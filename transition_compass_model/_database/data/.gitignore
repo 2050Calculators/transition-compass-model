@@ -1,0 +1,4 @@
+# discard the data
+csv/*
+!csv/interactions_constants.csv
+datamatrix/power.pickle
