@@ -1133,7 +1133,8 @@ def load_module_input_from_pickle(module):
 
 
 def filter_country_and_load_data_from_pickles(country_list, modules_list):
-
+  # Loads DM from pickles that correspond to the modules in modules_list
+  # It keeps only the required countries from country_list
   if isinstance(modules_list, str):
     modules_list = [modules_list]
 
@@ -1146,6 +1147,7 @@ def filter_country_and_load_data_from_pickles(country_list, modules_list):
 
 
 def return_lever_data(lever_name, DM_input, DM_out = None):
+  lever_name = lever_name.replace('lever_', '')
   if DM_out is None:
     DM_out = dict()
 
@@ -1167,3 +1169,27 @@ def return_lever_data(lever_name, DM_input, DM_out = None):
       break
 
   return DM_out
+
+
+def get_lever_data_to_plot(lever_name, DM_input):
+  # Given the lever_name and a DM_input containing the input used in the run,
+  # returns a DM with keys 1,2,3,4 and for each, a flat dm covering the whole time series.
+  # lever_name should be in chosen lever_position.json
+  # DM_input can be obtained by running:
+  # DM_input = filter_country_and_load_data_from_pickles(country_list, modules_list)
+
+  DM_lever = return_lever_data(lever_name, DM_input)
+  DM_clean = dict()
+  if DM_lever is None:
+    print(f'lever_name {lever_name} not found in input DM')
+  else:
+    dm_ots = DM_lever['ots'].flattest()
+    if not isinstance(dm_ots, dict):
+      for lev in range(4):
+        dm_fts = DM_lever['fts'][lev+1].flattest()
+        DM_clean[lev+1] = dm_ots.copy()
+        DM_clean[lev + 1].append(dm_fts, dim='Years')
+    else:
+      print(f'The lever {lever_name} controls more than one variable and cannot be plotted')
+
+  return DM_clean
