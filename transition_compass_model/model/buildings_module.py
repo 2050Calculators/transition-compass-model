@@ -223,7 +223,9 @@ def read_data(data_file, lever_setting):
                  'heating-technology': DM_ots_fts['heating-technology-fuel']['bld_heating-technology'],
                  'heatcool-behaviour': DM_ots_fts['heatcool-behaviour'],
                  'heating-calibration': DM_buildings['fxa']['heating-energy-calibration'],
-                 'electricity-emission': DM_buildings['fxa']['emission-factor-electricity']}
+                 'electricity-emission': DM_buildings['fxa']['emission-factor-electricity'],
+                 "u-value" :  DM_buildings['fxa']["u-value"],
+                 "surface-to-floorarea" : DM_buildings['fxa']["surface-to-floorarea"]}
 
     cdm_const = DM_buildings['constant']
 
@@ -500,6 +502,7 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots, years_f
 
     # SECTION Prepare output
     dm_industry = dm_bld_tot.filter({'Variables': ['bld_floor-area_new', 'bld_floor-area_renovated', 'bld_floor-area_waste']})
+    dm_industry[:, :, 'bld_floor-area_renovated', ...] = np.maximum(0, dm_industry[:, :, 'bld_floor-area_renovated', ...]) # Remove negative renovation
     dm_industry.group_all('Categories2')
     dm_industry.groupby({'residential': '.*'}, dim='Categories1', regex=True, inplace=True)
     dm_industry = dm_industry.flatten()
@@ -543,16 +546,16 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
 
     # SECTION Heating energy demand
     # dH = kH (24 HDD Us A − IG)
-    cdm_uvalue = cdm_const['u-value']
-    cdm_A = cdm_const['surface-to-floorarea']
-    idx_a = cdm_A.idx
-    idx_u = cdm_uvalue.idx
+    dm_uvalue = DM_energy['u-value']
+    dm_A = DM_energy['surface-to-floorarea']
+    idx_a = dm_A.idx
+    idx_u = dm_uvalue.idx
     idx = dm_floor_area.idx
     # Power per degree
     # 24 * Us * A * m2
     arr_W_K = dm_floor_area.array[:, :, idx['bld_floor-area_stock'], :, :] \
-               * cdm_uvalue.array[np.newaxis, np.newaxis, idx_u['bld_u-value'], :, :] \
-               * cdm_A.array[np.newaxis, np.newaxis, idx_a['bld_surface-to-floorarea'], :, np.newaxis]
+               * dm_uvalue.array[:,:,idx_u['bld_u-value'], :, :] \
+               * dm_A.array[:,:,idx_a['bld_surface-to-floorarea'],:,np.newaxis]
     dm_floor_area.add(arr_W_K, dim='Variables', col_label='bld_power-per-K', unit='W/K')
     # Yearly heating energy demand
     # W/K x HDD x 24
@@ -1276,7 +1279,8 @@ def buildings(lever_setting, years_setting, interface=Interface()):
             print('You are missing lifestyles to buildings interface')
         data_file = os.path.join(current_file_directory, '../_database/data/interface/climate_to_buildings.pickle')
         with open(data_file, 'rb') as handle:
-            dm_clm = pickle.load(handle)
+            DM_clm = pickle.load(handle)
+        dm_clm = DM_clm["cdd-hdd"]
         cntr_list = DM_floor_area['floor-intensity'].col_labels['Country']
         dm_clm.filter({'Country': cntr_list}, inplace=True)
 
@@ -1326,4 +1330,4 @@ def buildings_local_run():
 
 
 # database_from_csv_to_datamatrix()
-#buildings_local_run()
+# buildings_local_run()
