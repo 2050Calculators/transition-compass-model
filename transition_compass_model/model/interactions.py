@@ -17,12 +17,13 @@ from model.landuse_module import land_use
 from model.oilrefinery_module import refinery
 
 import math
+import copy
 import time
 import os
 import json
 
 
-def runner(lever_setting, years_setting, DM_input, sectors, logger):
+def runner(lever_setting, years_setting, DM_in, sectors, logger):
     # lever setting dictionary convert float to integer
     lever_setting = {key: math.floor(value) for key, value in lever_setting.items()}
     # Transport module
@@ -30,6 +31,7 @@ def runner(lever_setting, years_setting, DM_input, sectors, logger):
     init_time = time.time()
     TPE = {}
     interface = Interface()
+    DM_input = copy.deepcopy(DM_in)
     if 'climate' in sectors:
       start_time = time.time()
       TPE["climate"] = climate(lever_setting, years_setting, DM_input['climate'], interface)
