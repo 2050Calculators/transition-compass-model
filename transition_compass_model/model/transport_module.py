@@ -13,6 +13,7 @@ from model.common.auxiliary_functions import (
     read_level_data,
     create_years_list,
     linear_fitting,
+  filter_country_and_load_data_from_pickles,
 )
 import pickle
 import json
@@ -21,10 +22,7 @@ import numpy as np
 import time
 
 
-def read_data(data_file, lever_setting):
-
-    with open(data_file, "rb") as handle:
-        DM_transport = pickle.load(handle)
+def read_data(DM_transport, lever_setting):
 
     dict_fxa = DM_transport["fxa"]
     dm_freight_tech = dict_fxa["freight_tech"]
@@ -1566,15 +1564,10 @@ def tra_power_interface(DM_passenger_power, DM_freight_power, write_pickle=False
     return DM_power
 
 
-def transport(lever_setting, years_setting, interface=Interface()):
+def transport(lever_setting, years_setting, DM_input, interface=Interface()):
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    transport_data_file = os.path.join(
-        current_file_directory, "../_database/data/datamatrix/geoscale/transport.pickle"
-    )
-    DM_passenger, DM_freight, DM_other, cdm_const = read_data(
-        transport_data_file, lever_setting
-    )
+    DM_passenger, DM_freight, DM_other, cdm_const = read_data(DM_input, lever_setting)
 
     cntr_list = DM_passenger["passenger_modal_split"].col_labels["Country"]
 
@@ -1694,11 +1687,11 @@ def local_transport_run():
     f = open(os.path.join(current_file_directory, "../config/lever_position.json"))
     lever_setting = json.load(f)[0]
 
-    global_vars = {"geoscale": "Switzerland|Vaud"}
+    # get geoscale
+    country_list = ['EU27', 'Switzerland', 'Vaud']
+    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'transport')
 
-    filter_geoscale(global_vars['geoscale'])
-
-    results_run = transport(lever_setting, years_setting)
+    results_run = transport(lever_setting, years_setting, DM_input['transport'])
 
     return results_run
 

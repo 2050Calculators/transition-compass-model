@@ -2,13 +2,10 @@ import pandas as pd
 
 from model.common.data_matrix_class import DataMatrix
 from model.common.constant_data_matrix_class import ConstantDataMatrix
-from model.common.io_database import read_database, read_database_fxa, edit_database, database_to_df, dm_to_database
-from model.common.io_database import read_database_to_ots_fts_dict, read_database_to_ots_fts_dict_w_groups
+from model.common.io_database import dm_to_database
 from model.common.interface_class import Interface
-from model.common.auxiliary_functions import compute_stock, filter_geoscale, calibration_rates, check_ots_fts_match, \
-    create_years_list, linear_fitting
-from model.common.auxiliary_functions import read_level_data, simulate_input
-from scipy.optimize import linprog
+from model.common.auxiliary_functions import  calibration_rates
+from model.common.auxiliary_functions import read_level_data, filter_country_and_load_data_from_pickles
 import pickle
 import json
 import os
@@ -32,9 +29,7 @@ def init_years_lever():
 #######################################################################################################
 
 # CalculationLeaf READ PICKLE
-def read_data(data_file, lever_setting):
-    with open(data_file, 'rb') as handle:
-        DM_agriculture = pickle.load(handle)
+def read_data(DM_agriculture, lever_setting):
 
     # Read fts based on lever_setting
     # FIXME error it adds ots and fts
@@ -2250,12 +2245,10 @@ def agriculture_TPE_interface(DM_livestock, DM_crop, dm_crop_other, DM_feed, dm_
 # ----------------------------------------------------------------------------------------------------------------------
 # AGRICULTURE ----------------------------------------------------------------------------------------------------------
 # ----------------------------------------------------------------------------------------------------------------------
-def agriculture(lever_setting, years_setting, interface=Interface()):
+def agriculture(lever_setting, years_setting, DM_input, interface=Interface()):
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    agriculture_data_file = os.path.join(current_file_directory,
-                                         '../_database/data/datamatrix/geoscale/agriculture.pickle')
     DM_ots_fts, DM_lifestyle, DM_food_demand, DM_livestock, DM_alc_bev, DM_bioenergy, DM_manure, DM_feed, DM_crop, DM_land, DM_nitrogen, DM_energy_ghg, CDM_const = read_data(
-        agriculture_data_file, lever_setting)
+        DM_input, lever_setting)
 
     cntr_list = DM_food_demand['food-net-import-pro'].col_labels['Country']
 
@@ -2376,10 +2369,10 @@ def agriculture(lever_setting, years_setting, interface=Interface()):
 
 
 def agriculture_local_run():
-    global_vars = {'geoscale': 'Switzerland'}
-    filter_geoscale(global_vars['geoscale'])
+    country_list = ['Switzerland', 'Vaud']
+    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'agriculture')
     years_setting, lever_setting = init_years_lever()
-    agriculture(lever_setting, years_setting)
+    agriculture(lever_setting, years_setting, DM_input['agriculture'])
     return
 
 

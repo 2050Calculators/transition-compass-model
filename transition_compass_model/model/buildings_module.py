@@ -4,7 +4,7 @@ from model.common.interface_class import Interface
 from model.common.constant_data_matrix_class import ConstantDataMatrix
 from model.common.io_database import read_database, read_database_fxa, edit_database, read_database_w_filter
 from model.common.io_database import read_database_to_ots_fts_dict, read_database_to_ots_fts_dict_w_groups
-from model.common.auxiliary_functions import read_level_data, filter_geoscale, compute_stock, create_years_list, moving_average
+from model.common.auxiliary_functions import read_level_data, filter_country_and_load_data_from_pickles, create_years_list
 import pickle
 import json
 import os
@@ -206,10 +206,7 @@ def database_from_csv_to_datamatrix():
     return
 
 
-def read_data(data_file, lever_setting):
-    with open(data_file, 'rb') as handle:
-        DM_buildings = pickle.load(handle)
-
+def read_data(DM_buildings, lever_setting):
     # Read fts based on lever_setting
     DM_ots_fts = read_level_data(DM_buildings, lever_setting)
 
@@ -1250,11 +1247,10 @@ def bld_TPE_interface(DM_energy, DM_area):
     return dm_tpe
 
 
-def buildings(lever_setting, years_setting, interface=Interface()):
+def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    buildings_data_file = os.path.join(current_file_directory, '../_database/data/datamatrix/geoscale/buildings.pickle')
     # Read data into workflow datamatrix dictionaries
-    DM_floor_area, DM_energy, cdm_const = read_data(buildings_data_file, lever_setting)
+    DM_floor_area, DM_energy, cdm_const = read_data(DM_input, lever_setting)
     years_ots = create_years_list(years_setting[0], years_setting[1], 1)
     years_fts = create_years_list(years_setting[2], years_setting[3], 5)
 
@@ -1322,10 +1318,11 @@ def buildings_local_run():
     years_setting, lever_setting = init_years_lever()
     # Function to run only transport module without converter and tpe
 
-    global_vars = {'geoscale': 'EU27|Switzerland|Vaud'}
-    filter_geoscale(global_vars['geoscale'])
+    # get geoscale
+    country_list = ['EU27', 'Switzerland', 'Vaud']
+    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'buildings')
 
-    buildings(lever_setting, years_setting)
+    buildings(lever_setting, years_setting, DM_input['buildings'])
     return
 
 
