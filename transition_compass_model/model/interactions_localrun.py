@@ -4,6 +4,8 @@ from model.transport_module import transport
 from model.lifestyles_module import lifestyles
 from model.buildings_module import buildings
 from model.industry_module import industry
+from model.agriculture_module import agriculture
+from model.forestry_module import forestry
 from model.common.interface_class import Interface
 from model.common.auxiliary_functions import filter_geoscale
 # from model.district_heating_module import district_heating
@@ -44,9 +46,12 @@ def interactions(lever_setting, years_setting):
     TPE['industry'] = industry(lever_setting, years_setting, interface)
     runtime['Execution time Industry'] = time.time() - start_time
     start_time = time.time()
-    #TPE['agriculture'] = agriculture(lever_setting, years_setting, interface)
-    #runtime['Execution time Agriculture'] = time.time() - start_time
-    #start_time = time.time()
+    TPE['forestry'] = forestry(lever_setting, years_setting, interface)
+    runtime['Execution time Forestry'] = time.time() - start_time
+    start_time = time.time()
+    TPE['agriculture'] = agriculture(lever_setting, years_setting, interface)
+    runtime['Execution time Agriculture'] = time.time() - start_time
+    start_time = time.time()
     #TPE['ammonia'] = ammonia(lever_setting, years_setting, interface)
     #runtime['Execution time Ammonia'] = time.time() - start_time
     #start_time = time.time()
@@ -86,7 +91,7 @@ def local_interactions_run():
     
     # geoscale
     global_vars = {'geoscale': 'EU27|Switzerland|Vaud'}
-    filter_geoscale(global_vars)
+    filter_geoscale(global_vars['geoscale'])
 
     # run
     results_run, runtime = interactions(lever_setting, years_setting)
@@ -95,7 +100,6 @@ def local_interactions_run():
     return results_run, runtime
 
 # run local
-# __file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/model/interactions_localrun.py"
 results_run, runtime = local_interactions_run()
 
 # # checks
