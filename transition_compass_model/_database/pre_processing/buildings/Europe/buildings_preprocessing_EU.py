@@ -1624,9 +1624,9 @@ dm_all = compute_stock_area_by_cat(dm_stock_cat, dm_new_cat, dm_renov_cat, dm_wa
 
 # Checks
 # dm_all.filter({"Country" : ["EU27"], "Variables" : ["bld_floor-area_stock"]}).flatten().flatten().datamatrix_plot() 
-dm_stock_cat.filter({"Country" : ["EU27"], 
-                "Variables" : ["bld_floor-area_stock"], 
-                "Categories1" : ["single-family-households","multi-family-households"]}).group_all("Categories1",inplace=False).flatten().datamatrix_plot(stacked=True) 
+# dm_stock_cat.filter({"Country" : ["EU27"], 
+#                 "Variables" : ["bld_floor-area_stock"], 
+#                 "Categories1" : ["single-family-households","multi-family-households"]}).group_all("Categories1",inplace=False).flatten().datamatrix_plot(stacked=True) 
 # df_temp = dm_all.write_df()
 # df_temp = pd.melt(df_temp, id_vars = ["Country","Years"])
 # df_temp = df_temp.loc[df_temp["value"]<0,:]
