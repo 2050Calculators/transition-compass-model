@@ -13,6 +13,7 @@ from model.common.interface_class import Interface
 
 # ImportFunctions
 from model.common.auxiliary_functions import read_level_data, filter_geoscale, my_pickle_dump
+from model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
 
 
 # init years and lever
@@ -26,11 +27,7 @@ def init_years_lever():
 
 
 #  Reading the Pickle
-def read_data(data_file, lever_setting):
-    
-    # load dm
-    with open(data_file, 'rb') as handle:
-        DM_lfs = pickle.load(handle)
+def read_data(DM_lfs, lever_setting):
 
     # Get ots fts based on lever_setting
     DM_ots_fts = read_level_data(DM_lfs, lever_setting)
@@ -40,13 +37,11 @@ def read_data(data_file, lever_setting):
 
 
 # CORE module
-def lifestyles(lever_setting, years_setting, interface=Interface(), write_pickle = False):
-    
+def lifestyles(lever_setting, years_setting, DM_input, interface=Interface(), write_pickle = False):
+
     # get population data
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    lifestyles_data_file = os.path.join(current_file_directory,
-                                        '../_database/data/datamatrix/geoscale/lifestyles.pickle')
-    DM_pop = read_data(lifestyles_data_file, lever_setting)
+    DM_pop = read_data(DM_input, lever_setting)
     dm_pop = DM_pop['pop']["lfs_population_"]
 
     # send population to agriculture
@@ -85,10 +80,10 @@ def local_lifestyles_run(write_pickle=False):
     # Initiate the year & lever setting
     years_setting, lever_setting = init_years_lever()
 
-    global_vars = {'geoscale': 'EU27|Switzerland|Vaud'}
-    filter_geoscale(global_vars['geoscale'])
+    country_list = ['EU27', 'Switzerland', 'Vaud']
+    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'lifestyles')
 
-    lifestyles(lever_setting, years_setting, write_pickle=write_pickle)
+    lifestyles(lever_setting, years_setting, DM_input['lifestyles'], write_pickle=write_pickle)
     return
 
 # Update/Create the Pickle

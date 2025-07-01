@@ -5,7 +5,7 @@ from model.common.interface_class import Interface
 from model.common.constant_data_matrix_class import ConstantDataMatrix
 from model.common.io_database import read_database, read_database_fxa, read_database_to_ots_fts_dict
 from model.common.auxiliary_functions import compute_stock, filter_geoscale
-from model.common.auxiliary_functions import read_level_data, create_years_list, linear_fitting
+from model.common.auxiliary_functions import read_level_data, filter_country_and_load_data_from_pickles
 import pickle
 import json
 import os
@@ -13,10 +13,7 @@ import numpy as np
 import time
 
 
-def read_data(data_file, lever_setting):
-
-    with open(data_file, 'rb') as handle:
-        DM_forestry = pickle.load(handle)
+def read_data(DM_forestry, lever_setting):
 
     dict_const = DM_forestry['constant']
     dict_fxa = DM_forestry['fxa']
@@ -293,16 +290,15 @@ def forestry_to_tpe(DM_supply, DM_power, DM_industry, DM_ots_fts):
     return dm_tpe
 
 
-def forestry(lever_setting, years_setting, interface=Interface()):
+def forestry(lever_setting, years_setting, DM_input, interface=Interface()):
 
     ##############################################################
     # Load the datamatrix of Forestry: the following is computed in the pre-processing, and includes ots, fts, fxa, cp
     ##############################################################
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    forestry_data_file = os.path.join(current_file_directory, '../_database/data/datamatrix/geoscale/forestry.pickle')
     # Read forestry pickle data based on lever setting and return data in a structured DM
-    DM_forestry, DM_wood_conversion, DM_ots_fts = read_data(forestry_data_file, lever_setting)
+    DM_forestry, DM_wood_conversion, DM_ots_fts = read_data(DM_input, lever_setting)
     cntr_list = DM_ots_fts['harvest-rate'].col_labels['Country']
     #cntr_list = ['Switzerland']
 
@@ -408,12 +404,13 @@ def local_forestry_run():
     f = open(os.path.join(current_file_directory, '../config/lever_position.json'))
     lever_setting = json.load(f)[0]
 
-    global_vars = {'geoscale': 'Vaud'}
-    filter_geoscale(global_vars['geoscale'])
+    # get geoscale
+    country_list = ['Switzerland', 'Vaud']
+    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'forestry')
 
-    results_run = forestry(lever_setting, years_setting)
+    results_run = forestry(lever_setting, years_setting, DM_input['forestry'])
 
     return results_run
 
 
-local_forestry_run()
+#local_forestry_run()
