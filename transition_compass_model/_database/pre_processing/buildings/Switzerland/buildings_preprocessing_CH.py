@@ -3,7 +3,7 @@ import pandas as pd
 import pickle
 
 
-from model.common.auxiliary_functions import moving_average, linear_fitting, create_years_list, my_pickle_dump
+from model.common.auxiliary_functions import moving_average, linear_fitting, create_years_list, my_pickle_dump, cdm_to_dm
 from model.common.io_database import update_database_from_dm, csv_database_reformat, read_database_to_dm
 from _database.pre_processing.api_routines_CH import get_data_api_CH
 from model.common.data_matrix_class import DataMatrix
@@ -962,7 +962,7 @@ def extract_heating_technologies_old(table_id, file, cat_sfh, cat_mfh):
     dm_heating_mfh.append(dm_heating_sfh, dim='Categories1')
     dm_heating_old = dm_heating_mfh
 
-    dm_heating_old.groupby({'other': ['Autre agent énergétique (chauf.)', 'Sans chauffage']},
+    dm_heating_old.groupby({'other-tech': ['Autre agent énergétique (chauf.)', 'Sans chauffage']},
                            dim='Categories2', inplace=True)
     dm_heating_old.rename_col(['Mazout (chauf.)', 'Bois (chauf.)', 'Pompe à chaleur (chauf.)',
                                'Electricité (chauf.)', 'Gaz (chauf.)', 'Chaleur à distance (chauf.)',
@@ -1021,7 +1021,7 @@ def extract_heating_technologies(table_id, file, cat_sfh, cat_mfh):
     dm_heating.groupby({'Other': ['Autre', 'Aucune']}, dim='Categories2', inplace=True)
     dm_heating.rename_col(
         ['Bois', 'Chaleur produite à distance', 'Electricité', 'Gaz', 'Mazout', 'Other', 'Pompe à chaleur', 'Soleil (thermique)'],
-        ['wood', 'district-heating', 'electricity', 'gas', 'heating-oil', 'other', 'heat-pump', 'solar'], dim='Categories2')
+        ['wood', 'district-heating', 'electricity', 'gas', 'heating-oil', 'other-tech', 'heat-pump', 'solar'], dim='Categories2')
 
     dm_heating.deepen(based_on='Variables')
 
@@ -1248,6 +1248,7 @@ def compute_floor_area_waste_cat(dm_waste_tot):
     dm.rename_col('multi-family-households', 'multi-family-households_F', dim='Categories1')
     dm.deepen()
     dm.add(0, dummy=True, dim='Categories2', col_label=['B', 'C', 'D', 'E'])
+    dm.sort("Categories2")
 
     return dm
 
@@ -1607,7 +1608,7 @@ def compute_heating_efficiency_by_archetype(dm_heating_eff, dm_stock_cat, envelo
 def extract_heating_efficiency(file, sheet_name, years_ots):
     df = pd.read_excel(file, sheet_name=sheet_name)
     df = df[0:13].copy()
-    names_map = {'Ratio of energy service to energy consumption': 'remove', 'Space heating': 'other', 'Solids': 'coal',
+    names_map = {'Ratio of energy service to energy consumption': 'remove', 'Space heating': 'other-tech', 'Solids': 'coal',
                  'Liquified petroleum gas (LPG)': 'remove', 'Diesel oil': 'heating-oil', 'Natural gas': 'gas',
                  'Biomass': 'wood', 'Geothermal': 'geothermal', 'Distributed heat': 'district-heating',
                  'Advanced electric heating': 'heat-pump', 'Conventional electric heating': 'electricity',
@@ -1632,11 +1633,18 @@ def extract_heating_efficiency(file, sheet_name, years_ots):
 years_ots = create_years_list(1990, 2023, 1)
 years_fts = create_years_list(2025, 2050, 5)
 
-dict_lfs_ots, dict_lfs_fts = read_database_to_dm('lifestyles_population.csv', filter={'geoscale': ['Vaud', 'Switzerland']},
-                                                 baseyear=years_ots[-1], num_cat=0, level='all')
-dm_pop = dict_lfs_ots['pop'].filter({'Variables': ['lfs_population_total']}, inplace=False)
-dm_pop.sort('Country')
+# population
+filepath = "../../../data/datamatrix/lifestyles.pickle"
+with open(filepath, 'rb') as handle:
+    DM_lfs = pickle.load(handle)
+dm_pop = DM_lfs["ots"]["pop"]["lfs_population_"].copy()
+dm_pop.append(DM_lfs["fts"]["pop"]["lfs_population_"][1],"Years")
+dm_pop = dm_pop.filter({"Country" : ['Vaud', 'Switzerland']})
+dm_pop.sort("Years")
+dm_pop.filter({"Years" : years_ots},inplace=True)
+del DM_lfs
 
+# __file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/buildings/Switzerland/buildings_preprocessing_CH.py"
 filename = 'data/bld_household_size.pickle'
 dm_lfs_household_size = extract_lfs_household_size(years_ots, table_id='px-x-0102020000_402', file=filename)
 
@@ -1759,7 +1767,7 @@ dm_all = compute_stock_area_by_cat(dm_stock_cat, dm_new_cat, dm_renov_cat, dm_wa
 # I will need to re-compute the demolition rate
 #dm_all = harmonise_stock_new_renovated_transformed(dm_energy_cat, dm_renovation, dm_renov_distr, envelope_cat_new)
 
-# SECTION U-values - constant
+# SECTION U-values - fixed assumption
 # Definition of Building Archetypes Based on the Swiss Energy Performance Certificates Database
 # by Alessandro Pongelli et al.
 # U-value is computed as the average of the house element u-value (roof, wall, windows, ..) weighted by their area
@@ -1780,8 +1788,9 @@ idx = cdm_u_value.idx
 for bld, dict_val in envelope_cat_u_value.items():
     for cat, val in dict_val.items():
         cdm_u_value.array[idx['bld_u-value'], idx[bld], idx[cat]] = val
+dm_u_value = cdm_to_dm(cdm_u_value, ["Switzerland","Vaud"], ["All"])
 
-# SECTION Surface to Floorarea factor - constant
+# SECTION Surface to Floorarea factor - fixed assumption
 # From the same dataset we obtain also the floor to surface area
 surface_to_floorarea = {'single-family-households': 2.0, 'multi-family-households': 1.3}
 cdm_s2f = ConstantDataMatrix(col_labels={'Variables': ['bld_surface-to-floorarea'],
@@ -1791,6 +1800,8 @@ cdm_s2f.array = arr
 idx = cdm_s2f.idx
 for cat, val in surface_to_floorarea.items():
     cdm_s2f.array[idx['bld_surface-to-floorarea'], idx[cat]] = val
+cdm_s2f.units["bld_surface-to-floorarea"] = "%" 
+dm_s2f = cdm_to_dm(cdm_s2f, ["Switzerland","Vaud"], ["All"])
 
 # 2018: Type of renovation 4% windows, 51% roof, 38% facade, 2% floor, 5% other
 # shallow: 11% (windows, floor, other) -> uvalue improvement 15%
@@ -1879,7 +1890,7 @@ if check:
 
 # SECTION: Heating efficiency
 #######      HEATING EFFICIENCY     ###########
-file = '../Europe/data/JRC-IDEES-2021_Residential_EU27.xlsx'
+file = '../Europe/data/databases_full/JRC/JRC-IDEES-2021_Residential_EU27.xlsx'
 sheet_name = 'RES_hh_eff'
 dm_heating_eff = extract_heating_efficiency(file, sheet_name, years_ots)
 dm_heating_eff_cat = compute_heating_efficiency_by_archetype(dm_heating_eff, dm_stock_cat, envelope_cat_new,
@@ -1893,8 +1904,8 @@ file = '../../../data/datamatrix/lifestyles.pickle'
 with open(file, 'rb') as handle:
     DM_lifestyles = pickle.load(handle)
 
-dm_pop_ots = DM_lifestyles['ots']['pop']['lfs_population_'].copy()
-dm_pop_fts = DM_lifestyles['fts']['pop']['lfs_population_'][1]
+dm_pop_ots = DM_lifestyles['ots']['pop']['lfs_population_'].filter({"Country" : ["Switzerland","Vaud"]})
+dm_pop_fts = DM_lifestyles['fts']['pop']['lfs_population_'][1].filter({"Country" : ["Switzerland","Vaud"]})
 dm_pop_ots.append(dm_pop_fts, dim='Years')
 DM_interface_lfs_to_bld = {'pop': dm_pop_ots}
 
@@ -1910,8 +1921,8 @@ file = '../../../data/datamatrix/climate.pickle'
 with open(file, 'rb') as handle:
     DM_clm = pickle.load(handle)
 
-dm_clm_ots = DM_clm['ots']['temp']['bld_climate-impact-space'].copy()
-dm_clm_fts = DM_clm['fts']['temp']['bld_climate-impact-space'][1]
+dm_clm_ots = DM_clm['ots']['temp']['bld_climate-impact-space'].filter({"Country" : ["Switzerland","Vaud"]})
+dm_clm_fts = DM_clm['fts']['temp']['bld_climate-impact-space'][1].filter({"Country" : ["Switzerland","Vaud"]})
 dm_clm_ots.append(dm_clm_fts, dim='Years')
 DM_interface_clm_to_bld = {'cdd-hdd': dm_clm_ots}
 
@@ -1921,7 +1932,7 @@ my_pickle_dump(DM_new=DM_interface_clm_to_bld, local_pickle_file=file)
 # SECTION: FTS + PREPARE OUTPUT
 
 # SECTION: Calibration from existing buildings.pickle
-DM_buildings['fxa']['heating-energy-calibration'] = DM_bld['fxa']['heating-energy-calibration']
+DM_buildings['fxa']['heating-energy-calibration'] = DM_bld['fxa']['heating-energy-calibration'].filter({"Country" : ["Switzerland","Vaud"]})
 
 # SECTION: Floor intensity
 #########################################
@@ -2051,12 +2062,14 @@ DM_buildings['fxa']['bld_age'] = dm_age
 #########################################
 #####          U-VALUE            #######
 #########################################
-DM_buildings['constant']['u-value'] = cdm_u_value
+# DM_buildings['constant']['u-value'] = cdm_u_value
+DM_buildings['fxa']['u-value'] = dm_u_value
 
 #########################################
 #####       SURFACE-2-FLOOR       #######
 #########################################
-DM_buildings['constant']['surface-to-floorarea'] = cdm_s2f
+# DM_buildings['constant']['surface-to-floorarea'] = cdm_s2f
+DM_buildings['fxa']['surface-to-floorarea'] = dm_s2f
 
 
 # SECTION: Heating technology mix fts
