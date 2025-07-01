@@ -324,6 +324,23 @@ for i in range(1,4+1):
     arr_rates = dm_temp.array[idx["Germany"],...] / arr_2023[np.newaxis,...]
     arr_uk = arr_2023_uk[np.newaxis,...] * arr_rates
     dict_dm_pop_fts_tot[i].add(arr_uk, "Country", "United Kingdom")
+    
+# save full datamatrix with all countries (to be used in other pre processing if needed)
+DM_lfs = {"ots" : {"pop" : {"lfs_demography_":[],
+                            "lfs_population_" : []}},
+          "fts" : {"pop" : {"lfs_demography_": {1:[],2:[],3:[],4:[]},
+                            "lfs_population_": {1:[],2:[],3:[],4:[]}}}}
+DM_lfs['ots']['pop']['lfs_demography_'] = dm_pop_age
+for lev in range(4):
+    lev = lev + 1
+    DM_lfs['fts']['pop']['lfs_demography_'][lev] = dict_dm_pop_fts[lev]
+DM_lfs['ots']['pop']['lfs_population_'] = dm_pop_tot
+for lev in range(4):
+    lev = lev + 1
+    DM_lfs['fts']['pop']['lfs_population_'][lev] = dict_dm_pop_fts_tot[lev]
+current_file_directory = os.path.dirname(os.path.abspath(__file__))
+file = os.path.join(current_file_directory, 'data/lifestyles_allcountries.pickle')
+my_pickle_dump(DM_lfs, file)
 
 # keep only EU27
 dm_pop_age = dm_pop_age.filter({"Country" : ["EU27"]})
