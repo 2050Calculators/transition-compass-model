@@ -246,6 +246,10 @@ df_check = pd.melt(cdm_check.write_df())
 tmp = create_constant(df_agg, ['battery-lion-HDV_BEV[t/num]', 'battery-lion-HDV_PHEV[t/num]',
                                'battery-lion-LDV_BEV[t/num]', 'battery-lion-LDV_PHEV[t/num]'])
 cdm_tra_bat = ConstantDataMatrix.create_from_constant(tmp, 2)
+cdm_temp = cdm_tra_bat.filter({"Variables" : ["battery-lion-HDV"]})
+cdm_temp.rename_col("battery-lion-HDV","battery-lion-bus","Variables")
+cdm_tra_bat.append(cdm_temp, "Variables")
+cdm_tra_bat.sort("Variables")
 
 # add missing categories for PHEV
 idx = cdm_tra_bat.idx
