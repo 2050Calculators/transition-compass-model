@@ -1,6 +1,7 @@
 
 # packages
 from model.common.data_matrix_class import DataMatrix
+from model.common.auxiliary_functions import linear_fitting, fix_jumps_in_dm
 import pandas as pd
 import pickle
 import os
@@ -95,6 +96,22 @@ df_check = df_agg.groupby(["variable"], as_index=False)['value'].agg(np.mean)
 
 # substitue nan with zero
 df_agg.loc[df_agg["value"].isnull(),"value"] = 0
+
+# TODO:
+
+# trucks and buses, I will assume that they are the same of vehicles
+# # Source: https://horizoneuropencpportal.eu/sites/default/files/2023-09/acea-position-paper-end-of-life-vehicles-directive-trucks-buses-2020.pdf
+# Page 3:
+# Industry believes that the re-use and recycling of second raw materials is important as well. In fact,
+# this is already part of the business models of many vehicle manufacturers today. Throughout the 19
+# years that HDVs have been outside the scope of the ELV Directive, the vehicle recycling industry
+# has handled, treated and de-polluted trucks and buses in a way similar to passenger cars and thus
+# basically already applies existing environmental legislation to HDVs.
+
+# trains and mt: Table 2 https://www.sciencedirect.com/science/article/pii/S0956053X16305396?casa_token=URoJ4M0WLRAAAAAA:0TjVLbKhEiDy3Il7b9CmbTjEDelPNlZpF5SBRZWb_mvNeayULwxjW3BW_wAHfKQR-_8tioFj6_HQ#b0255
+
+# planes: https://www.easa.europa.eu/en/document-library/research-reports/study-assessment-environmental-sustainability-status-aviation
+# put same recovery rates than trains (the recovery rates will be similar by material, i.e. aluminium high, composites low, etc).
 
 # map to products we have in the calc (by taking the mean across products)
 dict_map = {"vehicles" : ['ELV_shredding-and-dismantling_recycling-best',
