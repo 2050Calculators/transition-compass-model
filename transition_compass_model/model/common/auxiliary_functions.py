@@ -1120,3 +1120,76 @@ def add_dummy_country_to_DM(DM, new_country, ref_country):
 
     return
 
+
+def load_module_input_from_pickle(module):
+  current_file_directory = os.path.dirname(os.path.abspath(__file__))
+  pickle_path = "/../../_database/data/datamatrix/"
+  DM_module = dict()
+  f = os.path.join(current_file_directory + pickle_path, module + ".pickle")
+  with open(f, 'rb') as handle:
+    DM_module = pickle.load(handle)
+
+  return DM_module
+
+
+def filter_country_and_load_data_from_pickles(country_list, modules_list):
+  # Loads DM from pickles that correspond to the modules in modules_list
+  # It keeps only the required countries from country_list
+  if isinstance(modules_list, str):
+    modules_list = [modules_list]
+
+  DM_input = dict()
+  for module in modules_list:
+    DM_input[module] = load_module_input_from_pickle(module)
+    filter_DM(DM_input[module], {'Country': country_list})
+
+  return DM_input
+
+
+def return_lever_data(lever_name, DM_input, DM_out = None):
+  lever_name = lever_name.replace('lever_', '')
+  if DM_out is None:
+    DM_out = dict()
+
+  if 'ots' in DM_out and 'fts' in DM_out:
+    return DM_out
+
+  for key in DM_input.keys():
+    if key == lever_name:
+      if isinstance(DM_input[key], dict) and 1 in DM_input[key].keys():
+        DM_out['fts'] = DM_input[key]
+      elif 'ots' not in DM_out:
+        DM_out['ots'] = DM_input[key]
+      else:
+        DM_out['fts'] = DM_input[key]
+    # If you still have a dictionary to explore and it is not an fts
+    elif isinstance(DM_input[key], dict)  and key != 'fxa':
+      DM_out = return_lever_data(lever_name, DM_input[key], DM_out)
+    if 'ots' in DM_out and 'fts' in DM_out:
+      break
+
+  return DM_out
+
+
+def get_lever_data_to_plot(lever_name, DM_input):
+  # Given the lever_name and a DM_input containing the input used in the run,
+  # returns a DM with keys 1,2,3,4 and for each, a flat dm covering the whole time series.
+  # lever_name should be in chosen lever_position.json
+  # DM_input can be obtained by running:
+  # DM_input = filter_country_and_load_data_from_pickles(country_list, modules_list)
+
+  DM_lever = return_lever_data(lever_name, DM_input)
+  DM_clean = dict()
+  if DM_lever is None:
+    print(f'lever_name {lever_name} not found in input DM')
+  else:
+    dm_ots = DM_lever['ots'].flattest()
+    if not isinstance(dm_ots, dict):
+      for lev in range(4):
+        dm_fts = DM_lever['fts'][lev+1].flattest()
+        DM_clean[lev+1] = dm_ots.copy()
+        DM_clean[lev + 1].append(dm_fts, dim='Years')
+    else:
+      print(f'The lever {lever_name} controls more than one variable and cannot be plotted')
+
+  return DM_clean

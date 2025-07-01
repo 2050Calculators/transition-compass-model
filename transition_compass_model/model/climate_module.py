@@ -14,7 +14,7 @@ from model.common.interface_class import Interface
 
 # ImportFunctions
 from model.common.io_database import read_database_to_ots_fts_dict_w_groups  # read functions for levers & fixed assumptions
-from model.common.auxiliary_functions import filter_geoscale
+from model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
 
 
 # filtering the constants & read csv and prepares it for the pickle format
@@ -75,11 +75,7 @@ def database_from_csv_to_datamatrix():
 
     return DM_climate
 
-def read_data(data_file, lever_setting):
-    
-    # load dm
-    with open(data_file, 'rb') as handle:
-        DM_climate = pickle.load(handle)
+def read_data(DM_climate, lever_setting):
 
     # get lever
     DM_ots_fts = read_level_data(DM_climate, lever_setting)
@@ -123,12 +119,11 @@ def climate_power_interface(DM_ots_fts, write_pickle = False):
     return dm
 
 # CORE module
-def climate(lever_setting, years_setting, interface = Interface(), calibration = False):
+def climate(lever_setting, years_setting, DM_input, interface = Interface(), calibration = False):
     
     # climate data file
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    climate_data_file = os.path.join(current_file_directory,'../_database/data/datamatrix/geoscale/climate.pickle')
-    DM_ots_fts = read_data(climate_data_file, lever_setting)
+    DM_ots_fts = read_data(DM_input, lever_setting)
     
     # tpe
     results_run = variables_to_tpe(DM_ots_fts)
@@ -153,11 +148,11 @@ def local_climate_run():
     years_setting, lever_setting = init_years_lever()
 
     # get geoscale
-    global_vars = {'geoscale': 'EU27|Switzerland|Vaud'}
-    filter_geoscale(global_vars['geoscale'])
+    country_list = ['EU27', 'Switzerland', 'Vaud']
+    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'climate')
 
     # run
-    results_run = climate(lever_setting, years_setting)
+    results_run = climate(lever_setting, years_setting, DM_input['climate'])
 
     return results_run
 
