@@ -1386,7 +1386,7 @@ def calculate_heating_eff_fts(dm_heating_eff, years_fts, maximum_eff):
 filepath = "../../../data/datamatrix/buildings.pickle"
 with open(filepath, 'rb') as handle:
     DM_bld = pickle.load(handle)
-    
+
 ##################
 ##### LEVERS #####
 ##################
