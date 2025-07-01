@@ -6,13 +6,13 @@
 
 # packages
 from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting
+from model.common.auxiliary_functions import linear_fitting, fix_jumps_in_dm
 import pandas as pd
 import pickle
 import os
 import numpy as np
 import warnings
-
+import eurostat
 # from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
 import plotly.express as px
@@ -481,6 +481,85 @@ DM_wst_mgt = {"elv-total" : dm_elv_tot,
 
 # clean
 del dm_elv_tot, dm_elv_col
+
+##############################################################################
+############################## TRUCKS AND BUSES ##############################
+##############################################################################
+
+# DM_wst_mgt["elv-total"].filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
+# DM_wst_mgt["elv-col"].filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
+
+# For buses and trucks:
+# Assumption: same of vehicles
+
+# # Source: https://horizoneuropencpportal.eu/sites/default/files/2023-09/acea-position-paper-end-of-life-vehicles-directive-trucks-buses-2020.pdf
+# Page 3:
+# Industry believes that the re-use and recycling of second raw materials is important as well. In fact,
+# this is already part of the business models of many vehicle manufacturers today. Throughout the 19
+# years that HDVs have been outside the scope of the ELV Directive, the vehicle recycling industry
+# has handled, treated and de-polluted trucks and buses in a way similar to passenger cars and thus
+# basically already applies existing environmental legislation to HDVs.
+
+# Source: https://cms.uitp.org/wp/wp-content/uploads/2021/05/Knowledge-Brief-Second-hand-bus_final.pdf
+# Page 2: Only 10–20% of the dismissed buses find a
+# second life. This is simply because most buses are entirely used up to their technical life duration (15-20 years)
+# and then scrapped. In cases where buses are taken out
+# of service at early ages, buyers could be found, mostly in
+# distant or significantly poorer countries.
+
+##############################################################################
+############################ TRAINS AND METROTRAM ############################
+##############################################################################
+
+# Assumption: most of the trains that are collected go to recycling
+# Source: https://www.researchgate.net/publication/267762517_Recycling_guidelines_of_the_rolling_stock/link/5784f3d908ae36ad40a4b0e6/download?_tp=eyJjb250ZXh0Ijp7ImZpcnN0UGFnZSI6InB1YmxpY2F0aW9uIiwicGFnZSI6InB1YmxpY2F0aW9uIn19
+# Page 8:
+# The subway rolling stock is characterized by an almost 95% recovery rate [10]. 85% of the mass is subject to recycling and another 10% is combusted with energy recovery.
+# Eurostar - has also implemented assumptions of environment-friendly traveling. One of the elements of the strategy was to achieve an 80% recycling rate of the end-of- life rolling stock by 2012 with the assumption that no waste will be forwarded for landfilling
+
+dm_rail_tot = DM_wst_mgt["elv-total"].copy()
+dm_rail_tot[:,:,:,"export"] = np.nanmean(dm_rail_tot[:,:,:,"export"]) # assuming similar export than vehicles
+dm_rail_tot[:,:,:,"waste-collected"] = 1-dm_rail_tot[:,:,:,"export"] # assuming all rest is collected
+dm_rail_tot[:,:,:,"waste-uncollected"] = 0
+dm_rail_tot[:,:,:,"littered"] = 0
+dm_rail_tot.rename_col("vehicles","trains","Variables")
+
+dm_rail_col = DM_wst_mgt["elv-col"].copy()
+dm_rail_col["reuse"] = 0 # assuming trains are used until the end of their lifetime
+dm_rail_col["incineration"] = 0 # assuming trains are not incinerated
+dm_rail_col["landfill"] = 0.05 # assuming 95% recovery rate. so 5% landfilled
+dm_rail_col["recycling"] = 0.85
+dm_rail_col["energy-recovery"] = 0.1
+dm_rail_col.rename_col("vehicles","trains","Variables")
+
+DM_wst_mgt["trains-total"] = dm_rail_tot
+DM_wst_mgt["trains-col"] = dm_rail_col
+
+##############################################################################
+################################### PLANES ###################################
+##############################################################################
+
+# Source: https://www.easa.europa.eu/en/document-library/research-reports/study-assessment-environmental-sustainability-status-aviation
+# Page 106 table 23: reuse 30, recycling 60, energy recovery 8, landfill 2
+# Page 91: Litter likely to be produced, but unlikely that is generate beyond the exterior fencing
+# I will assume litter, uncollected and exported to zero.
+
+dm_planes_tot = DM_wst_mgt["elv-total"].copy()
+dm_planes_tot[:,:,:,"waste-collected"] = 1
+dm_planes_tot[:,:,:,"export"] = 0
+dm_planes_tot[:,:,:,"waste-uncollected"] = 0
+dm_planes_tot[:,:,:,"littered"] = 0
+
+dm_planes_col = DM_wst_mgt["elv-col"].copy()
+dm_planes_col["reuse"] = 0.3
+dm_planes_col["incineration"] = 0
+dm_planes_col["landfill"] = 0.02
+dm_planes_col["recycling"] = 0.6
+dm_planes_col["energy-recovery"] = 0.08
+dm_planes_col.rename_col("vehicles","planes","Variables")
+
+DM_wst_mgt["planes-total"] = dm_planes_tot
+DM_wst_mgt["planes-col"] = dm_planes_col
 
 ###############################################################################
 ################### LARGER APPLIANCES, AND PC & ELECTRONICS ###################
@@ -1026,6 +1105,7 @@ df_temp_mun = df_temp_mun.loc[:,['freq', 'wst_oper', 'unit', 'geoscale',"2018"]]
 
 # so, formulas:
 # littered: 0
+# TODO: consdier what to do for littering, as we did for cars
 # exported: RCY_EU_FOR + RCY_NEU (only RCY_NEU for EU27)
 # collected: recycling + energy recovery + reuse + landfill + incineration
 # uncollected: GEN - collected
