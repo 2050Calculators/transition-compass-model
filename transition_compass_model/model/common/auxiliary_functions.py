@@ -1120,3 +1120,50 @@ def add_dummy_country_to_DM(DM, new_country, ref_country):
 
     return
 
+
+def load_module_input_from_pickle(module):
+  current_file_directory = os.path.dirname(os.path.abspath(__file__))
+  pickle_path = "/../../_database/data/datamatrix/"
+  DM_module = dict()
+  f = os.path.join(current_file_directory + pickle_path, module + ".pickle")
+  with open(f, 'rb') as handle:
+    DM_module = pickle.load(handle)
+
+  return DM_module
+
+
+def filter_country_and_load_data_from_pickles(country_list, modules_list):
+
+  if isinstance(modules_list, str):
+    modules_list = [modules_list]
+
+  DM_input = dict()
+  for module in modules_list:
+    DM_input[module] = load_module_input_from_pickle(module)
+    filter_DM(DM_input[module], {'Country': country_list})
+
+  return DM_input
+
+
+def return_lever_data(lever_name, DM_input, DM_out = None):
+  if DM_out is None:
+    DM_out = dict()
+
+  if 'ots' in DM_out and 'fts' in DM_out:
+    return DM_out
+
+  for key in DM_input.keys():
+    if key == lever_name:
+      if isinstance(DM_input[key], dict) and 1 in DM_input[key].keys():
+        DM_out['fts'] = DM_input[key]
+      elif 'ots' not in DM_out:
+        DM_out['ots'] = DM_input[key]
+      else:
+        DM_out['fts'] = DM_input[key]
+    # If you still have a dictionary to explore and it is not an fts
+    elif isinstance(DM_input[key], dict)  and key != 'fxa':
+      DM_out = return_lever_data(lever_name, DM_input[key], DM_out)
+    if 'ots' in DM_out and 'fts' in DM_out:
+      break
+
+  return DM_out

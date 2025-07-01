@@ -10,14 +10,11 @@ import os
 import numpy as np
 import re
 import warnings
+from model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
 import time
 warnings.simplefilter("ignore")
 
-def read_data(data_file, lever_setting):
-    
-    # load dm
-    with open(data_file, 'rb') as handle:
-        DM_industry = pickle.load(handle)
+def read_data(DM_industry, lever_setting):
 
     # get fxa
     DM_fxa = DM_industry['fxa']
@@ -30,9 +27,6 @@ def read_data(data_file, lever_setting):
 
     # get constants
     CMD_const = DM_industry['constant']
-
-    # clean
-    del handle, DM_industry, data_file, lever_setting
     
     # return
     return DM_fxa, DM_ots_fts, dm_cal, CMD_const
@@ -1436,12 +1430,11 @@ def industry_airpollution_interface(DM_material_production, DM_energy_demand, wr
     # return
     return dm_airpoll
 
-def industry(lever_setting, years_setting, interface = Interface(), calibration = False):
+def industry(lever_setting, years_setting, DM_input, interface = Interface(), calibration = False):
 
     # industry data file
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    industry_data_file = os.path.join(current_file_directory, '../_database/data/datamatrix/geoscale/industry.pickle')
-    DM_fxa, DM_ots_fts, DM_cal, CDM_const = read_data(industry_data_file, lever_setting)
+    DM_fxa, DM_ots_fts, DM_cal, CDM_const = read_data(DM_input, lever_setting)
 
     # get interfaces
     cntr_list = DM_ots_fts["product-net-import"].col_labels['Country']
@@ -1623,11 +1616,11 @@ def local_industry_run():
     # lever_setting["lever_technology-share"] = 4
     
     # get geoscale
-    global_vars = {'geoscale': 'EU27|Switzerland|Vaud'}
-    filter_geoscale(global_vars['geoscale'])
+    country_list = ['EU27', 'Switzerland', 'Vaud']
+    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'industry')
 
     # run
-    results_run = industry(lever_setting, years_setting)
+    results_run = industry(lever_setting, years_setting, DM_input['industry'])
     
     # return
     return results_run
