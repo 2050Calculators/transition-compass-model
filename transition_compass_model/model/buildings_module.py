@@ -1244,7 +1244,33 @@ def bld_TPE_interface(DM_energy, DM_area):
     dm_tpe.append(DM_area['floor-area-cat'].flattest(), dim='Variables')
     dm_tpe.append(DM_area['floor-area-bld-type'].flattest(), dim='Variables')
 
-    return dm_tpe
+    KPI =[]
+    yr = 2050
+    # Emissions
+    dm_tot_emi = DM_energy['energy-emissions-by-class'].filter({'Variables': ['bld_CO2-emissions_heating']})
+    dm_tot_emi.group_all('Categories1', inplace=True)
+    value = dm_tot_emi[0, yr, 'bld_CO2-emissions_heating']
+    KPI.append({'title': 'CO2 emissions', 'value': value, 'unit': 'Mt'})
+
+    # Energy demand in TWh
+    dm_tot_enr = DM_energy['energy-demand-heating'].filter({'Variables': ['bld_energy-demand_heating']})
+    dm_tot_enr.group_all('Categories1', inplace=True)
+    value = dm_tot_enr[0, yr, 'bld_energy-demand_heating']
+    KPI.append({'title': 'Energy Demand for Space Heating', 'value': value, 'unit': 'TWh'})
+
+    # A-C buildings buildings %
+    dm_area = DM_area['floor-area-cat'].normalise('Categories1', inplace=False)
+    value = (dm_area[0, yr, 'bld_floor-area_stock_share', 'B']
+             + dm_area[0, yr, 'bld_floor-area_stock_share', 'C'] ) * 100
+    KPI.append({'title': 'A-C class', 'value': value, 'unit': '%'})
+
+    # Unrenovated buildings
+    dm_tot_area = DM_area['floor-area-cumulated'].groupby({'bld_tot-area': '.*'}, dim='Variables', regex=True, inplace=False)
+    value = DM_area['floor-area-cumulated'][0, yr, 'bld_floor-area_unrenovated-cumulated'] / dm_tot_area[0, yr, 'bld_tot-area']
+    KPI.append({'title': 'Unrenovated Envelope Share', 'value': value, 'unit': '%'})
+
+
+    return dm_tpe, KPI
 
 
 def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
@@ -1293,7 +1319,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     DM_energy_out = bld_energy_workflow(DM_energy, dm_clm, DM_floor_out['wf-energy'], cdm_const)
 
     # TPE
-    results_run = bld_TPE_interface(DM_energy_out['TPE'], DM_floor_out['TPE'])
+    results_run, KPI = bld_TPE_interface(DM_energy_out['TPE'], DM_floor_out['TPE'])
 
     # 'District-heating' module interface
     interface.add_link(from_sector='buildings', to_sector='district-heating', dm=DM_energy_out['district-heating'])
@@ -1310,7 +1336,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
 
     interface.add_link(from_sector='buildings', to_sector='oil-refinery', dm=DM_energy_out['refinery'])
 
-    return results_run
+    return results_run, KPI
 
 
 def buildings_local_run():
@@ -1327,4 +1353,4 @@ def buildings_local_run():
 
 
 # database_from_csv_to_datamatrix()
-# buildings_local_run()
+#buildings_local_run()

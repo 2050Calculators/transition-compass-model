@@ -30,6 +30,7 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
 
     init_time = time.time()
     TPE = {}
+    KPI = {}
     interface = Interface()
     DM_input = copy.deepcopy(DM_in)
     if 'climate' in sectors:
@@ -46,7 +47,7 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
       logger.info("Execution time Transport: {0:.3g} s".format(time.time() - start_time))
     if 'buildings' in sectors:
       start_time = time.time()
-      TPE['buildings'] = buildings(lever_setting, years_setting, DM_input['buildings'], interface)
+      TPE['buildings'], KPI['buildings'] = buildings(lever_setting, years_setting, DM_input['buildings'], interface)
       logger.info('Execution time Buildings: {0:.3g} s'.format(time.time() - start_time))
     if 'industry' in sectors:
       start_time = time.time()
@@ -88,5 +89,5 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
 
     logger.info("Total runtime: {0:.3g} s".format(time.time() - init_time))
 
-    return TPE
+    return TPE, KPI
 
