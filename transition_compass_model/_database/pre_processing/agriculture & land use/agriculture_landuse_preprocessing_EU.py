@@ -74,7 +74,7 @@ def diet_processing(list_countries, file):
         ld = faostat.list_datasets()
         code = 'FBSH'
         pars = faostat.list_pars(code)
-        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries] # faostat.get_par(code, 'elements')
         my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
         my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
         list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
