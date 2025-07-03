@@ -5170,8 +5170,13 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     ###### CONSTANTS #######
     #####################
     # ConstantsToDatamatrix
+
+    # FTS based on EuCalc fts
+    dict_const = DM_agriculture_old['constant'].copy()
+
+
     # Data - Read Constants (use 'xx|xx|xx' to add)
-    cdm_const = ConstantDataMatrix.extract_constant('interactions_constants',
+    """cdm_const = ConstantDataMatrix.extract_constant('interactions_constants',
                                                     pattern='cp_time_days-per-year.*|cp_ibp_liv_.*_brf_fdk_afat|cp_ibp_liv_.*_brf_fdk_offal|cp_ibp_bev_.*|cp_liquid_tec.*|cp_load_hours|cp_ibp_aps_insect.*|cp_ibp_aps_algae.*|cp_efficiency_liv.*|cp_ibp_processed.*|cp_ef_urea.*|cp_ef_liming|cp_emission-factor_CO2.*',
                                                     num_cat=0)
 
@@ -5282,7 +5287,7 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
 
     # Electricity
     cdm_load = cdm_const.filter({'Variables': ['cp_load_hours-per-year-twh']})
-    dict_const['cdm_load'] = cdm_load
+    dict_const['cdm_load'] = cdm_load"""
 
     # Group all datamatrix in a single structure -----------------------------------------------------------------------
     DM_agriculture = {
