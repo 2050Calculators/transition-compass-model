@@ -1507,7 +1507,7 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
 
     # Total crop residues = sum(Crop residues per crop type) (In KNIME but not used)
 
-    # Residues per use (only for cereal residues) [Mt] = residues [kcal] * biomass hierarchy use [Mt/kcal] FIXME check with Gino if KNIME error assumption is correct (to use residues instead of dom prod afw)
+    # Residues per use (only for cereal residues) [Mt] = residues [kcal] * biomass hierarchy use [Mt/kcal] FIXME check with DM_SSR if KNIME error assumption is correct (to use residues instead of dom prod afw)
     dm_residues_cereal = DM_crop['residues_yield'].filter({'Variables': ['agr_residues'], 'Categories1': ['cereal']})
     dm_residues_cereal = dm_residues_cereal.flatten()
     idx_residues = dm_residues_cereal.idx
@@ -1524,7 +1524,13 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
                  * DM_crop['ef_residues'].array[:, :, idx_ef['ef'], :, :]
     DM_crop['ef_residues'].add(array_temp, dim='Variables', col_label='agr_crop_emission', unit='Mt')
 
-    return DM_crop, dm_crop, dm_crop_other, dm_feed_processed, dm_food_processed, df_cal_rates_crop
+    # Gino: Adding SSR DM to send to the TPE
+    DM_ssr  = {'food': dm_ssr_food,
+               'feed': dm_ssr_feed_pro,
+               'bioenergy': dm_ssr_bioe_pro,
+               'processed': dm_ssr_food_pro}
+
+    return DM_crop, dm_crop, dm_crop_other, dm_feed_processed, dm_food_processed, df_cal_rates_crop, DM_ssr
 
 
 # CalculationLeaf AGRICULTURAL LAND DEMAND -----------------------------------------------------------------------------
@@ -1755,7 +1761,7 @@ def energy_ghg_workflow(DM_energy_ghg, DM_crop, DM_land, DM_manure, dm_land, dm_
     # Rename to _raw for calibration
     dm_CO2.rename_col('agr_input-use_emissions-CO2', 'agr_input-use_emissions-CO2_raw', dim='Variables')
 
-    # Calibration CO2 from fuel, liming, urea emissions FIXME check with gino if it makes sense to change the calibration order from KNIME to put it before summing
+    # Calibration CO2 from fuel, liming, urea emissions FIXME check with crop_work if it makes sense to change the calibration order from KNIME to put it before summing
     dm_cal_CO2_input = DM_energy_ghg['cal_input']
     dm_cal_CO2_input.change_unit('cal_agr_input-use_emissions-CO2', 10 ** 3, old_unit='kt',
                                  new_unit='t')  # Unit conversion [kt] => [t]
@@ -2085,7 +2091,7 @@ def agriculture_refinery_interface(DM_energy_ghg):
 def agriculture_TPE_interface(DM_livestock, DM_crop, dm_crop_other, DM_feed, dm_aps, dm_input_use_CO2, dm_crop_residues,
                               dm_CH4, dm_liv_N2O, dm_CH4_rice, dm_fertilizer_N2O, DM_energy_ghg, DM_bioenergy, dm_lgn,
                               dm_eth, dm_oil, dm_aps_ibp, DM_food_demand, dm_lfs_pro, dm_lfs, DM_land, dm_fiber,
-                              dm_aps_ibp_oil, dm_voil_tpe, DM_alc_bev, dm_biofuel_fdk, dm_liv_pop):
+                              dm_aps_ibp_oil, dm_voil_tpe, DM_alc_bev, dm_biofuel_fdk, dm_liv_pop, DM_ssr):
     kcal_to_TWh = 1.163e-12
 
     # Livestock population
@@ -2194,7 +2200,7 @@ def agriculture_TPE_interface(DM_livestock, DM_crop, dm_crop_other, DM_feed, dm_
     dm_ind_bp = dm_aps_ibp_oil
     dm_tpe.append(dm_ind_bp.flattest(), dim='Variables')
 
-    # Total bioenergy consumption (sum of liquid, biogas feedstock kcal) (solid not included in KNIME) FIXME check with Gino if solid should be considered
+    # Total bioenergy consumption (sum of liquid, biogas feedstock kcal) (solid not included in KNIME) FIXME check with crop_work if solid should be considered
     # Sum liquid & solid
     dm_bioenergy = dm_fdk_liquid.group_all('Categories1', inplace=False)
     dm_bioenergy.append(dm_ind_bp, dim='Variables')
@@ -2224,7 +2230,7 @@ def agriculture_TPE_interface(DM_livestock, DM_crop, dm_crop_other, DM_feed, dm_
 
     # Solid (same as bioenergy feedstock mix) Note : not included in KNIME
 
-    # Total non-food consumption (beverages and fiber crops) FIXME check with Gino if okay to consider fiber crops
+    # Total non-food consumption (beverages and fiber crops) FIXME check with crop_work if okay to consider fiber crops
     # Beverages
     dm_crop_bev = dm_lfs_pro.filter_w_regex({'Variables': 'agr_domestic_production', 'Categories1': 'pro-bev.*'})
     dm_crop_bev.groupby({'crop-bev': '.*'}, dim='Categories1', regex=True, inplace=True)
@@ -2238,6 +2244,18 @@ def agriculture_TPE_interface(DM_livestock, DM_crop, dm_crop_other, DM_feed, dm_
     dm_crop_bev.operation('agr_domestic-production_fibres-plant-eq', '+', 'agr_domestic_production_crop-bev',
                           out_col='agr_crop-cons_non-food', unit='kcal')
     dm_tpe.append(dm_crop_bev.flattest(), dim='Variables')
+    dm_tpe.append(dm_lfs.flattest(), dim='Variables')
+
+    # Self-sufficiency ratio
+    dm_ssr_food = DM_ssr['food']
+    dm_ssr_feed = DM_ssr['feed']
+    dm_ssr_bioenergy = DM_ssr['bioenergy']
+    dm_ssr_processed = DM_ssr['processed']
+    dm_ssr = dm_ssr_food.copy()
+    dm_ssr.append(dm_ssr_feed, dim='Categories1')
+    dm_ssr.append(dm_ssr_processed, dim='Categories1')
+    dm_ssr.append(dm_ssr_bioenergy, dim='Categories1')
+    dm_tpe.append(dm_ssr.flattest(), dim='Variables')
 
     return dm_tpe
 
@@ -2306,7 +2324,7 @@ def agriculture(lever_setting, years_setting, DM_input, interface=Interface()):
                                                                                                 CDM_const,
                                                                                                 years_setting)
     dm_voil, dm_aps_ibp_oil, dm_voil_tpe = biomass_allocation_workflow(dm_aps_ibp, dm_oil)
-    DM_crop, dm_crop, dm_crop_other, dm_feed_processed, dm_food_processed, df_cal_rates_crop = crop_workflow(DM_crop,
+    DM_crop, dm_crop, dm_crop_other, dm_feed_processed, dm_food_processed, df_cal_rates_crop, DM_ssr = crop_workflow(DM_crop,
                                                                                                              DM_feed,
                                                                                                              DM_bioenergy,
                                                                                                              dm_voil,
@@ -2363,7 +2381,7 @@ def agriculture(lever_setting, years_setting, DM_input, interface=Interface()):
                                             dm_crop_residues, dm_CH4, dm_liv_N2O, dm_CH4_rice, dm_fertilizer_N2O,
                                             DM_energy_ghg, DM_bioenergy, dm_lgn, dm_eth, dm_oil, dm_aps_ibp,
                                             DM_food_demand, dm_lfs_pro, dm_lfs, DM_land, dm_fiber, dm_aps_ibp_oil,
-                                            dm_voil_tpe, DM_alc_bev, dm_biofuel_fdk, dm_liv_pop)
+                                            dm_voil_tpe, DM_alc_bev, dm_biofuel_fdk, dm_liv_pop, DM_ssr)
 
     return results_run
 
