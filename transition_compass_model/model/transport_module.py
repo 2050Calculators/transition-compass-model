@@ -1331,6 +1331,7 @@ def tra_industry_interface(
     # put together
     cat_missing = list(
         set(dm_veh.col_labels["Categories2"]) - set(dm_fre.col_labels["Categories2"])
+    )
     dm_veh.add(0, dummy=True, dim="Categories2", col_label=["ICE"])
     dm_fre.add(0, dummy=True, dim="Categories2", col_label=["H2", "kerosene"])
     dm_veh.append(dm_fre, "Categories1")
