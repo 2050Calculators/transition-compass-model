@@ -347,6 +347,7 @@ dm_lsu.change_unit('agr_livestock', old_unit='animals', new_unit='lsu', factor=1
 
 # Slaughtered = Stock x slaughtered-rate
 dm_slaughtered_rate = DM_agriculture['ots']['climate-smart-livestock']['climate-smart-livestock_slaughtered']
+dm_slaughtered_rate.filter_w_regex({'Categories1': 'meat.*'}, inplace=True)
 dm_lsu_meat = dm_lsu.filter_w_regex({'Categories1': 'meat.*'}, inplace=False)
 dm_lsu_other = dm_lsu.filter_w_regex({'Categories1': 'abp.*'}, inplace=False)
 dm_lsu_meat.append(dm_slaughtered_rate, dim='Variables')
