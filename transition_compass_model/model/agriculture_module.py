@@ -4,7 +4,7 @@ from model.common.data_matrix_class import DataMatrix
 from model.common.constant_data_matrix_class import ConstantDataMatrix
 from model.common.io_database import dm_to_database
 from model.common.interface_class import Interface
-from model.common.auxiliary_functions import  calibration_rates
+from model.common.auxiliary_functions import  calibration_rates, create_years_list
 from model.common.auxiliary_functions import read_level_data, filter_country_and_load_data_from_pickles
 import pickle
 import json
@@ -547,9 +547,9 @@ def livestock_workflow(DM_livestock, CDM_const, dm_lfs_pro, years_setting):
     # GRAZING LIVESTOCK
     # Filtering ruminants (bovine & sheep)
     dm_liv_ruminants = dm_liv_pop.filter(
-        {'Variables': ['agr_liv_population'], 'Categories1': ['meat-bovine', 'meat-sheep']})
-    # Ruminant livestock [lsu] = population bovine + population sheep
-    dm_liv_ruminants.operation('meat-bovine', '+', 'meat-sheep', dim="Categories1", out_col='ruminant')
+        {'Variables': ['agr_liv_population'], 'Categories1': ['meat-bovine', 'meat-sheep', 'abp-dairy-milk']})
+    # Ruminant livestock [lsu] = population bovine + population sheep + population dairy
+    dm_liv_ruminants.groupby({'ruminant': '.*'}, dim='Categories1', regex=True, inplace=True)
     # Append to relevant dm
     dm_liv_ruminants = dm_liv_ruminants.filter({'Variables': ['agr_liv_population'], 'Categories1': ['ruminant']})
     dm_liv_ruminants = dm_liv_ruminants.flatten()  # change from category to variable

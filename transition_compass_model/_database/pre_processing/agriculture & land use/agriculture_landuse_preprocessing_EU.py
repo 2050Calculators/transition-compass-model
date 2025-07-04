@@ -1401,13 +1401,31 @@ def climate_smart_crop_processing(list_countries, file_dict):
     return df_climate_smart_crop_pathwaycalc, df_energy_demand_cal
 
 # CalculationLeaf CLIMATE SMART LIVESTOCK ------------------------------------------------------------------------------
-def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, list_countries):
+def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_density, list_countries):
 
     # ----------------------------------------------------------------------------------------------------------------------
     # LIVESTOCK DENSITY & GRAZING INTENSITY ---------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
 
-    list_elements = ['Livestock units per agricultural land area', 'Share in total livestock']
+    # Filter grazing ruminant livestock (cattle meat, sheep, goats) and sum per year
+    df_ruminant = df_liv_pop[df_liv_pop['Item'].isin(
+      ['Cattle, dairy','Cattle, non-dairy', 'Sheep and Goats'])]
+    df_ruminant = df_ruminant.groupby(['Area', 'Year'], as_index=False)['Value'].sum()
+
+    # Merge with cropland_density
+    df_ruminant = pd.merge(df_ruminant, df_cropland_density, on=['Area', 'Year'])
+
+    # Compute livestock density of ruminant per area of permanent meadows and pastures
+    df_ruminant['Livestock density [lsu/ha]'] = df_ruminant['Value']/df_ruminant['Permanent meadows and pastures']
+
+    # Filter and add column density
+    df_ruminant = df_ruminant[['Year', 'Area', 'Livestock density [lsu/ha]']]
+
+    # Adding an Item column for name
+    df_ruminant['Item'] = 'Density'
+
+
+    '''list_elements = ['Livestock units per agricultural land area', 'Share in total livestock']
 
     list_items = ['Major livestock types > (List)']
 
@@ -1448,8 +1466,12 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, list_countries):
     df_density_1990_2021.loc[df_density_1990_2021['Item'].str.contains('Goat', case=False, na=False), 'Item'] = 'Goat'
     # df_density_1990_2021.loc[df_density_1990_2021['Item'].str.contains('Rabbits and hares', case=False, na=False), 'Item'] = 'Rabbit'
 
+    # Filter only for Cattle, sheep and goats
+    df_density_1990_2021 = df_density_1990_2021[df_density_1990_2021['Item'].isin(
+      ['Cattle', 'Sheep', 'Goat'])]
+
     # Aggregating
-    # Reading excel lsu equivalent (for aggregatop,
+    # Reading excel lsu equivalent (for aggregation)
     df_lsu = pd.read_excel(
         'dictionaries/lsu_equivalent.xlsx',
         sheet_name='lsu_equivalent')
@@ -1484,14 +1506,23 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, list_countries):
     # Drop other columns by selecting only the desired columns
     grouped_df = grouped_df[['Year', 'Area', 'Livestock density [lsu/ha]']]
 
-    # Adding an Item column for name
-    grouped_df['Item'] = 'Density'
+    # Merge with df_cropland_density
+    grouped_df = pd.merge(df_cropland_density, grouped_df, on=['Area', 'Year'])
 
+    # Density per grassland instead of density per agricultural land
+    # Calculate total livestock
+    grouped_df['total_livestock'] = grouped_df['Livestock density [lsu/ha]'] * (grouped_df['Cropland'] + grouped_df['Permanent meadows and pastures'])
+    # Calculate livestock density per grassland
+    grouped_df['Livestock density [lsu/ha]'] = grouped_df['total_livestock'] / grouped_df['Permanent meadows and pastures']
+    grouped_df = grouped_df[['Year', 'Area', 'Livestock density [lsu/ha]']]
+
+    # Adding an Item column for name
+    grouped_df['Item'] = 'Density' '''
 
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
 
     # Renaming into 'Value'
-    grouped_df.rename(columns={'Area': 'geoscale', 'Year': 'timescale', 'Livestock density [lsu/ha]': 'value'},
+    df_ruminant.rename(columns={'Area': 'geoscale', 'Year': 'timescale', 'Livestock density [lsu/ha]': 'value'},
                       inplace=True)
 
     # Read excel file
@@ -1500,7 +1531,7 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, list_countries):
         sheet_name='climate-smart-livestock')
 
     # Merge based on 'Item'
-    df_csl_density_pathwaycalc = pd.merge(df_dict_csl, grouped_df, on='Item')
+    df_csl_density_pathwaycalc = pd.merge(df_dict_csl, df_ruminant, on='Item')
 
     # Drop the 'Item' column
     df_csl_density_pathwaycalc = df_csl_density_pathwaycalc.drop(columns=['Item'])
@@ -1529,7 +1560,7 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, list_countries):
     # Is equal to 0 for all ots for all countries
 
     # Use density (grouped_df) as a structural basis
-    agroforestry_liv = grouped_df.copy()
+    agroforestry_liv = df_ruminant.copy()
 
     # Drop the column Item
     agroforestry_liv = agroforestry_liv.drop(columns=['Item', 'value'])
@@ -3478,6 +3509,7 @@ def livestock_crop_calibration(df_energy_demand_cal, list_countries):
     list_items_poultry = ['Chickens, broilers', 'Ducks', 'Turkeys']
 
     list_items_others = ['Asses', 'Buffalo', 'Camels', 'Horses', 'Llamas', 'Mules and hinnies']
+    list_sources = ['FAO TIER 1']
 
     # 1990 - 2022
     ld = faostat.list_datasets()
@@ -3486,6 +3518,7 @@ def livestock_crop_calibration(df_energy_demand_cal, list_countries):
     my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+    my_sources = [faostat.get_par(code, 'sources')[i] for i in list_sources]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
                   '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013',
                   '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022']
@@ -3495,7 +3528,8 @@ def livestock_crop_calibration(df_energy_demand_cal, list_countries):
         'area': my_countries,
         'element': my_elements,
         'item': my_items,
-        'year': my_years
+        'year': my_years,
+        'source': my_sources
     }
     df_liv_population = faostat.get_data_df(code, pars=my_pars, strval=False)
 
@@ -3504,7 +3538,8 @@ def livestock_crop_calibration(df_energy_demand_cal, list_countries):
         'area': my_countries,
         'element': my_elements,
         'item': my_items_poultry,
-        'year': my_years
+        'year': my_years,
+        'source': my_sources
     }
     df_liv_population_poultry = faostat.get_data_df(code, pars=my_pars_poultry, strval=False)
 
@@ -3513,7 +3548,8 @@ def livestock_crop_calibration(df_energy_demand_cal, list_countries):
         'area': my_countries,
         'element': my_elements,
         'item': my_items_others,
-        'year': my_years
+        'year': my_years,
+        'source': my_sources
     }
     df_liv_population_others = faostat.get_data_df(code, pars=my_pars_others, strval=False)
 
@@ -4274,7 +4310,7 @@ def land_calibration(list_countries):
     # List of elements
     list_elements = ['Area']
 
-    list_items = ['--- Temporary crops', '--- Temporary fallow', '-- Permanent meadows and pastures']
+    list_items = ['-- Cropland','--- Temporary crops', '--- Temporary fallow', '-- Permanent meadows and pastures']
 
     # 1990 - 2022
     ld = faostat.list_datasets()
@@ -4307,9 +4343,18 @@ def land_calibration(list_countries):
     # Unit conversion [k ha] => [ha]
     df_land_use_fao['Value'] = df_land_use_fao['Value'] * 1000
 
+    # Filter for Cropland for density lsu
+    df_cropland_density = df_land_use_fao[df_land_use_fao['Item'].isin(['Cropland', 'Permanent meadows and pastures'])]
+    df_cropland_density = df_cropland_density.pivot_table(
+      index=['Area', 'Year'],
+      columns='Item',
+      values='Value'
+    ).reset_index()
+
     # Cropland = temporary crops + temporary fallow
     # 1. Filter only the rows for the items of interest
     df_crop_fallow = df_land_use_fao[df_land_use_fao['Item'].isin(['Temporary crops', 'Temporary fallow'])]
+
     # 2. Group by Area and Year, then sum the values
     df_cropland = (
         df_crop_fallow
@@ -4342,7 +4387,7 @@ def land_calibration(list_countries):
     df_land_use_fao_calibration.rename(columns={'Area': 'geoscale', 'Year': 'timescale', 'Value':'value'},
                                    inplace=True)
 
-    return df_land_use_fao_calibration
+    return df_land_use_fao_calibration, df_cropland_density
 
 # CalculationLeaf CAL - CROPLAND -----------------------------------------------------------------------------------
 def cropland_calibration(list_countries):
@@ -5355,7 +5400,8 @@ file_dict = {'losses': 'data/faostat/losses.csv', 'yield': 'data/faostat/yield.c
 df_climate_smart_crop_pathwaycalc, df_energy_demand_cal = climate_smart_crop_processing(list_countries, file_dict)
 # Exceptionnally running livestock calibration before to use the livestock population in livestock after
 df_domestic_supply_calibration, df_liv_population_calibration, df_liv_pop = livestock_crop_calibration(df_energy_demand_cal, list_countries)
-df_climate_smart_livestock_pathwaycalc = climate_smart_livestock_processing(df_csl_feed, df_liv_pop, list_countries)
+df_land_use_fao_calibration, df_cropland_density = land_calibration(list_countries)
+df_climate_smart_livestock_pathwaycalc = climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_density, list_countries)
 df_climate_smart_forestry_pathwaycalc, csf_managed = climate_smart_forestry_processing() #FutureWarning at last line
 df_land_management_pathwaycalc = land_management_processing(csf_managed)
 df_bioenergy_capacity_CH_pathwaycalc = bioernergy_capacity_processing(df_csl_feed)
@@ -5367,7 +5413,6 @@ df_diet_calibration = lifestyle_calibration(list_countries)
 df_nitrogen_calibration = nitrogen_calibration(list_countries)
 df_liv_emissions_calibration = manure_calibration(list_countries)
 df_feed_calibration = feed_calibration(list_countries)
-df_land_use_fao_calibration = land_calibration(list_countries)
 df_cropland_fao_calibration = cropland_calibration(list_countries)
 df_liming_urea_calibration = CO2_emissions()
 df_wood_calibration = wood_calibration(list_countries)
