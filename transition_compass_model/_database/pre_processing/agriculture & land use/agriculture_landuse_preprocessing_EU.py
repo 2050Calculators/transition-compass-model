@@ -1729,14 +1729,14 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_dens
 
     list_items = ['All Animals > (List)']
 
-    # 1990 - 2021
+    # 1990 - 2022
     code = 'EMN'
     my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
                   '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013',
-                  '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021']
+                  '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022']
     my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
     my_pars = {
@@ -1769,7 +1769,7 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_dens
     df_manure_1990_2021.loc[
         df_manure_1990_2021['Item'].str.contains('Camel', case=False, na=False), 'Item'] = 'Other non-specified'
 
-    # Reading excel lsu equivalent (for aggregatop,
+    # Reading excel lsu equivalent (for aggregation)
     df_lsu = pd.read_excel(
         'dictionaries/lsu_equivalent.xlsx',
         sheet_name='lsu_equivalent')
@@ -1784,6 +1784,30 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_dens
     pivot_df = df_manure_1990_2021.pivot_table(index=['Area', 'Year', 'Aggregation'], columns='Element',
                                                values='Value').reset_index()
 
+    # Create copy for manure_fxa()
+    df_manure_n_fxa = pivot_df.copy()
+
+    # Merge with df_liv_pop
+    # Rename for merge (df_liv_pop => pivot_df_slau (meat) or df_slau_eggs_milk (eggs,dairy))
+    terms = {
+        'Cattle, dairy': 'Dairy-milk',
+        'Cattle, non-dairy': 'Bovine',
+        'Chickens, layers': 'Hens-egg',
+        'Sheep and Goats': 'Sheep',
+        'Swine': 'Pig',
+        'Others Stocks': 'Other animal',
+        'Poultry Stocks': 'Poultry'
+    }
+
+    # Apply the replacement
+    df_liv_pop['Item'] = df_liv_pop['Item'].replace(terms)
+
+    # Merge with stock from df_liv_pop
+    pivot_df = pd.merge(pivot_df, df_liv_pop,
+                         left_on=['Area', 'Year','Aggregation'],
+                         right_on=['Area', 'Year','Item'],
+                         how='inner')
+
     # Manure applied/treated/pasture [%] = Manure applied to soil/treated/left on pasture (N content) [kg] / Amount excreted (N content) [kg]
 
     pivot_df['Manure applied [%]'] = pivot_df['Manure applied to soils (N content)'] / pivot_df[
@@ -1793,15 +1817,20 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_dens
     pivot_df['Manure pasture [%]'] = pivot_df['Manure left on pasture (N content)'] / pivot_df[
         'Amount excreted in manure (N content)']
 
+    # Compute manure yield fxa
+    pivot_df['Manure yield [tN/lsu]'] = 10**-3 * pivot_df['Amount excreted in manure (N content)'] / pivot_df['Value']
+
+    # Create copy for emission factor per practice
+
     # Drop the columns
     pivot_df = pivot_df.drop(columns=['Manure applied to soils (N content)', 'Losses from manure treated (N content)',
-                                      'Manure left on pasture (N content)', 'Amount excreted in manure (N content)'])
+                                      'Manure left on pasture (N content)', 'Amount excreted in manure (N content)', 'Value', 'Item'])
 
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
 
     # Melt the DataFrame
     df_melted = pd.melt(pivot_df, id_vars=['Area', 'Year', 'Aggregation'],
-                        value_vars=['Manure applied [%]', 'Manure treated [%]', 'Manure pasture [%]'],
+                        value_vars=['Manure applied [%]', 'Manure treated [%]', 'Manure pasture [%]', 'Manure yield [tN/lsu]'],
                         var_name='Item', value_name='value')
 
     # Concatenate the aggregation column with the manure column names
@@ -1841,6 +1870,15 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_dens
     df_manure_pathwaycalc['geoscale'] = df_manure_pathwaycalc['geoscale'].replace('Netherlands (Kingdom of the)',
                                                                                   'Netherlands')
     df_manure_pathwaycalc['geoscale'] = df_manure_pathwaycalc['geoscale'].replace('Czechia', 'Czech Republic')
+
+    # Filter for fxa
+    df_csl_fxa = df_manure_pathwaycalc[
+        df_manure_pathwaycalc['variables'].str.contains('fxa', case=False, na=False)]
+
+   # Drop the rows from original df
+    df_manure_pathwaycalc = df_manure_pathwaycalc[
+      ~df_manure_pathwaycalc['variables'].str.contains('fxa', case=False,
+                                                       na=False)]
 
     # ----------------------------------------------------------------------------------------------------------------------
     # LOSSES ---------------------------------------------------------------------------------------------------------------
@@ -2326,7 +2364,7 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_dens
     df_climate_smart_livestock_pathwaycalc = linear_fitting_ots_db(df_climate_smart_livestock_pathwaycalc, years_ots, countries='all')
 
 
-    return df_climate_smart_livestock_pathwaycalc
+    return df_climate_smart_livestock_pathwaycalc, df_csl_fxa, df_manure_n_fxa
 
 # CalculationLeaf CLIMATE SMART FORESTRY -------------------------------------------------------------------------------
 def climate_smart_forestry_processing():
@@ -3773,6 +3811,7 @@ def manure_calibration(list_countries):
     list_items_poultry = ['Chickens, broilers', 'Ducks', 'Turkeys']
 
     list_items_others = ['Asses', 'Buffalo','Camels', 'Horses', 'Llamas', 'Mules and hinnies']
+    list_sources = ['FAO TIER 1']
 
     # 1990 - 2022
     ld = faostat.list_datasets()
@@ -3781,17 +3820,20 @@ def manure_calibration(list_countries):
     my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+    my_sources = [faostat.get_par(code, 'sources')[i] for i in list_sources]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
                   '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013',
-                  '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021','2022']
+                  '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022']
     my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
     my_pars = {
         'area': my_countries,
         'element': my_elements,
         'item': my_items,
-        'year': my_years
+        'year': my_years,
+        'source': my_sources
     }
+
     df_liv_emissions = faostat.get_data_df(code, pars=my_pars, strval=False)
 
     my_items_poultry = [faostat.get_par(code, 'item')[i] for i in list_items_poultry]
@@ -3799,7 +3841,8 @@ def manure_calibration(list_countries):
         'area': my_countries,
         'element': my_elements,
         'item': my_items_poultry,
-        'year': my_years
+        'year': my_years,
+        'source': my_sources
     }
     df_liv_emissions_poultry = faostat.get_data_df(code, pars=my_pars_poultry, strval=False)
 
@@ -3808,7 +3851,8 @@ def manure_calibration(list_countries):
         'area': my_countries,
         'element': my_elements,
         'item': my_items_others,
-        'year': my_years
+        'year': my_years,
+        'source': my_sources
     }
     df_liv_emissions_others = faostat.get_data_df(code, pars=my_pars_others, strval=False)
 
@@ -3873,7 +3917,7 @@ def manure_calibration(list_countries):
     df_to_duplicate['variables'] = 'cal_agr_liv_CH4-emission_meat-poultry_enteric[kt]'  # Rename variable
     df_liv_emissions_calibration = pd.concat([df_liv_emissions_calibration, df_to_duplicate], ignore_index=True)
 
-    return df_liv_emissions_calibration
+    return df_liv_emissions_calibration, df_liv_emissions
 
 
 # CalculationLeaf CAL - ENERGY & GHG -----------------------------------------------------------------------------------
@@ -4706,6 +4750,103 @@ def calibration_formatting(df_diet_calibration, df_domestic_supply_calibration, 
 
     return df_calibration_ext_agr
 
+
+# CalculationLeaf FXA - MANURE ------------------------------
+
+def manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa):
+
+   # Filter & Rename
+   df_manure_n_fxa = df_manure_n_fxa[['Area', 'Year', 'Aggregation','Manure left on pasture (N content)',
+                     'Manure applied to soils (N content)', 'Losses from manure treated (N content)']]
+   df_manure_n_fxa.rename(columns={'Manure left on pasture (N content)':'N2O Pasture',
+                                   'Manure applied to soils (N content)':'N2O Applied',
+                                   'Losses from manure treated (N content)':'N2O Treated'},
+                          inplace=True)
+
+   # Melt df
+   df_melted = pd.melt(df_manure_n_fxa, id_vars=['Area', 'Year', 'Aggregation'],
+                       value_vars=['N2O Pasture', 'N2O Applied',
+                                   'N2O Treated'],
+                       var_name='Item', value_name='value N')
+
+   # Concatenate the aggregation column with the manure column names
+   df_melted['Item'] = df_melted['Aggregation'] + ' ' + df_melted['Item']
+
+   # Rename cols
+   # Rename for merge (df_liv_pop => pivot_df_slau (meat) or df_slau_eggs_milk (eggs,dairy))
+   terms = {
+     'Cattle, dairy': 'Dairy-milk',
+     'Cattle, non-dairy': 'Bovine',
+     'Chickens, layers': 'Hens-egg',
+     'Sheep and Goats': 'Sheep',
+     'Swine': 'Pig',
+     'Others': 'Other animal',
+     'Poultry Stocks': 'Poultry',
+     'Manure management (Emissions N2O)': 'N2O Treated',
+     'Manure left on pasture (Emissions N2O)': 'N2O Pasture',
+     'Emissions (N2O) (Manure applied)': 'N2O Applied'
+   }
+   def replace_partial(text):
+     for key, value in terms.items():
+       if key in text:
+         text = text.replace(key, value)
+     return text
+   df_liv_emissions['Item'] = df_liv_emissions['Item'].apply(replace_partial)
+
+   # Merge with NO2 emission df_liv_emissions_calibration
+   df_manure_fxa = df_melted.merge(df_liv_emissions, on=['Area', 'Year', 'Item'], how='inner')
+
+   # Compute emission factor per practice : EF = Emissions NO2 [kt] / Manure applied-treated-pasture [kg N]
+   df_manure_fxa['value'] = df_manure_fxa['Value'] * 10**6 / df_manure_fxa['value N']
+   df_manure_fxa = df_manure_fxa[['Area', 'Year', 'Item', 'value']]
+
+   # Fill na with 0
+   df_manure_fxa['value'].fillna(0.0, inplace=True)
+
+   # PathwayCalc formatting ------------------------------------------------------------------
+   # Food item name matching with dictionary
+   # Read excel file
+   df_dict_csl = pd.read_excel(
+     'dictionaries/dictionnary_agriculture_landuse.xlsx',
+     sheet_name='climate-smart-livestock')
+
+   # Merge based on 'Item'
+   df_manure_fxa = pd.merge(df_dict_csl, df_manure_fxa, on='Item')
+
+   # Drop the 'Item' column
+   df_manure_fxa = df_manure_fxa.drop(columns=['Item'])
+
+   # Renaming existing columns (geoscale, timsecale, value)
+   df_manure_fxa.rename(columns={'Area': 'geoscale', 'Year': 'timescale'},
+                              inplace=True)
+
+   # Adding the columns module, lever, level and string-pivot at the correct places
+   df_manure_fxa['module'] = 'agriculture'
+   df_manure_fxa['lever'] = 'climate-smart-livestock'
+   df_manure_fxa['level'] = 0
+   cols = df_manure_fxa.columns.tolist()
+   cols.insert(cols.index('value'), cols.pop(cols.index('module')))
+   cols.insert(cols.index('value'), cols.pop(cols.index('lever')))
+   cols.insert(cols.index('value'), cols.pop(cols.index('level')))
+   df_manure_fxa = df_manure_fxa[cols]
+
+   # Rename countries to Pathaywcalc name
+   df_manure_fxa['geoscale'] = df_manure_fxa['geoscale'].replace(
+     'United Kingdom of Great Britain and Northern Ireland', 'United Kingdom')
+   df_manure_fxa['geoscale'] = df_manure_fxa['geoscale'].replace(
+     'Netherlands (Kingdom of the)',
+     'Netherlands')
+   df_manure_fxa['geoscale'] = df_manure_fxa['geoscale'].replace(
+     'Czechia', 'Czech Republic')
+
+   # Extrapolating
+   df_manure_fxa = ensure_structure(df_manure_fxa)
+   df_manure_fxa = linear_fitting_ots_db(df_manure_fxa, years_ots,
+                                               countries='all')
+
+   return df_manure_fxa
+
+
 # CalculationLeaf FXA FORMATTING
 def fxa_preprocessing():
 
@@ -4743,7 +4884,7 @@ def fxa_preprocessing():
 # CalculationLeaf Pickle creation
 #  FIXME only Switzerland for now
 
-def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc):
+def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa):
     #############################################
     ##### database_from_csv_to_datamatrix() #####
     #############################################
@@ -4768,6 +4909,27 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     if 'lus_land_total-area' in dm.col_labels['Variables']:
         dm.rename_col('lus_land_total-area', 'fxa_lus_land_total-area', dim='Variables')
     DM_agriculture_old['fxa']['lus_land_total-area'] = dm
+
+    # Include new fxa
+    # Manure yield
+    df_csl_fxa = ensure_structure(df_csl_fxa)
+    df_csl_fxa = linear_fitting_ots_db(df_csl_fxa, years_all,countries='all')
+    lever = 'climate-smart-livestock'
+    df_ots, df_fts = database_to_df(df_csl_fxa, lever, level='all')
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm = DataMatrix.create_from_df(df_ots, num_cat=1)
+    # Replace for Switzerland
+    DM_agriculture_old['fxa']['liv_manure_n-stock']['Switzerland', :, 'fxa_liv_manure_n-stock', :] = dm['Switzerland', :, 'fxa_liv_manure_n-stock', :]
+
+    # Emission factor N2O
+    df_manure_fxa = ensure_structure(df_manure_fxa)
+    df_manure_fxa = linear_fitting_ots_db(df_manure_fxa, years_all, countries='all')
+    lever = 'climate-smart-livestock'
+    df_ots, df_fts = database_to_df(df_manure_fxa, lever, level='all')
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm = DataMatrix.create_from_df(df_ots, num_cat=2)
+    # Replace for Switzerland
+    DM_agriculture_old['fxa']['ef_liv_N2O-emission']['Switzerland', :, 'fxa_ef_liv_N2O-emission_ef', :, :] = dm['Switzerland', :, 'fxa_ef_liv_N2O-emission_ef', :, :]
 
     # LeversToDatamatrix FTS based on EuCalc fts
     dm_fts = DM_agriculture_old['fts'].copy()
@@ -5401,7 +5563,7 @@ df_climate_smart_crop_pathwaycalc, df_energy_demand_cal = climate_smart_crop_pro
 # Exceptionnally running livestock calibration before to use the livestock population in livestock after
 df_domestic_supply_calibration, df_liv_population_calibration, df_liv_pop = livestock_crop_calibration(df_energy_demand_cal, list_countries)
 df_land_use_fao_calibration, df_cropland_density = land_calibration(list_countries)
-df_climate_smart_livestock_pathwaycalc = climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_density, list_countries)
+df_climate_smart_livestock_pathwaycalc, df_csl_fxa, df_manure_n_fxa = climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_density, list_countries)
 df_climate_smart_forestry_pathwaycalc, csf_managed = climate_smart_forestry_processing() #FutureWarning at last line
 df_land_management_pathwaycalc = land_management_processing(csf_managed)
 df_bioenergy_capacity_CH_pathwaycalc = bioernergy_capacity_processing(df_csl_feed)
@@ -5411,7 +5573,7 @@ df_protein_meals_pathwaycalc = livestock_protein_meals_processing(df_csl_feed)
 # CalculationTree RUNNING CALIBRATION ----------------------------------------------------------------------------------
 df_diet_calibration = lifestyle_calibration(list_countries)
 df_nitrogen_calibration = nitrogen_calibration(list_countries)
-df_liv_emissions_calibration = manure_calibration(list_countries)
+df_liv_emissions_calibration, df_liv_emissions = manure_calibration(list_countries)
 df_feed_calibration = feed_calibration(list_countries)
 df_cropland_fao_calibration = cropland_calibration(list_countries)
 df_liming_urea_calibration = CO2_emissions()
@@ -5422,10 +5584,12 @@ df_calibration = calibration_formatting(df_diet_calibration, df_domestic_supply_
                      df_land_use_fao_calibration, df_liming_urea_calibration, df_wood_calibration,
                      df_emissions_calibration, df_cropland_fao_calibration) # Fixme PerformanceWarning ?
 
+df_manure_fxa = manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa)
+
 # CalculationTree RUNNING FXA PRE-PROCESSING ---------------------------------------------------------------------------
 #fxa_preprocessing()
 # CalculationTree RUNNING PICKLE CREATION
-database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc) #Fixme duplicates in constants
+database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa) #Fixme duplicates in constants
 
 # CalculationTree NEW ENERGY REQUIREMENTS ------------------------------------------------------------------------------
 # The idea was to have energy requirements per demography (agr_kcal-req) based on the current consumption and not the
