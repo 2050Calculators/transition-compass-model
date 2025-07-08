@@ -1615,25 +1615,28 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_dens
     # ----------------------------------------------------------------------------------------------------------------------
     # ENTERIC EMISSIONS ----------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
-    list_elements = ['Enteric fermentation (Emissions CH4)', 'Stocks']
+    list_elements = ['Enteric fermentation (Emissions CH4)', 'Manure management (Emissions CH4)', 'Stocks']
 
     list_items = ['All Animals > (List)']
+    list_sources = ['FAO TIER 1']
 
     # 1990 - 2021
     code = 'GLE'
     my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+    my_sources = [faostat.get_par(code, 'sources')[i] for i in list_sources]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
                   '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013',
-                  '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021']
+                  '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022']
     my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
     my_pars = {
         'area': my_countries,
         'element': my_elements,
         'item': my_items,
-        'year': my_years
+        'year': my_years,
+        'source': my_sources
     }
     df_enteric_1990_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
 
@@ -1683,8 +1686,15 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_dens
     pivot_df['Enteric emissions CH4 [t/lsu]'] = 1000 * pivot_df['Enteric fermentation (Emissions CH4)'] / pivot_df[
         'Stocks']
 
+    # Create duplicate for fxa
+    df_manure_ch4_fxa = pivot_df.copy()
+    df_manure_ch4_fxa['Manure emissions CH4 [t/lsu]'] = 1000 * df_manure_ch4_fxa[
+      'Manure management (Emissions CH4)'] / df_manure_ch4_fxa[
+                                                  'Stocks']
+    df_manure_ch4_fxa = df_manure_ch4_fxa[['Area', 'Year', 'Aggregation', 'Manure emissions CH4 [t/lsu]']].copy()
+
     # Drop the columns 'Enteric fermentation (Emissions CH4)' 'Stocks'
-    pivot_df = pivot_df.drop(columns=['Enteric fermentation (Emissions CH4)', 'Stocks'])
+    pivot_df = pivot_df.drop(columns=['Enteric fermentation (Emissions CH4)','Manure management (Emissions CH4)', 'Stocks'])
 
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
 
@@ -2364,7 +2374,7 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_dens
     df_climate_smart_livestock_pathwaycalc = linear_fitting_ots_db(df_climate_smart_livestock_pathwaycalc, years_ots, countries='all')
 
 
-    return df_climate_smart_livestock_pathwaycalc, df_csl_fxa, df_manure_n_fxa
+    return df_climate_smart_livestock_pathwaycalc, df_csl_fxa, df_manure_n_fxa, df_manure_ch4_fxa
 
 # CalculationLeaf CLIMATE SMART FORESTRY -------------------------------------------------------------------------------
 def climate_smart_forestry_processing():
@@ -4753,8 +4763,9 @@ def calibration_formatting(df_diet_calibration, df_domestic_supply_calibration, 
 
 # CalculationLeaf FXA - MANURE ------------------------------
 
-def manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa):
+def manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa):
 
+   # N2O EMISSIONS -------------------------------------------------------------
    # Filter & Rename
    df_manure_n_fxa = df_manure_n_fxa[['Area', 'Year', 'Aggregation','Manure left on pasture (N content)',
                      'Manure applied to soils (N content)', 'Losses from manure treated (N content)']]
@@ -4802,6 +4813,18 @@ def manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa):
 
    # Fill na with 0
    df_manure_fxa['value'].fillna(0.0, inplace=True)
+
+   # CH4 EMISSIONS -------------------------------------------------------------
+   # Format
+   df_manure_ch4_fxa.rename(
+     columns={'Manure emissions CH4 [t/lsu]': 'value',
+              'Aggregation': 'Item'},
+     inplace=True)
+   df_manure_ch4_fxa['Item'] = df_manure_ch4_fxa['Item'].apply(lambda x: f"CH4 Treated {x}")
+
+   # Concat
+   df_manure_fxa = pd.concat([df_manure_fxa, df_manure_ch4_fxa],
+                              axis=0)
 
    # PathwayCalc formatting ------------------------------------------------------------------
    # Food item name matching with dictionary
@@ -4924,12 +4947,25 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     # Emission factor N2O
     df_manure_fxa = ensure_structure(df_manure_fxa)
     df_manure_fxa = linear_fitting_ots_db(df_manure_fxa, years_all, countries='all')
+    df_manure_N2O = df_manure_fxa[df_manure_fxa['variables'].str.contains('fxa_ef_liv_N2O-emission_ef_', case=False)]
     lever = 'climate-smart-livestock'
-    df_ots, df_fts = database_to_df(df_manure_fxa, lever, level='all')
+    df_ots, df_fts = database_to_df(df_manure_N2O, lever, level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm = DataMatrix.create_from_df(df_ots, num_cat=2)
     # Replace for Switzerland
     DM_agriculture_old['fxa']['ef_liv_N2O-emission']['Switzerland', :, 'fxa_ef_liv_N2O-emission_ef', :, :] = dm['Switzerland', :, 'fxa_ef_liv_N2O-emission_ef', :, :]
+
+    # Emission factor CH4 treated manure
+    df_manure_fxa = ensure_structure(df_manure_fxa)
+    df_manure_fxa = linear_fitting_ots_db(df_manure_fxa, years_all, countries='all')
+    df_manure_CH4 = df_manure_fxa[
+      df_manure_fxa['variables'].str.contains('fxa_ef_liv_CH4-emission_treated', case=False)]
+    lever = 'climate-smart-livestock'
+    df_ots, df_fts = database_to_df(df_manure_CH4, lever, level='all')
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm = DataMatrix.create_from_df(df_ots, num_cat=1)
+    # Replace for Switzerland
+    DM_agriculture_old['fxa']['ef_liv_CH4-emission_treated']['Switzerland', :, 'fxa_ef_liv_CH4-emission_treated', :] = dm['Switzerland', :, 'fxa_ef_liv_CH4-emission_treated', :]
 
     # LeversToDatamatrix FTS based on EuCalc fts
     dm_fts = DM_agriculture_old['fts'].copy()
@@ -5563,7 +5599,7 @@ df_climate_smart_crop_pathwaycalc, df_energy_demand_cal = climate_smart_crop_pro
 # Exceptionnally running livestock calibration before to use the livestock population in livestock after
 df_domestic_supply_calibration, df_liv_population_calibration, df_liv_pop = livestock_crop_calibration(df_energy_demand_cal, list_countries)
 df_land_use_fao_calibration, df_cropland_density = land_calibration(list_countries)
-df_climate_smart_livestock_pathwaycalc, df_csl_fxa, df_manure_n_fxa = climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_density, list_countries)
+df_climate_smart_livestock_pathwaycalc, df_csl_fxa, df_manure_n_fxa, df_manure_ch4_fxa = climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_density, list_countries)
 df_climate_smart_forestry_pathwaycalc, csf_managed = climate_smart_forestry_processing() #FutureWarning at last line
 df_land_management_pathwaycalc = land_management_processing(csf_managed)
 df_bioenergy_capacity_CH_pathwaycalc = bioernergy_capacity_processing(df_csl_feed)
@@ -5584,7 +5620,7 @@ df_calibration = calibration_formatting(df_diet_calibration, df_domestic_supply_
                      df_land_use_fao_calibration, df_liming_urea_calibration, df_wood_calibration,
                      df_emissions_calibration, df_cropland_fao_calibration) # Fixme PerformanceWarning ?
 
-df_manure_fxa = manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa)
+df_manure_fxa = manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa)
 
 # CalculationTree RUNNING FXA PRE-PROCESSING ---------------------------------------------------------------------------
 #fxa_preprocessing()
