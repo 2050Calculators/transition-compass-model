@@ -634,7 +634,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
     return df_ssr_pathwaycalc, df_csl_feed
 
 # CalculationLeaf CLIMATE SMART CROP ---------------------------------------------------------------------------------------------
-def climate_smart_crop_processing(list_countries, file_dict):
+def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
 
 
     # ENERGY DEMAND --------------------------------------------------------------------------------------------------------
@@ -813,7 +813,7 @@ def climate_smart_crop_processing(list_countries, file_dict):
         df_input_nitrogen_1990_2021 = pd.read_csv(file_dict['nitro'])
     except OSError:
         # List of elements
-        list_elements = ['Use per area of cropland']
+        list_elements = ['Agricultural Use']
 
         list_items = ['Nutrient nitrogen N (total)', 'Nutrient phosphate P2O5 (total)', 'Nutrient potash K2O (total)']
 
@@ -836,6 +836,10 @@ def climate_smart_crop_processing(list_countries, file_dict):
             'year': my_years
         }
         df_input_nitrogen_1990_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
+        df_input_nitrogen_1990_2021 = df_input_nitrogen_1990_2021.drop(
+          columns=['Domain Code', 'Domain', 'Area Code', 'Element Code',
+                   'Item Code', 'Year Code', 'Unit', 'Element'])
+
         df_input_nitrogen_1990_2021.to_csv(file_dict['nitro'], index=False)
 
     # PESTICIDES -----------------------------------------------------------------------------------------------------------
@@ -843,7 +847,7 @@ def climate_smart_crop_processing(list_countries, file_dict):
         df_input_pesticides_1990_2021 = pd.read_csv(file_dict['pesticide'])
     except OSError:
         # List of elements
-        list_elements = ['Use per area of cropland']
+        list_elements = ['Agricultural Use']
 
         list_items = ['Pesticides (total) + (Total)']
 
@@ -864,12 +868,15 @@ def climate_smart_crop_processing(list_countries, file_dict):
             'year': my_years
         }
         df_input_pesticides_1990_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
+        df_input_pesticides_1990_2021 = df_input_pesticides_1990_2021.drop(
+          columns=['Domain Code', 'Domain', 'Area Code', 'Element Code',
+                   'Item Code', 'Year Code', 'Unit', 'Element'])
         df_input_pesticides_1990_2021.to_csv(file_dict['pesticide'], index=False)
 
     # LIMING, UREA ---------------------------------------------------------------------------------------------------------
     try:
-        df_urea_area = pd.read_csv(file_dict['urea'])
-        df_liming_area = pd.read_csv(file_dict['liming'])
+        df_input_urea_1990_2021 = pd.read_csv(file_dict['urea'])
+        df_input_liming_1990_2021 = pd.read_csv(file_dict['liming'])
     except OSError:
         # List of elements
         list_elements = ['Agricultural Use']
@@ -893,7 +900,7 @@ def climate_smart_crop_processing(list_countries, file_dict):
         }
         df_input_liming_urea_1990_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-        # Area Harvested 2002 - 2021
+        '''# Area Harvested 2002 - 2021
 
         # List of elements
         list_elements = ['Area harvested']
@@ -919,14 +926,14 @@ def climate_smart_crop_processing(list_countries, file_dict):
 
         # Conversion from [t] in [t/ha]-----------------------------------------------------------------------------------------
         # Summming Area harvested per country and year (and element)
-        df_area_total_2022_2021 = df_area_2022_2021.groupby(['Area', 'Element', 'Year'])['Value'].sum().reset_index()
+        df_area_total_2022_2021 = df_area_2022_2021.groupby(['Area', 'Element', 'Year'])['Value'].sum().reset_index()'''
 
         # UREA
         # Filtering and dropping columns
         df_input_urea_1990_2021 = df_input_liming_urea_1990_2021[df_input_liming_urea_1990_2021['Item'] == 'Urea']
         df_input_urea_1990_2021 = df_input_urea_1990_2021.drop(
             columns=['Domain Code', 'Domain', 'Area Code', 'Element Code',
-                     'Item Code', 'Year Code', 'Unit', 'Item'])
+                     'Item Code', 'Year Code', 'Unit', 'Element'])
 
         # LIMING
         # Filtering and dropping columns
@@ -934,59 +941,41 @@ def climate_smart_crop_processing(list_countries, file_dict):
                                                                        'Item'] == 'Calcium ammonium nitrate (CAN) and other mixtures with calcium carbonate']
         df_input_liming_1990_2021 = df_input_liming_1990_2021.drop(
             columns=['Domain Code', 'Domain', 'Area Code', 'Element Code',
-                     'Item Code', 'Year Code', 'Unit', 'Item'])
-        # Concatenate
-        df_liming_area = pd.concat([df_area_total_2022_2021, df_input_liming_1990_2021])
+                     'Item Code', 'Year Code', 'Unit', 'Element'])
 
-        # Concatenate
-        df_urea_area = pd.concat([df_area_total_2022_2021, df_input_urea_1990_2021])
-        df_liming_area.to_csv(file_dict['liming'], index=False)
-        df_urea_area.to_csv(file_dict['urea'], index=False)
+        df_input_liming_1990_2021.to_csv(file_dict['liming'], index=False)
+        df_input_urea_1990_2021.to_csv(file_dict['urea'], index=False)
 
-    # Step 1: Pivot the DataFrame
-    pivot_df = df_urea_area.pivot_table(index=['Area', 'Year'], columns='Element', values='Value').reset_index()
-    # Step 2: Compute the input [t/ha]
-    pivot_df['Input[t/ha]'] = pivot_df['Agricultural Use'] / pivot_df['Area harvested']
-    # Drop the columns Yield
-    pivot_df = pivot_df.drop(columns=['Agricultural Use', 'Area harvested'])
-    # Adding a column Item
-    pivot_df['Item'] = 'Urea'
-    cols = pivot_df.columns.tolist()
-    cols.insert(cols.index('Input[t/ha]'), cols.pop(cols.index('Item')))
-    pivot_df = pivot_df[cols]
-    pivot_df_urea = pivot_df.copy()
+    # Concatenate inputs
+    df_input = pd.concat([df_input_urea_1990_2021, df_input_liming_1990_2021])
+    df_input = pd.concat([df_input, df_input_pesticides_1990_2021])
+    df_input = pd.concat([df_input, df_input_nitrogen_1990_2021])
 
+    # Pivot
+    pivot_df = df_input.pivot_table(index=['Area', 'Year'], columns='Item',
+                                        values='Value').reset_index()
 
-    # Step 1: Pivot the DataFrame
-    pivot_df = df_liming_area.pivot_table(index=['Area', 'Year'], columns='Element', values='Value').reset_index()
-    # Step 2: Compute the input [t/ha]
-    pivot_df['Input[t/ha]'] = pivot_df['Agricultural Use'] / pivot_df['Area harvested']
-    # Drop the columns
-    pivot_df = pivot_df.drop(columns=['Agricultural Use', 'Area harvested'])
-    # Adding a column Item
-    pivot_df['Item'] = 'Calcium ammonium nitrate (CAN) and other mixtures with calcium carbonate'
-    cols = pivot_df.columns.tolist()
-    cols.insert(cols.index('Input[t/ha]'), cols.pop(cols.index('Item')))
-    pivot_df = pivot_df[cols]
-    pivot_df_liming = pivot_df.copy()
+    # Fil na with zeros
+    pivot_df[:].fillna(0.0, inplace=True)
 
-    # Conversion from [kg/ha] in [t/ha]-------------------------------------------------------------------------------------
+    # Merge inputs with agricultural land
+    pivot_df['Year'] = pivot_df['Year'].astype(str)
+    df_input_land = pd.merge(pivot_df, df_agri_land, on=['Area', 'Year'])
 
-    # Concatenating
-    df_input_pesticides_nitrogen = pd.concat([df_input_pesticides_1990_2021, df_input_nitrogen_1990_2021])
-    # Step 1: Pivot the DataFrame
-    pivot_df = df_input_pesticides_nitrogen.pivot_table(index=['Area', 'Year', 'Item'], columns='Element',
-                                                        values='Value').reset_index()
-    # Step 2: Compute the Input [t/ha]
-    pivot_df['Input[t/ha]'] = pivot_df['Use per area of cropland'] * 0.001
-    # Drop the columns
-    pivot_df_pesticides_nitrogen = pivot_df.drop(columns=['Use per area of cropland'])
+    # Compute the use per land [t/ha]
+    # Identify the columns to divide (exclude Year, Area, Agricultural land)
+    cols_to_divide = df_input_land.columns.difference(
+      ['Year', 'Area', 'Agricultural land [ha]'])
+    # Divide each of those columns by 'Agricultural land [ha]'
+    df_input_land[cols_to_divide] = df_input_land[cols_to_divide].div(df_input_land['Agricultural land [ha]'],
+                                                axis=0)
 
-    # PathwayCalc formatting -----------------------------------------------------------------------------------------------
-
-    # Concatenating
-    pivot_df_input = pd.concat([pivot_df_urea, pivot_df_liming], axis=0)
-    pivot_df_input = pd.concat([pivot_df_input, pivot_df_pesticides_nitrogen], axis=0)
+    # Melt the DataFrame
+    df_input_land = df_input_land.melt(
+      id_vars=['Year', 'Area'],  # columns to keep fixed
+      var_name='Item',  # name of the new 'item' column
+      value_name='value'  # name of the new 'value' column
+    )
 
     # Food item name matching with dictionary
     # Read excel file
@@ -995,13 +984,13 @@ def climate_smart_crop_processing(list_countries, file_dict):
         sheet_name='climate-smart-crops')
 
     # Merge based on 'Item'
-    df_input_pathwaycalc = pd.merge(df_dict_csc, pivot_df_input, on='Item')
+    df_input_pathwaycalc = pd.merge(df_dict_csc, df_input_land, on='Item')
 
     # Drop the 'Item' column
     df_input_pathwaycalc = df_input_pathwaycalc.drop(columns=['Item'])
 
     # Renaming existing columns (geoscale, timsecale, value)
-    df_input_pathwaycalc.rename(columns={'Area': 'geoscale', 'Year': 'timescale', 'Input[t/ha]': 'value'}, inplace=True)
+    df_input_pathwaycalc.rename(columns={'Area': 'geoscale', 'Year': 'timescale'}, inplace=True)
 
     # Adding the columns module, lever, level and string-pivot at the correct places
     df_input_pathwaycalc['module'] = 'agriculture'
@@ -1026,10 +1015,10 @@ def climate_smart_crop_processing(list_countries, file_dict):
     # Is equal to 0 for all ots for all countries
 
     # Use pivot_df_input as a structural basis
-    agroforestry_crop = pivot_df_input.copy()
+    agroforestry_crop = df_input_land.copy()
 
     # Drop the column Item
-    agroforestry_crop = agroforestry_crop.drop(columns=['Item', 'Input[t/ha]'])
+    agroforestry_crop = agroforestry_crop.drop(columns=['Item', 'value'])
 
     # Rename the column in geoscale and timescale
     agroforestry_crop.rename(columns={'Area': 'geoscale', 'Year': 'timescale'}, inplace=True)
@@ -4405,6 +4394,16 @@ def land_calibration(list_countries):
       values='Value'
     ).reset_index()
 
+    # Create a copy with only agricultural land
+    df_agri_land = df_land_use_fao.copy()
+    df_agri_land = df_agri_land.pivot_table(
+      index=['Area', 'Year'],
+      columns='Item',
+      values='Value'
+    ).reset_index()
+    df_agri_land['Agricultural land [ha]'] = df_agri_land['Cropland'] + df_agri_land['Permanent meadows and pastures']
+    df_agri_land = df_agri_land[['Area', 'Year', 'Agricultural land [ha]']]
+
     # Cropland = temporary crops + temporary fallow
     # 1. Filter only the rows for the items of interest
     df_crop_fallow = df_land_use_fao[df_land_use_fao['Item'].isin(['Temporary crops', 'Temporary fallow'])]
@@ -4441,7 +4440,7 @@ def land_calibration(list_countries):
     df_land_use_fao_calibration.rename(columns={'Area': 'geoscale', 'Year': 'timescale', 'Value':'value'},
                                    inplace=True)
 
-    return df_land_use_fao_calibration, df_cropland_density
+    return df_land_use_fao_calibration, df_cropland_density, df_agri_land
 
 # CalculationLeaf CAL - CROPLAND -----------------------------------------------------------------------------------
 def cropland_calibration(list_countries):
@@ -5592,13 +5591,13 @@ dm_kcal_req_pathwaycalc = energy_requirements_processing(country_list=df_waste_p
 file_dict = {'ssr': 'data/faostat/ssr.csv', 'cake': 'data/faostat/ssr_cake.csv',
              'molasse': 'data/faostat/ssr_2010_2021_molasse_cake.csv'}
 df_ssr_pathwaycalc, df_csl_feed = self_sufficiency_processing(years_ots, list_countries, file_dict)
+df_land_use_fao_calibration, df_cropland_density, df_agri_land = land_calibration(list_countries)
 file_dict = {'losses': 'data/faostat/losses.csv', 'yield': 'data/faostat/yield.csv','cropland': 'data/faostat/cropand.csv', 'urea': 'data/faostat/urea.csv',
              'land': 'data/faostat/land.csv', 'nitro': 'data/faostat/nitro.csv',
              'pesticide': 'data/faostat/pesticide.csv', 'liming': 'data/faostat/liming.csv'}
-df_climate_smart_crop_pathwaycalc, df_energy_demand_cal = climate_smart_crop_processing(list_countries, file_dict)
+df_climate_smart_crop_pathwaycalc, df_energy_demand_cal = climate_smart_crop_processing(list_countries, df_agri_land, file_dict)
 # Exceptionnally running livestock calibration before to use the livestock population in livestock after
 df_domestic_supply_calibration, df_liv_population_calibration, df_liv_pop = livestock_crop_calibration(df_energy_demand_cal, list_countries)
-df_land_use_fao_calibration, df_cropland_density = land_calibration(list_countries)
 df_climate_smart_livestock_pathwaycalc, df_csl_fxa, df_manure_n_fxa, df_manure_ch4_fxa = climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_density, list_countries)
 df_climate_smart_forestry_pathwaycalc, csf_managed = climate_smart_forestry_processing() #FutureWarning at last line
 df_land_management_pathwaycalc = land_management_processing(csf_managed)
@@ -5632,6 +5631,10 @@ database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, d
 # calculated based on the metabolism.
 # AND update the calibration values for cal_diet.
 # ----------------------------------------------------------------------------------------------------------------------
+years_ots = create_years_list(1990, 2023, 1)  # make list with years from 1990 to 2015
+years_fts = create_years_list(2025, 2050, 5)
+years_all = years_ots + years_fts
+
 
 # Load pickles
 with open('../../data/datamatrix/agriculture.pickle', 'rb') as handle:
@@ -5645,7 +5648,35 @@ filter_DM(DM_agriculture, {'Country': ['Switzerland', 'Vaud', 'EU27']})
 filter_DM(DM_lifestyles, {'Country': ['Switzerland', 'Vaud', 'EU27']})
 
 # ADDING CONSTANTS ----------------------------------------------------------------------------------------
+# FXA EF NITROGEN FERTILIZER ----------------------------------------------------------------------------------------
+# Load data
+dm_emission_fert = DM_agriculture['fxa']['cal_agr_crop_emission_N2O-emission_fertilizer'].copy()
+dm_input_fert = DM_agriculture['ots']['climate-smart-crop']['climate-smart-crop_input-use'].copy()
+dm_land = DM_agriculture['fxa']['cal_agr_lus_land'].copy()
 
+# COmpute total land
+dm_land.group_all(dim='Categories1', inplace=True)
+
+# CHange unit from Mt => t
+dm_emission_fert.change_unit('cal_agr_crop_emission_N2O-emission_fertilizer', old_unit='Mt', new_unit='t', factor=10**6)
+
+# Filter and flatten
+dm_input_fert = dm_input_fert.filter({'Categories1':['nitrogen']})
+dm_input_fert = dm_input_fert.flatten()
+
+# Append & compute
+dm_input_fert.append(dm_emission_fert, dim='Variables')
+dm_input_fert.append(dm_land, dim='Variables')
+dm_input_fert.operation('agr_climate-smart-crop_input-use_nitrogen', '*', 'cal_agr_lus_land',
+                                 out_col='temp', unit='tN')
+dm_input_fert.operation('cal_agr_crop_emission_N2O-emission_fertilizer', '/', 'temp',
+                                 out_col='fxa_agr_emission_fertilizer', unit='N2O/N')
+
+# Extrapolate to fts
+linear_fitting(dm_input_fert, years_all)
+
+# Overwrite fxa_agr_emission_fertilizer in pickle
+DM_agriculture['fxa']['agr_emission_fertilizer'][:,:,'fxa_agr_emission_fertilizer'] = dm_input_fert[:,:,'fxa_agr_emission_fertilizer']
 
 # CALIBRATION DOMESTIC PROD WITH LOSSES ----------------------------------------------------------------------------------------
 

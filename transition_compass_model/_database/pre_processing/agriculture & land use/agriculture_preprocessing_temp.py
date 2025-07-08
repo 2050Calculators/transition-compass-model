@@ -1,7 +1,7 @@
 import pickle
 
 import numpy as np
-from model.common.auxiliary_functions import filter_DM
+from model.common.auxiliary_functions import filter_DM, linear_fitting, create_years_list
 from model.common.data_matrix_class import DataMatrix
 import faostat
 import pandas as pd
@@ -15,8 +15,42 @@ with open('../../data/datamatrix/lifestyles.pickle', 'rb') as handle:
     DM_lifestyles = pickle.load(handle)
 
 
-# ADDING CONSTANTS ----------------------------------------------------------------------------------------
+years_ots = create_years_list(1990, 2023, 1)  # make list with years from 1990 to 2015
+years_fts = create_years_list(2025, 2050, 5)
+years_all = years_ots + years_fts
 
+
+# ADDING CONSTANTS ----------------------------------------------------------------------------------------
+# FXA EF NITROGEN FERTILIZER ----------------------------------------------------------------------------------------
+# Load data
+dm_emission_fert = DM_agriculture['fxa']['cal_agr_crop_emission_N2O-emission_fertilizer']
+dm_input_fert = DM_agriculture['ots']['climate-smart-crop']['climate-smart-crop_input-use']
+dm_land = DM_agriculture['fxa']['cal_agr_lus_land']
+
+# COmpute total land
+dm_land.group_all(dim='Categories1', inplace=True)
+
+# CHange unit from Mt => t
+dm_emission_fert.change_unit('cal_agr_crop_emission_N2O-emission_fertilizer', old_unit='Mt', new_unit='t', factor=10**6)
+
+# Filter and flatten
+dm_input_fert = dm_input_fert.filter({'Categories1':['nitrogen']})
+dm_input_fert = dm_input_fert.flatten()
+
+# Append & compute
+dm_input_fert.append(dm_emission_fert, dim='Variables')
+dm_input_fert.append(dm_land, dim='Variables')
+dm_input_fert.operation('agr_climate-smart-crop_input-use_nitrogen', '*', 'cal_agr_lus_land',
+                                 out_col='temp', unit='tN')
+dm_input_fert.operation('cal_agr_crop_emission_N2O-emission_fertilizer', '/', 'temp',
+                                 out_col='fxa_agr_emission_fertilizer', unit='N2O/N')
+
+# Extrapolate to fts
+linear_fitting(dm_input_fert, years_all)
+
+
+# Overwrite fxa_agr_emission_fertilizer in pickle
+DM_agriculture['fxa']['agr_emission_fertilizer'][:,:,'fxa_agr_emission_fertilizer'] = dm_input_fert[:,:,'fxa_agr_emission_fertilizer']
 
 # CALIBRATION DOMESTIC PROD WITH LOSSES ----------------------------------------------------------------------------------------
 
