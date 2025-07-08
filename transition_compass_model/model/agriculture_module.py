@@ -2091,7 +2091,7 @@ def agriculture_refinery_interface(DM_energy_ghg):
 def agriculture_TPE_interface(DM_livestock, DM_crop, dm_crop_other, DM_feed, dm_aps, dm_input_use_CO2, dm_crop_residues,
                               dm_CH4, dm_liv_N2O, dm_CH4_rice, dm_fertilizer_N2O, DM_energy_ghg, DM_bioenergy, dm_lgn,
                               dm_eth, dm_oil, dm_aps_ibp, DM_food_demand, dm_lfs_pro, dm_lfs, DM_land, dm_fiber,
-                              dm_aps_ibp_oil, dm_voil_tpe, DM_alc_bev, dm_biofuel_fdk, dm_liv_pop, DM_ssr):
+                              dm_aps_ibp_oil, dm_voil_tpe, DM_alc_bev, dm_biofuel_fdk, dm_liv_pop, DM_ssr, dm_fertilizer_co):
     kcal_to_TWh = 1.163e-12
 
     # Livestock population
@@ -2250,12 +2250,17 @@ def agriculture_TPE_interface(DM_livestock, DM_crop, dm_crop_other, DM_feed, dm_
     dm_ssr_food = DM_ssr['food']
     dm_ssr_feed = DM_ssr['feed']
     dm_ssr_bioenergy = DM_ssr['bioenergy']
-    dm_ssr_processed = DM_ssr['processed']
+    dm_ssr_processed = DM_food_demand['food-net-import-pro']
     dm_ssr = dm_ssr_food.copy()
     dm_ssr.append(dm_ssr_feed, dim='Categories1')
     dm_ssr.append(dm_ssr_processed, dim='Categories1')
     dm_ssr.append(dm_ssr_bioenergy, dim='Categories1')
     dm_tpe.append(dm_ssr.flattest(), dim='Variables')
+
+    #Input-use
+    dm_input = dm_fertilizer_co.filter({'Variables': ['agr_input-use']})
+    dm_tpe.append(dm_input.flattest(), dim='Variables')
+
 
     return dm_tpe
 
@@ -2381,7 +2386,7 @@ def agriculture(lever_setting, years_setting, DM_input, interface=Interface()):
                                             dm_crop_residues, dm_CH4, dm_liv_N2O, dm_CH4_rice, dm_fertilizer_N2O,
                                             DM_energy_ghg, DM_bioenergy, dm_lgn, dm_eth, dm_oil, dm_aps_ibp,
                                             DM_food_demand, dm_lfs_pro, dm_lfs, DM_land, dm_fiber, dm_aps_ibp_oil,
-                                            dm_voil_tpe, DM_alc_bev, dm_biofuel_fdk, dm_liv_pop, DM_ssr)
+                                            dm_voil_tpe, DM_alc_bev, dm_biofuel_fdk, dm_liv_pop, DM_ssr, dm_fertilizer_co)
 
     return results_run
 
