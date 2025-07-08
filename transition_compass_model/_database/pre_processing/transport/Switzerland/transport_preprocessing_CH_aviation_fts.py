@@ -9,37 +9,36 @@ from model.common.auxiliary_functions import linear_fitting, my_pickle_dump, cre
 import os
 
 from model.common.data_matrix_class import DataMatrix
-# from training.transport_module_notebook import col_labels
-# 2. Liste des années OTS
-years_ots = create_years_list(start_year= 1990, end_year= 2023, step = 1)
-# 2. Liste des années FTS uniquement (2025 à 2050)
-years_fts = create_years_list(2025, 2050, 5)
 
-data_file = '../../../data/datamatrix/transport.pickle'
-with open(data_file, 'rb') as handle:
-    DM_transport = pickle.load(handle)
 
-data_file = '../../../data/datamatrix/lifestyles.pickle'
-with open(data_file, 'rb') as handle:
-    DM_lifestyles = pickle.load(handle)
+def update_from_subdm(dm, subdm):
+  # Copy or reference
+  idx_all = []
 
-filter_DM(DM_transport, {'Country': ['Switzerland']})
-dm_pop_fts = DM_lifestyles['fts']['pop']['lfs_population_'][1].filter({'Country': ['Switzerland']})
+  # Sort both data models by each dimension
+  for dim in subdm.dim_labels:
+    dm.sort(dim)
+    subdm.sort(dim)
 
-#création des dictionnaires
-DM_fts = {'fts': dict()}
-DM_ots = {'ots': dict()}
+    # Validate that all update labels exist in the target
+    if not set(subdm.col_labels[dim]).issubset(dm.col_labels[dim]):
+      raise ValueError(
+        f"Labels in dim '{dim}' from 'from_dm' not found in 'of_dm'")
 
-# importation des données sur la population suisse
-dm_pop = DM_lifestyles['ots']['pop']['lfs_population_'].filter({'Country': ['Switzerland']})
+  # Build indexing tuple
+  for dim in subdm.dim_labels:
+    # Get the list of indices for this dimension in dm_out
+    idx_dim = [dm.idx[label] for label in subdm.col_labels[dim]]
+    idx_all.append(np.array(idx_dim))
 
-# 0) création de pkm dans le dictionnaire fts
-DM_fts['fts']['passenger_aviation-pkm-monde'] = {}
+  # Convert idx_all into a tuple of index arrays for fancy indexing
+  # Each idx_dim must be broadcasted into a meshgrid to match the shape of from_dm.array
+  idx_mesh = np.ix_(*idx_all)
 
-# ======================  DATA MATRIX CREATION  ===========================================================================================================================================================================
+  # Update the corresponding subarray
+  dm.array[idx_mesh] = subdm.array
 
-# -------------------- PKM (ots et fts) -------------------------------------------------------------------------------------------------------------------------
-# section DONNEES PKM-MONDE OTS
+  return dm
 
 
 def merge_dm(dm_A, dm_B, same_dim = ['Country', 'Years', 'Variables'], union_dim=['Categories2'], along_dim='Categories1'):
@@ -57,7 +56,8 @@ def merge_dm(dm_A, dm_B, same_dim = ['Country', 'Years', 'Variables'], union_dim
         dm_A.add(np.nan, dim=dim, col_label=cols_B, dummy=True)
 
     dm = dm_A.copy()
-    dm.append(dm_B, dim=along_dim)
+    if not set(dm_B.col_labels[along_dim]).issubset(set(dm.col_labels[along_dim])):
+      dm.append(dm_B, dim=along_dim)
 
     return dm
 
@@ -74,20 +74,6 @@ def pkm_monde_ots(dm_pkm_orig, value_2024):
     dm_pkm[0, 2020, 0, 0] = 3103.0
 
     return dm_pkm
-
-
-# 1) Récupérer les datas ots et les placer dans DM_ots
-dm_pkm_orig = DM_transport['ots']['passenger_aviation-pkm']
-# IATA, Global Air Passenger Demand Reaches Record High in 2024
-# https://www.iata.org/en/pressroom/2025-releases/2025-01-30-01/
-value_2024 = dm_pkm_orig[0, 2019, 0, 0] * 1.038
-# Adjust dm_pkm_orig for post-covid
-dm_pkm_ots = pkm_monde_ots(dm_pkm_orig, value_2024)
-DM_transport['ots']['passenger_aviation-pkm'] = dm_pkm_ots
-del dm_pkm_ots, dm_pkm_orig
-
-
-#section DONNEES PKM-MONDE FTS
 
 
 def pkm_monde_fts(value_2024, pkm_rates):
@@ -116,95 +102,23 @@ def pkm_monde_fts(value_2024, pkm_rates):
     return DM
 
 
-# les trois taux annuels à tester
-pkm_rates = [0.04, 0.029, 0.02, -0.02]  #scénario 1 et 2 sont les mêmes
-DM = pkm_monde_fts(value_2024, pkm_rates)
-DM_transport['fts']['passenger_aviation-pkm'] = DM
-del pkm_rates, DM, value_2024
-
-# -------------------PASSENGER_VEC_EFFICIENCY_NEW OTS ------------------------------------------------------------------------------
-
-#section  PASSENGER_VEC_EFFICIENCY_NEW OTS
-
-#ICE, BEV, H2
-df_passengereff_ots = pd.read_excel('data/aviation_energy_intensity_fleet.xlsx', sheet_name = 'Feuil1')
-dm_passengereff_ots = DataMatrix.create_from_df(df_passengereff_ots, num_cat=2)
-dm_passengereff_orig = DM_transport['ots']['passenger_veh-efficiency_new'].copy()
-dm_passengereff = merge_dm(dm_passengereff_orig, dm_passengereff_ots)
-
-DM_transport['ots']['passenger_veh-efficiency_new'] = dm_passengereff
-del dm_passengereff_orig, dm_passengereff_ots
-
-
-
-#section DONNES PKM-SUISSE OTS
-
-"""
-def pkm_suisse_ots(file, dm_pop, dm_pkm_monde_ots):
-    # 1) Récupérer les datas ots et les placer dans DM_ots
-    df_pkmsuisse_ots = pd.read_excel(file, sheet_name='pkm')
-    df_passsuisse_ots = pd.read_excel(file, sheet_name='passengers')
-
-    dm_suisse = DataMatrix.create_from_df(df_pkmsuisse_ots, num_cat=1)
-    dm_pass = DataMatrix.create_from_df(df_passsuisse_ots, num_cat=1)
-
-    years_missing = list(set(years_ots) - set(dm_suisse.col_labels['Years']))
-    dm_suisse.add(np.nan, col_label=years_missing, dim='Years', dummy=True)
-    dm_suisse.append(dm_pass, dim='Variables')
-
-    dm_suisse.operation('tra_pkm-cap-scope1', '/', 'tra_passenger', out_col='ratio_pkm_pass', unit='pkm/pass')
-    linear_fitting(dm_suisse, years_ots, based_on=create_years_list(2006, 2017,1))
-    dm_suisse.operation('ratio_pkm_pass', '*', 'tra_passenger', out_col='tra_pkm-cap-scope1-adj', unit='pkm')
-
-    dm_suisse = dm_suisse.flatten()
-    dm_suisse.append(dm_pop, dim="Variables")
-
-    dm_suisse.operation('tra_pkm-cap-scope1-adj_aviation', "/", 'lfs_population_total',
-                        out_col='tra_pkm-suisse-cap_aviation', unit='pkm/cap')
-    #dm_suisse.append(dm_pkm_monde_ots.flatten(), dim='Variables')
-    #dm_suisse.operation('tra_pkm-suisse-cap_aviation', '/', 'tra_pkm-cap_aviation', out_col='ratio', unit='%')
-    #linear_fitting(dm_suisse, years_ots)
-    #dm_suisse.operation('tra_pkm-cap_aviation', '*', 'ratio', out_col='tra_pkm-suisse-cap_aviation_adj', unit='pkm/cap')
-    #dm_suisse[0, :, 'tra_pkm-suisse-cap_aviation_adj'] = np.minimum(dm_suisse[0, :, 'tra_pkm-suisse-cap_aviation_adj'],
-    #                                                                dm_suisse[0, :, 'tra_pkm-cap_aviation'])
-    dm_pkm_suisse = dm_suisse.filter({'Variables': ['tra_pkm-suisse-cap_aviation']})
-    #dm_pkm_suisse.rename_col_regex('_adj', '', dim='Variables')
-    dm_pkm_suisse.deepen()
-
-    return dm_pkm_suisse  """
-
-
 def adj_pkm_monde_ots(dm_pkmsuisse_ots, dm_pkm_ots):
-    idx = dm_pkm_ots.idx
-    dm_pkm_ots.array[:, 0:idx[2005], ...] = np.nan
-    dm_pkm_ots.append(dm_pkmsuisse_ots, dim='Variables')
-    dm_pkm_ots.operation('tra_pkm-cap', '/', 'tra_pkm-suisse-cap', out_col='ratio', unit='%')
-    linear_fitting(dm_pkm_ots, years_ots, based_on=create_years_list(2006, 2017, 1))
-    dm_pkm_ots[:, :, 'ratio', ...] = np.maximum(1.05, dm_pkm_ots[:, :, 'ratio', ...])
+  idx = dm_pkm_ots.idx
+  dm_pkm_ots.array[:, 0:idx[2005], ...] = np.nan
+  dm_pkm_ots.append(dm_pkmsuisse_ots, dim='Variables')
+  dm_pkm_ots.operation('tra_pkm-cap', '/', 'tra_pkm-suisse-cap',
+                       out_col='ratio', unit='%')
+  linear_fitting(dm_pkm_ots, years_ots,
+                 based_on=create_years_list(2006, 2017, 1))
+  dm_pkm_ots[:, :, 'ratio', ...] = np.maximum(1.05,
+                                              dm_pkm_ots[:, :, 'ratio', ...])
 
-    dm_pkm_ots.operation('ratio', '*', 'tra_pkm-suisse-cap', out_col='tra_pkm-cap_adj', unit='pkm/cap')
-    dm_pkm_ots.filter({'Variables': ['tra_pkm-cap_adj']}, inplace=True)
-    dm_pkm_ots.rename_col('tra_pkm-cap_adj', 'tra_pkm-cap', dim='Variables')
-    return dm_pkm_ots
+  dm_pkm_ots.operation('ratio', '*', 'tra_pkm-suisse-cap',
+                       out_col='tra_pkm-cap_adj', unit='pkm/cap')
+  dm_pkm_ots.filter({'Variables': ['tra_pkm-cap_adj']}, inplace=True)
+  dm_pkm_ots.rename_col('tra_pkm-cap_adj', 'tra_pkm-cap', dim='Variables')
+  return dm_pkm_ots
 
-#
-# <<<<<<< HEAD
-# =======
-#file = 'data/pkm_suisse.xlsx'
-# >>>>>>> 28518f8cb5830e8b67af8c154233ea7882c169fd
-file = 'data/aviation_pkm_suisse.csv'
-dm_pkm_ots = DM_transport['ots']['passenger_aviation-pkm'].copy()
-df = pd.read_csv(file, sep=';', decimal=',')
-df.drop(['Unnamed: 0'], axis=1, inplace=True)
-dm_pkmsuisse_ots = DataMatrix.create_from_df(df, num_cat=1)
-dm_pkmsuisse_ots.rename_col('tra_pkm-cap', 'tra_pkm-suisse-cap', dim='Variables')
-
-dm_pkm_ots = adj_pkm_monde_ots(dm_pkmsuisse_ots, dm_pkm_ots)
-DM_transport['ots']['passenger_aviation-pkm'] = dm_pkm_ots.copy()
-DM_ots['ots']['passenger_aviation-pkm-suisse'] = dm_pkmsuisse_ots.copy()
-
-
-#section DONNES PKM-SUISSE FTS
 
 
 def pkm_suisse_fts(pkm_rates, dm_pkmsuisse_ots, years_ots, years_fts):
@@ -243,38 +157,75 @@ def pkm_suisse_fts(pkm_rates, dm_pkmsuisse_ots, years_ots, years_fts):
     return DM
 
 
-pkm_rates = [0.04, 0.029, 0.02, 0.02]
-DM = pkm_suisse_fts(pkm_rates, dm_pkmsuisse_ots, years_ots, years_fts)
-DM_fts['fts']['passenger_aviation-pkm-suisse'] = DM
-del DM
+def occupancy_monde_ots(dm_pkm_suisse, dm_pkm_tot, dm_occupancy_ots,
+                        dm_occupancyworld_ots):
+  # occupancy = (pkm_CH * occupancy_CH + (pkm_tot - pkm_CH) * occupancy_world) / pkm_tot
+  array_occupancyponderee = (dm_pkm_suisse[...] * dm_occupancy_ots[...] + (
+      dm_pkm_tot[...] - dm_pkm_suisse[...]) * dm_occupancyworld_ots[...]) / (
+                            dm_pkm_tot[...])
+  dm_occupancyworld_ots.add(array_occupancyponderee, dim='Variables',
+                            col_label='tra_passenger_occupancy_ponderee',
+                            unit='%')
+  dm_occupancyworld_ots.drop(dim='Variables',
+                             col_label=['tra_passenger_occupancy'])
+  dm_occupancyworld_ots.rename_col('tra_passenger_occupancy_ponderee',
+                                   'tra_passenger_occupancy', dim='Variables')
+  dm_occupancyworld_ots.fill_nans(dim_to_interp='Years')
+  dm_occupancyworld_ots.change_unit('tra_passenger_occupancy', old_unit='%',
+                                    new_unit='pkm/vkm', factor=1)
 
-
-# -------------------- OCCUPANCY_OTS --------------------------------------------------------------------------------------
-
-#section DONNEES OCCUPANCY SUISSE OTS
+  return dm_occupancyworld_ots
 
 def occupancy_suisse_ots(file, years_ots):
-    # création de la datamatrix pour occupancy_suisse_ots à partir du fichier excel
-    df_occupancy_ots = pd.read_excel(file)
-    dm_occupancy_ots = DataMatrix.create_from_df(df_occupancy_ots, num_cat=1)
+  # création de la datamatrix pour occupancy_suisse_ots à partir du fichier excel
+  df_occupancy_ots = pd.read_excel(file)
+  dm_occupancy_ots = DataMatrix.create_from_df(df_occupancy_ots, num_cat=1)
 
-    # rajout des années manquantes et extrapolation constante
-    missing_years = set(years_ots) - set(dm_occupancy_ots.col_labels['Years'])
-    dm_occupancy_ots.add(np.nan, 'Years', list(missing_years), dummy=True)
-    dm_occupancy_ots.sort('Years')
-    dm_occupancy_ots.fill_nans('Years')
+  # rajout des années manquantes et extrapolation constante
+  missing_years = set(years_ots) - set(dm_occupancy_ots.col_labels['Years'])
+  dm_occupancy_ots.add(np.nan, 'Years', list(missing_years), dummy=True)
+  dm_occupancy_ots.sort('Years')
+  dm_occupancy_ots.fill_nans('Years')
 
-    # For aviation it is actually in pkm/skm
-    dm_occupancy_ots.change_unit('tra_passenger_occupancy', factor=1, old_unit='%', new_unit='pkm/vkm')
-    return dm_occupancy_ots
+  # For aviation it is actually in pkm/skm
+  dm_occupancy_ots.change_unit('tra_passenger_occupancy', factor=1,
+                               old_unit='%', new_unit='pkm/vkm')
+  return dm_occupancy_ots
 
+def occupancy_fts(value_2023, scenarios):
+  # 3) Années à générer
+  years = list(range(2024, 2051))
+  DM = dict()
+  # pour nommer dans la boucle les scénarios 1,2,3,4
+  for lev in range(4):
+    # Transformer le scénario en valeur finale d'occupancy (%) en 2050
+    value_2050 = scenarios[lev]
 
-file = 'data/aviation_occupancy_ots.xlsx'
-dm_occupancy_ots = occupancy_suisse_ots(file, years_ots)
-DM_ots['ots']['passenger_occupancy-suisse'] = dm_occupancy_ots
+    # On crée d'abord une grille linéaire de 2023→2050
+    all_years = [2023] + years
+    all_values = np.linspace(value_2023, value_2050, num=len(all_years))
 
+    # On construit le DataFrame, puis on retire la ligne 2023
+    df_scenario = pd.DataFrame({
+      'Country': 'Switzerland',
+      'Years': all_years,
+      'tra_passenger_occupancy[%]': all_values,
+    }).query("Years >= 2024").reset_index(drop=True)
 
-#section DONNEES OCCUPANCY MONDE OTS
+    # On convertit en DataMatrix
+    dm_scenario = DataMatrix.create_from_df(df_scenario, num_cat=0)
+
+    # On ajoute au dictionnaire sous une clé descriptive
+    dm_scenario.rename_col('tra_passenger_occupancy',
+                           'tra_passenger_occupancy_aviation',
+                           dim='Variables')
+    dm_scenario.change_unit('tra_passenger_occupancy_aviation', factor=1,
+                            old_unit='%', new_unit='pkm/vkm')
+    dm_scenario.filter({'Years': years_fts}, inplace=True)
+    dm_scenario.deepen()
+    DM[lev + 1] = dm_scenario
+  return DM
+
 
 def occupancy_global_ots(file, years_ots):
     # création de la datamatrix pour occupancy_monde_ots à partir du fichier excel
@@ -288,28 +239,231 @@ def occupancy_global_ots(file, years_ots):
     dm_occupancyworld_ots.fill_nans('Years')
     return dm_occupancyworld_ots
 
+
+def compute_seats(dm_pkm, dm_utilirate, dm_occupancy, dm_pop, subfix):
+    # seat ots = pkm_ots / occupancy_ots (pkm/skm) / utilisation-rate
+    arr_seat = dm_pkm.array/dm_occupancy.array/dm_utilirate.array*dm_pop.array[..., np.newaxis]
+    arr_skm = dm_pkm.array/dm_occupancy.array*dm_pop.array[..., np.newaxis]
+    dm_occupancy.add(arr_seat, dim='Variables', col_label='tra_passenger_seats'+subfix, unit='seat')
+    dm_occupancy.add(arr_skm, dim='Variables', col_label='tra_passenger-demand-skm'+subfix, unit='skm')
+    dm_seats = dm_occupancy.filter({'Variables': ['tra_passenger_seats'+subfix]})
+    dm_skm = dm_occupancy.filter({'Variables': ['tra_passenger-demand-skm'+subfix]})
+    return dm_seats, dm_skm
+
+
+def compute_new_veh_max(dm_max):
+  years_fts_all = create_years_list(2025, 2050, 1)
+  missing_years = list(set(years_fts_all) - set(years_fts))
+  dm_max.add(np.nan, dim='Years', col_label=missing_years, dummy=True)
+  dm_max.sort(dim='Years')
+  dm_max.fill_nans('Years')
+  # Compute new fleet as s(t) = s(t-1) + new(t) - waste(t), by assuming waste(t) = 0 for H2, BEV
+  # then n(t) = s(t) - s(t-1)
+  dm_max.lag_variable('tra_vehicles-max', shift=1, subfix='_tm1')
+  dm_max.operation('tra_vehicles-max', '-', 'tra_vehicles-max_tm1',
+                   out_col='tra_new-vehicles-max', unit='seat')
+  dm_max.add(0, dim='Variables', col_label='tra_vehicles-waste-max', dummy=True,
+             unit='seat')
+  dm_max.drop(col_label='tra_vehicles-max_tm1', dim='Variables')
+  dm_max.filter({'Years': years_fts_all}, inplace=True)
+  return dm_max
+
+
+def compute_share_emissions(dm_skm_CH, dm_skm_abroad):
+    # Emissions = skm x MJ/skm x CO2/MJ
+    # Emissions_CH = skm_CH x (MJ/skm x CO2/MJ)_CH
+    # Emissions_abroad = skm_abroud x (MJ/skm x CO2/MJ)_abroad
+    # Emission_CH / Emissions_abroad = skm_CH / skm_abroad ----> seats_CH / seats_abroad
+    # Multiply by 2 the Swiss seats to obtain emissions according to sold quantity principle
+    dm_skm_CH[:, :, 'tra_passenger-demand-skm_CH', ...] = 2 * dm_skm_CH[:, :, 'tra_passenger-demand-skm_CH', ...]
+    dm_skm_CH.append(dm_skm_abroad, dim='Variables')
+    dm_skm_CH.operation('tra_passenger-demand-skm_CH', '/', 'tra_passenger-demand-skm',
+                        out_col='tra_share-emissions-local', unit='%')
+    dm_emiss_share = dm_skm_CH.filter({'Variables': ['tra_share-emissions-local']})
+    # dm_emiss_share.add(np.nan, col_label=years_fts, dim='Years', dummy=True)
+    #inear_fitting(dm_emiss_share, years_fts, based_on=create_years_list(2015, 2019, 1))
+    return dm_emiss_share
+
+
+def compute_tech_new_from_newfleet(dm_fleet_ofts, dm_max):
+  # Extract new, fleet, waste from pickle saved during run
+  dm_new_veh_demand = dm_fleet_ofts.filter(
+    {'Variables': ['tra_passenger_new-vehicles', 'tra_passenger_vehicle-fleet',
+                   'tra_passenger_vehicle-waste']})
+  dm_new_veh_demand.rename_col(
+    ['tra_passenger_new-vehicles', 'tra_passenger_vehicle-fleet',
+     'tra_passenger_vehicle-waste'],
+    ['tra_new-vehicles-max_tot', 'tra_vehicles-max_tot',
+     'tra_vehicles-waste-max_tot'], dim='Variables')
+  for var in dm_new_veh_demand.col_labels['Variables']:
+    dm_new_veh_demand.change_unit(var, factor=1, old_unit='number',
+                                  new_unit='seat')
+
+  dm_new_veh_demand.deepen(based_on='Variables')
+
+  # Add all Years from 2025 to 2050
+  years_fts_all = create_years_list(2025, 2050, 1)
+  missing_years = list(set(years_fts_all) - set(years_fts))
+  dm_new_veh_demand.add(np.nan, dim='Years', dummy=True,
+                        col_label=missing_years)
+  dm_new_veh_demand.sort('Years')
+  dm_new_veh_demand.fill_nans('Years')
+  dm_new_veh_demand.filter({'Years': years_fts_all}, inplace=True)
+
+  # Append max fleet of new tech with fleet of all tech from run
+  dm_max.append(dm_new_veh_demand, dim='Categories2')
+
+  dm_max.add(0, col_label='kerosene', dim='Categories2', dummy=True)
+  # ICE = tot - BEV - H2
+  dm_max[0, :, :, 'aviation', 'kerosene'] = dm_max[0, :, :, 'aviation',
+                                            'tot'] - dm_max[0, :, :, 'aviation',
+                                                     'BEV'] \
+                                            - dm_max[0, :, :, 'aviation', 'H2']
+
+  # If the demand for new planes is less than the new tech available
+  mask = np.any(dm_max.array < 0, axis=-1)
+  if mask.any():
+    dm_tot = dm_max.filter({'Categories2': ['tot']})
+    dm_max.drop('Categories2', 'tot')
+    idx = dm_max.idx
+    dm_max.array[mask, idx['kerosene']] = 0
+    dm_max.normalise('Categories2')
+    dm_max.array[...] = dm_max.array[...] * dm_tot.array[...]
+
+  # LEVEL 4 - HIGHEST PENETRATION OF BEV, H2
+  dm_new_tech = dm_max.filter({'Variables': ['tra_new-vehicles-max'],
+                               'Categories2': ['kerosene', 'BEV', 'H2']})
+  dm_new_tech.normalise(dim='Categories2', inplace=True, keep_original=False)
+  dm_new_tech.rename_col('tra_new-vehicles-max',
+                         'tra_passenger_technology-share_new', dim='Variables')
+  dm_new_tech.filter({'Years': years_fts}, inplace=True)
+  dm_new_tech.fill_nans('Years')
+  return dm_new_tech, dm_max
+
+def add_missing_cat_DM(DM_orig, DM_new):
+  for key in DM_orig.keys():
+    if isinstance(DM_orig[key], dict):
+      if 'freight' not in key and key != 'passenger_aviation-pkm':
+        add_missing_cat_DM(DM_orig[key], DM_new[key])
+    else:
+      dm_orig = DM_orig[key]
+      dm_new = DM_new[key]
+      if 'Categories1' in dm_new.dim_labels:
+        if 'aviation' in dm_new.col_labels[
+          'Categories1'] and 'freight' not in str(
+          key) and key != 'passenger_aviation-pkm':
+          dm_new.filter({'Categories1': ['aviation']}, inplace=True)
+          dm = update_from_subdm(dm_orig, dm_new)
+          DM_orig[key] = dm.copy()
+  return
+
+
+###################################################################
+#########          AVIATION - SWITZERLAND         #################
+###################################################################
+
+# from training.transport_module_notebook import col_labels
+# 2. Liste des années OTS
+years_ots = create_years_list(start_year= 1990, end_year= 2023, step = 1)
+# 2. Liste des années FTS uniquement (2025 à 2050)
+years_fts = create_years_list(2025, 2050, 5)
+
+# Read PICKLEs
+data_file = '../../../data/datamatrix/transport.pickle'
+with open(data_file, 'rb') as handle:
+    DM_transport = pickle.load(handle)
+
+data_file = '../../../data/datamatrix/lifestyles.pickle'
+with open(data_file, 'rb') as handle:
+    DM_lifestyles = pickle.load(handle)
+
+# Filter Switzerland
+filter_DM(DM_transport, {'Country': ['Switzerland']})
+# importation des données sur la population suisse
+dm_pop = DM_lifestyles['ots']['pop']['lfs_population_'].filter({'Country': ['Switzerland']})
+dm_pop_fts = DM_lifestyles['fts']['pop']['lfs_population_'][1].filter({'Country': ['Switzerland']})
+
+# Dictionaries to store temporary variables
+DM_fts = {'fts': dict()}
+DM_ots = {'ots': dict()}
+
+# ======================  DATA MATRIX CREATION  ===========================================================================================================================================================================
+
+# -------------------- PKM (ots et fts) -------------------------------------------------------------------------------------------------------------------------
+# section DONNEES PKM-MONDE OTS
+# 1) Récupérer les datas ots et les placer dans DM_ots
+dm_pkm_orig = DM_transport['ots']['passenger_aviation-pkm']
+# IATA, Global Air Passenger Demand Reaches Record High in 2024
+# https://www.iata.org/en/pressroom/2025-releases/2025-01-30-01/
+value_2024 = dm_pkm_orig[0, 2019, 0, 0] * 1.038
+# Adjust dm_pkm_orig for post-covid
+dm_pkm_ots = pkm_monde_ots(dm_pkm_orig, value_2024)
+DM_transport['ots']['passenger_aviation-pkm'] = dm_pkm_ots
+del dm_pkm_ots, dm_pkm_orig
+
+
+#section DONNEES PKM-MONDE FTS
+# les trois taux annuels à tester
+pkm_rates = [0.04, 0.029, 0.02, -0.02]  #scénario 1 et 2 sont les mêmes
+DM = pkm_monde_fts(value_2024, pkm_rates)
+DM_transport['fts']['passenger_aviation-pkm'] = DM
+del pkm_rates, DM, value_2024
+
+# -------------------PASSENGER_VEC_EFFICIENCY_NEW OTS ------------------------------------------------------------------------------
+
+#section  PASSENGER_VEC_EFFICIENCY_NEW OTS
+#ICE, BEV, H2
+df_passengereff_ots = pd.read_excel('data/aviation_energy_intensity_fleet.xlsx', sheet_name = 'Feuil1')
+dm_passengereff_ots = DataMatrix.create_from_df(df_passengereff_ots, num_cat=2)
+dm_passengereff_orig = DM_transport['ots']['passenger_veh-efficiency_new'].copy()
+#dm_passengereff = merge_dm(dm_passengereff_orig, dm_passengereff_ots)
+dm_passengereff = update_from_subdm(dm_passengereff_orig, dm_passengereff_ots)
+DM_transport['ots']['passenger_veh-efficiency_new'] = dm_passengereff
+del dm_passengereff_orig, dm_passengereff_ots
+
+
+#section DONNES PKM-SUISSE OTS
+#file = 'data/pkm_suisse.xlsx'
+file = 'data/aviation_pkm_suisse.csv'
+dm_pkm_ots = DM_transport['ots']['passenger_aviation-pkm'].copy()
+df = pd.read_csv(file, sep=';', decimal=',')
+df.drop(['Unnamed: 0'], axis=1, inplace=True)
+dm_pkmsuisse_ots = DataMatrix.create_from_df(df, num_cat=1)
+dm_pkmsuisse_ots.rename_col('tra_pkm-cap', 'tra_pkm-suisse-cap', dim='Variables')
+
+dm_pkm_ots = adj_pkm_monde_ots(dm_pkmsuisse_ots, dm_pkm_ots)
+DM_transport['ots']['passenger_aviation-pkm'] = dm_pkm_ots.copy()
+DM_ots['ots']['passenger_aviation-pkm-suisse'] = dm_pkmsuisse_ots.copy()
+
+
+#section DONNES PKM-SUISSE FTS
+pkm_rates = [0.04, 0.029, 0.02, 0.02]
+DM = pkm_suisse_fts(pkm_rates, dm_pkmsuisse_ots, years_ots, years_fts)
+DM_fts['fts']['passenger_aviation-pkm-suisse'] = DM
+del DM
+
+
+# -------------------- OCCUPANCY_OTS --------------------------------------------------------------------------------------
+
+#section DONNEES OCCUPANCY SUISSE OTS
+
+file = 'data/aviation_occupancy_ots.xlsx'
+dm_occupancy_ots = occupancy_suisse_ots(file, years_ots)
+DM_ots['ots']['passenger_occupancy-suisse'] = dm_occupancy_ots
+
+
+#section DONNEES OCCUPANCY MONDE OTS
+
+
 file = 'data/aviation_occupancy_pondere_ots.xlsx'
 dm_occupancyworld_ots = occupancy_global_ots(file, years_ots)
 
 #section CALCUL OCCUPANCY PONDEREE OTS
-
-
-def occupancy_monde_ots(dm_pkm_suisse, dm_pkm_tot, dm_occupancy_ots, dm_occupancyworld_ots):
-    # occupancy = (pkm_CH * occupancy_CH + (pkm_tot - pkm_CH) * occupancy_world) / pkm_tot
-    array_occupancyponderee = (dm_pkm_suisse[...]*dm_occupancy_ots[...] + (dm_pkm_tot[...] - dm_pkm_suisse[...])*dm_occupancyworld_ots[...])/ (dm_pkm_tot[...])
-    dm_occupancyworld_ots.add(array_occupancyponderee, dim= 'Variables', col_label= 'tra_passenger_occupancy_ponderee', unit = '%')
-    dm_occupancyworld_ots.drop(dim='Variables', col_label=['tra_passenger_occupancy'])
-    dm_occupancyworld_ots.rename_col('tra_passenger_occupancy_ponderee', 'tra_passenger_occupancy', dim='Variables')
-    dm_occupancyworld_ots.fill_nans(dim_to_interp='Years')
-    dm_occupancyworld_ots.change_unit('tra_passenger_occupancy', old_unit='%', new_unit='pkm/vkm', factor=1)
-
-    return dm_occupancyworld_ots
-
-
 dm_pkm_suisse = DM_ots['ots']['passenger_aviation-pkm-suisse'].copy()
 dm_pkm_tot = DM_transport['ots']['passenger_aviation-pkm'].copy()
 dm_occupancy_monde_ots = occupancy_monde_ots(dm_pkm_suisse, dm_pkm_tot, dm_occupancy_ots, dm_occupancyworld_ots)
-DM_transport['ots']['passenger_occupancy'].append(dm_occupancyworld_ots, dim='Categories1')
+dm_occupancy_orig = DM_transport['ots']['passenger_occupancy']
+dm_occupancy_update = update_from_subdm(dm_occupancy_orig, dm_occupancy_monde_ots)
 
 del dm_pkm_tot, dm_pkm_suisse, dm_occupancy_monde_ots, dm_occupancyworld_ots, dm_occupancy_ots
 
@@ -322,40 +476,6 @@ DM_fts['fts']['passenger_occupancy-suisse'] = {}
 DM_fts['fts']['passenger_occupancy-monde'] = {}
 
 #section DONNEES OCCUPANCY SUISSE FTS
-
-
-def occupancy_fts(value_2023, scenarios):
-    # 3) Années à générer
-    years = list(range(2024, 2051))
-    DM = dict()
-    #pour nommer dans la boucle les scénarios 1,2,3,4
-    for lev in range(4):
-        # Transformer le scénario en valeur finale d'occupancy (%) en 2050
-        value_2050 = scenarios[lev]
-
-        # On crée d'abord une grille linéaire de 2023→2050
-        all_years = [2023] + years
-        all_values = np.linspace(value_2023, value_2050, num=len(all_years))
-
-        # On construit le DataFrame, puis on retire la ligne 2023
-        df_scenario = pd.DataFrame({
-            'Country' : 'Switzerland',
-            'Years': all_years,
-            'tra_passenger_occupancy[%]': all_values,
-           }).query("Years >= 2024").reset_index(drop=True)
-
-        # On convertit en DataMatrix
-        dm_scenario = DataMatrix.create_from_df(df_scenario, num_cat=0)
-
-        # On ajoute au dictionnaire sous une clé descriptive
-        dm_scenario.rename_col('tra_passenger_occupancy', 'tra_passenger_occupancy_aviation', dim='Variables')
-        dm_scenario.change_unit('tra_passenger_occupancy_aviation', factor=1, old_unit='%', new_unit='pkm/vkm')
-        dm_scenario.filter({'Years': years_fts}, inplace=True)
-        dm_scenario.deepen()
-        DM[lev+1] = dm_scenario
-    return DM
-
-
 # 1) Valeur connue en 2023 (différente façon de faire)
 dm_occupancy_ots = DM_ots['ots']['passenger_occupancy-suisse'].copy()
 value_2023 = dm_occupancy_ots[0, 2023, 0, 0]
@@ -370,7 +490,7 @@ value_2023 = dm_occupancyworld_ots[0, 2023, 0, 0]
 DM = occupancy_fts(value_2023, scenarios)
 for lev in DM.keys():
     dm_orig = DM_transport['fts']['passenger_occupancy'][lev].copy()
-    dm_orig.append(DM[lev], dim='Categories1')
+    dm_orig = update_from_subdm(dm_orig, DM[lev])
     DM_transport['fts']['passenger_occupancy'][lev] = dm_orig
 
 del dm_occupancyworld_ots, dm_occupancy_ots, value_2023, file, DM
@@ -378,65 +498,15 @@ del dm_occupancyworld_ots, dm_occupancy_ots, value_2023, file, DM
 # -------------------- PASSENGER_TECHNOLOGY_SHARE_NEW OTS ----------------------------------------------------------------------------------------------------------------------------
 
 #section  PASSENGER_TECHNOLOGY_SHARE_NEW OTS
-
-
-
 # création de la datamatrix pour technology_share à partir du fichier excel
 df_technoshare_new = pd.read_excel('data/aviation_passenger_technology_share_new_ots.xlsx')
 dm_technoshare_new = DataMatrix.create_from_df(df_technoshare_new, num_cat=2)
 
 # Merge aviation tech-share-new with tech-share-new for other mode of transport
 dm_technoshare_orig = DM_transport['ots']['passenger_technology-share_new'].copy()
-dm_technoshare = merge_dm(dm_technoshare_orig, dm_technoshare_new)
+dm_technoshare = update_from_subdm(dm_technoshare_orig, dm_technoshare_new)
 
 DM_transport['ots']['passenger_technology-share_new'] = dm_technoshare
-
-# -------------------- PASSENGER_TECHNOLOGY_SHARE_NEW FTS ----------------------------------------------------------------------------------------------------------------
-
-#for lev in range(4):
-#    DM_transport['fts']['passenger_technology-share_new'][lev+1].add(np.nan, dummy=True, dim='Categories1', col_label= ['aviation'])
-#    DM_transport['fts']['passenger_technology-share_new'][lev+1].add(np.nan, dummy=True, dim='Categories2', col_label= ['H2'])
-
-#
-# df_test = DM_fts['fts']['passenger_occupancy-suisse']['3'].write_df()
-# df_test.to_csv('data/passenger_occupancy-suisse_3.csv', sep = ',')
-
-# df_test = DM_fts['fts']['passenger_occupancy-suisse']['4'].write_df()
-# df_test.to_csv('data/passenger_occupancy-suisse_4.csv', sep = ',')
-#
-# df_test = DM_fts['fts']['passenger_occupancy-monde']['1'].write_df()
-# df_test.to_csv('data/passenger_occupancy-monde_1.csv', sep = ',')
-#
-# df_test = DM_fts['fts']['passenger_occupancy-monde']['2'].write_df()
-# df_test.to_csv('data/passenger_occupancy-monde_2.csv', sep = ',')
-#
-# df_test = DM_fts['fts']['passenger_occupancy-monde']['3'].write_df()
-# df_test.to_csv('data/passenger_occupancy-monde_3.csv', sep = ',')
-#
-# df_test = DM_fts['fts']['passenger_occupancy-monde']['4'].write_df()
-# df_test.to_csv('data/passenger_occupancy-monde_4.csv', sep = ',')
-#
-# df_test = DM_fts['fts']['passenger_aviation-pkm-monde']['4'].write_df()
-# df_test.to_csv('data/passenger_pkm-monde.csv', sep = ',')
-#
-# df_test = DM_fts['fts']['passenger_aviation-pkm-suisse']['4'].write_df()
-# df_test.to_csv('data/passenger_pkm-suisse.csv', sep = ',')
-#
-# df_test = DM_lifestyles['ots']['pop']['lfs_population_']
-# df_test.to_csv('data/population-suisse-ots.csv', sep = ',')
-#
-# df_test = DM_ots['ots']['passenger_aviation-pkm-suisse'].write_df()
-# df_test.to_csv('data/passenger_pkm-suisse_ots.csv', sep = ',')
-#
-# df_test = DM_ots['ots']['passenger_occupancy-suisse'].write_df()
-# df_test.to_csv('data/passenger_occupancy-suisse_ots.csv', sep = ',')
-#
-# df_test = DM_ots['ots']['passenger_occupancy-monde'].write_df()
-# df_test.to_csv('data/passenger_occupancy-monde_ots.csv', sep = ',')
-#
-# df_test = DM_ots['ots']['passenger_aviation-pkm-monde'].write_df()
-# df_test.to_csv('data/passenger_pkm-monde_ots.csv', sep = ',')
-
 
 
 # -------------------PASSENGER_VEC_EFFICIENCY_NEW FTS ------------------------------------------------------------------------------
@@ -485,7 +555,7 @@ for i, rate in enumerate(reduction_rates, start=1):
 for lev in DM.keys():
     dm_eff_orig = DM_transport['fts']['passenger_veh-efficiency_new'][lev]
     dm_eff_aviation = DM[lev]
-    dm_eff = merge_dm(dm_eff_orig, dm_eff_aviation)
+    dm_eff = update_from_subdm(dm_eff_orig, dm_eff_aviation)
     DM_transport['fts']['passenger_veh-efficiency_new'][lev] = dm_eff
 
 # -------------------PASSENGER_UTILISATION_RATE OTS ---------------------------------------------------------------------------------
@@ -516,14 +586,15 @@ df_utilirate_fts = pd.read_excel('data/aviation_utilisation-rate-FTS.xlsx')
 dm_utilirate_fts = DataMatrix.create_from_df(df_utilirate_fts, num_cat=1)
 dm_utilirate_fts.filter({'Years': years_fts}, inplace=True)
 for lev in range(4):
-    DM_transport['fts']['passenger_utilization-rate'][lev+1].append(dm_utilirate_fts, dim='Categories1')
-
+    dm_orig = DM_transport['fts']['passenger_utilization-rate'][lev+1]
+    dm_orig = update_from_subdm(dm_orig, dm_utilirate_fts)
+    DM_transport['fts']['passenger_utilization-rate'][lev + 1] = dm_orig
 
 # ------------------- CONSTANT : EMISSION FACTOR ------------------------------------------------------------------------------
 
 #section EMISSION FACTOR
 dm_const = DM_transport['constant']
-dm_const.add( np.nan, dim='Categories2', col_label=['SAF', 'H2'], dummy=True)
+#dm_const.add( np.nan, dim='Categories2', col_label=['SAF', 'H2'], dummy=True)
 idx = dm_const.idx
 dm_const.array[0, idx['CO2'], idx['kerosene']] = 73.3*3  # gCO2/MJ
 dm_const.array[0, idx['CO2'], idx['SAF']] = 73.3*2  # gCO2/MJ
@@ -538,7 +609,7 @@ df_lifetime = pd.read_excel('data/aviation_vehicles_lifetime.xlsx')
 dm_lifetime = DataMatrix.create_from_df(df_lifetime, num_cat=2)
 dm_lifetime.add(25, dim='Years', dummy=True, col_label=years_fts)
 dm_lifetime_orig = DM_transport['fxa']['passenger_vehicle-lifetime']
-dm_lifetime_merge = merge_dm(dm_lifetime_orig, dm_lifetime)
+dm_lifetime_merge = update_from_subdm(dm_lifetime_orig, dm_lifetime)
 DM_transport['fxa']['passenger_vehicle-lifetime'] = dm_lifetime_merge
 
 # ------------------ FXA : PASSENGER_TECH -----------------------------------------------------------------------------
@@ -564,76 +635,6 @@ dm_new_vehicules_max.add(0, dim='Years', dummy=True, col_label=years_ots)
 dm_new_vehicules_max.sort('Years')
 DM_transport['fxa']['vehicles-max'] = dm_new_vehicules_max
 
-
-# ======================  EXAMPLES  ===================================================================
-'''
-print('hello')
-
-# Unify datas on the same plot using append function
-dm_pkmaviation_ots = DM_transport['ots']['passenger_aviation-pkm'].filter({'Country': ['Switzerland']})
-#dm_pkmaviation_ots.datamatrix_plot()
-
-dm_pkmaviation_fts = DM_transport['fts']['passenger_aviation-pkm'][1].filter({'Country': ['Switzerland']})
-#dm_pkmaviation_fts.datamatrix_plot()
-
-dm_pkmaviation_ots.append(dm_pkmaviation_fts, dim='Years')
-#dm_pkmaviation_ots.datamatrix_plot()
-
-#take a category and rename it
-dm_occupancy_ots = DM_transport['ots']['passenger_occupancy'].filter({'Country': ['Switzerland'],'Categories1': ['LDV']})
-dm_occupancy_ots.rename_col("LDV", "aviation","Categories1")
-
-# Once you load dm (pour diviser pkm par pop)
-#dm=dm.flatten()
-#dm.append(dm_pop,dim='Variables')
-#dm.operation
-
-# pour créer un data array a partir de la data matrix puis recréer la data matrix
-df_tmp = dm.write_df()
-dm_1 = DataMatrix.create_from_df(df_tmp, num_cat=1)
-
-# version avec chatgpt de création de occupancy ots
-# 1) Identifier et créer les années manquantes avant 2006
-start_year, first_data_year = 1990, df['Years'].min()
-missing_years = list(range(start_year, first_data_year))
-# construire un DataFrame pour ces années
-missing_df = pd.DataFrame({
-    'Country': df['Country'].iloc[0],    # "Switzerland"
-    'Years': missing_years,
-    'tra_passenger_occupancy_aviation[%]': np.nan
-})
-
-# 2) Concaténer, trier et réinitialiser l’index
-df = pd.concat([df, missing_df], ignore_index=True)
-df = df.sort_values('Years').reset_index(drop=True)
-
-# 3) Convertir en types numériques si besoin
-df['tra_passenger_occupancy_aviation[%]'] = pd.to_numeric(
-    df['tra_passenger_occupancy_aviation[%]'],
-    errors='coerce'
-)
-
-# 4) Interpolation linéaire
-df['tra_passenger_occupancy_aviation[%]'] = (
-    df['tra_passenger_occupancy_aviation[%]']
-      .interpolate(method='linear', limit_direction='both')
-)
-
-# 5) Réaffecter dans DM_ots
-DM_ots['ots']['occupancy_aviation_ots'] = df
-
-test = DataMatrix.create_from_df(df, 0)
-'''
-
-def compute_seats(dm_pkm, dm_utilirate, dm_occupancy, dm_pop, subfix):
-    # seat ots = pkm_ots / occupancy_ots (pkm/skm) / utilisation-rate
-    arr_seat = dm_pkm.array/dm_occupancy.array/dm_utilirate.array*dm_pop.array[..., np.newaxis]
-    arr_skm = dm_pkm.array/dm_occupancy.array*dm_pop.array[..., np.newaxis]
-    dm_occupancy.add(arr_seat, dim='Variables', col_label='tra_passenger_seats'+subfix, unit='seat')
-    dm_occupancy.add(arr_skm, dim='Variables', col_label='tra_passenger-demand-skm'+subfix, unit='skm')
-    dm_seats = dm_occupancy.filter({'Variables': ['tra_passenger_seats'+subfix]})
-    dm_skm = dm_occupancy.filter({'Variables': ['tra_passenger-demand-skm'+subfix]})
-    return dm_seats, dm_skm
 
 # SEATS ABROAD - OTS
 dm_pkm_tmp = DM_transport['ots']['passenger_aviation-pkm'].copy()
@@ -664,21 +665,6 @@ dm_occupancy = DM_fts['fts']['passenger_occupancy-suisse'][1].copy()
 dm_seats_fts_CH, dm_skm_fts_CH = compute_seats(dm_pkm_tmp, dm_utilirate, dm_occupancy, dm_pop_fts, subfix='_CH')
 del dm_pkm_tmp, dm_utilirate, dm_occupancy_ots
 
-
-def compute_share_emissions(dm_skm_CH, dm_skm_abroad):
-    # Emissions = skm x MJ/skm x CO2/MJ
-    # Emissions_CH = skm_CH x (MJ/skm x CO2/MJ)_CH
-    # Emissions_abroad = skm_abroud x (MJ/skm x CO2/MJ)_abroad
-    # Emission_CH / Emissions_abroad = skm_CH / skm_abroad ----> seats_CH / seats_abroad
-    # Multiply by 2 the Swiss seats to obtain emissions according to sold quantity principle
-    dm_skm_CH[:, :, 'tra_passenger-demand-skm_CH', ...] = 2 * dm_skm_CH[:, :, 'tra_passenger-demand-skm_CH', ...]
-    dm_skm_CH.append(dm_skm_abroad, dim='Variables')
-    dm_skm_CH.operation('tra_passenger-demand-skm_CH', '/', 'tra_passenger-demand-skm',
-                        out_col='tra_share-emissions-local', unit='%')
-    dm_emiss_share = dm_skm_CH.filter({'Variables': ['tra_share-emissions-local']})
-    # dm_emiss_share.add(np.nan, col_label=years_fts, dim='Years', dummy=True)
-    #inear_fitting(dm_emiss_share, years_fts, based_on=create_years_list(2015, 2019, 1))
-    return dm_emiss_share
 
 dm_skm_CH = dm_skm_ots_CH.copy()
 dm_skm_abroad = dm_skm_ots.copy()
@@ -736,7 +722,7 @@ arr_util_rate = dm_pkm_tmp.array * dm_pop.array[..., np.newaxis]/(dm_occupancy_o
 dm_utilirate = DM_ots['ots']['passenger_utilization-rate']
 dm_utilirate.array = arr_util_rate
 dm_utilirate_orig = DM_transport['ots']['passenger_utilization-rate']
-dm_utilrate_new = merge_dm(dm_utilirate_orig, dm_utilirate, union_dim=[], along_dim='Categories1')
+dm_utilrate_new = update_from_subdm(dm_utilirate_orig, dm_utilirate)
 DM_transport['ots']['passenger_utilization-rate'] = dm_utilrate_new
 
 # SECTION: PASSENGER TECH
@@ -746,136 +732,14 @@ tech_aviation = dm_pass_tech_aviation.col_labels['Categories2']
 dm_pass_tech_aviation.append(dm_fleetshare.filter({'Categories2': tech_aviation}), dim='Variables')
 dm_pass_tech_aviation.append(dm_fleet_eff.filter({'Categories2': tech_aviation}), dim='Variables')
 dm_pass_tech_orig = DM_transport['fxa']['passenger_tech']
-dm_pass_tech = merge_dm(dm_pass_tech_orig, dm_pass_tech_aviation)
+dm_pass_tech = update_from_subdm(dm_pass_tech_orig, dm_pass_tech_aviation)
 DM_transport['fxa']['passenger_tech'] = dm_pass_tech.copy()
 
 
 # SECTION: NEW-TECH SHARE FTS
 dm_max = DM_transport['fxa']['vehicles-max'].copy()
 
-def compute_new_veh_max(dm_max):
-    years_fts_all = create_years_list(2025, 2050, 1)
-    missing_years = list(set(years_fts_all) - set(years_fts))
-    dm_max.add(np.nan, dim='Years', col_label=missing_years, dummy=True)
-    dm_max.sort(dim='Years')
-    dm_max.fill_nans('Years')
-    # Compute new fleet as s(t) = s(t-1) + new(t) - waste(t), by assuming waste(t) = 0 for H2, BEV
-    # then n(t) = s(t) - s(t-1)
-    dm_max.lag_variable('tra_vehicles-max', shift=1, subfix='_tm1')
-    dm_max.operation('tra_vehicles-max', '-', 'tra_vehicles-max_tm1', out_col='tra_new-vehicles-max', unit='seat')
-    dm_max.add(0, dim='Variables', col_label='tra_vehicles-waste-max', dummy=True, unit='seat')
-    dm_max.drop(col_label='tra_vehicles-max_tm1', dim='Variables')
-    dm_max.filter({'Years': years_fts_all}, inplace=True)
-    return dm_max
-
 dm_max = compute_new_veh_max(dm_max)
-
-
-"""
-# SEATS MONDE
-# seat = pkm / occupancy (pkm/skm) / utilisation-rate (skm/seat)
-dm_occupancy_fts = DM_transport['fts']['passenger_occupancy'][4].filter({'Categories1': ['aviation']})
-#dm_pkm = DM_fts['fts']['passenger_aviation-pkm-monde']['1'].filter({'Years': years_fts})
-dm_pkm_tmp = DM_transport['fts']['passenger_aviation-pkm'][3].filter({'Categories1': ['aviation']})
-dm_pkm_4 = DM_transport['fts']['passenger_aviation-pkm'][4].filter({'Categories1': ['aviation']})
-dm_utilirate = dm_utilirate_fts.filter({'Years': years_fts})
-dm_seats_fts, dmtmp = compute_seats(dm_pkm_tmp.copy(), dm_utilirate.copy(), dm_occupancy_fts.copy(), dm_pop_fts.copy(), subfix='')
-dm_seats_fts_4, dmtmp = compute_seats(dm_pkm_4.copy(), dm_utilirate.copy(), dm_occupancy_fts.copy(), dm_pop_fts.copy(), subfix='')
-del dm_pkm_tmp, dm_utilirate, dm_occupancy_fts, dmtmp
-
-
-def compute_tech_new(dm_retirrate, dm_seats_fts, dm_max):
-    years_fts_all = create_years_list(2025, 2050, 1)
-    missing_years = list(set(years_fts_all) - set(years_fts))
-    # Compute new seats from total seats, using the average retirement-rate from 2000 - 2020
-    dm_rr_keep = dm_retirrate.filter({'Years': create_years_list(2000, 2019, 1), 'Variables': ['tra_retirement-rate']})
-    avg_rr = np.average(dm_rr_keep.array)
-    # n(t) = s(t) - s(t-1) + rr(t)*s(t-1) = s(t) - (1-rr)*s(t-1)
-    dm_seats_fts.add(np.nan, dim='Years', dummy=True, col_label=missing_years)
-    dm_seats_fts.sort('Years')
-    dm_seats_fts.fill_nans('Years')
-
-    dm_seats_fts.lag_variable('tra_passenger_seats', shift=1, subfix='_tm1')
-    waste_arr = avg_rr*dm_seats_fts[0, :, 'tra_passenger_seats_tm1', 'aviation']
-    new_arr = dm_seats_fts[0, :, 'tra_passenger_seats', 'aviation'] - \
-              dm_seats_fts[0, :, 'tra_passenger_seats_tm1', 'aviation'] + waste_arr
-    dm_seats_fts.add(waste_arr[np.newaxis, :, np.newaxis, np.newaxis], dim='Variables', col_label='tra_vehicles-waste-max_tot', unit='seat')
-    dm_seats_fts.add(new_arr[np.newaxis, :, np.newaxis, np.newaxis], dim='Variables', col_label='tra_new-vehicles-max_tot', unit='seat')
-    dm_seats_fts.rename_col('tra_passenger_seats', 'tra_vehicles-max_tot', dim='Variables')
-
-    dm_seats_fts.drop(col_label='tra_passenger_seats_tm1', dim='Variables')
-    dm_seats_fts.deepen(based_on='Variables')
-
-    dm_max.append(dm_seats_fts, dim='Categories2')
-
-    dm_max.add(0, col_label='kerosene', dim='Categories2', dummy=True)
-    # ICE = tot - BEV - H2
-    dm_max[0, :, :, 'aviation', 'kerosene'] = dm_max[0, :, :, 'aviation', 'tot'] - dm_max[0, :, :, 'aviation', 'BEV'] \
-                                            - dm_max[0, :, :, 'aviation', 'H2']
-
-    mask = np.any(dm_max.array < 0, axis=-1)
-    if mask.any():
-        dm_tot = dm_max.filter({'Categories2': ['tot']})
-        dm_max.drop('Categories2', 'tot')
-        idx = dm_max.idx
-        dm_max.array[mask, idx['kerosene']] = 0
-        dm_max.normalise('Categories2')
-        dm_max.array[...] = dm_max.array[...] * dm_tot.array[...]
-
-    # LEVEL 4 - HIGHEST PENETRATION OF BEV, H2
-    dm_new_tech = dm_max.filter({'Variables': ['tra_new-vehicles-max'], 'Categories2': ['kerosene', 'BEV', 'H2']})
-    dm_new_tech.normalise(dim='Categories2', inplace=True, keep_original=False)
-    dm_new_tech.rename_col('tra_new-vehicles-max', 'tra_passenger_technology-share_new', dim='Variables')
-    dm_new_tech.filter({'Years': years_fts}, inplace=True)
-    return dm_new_tech, dm_max
-"""
-#dm_new_tech_4, dm_tmp = compute_tech_new(dm_retirrate.copy(), dm_seats_fts_4.copy(), dm_max.copy())
-#dm_new_tech, dm_max = compute_tech_new(dm_retirrate.copy(), dm_seats_fts.copy(), dm_max.copy())
-
-def compute_tech_new_from_newfleet(dm_fleet_ofts, dm_max):
-    # Extract new, fleet, waste from pickle saved during run
-    dm_new_veh_demand = dm_fleet_ofts.filter({'Variables': ['tra_passenger_new-vehicles', 'tra_passenger_vehicle-fleet',
-                                                            'tra_passenger_vehicle-waste']})
-    dm_new_veh_demand.rename_col(['tra_passenger_new-vehicles', 'tra_passenger_vehicle-fleet', 'tra_passenger_vehicle-waste'],
-                                 ['tra_new-vehicles-max_tot', 'tra_vehicles-max_tot', 'tra_vehicles-waste-max_tot'], dim='Variables')
-    for var in dm_new_veh_demand.col_labels['Variables']:
-        dm_new_veh_demand.change_unit(var, factor=1, old_unit='number', new_unit='seat')
-
-    dm_new_veh_demand.deepen(based_on='Variables')
-
-    # Add all Years from 2025 to 2050
-    years_fts_all = create_years_list(2025, 2050, 1)
-    missing_years = list(set(years_fts_all) - set(years_fts))
-    dm_new_veh_demand.add(np.nan, dim='Years', dummy=True, col_label=missing_years)
-    dm_new_veh_demand.sort('Years')
-    dm_new_veh_demand.fill_nans('Years')
-    dm_new_veh_demand.filter({'Years': years_fts_all}, inplace=True)
-
-    # Append max fleet of new tech with fleet of all tech from run
-    dm_max.append(dm_new_veh_demand, dim='Categories2')
-
-    dm_max.add(0, col_label='kerosene', dim='Categories2', dummy=True)
-    # ICE = tot - BEV - H2
-    dm_max[0, :, :, 'aviation', 'kerosene'] = dm_max[0, :, :, 'aviation', 'tot'] - dm_max[0, :, :, 'aviation', 'BEV'] \
-                                              - dm_max[0, :, :, 'aviation', 'H2']
-
-    # If the demand for new planes is less than the new tech available
-    mask = np.any(dm_max.array < 0, axis=-1)
-    if mask.any():
-        dm_tot = dm_max.filter({'Categories2': ['tot']})
-        dm_max.drop('Categories2', 'tot')
-        idx = dm_max.idx
-        dm_max.array[mask, idx['kerosene']] = 0
-        dm_max.normalise('Categories2')
-        dm_max.array[...] = dm_max.array[...] * dm_tot.array[...]
-
-    # LEVEL 4 - HIGHEST PENETRATION OF BEV, H2
-    dm_new_tech = dm_max.filter({'Variables': ['tra_new-vehicles-max'], 'Categories2': ['kerosene', 'BEV', 'H2']})
-    dm_new_tech.normalise(dim='Categories2', inplace=True, keep_original=False)
-    dm_new_tech.rename_col('tra_new-vehicles-max', 'tra_passenger_technology-share_new', dim='Variables')
-    dm_new_tech.filter({'Years': years_fts}, inplace=True)
-    dm_new_tech.fill_nans('Years')
-    return dm_new_tech, dm_max
 
 file_tech_lev4 = 'data/tra_aviation_fleet_lev4.pickle'
 with open(file_tech_lev4, 'rb') as handle:
@@ -889,11 +753,11 @@ with open(file_tech_lev3, 'rb') as handle:
 dm_new_tech_3, dm_max = compute_tech_new_from_newfleet(dm_tech_3, dm_max.copy())
 
 dm_new_tech_orig = DM_transport['fts']['passenger_technology-share_new'][3]
-dm_3 = merge_dm(dm_new_tech_orig, dm_new_tech_3)
+dm_3 = update_from_subdm(dm_new_tech_orig, dm_new_tech_3)
 DM_transport['fts']['passenger_technology-share_new'][3] = dm_3
 
 dm_new_tech_orig = DM_transport['fts']['passenger_technology-share_new'][4]
-dm_4 = merge_dm(dm_new_tech_orig, dm_new_tech_4)
+dm_4 = update_from_subdm(dm_new_tech_orig, dm_new_tech_4)
 DM_transport['fts']['passenger_technology-share_new'][4] = dm_4
 
 # LEVEL 1 - NO BEV, H2
@@ -901,14 +765,14 @@ dm_new_tech_1 = dm_new_tech_3.copy()
 dm_new_tech_1[...] = 0
 dm_new_tech_1[..., 'kerosene'] = 1
 dm_new_tech_orig = DM_transport['fts']['passenger_technology-share_new'][1]
-dm_1 = merge_dm(dm_new_tech_orig, dm_new_tech_1)
+dm_1 = update_from_subdm(dm_new_tech_orig, dm_new_tech_1)
 DM_transport['fts']['passenger_technology-share_new'][1] = dm_1
 
 # LEVEL 2 / 3 intermediate
 dm_new_tech_2 = dm_new_tech_1.copy()
 dm_new_tech_2.array = 1/2*dm_new_tech_1.array + 1/2*dm_new_tech_3.array
 dm_new_tech_orig = DM_transport['fts']['passenger_technology-share_new'][2]
-dm_2 = merge_dm(dm_new_tech_orig, dm_new_tech_2)
+dm_2 = update_from_subdm(dm_new_tech_orig, dm_new_tech_2)
 DM_transport['fts']['passenger_technology-share_new'][2] = dm_2
 
 
@@ -995,24 +859,6 @@ for new_country in all_countries:
     add_dummy_country_to_DM(DM_transport, new_country, 'Switzerland')
 
 # Add aviation to DM_transport_orig
-def add_missing_cat_DM(DM_orig, DM_new):
-    for key in DM_orig.keys():
-        if isinstance(DM_orig[key], dict):
-            if 'freight' not in key and key != 'passenger_aviation-pkm':
-                add_missing_cat_DM(DM_orig[key], DM_new[key])
-        else:
-            dm_orig = DM_orig[key]
-            dm_new = DM_new[key]
-            if 'Categories1' in dm_new.dim_labels:
-                if 'aviation' in dm_new.col_labels['Categories1'] and 'freight' not in str(key) and key != 'passenger_aviation-pkm':
-                    dm_new.filter({'Categories1': ['aviation']}, inplace=True)
-                    if 'Categories2' in dm_orig.dim_labels:
-                        dm = merge_dm(dm_orig, dm_new, union_dim=['Categories2'], along_dim='Categories1')
-                    else:
-                        dm = merge_dm(dm_orig, dm_new, along_dim='Categories1', union_dim=[])
-                    DM_orig[key] = dm.copy()
-    return
-
 add_missing_cat_DM(DM_transport_orig, DM_transport)
 
 # Overwrite passenger_aviation-pkm
@@ -1042,11 +888,11 @@ for lev in range(4):
 
 DM_transport_orig['constant'] = DM_transport['constant']
 
-f = '../../../data/datamatrix/transport_new.pickle'
-with open(f, 'wb') as handle:
-    pickle.dump(DM_transport_orig, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-sort_pickle('../../../data/datamatrix/transport_new.pickle')
+f = '../../../data/datamatrix/transport.pickle'
+#with open(f, 'wb') as handle:
+#    pickle.dump(DM_transport_orig, handle, protocol=pickle.HIGHEST_PROTOCOL)
+my_pickle_dump(DM_transport_orig, f)
+sort_pickle('../../../data/datamatrix/transport.pickle')
 
 
 
