@@ -706,14 +706,14 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
     df_energy_demand = pd.merge(df_energy_demand, df_petroleum, on='timescale', how='outer')
     df_energy_demand = pd.merge(df_energy_demand, df_biogas, on='timescale', how='outer')
 
+    # Fill nan with 0.0
+    df_energy_demand[:].fillna(0.0, inplace=True)
+
     # Biodisel = huiles végétales animales + biodiesel
     df_energy_demand['Biodiesel'] = df_energy_demand['Biodiesel'] + df_energy_demand['Huiles vég. / anim.']
 
-    # Oth energies = renouvelables energies - bioenergies considered
-    df_energy_demand['Other energies'] = df_energy_demand['Autres énergies renouvelables'] -\
-                                         df_energy_demand['Biodiesel'] - \
-                                         df_energy_demand['Bioéthanol / Biométhanol'] - \
-                                         df_energy_demand['Biogas cons. Agr']
+    # Oth energies = other renouvelables energies
+    df_energy_demand['Other energies'] = df_energy_demand['Autres énergies renouvelables']
 
     # Ajouter colonnes avec 0
     df_energy_demand['LPG'] = 0.0
@@ -4720,6 +4720,11 @@ def calibration_formatting(df_diet_calibration, df_domestic_supply_calibration, 
     df_calibration_ext = linear_fitting_ots_db(df_calibration_struct, years_ots,
                                                 countries='all')
 
+    # Replace values <0 with 0 for energy-demand
+    # Replace negative 'value' with 0 when 'variables' contains 'energy-demand' (case-insensitive)
+    mask = df_calibration_ext['variables'].str.contains('energy-demand',case=False,na=False) & (df_calibration_ext['value'] < 0)
+    df_calibration_ext.loc[mask, 'value'] = 0
+
     # Filter to keep only data from 1990
     df_calibration_ext_agr = df_calibration_ext[df_calibration_ext["timescale"] >= 1990]
 
@@ -4906,7 +4911,7 @@ def fxa_preprocessing():
 # CalculationLeaf Pickle creation
 #  FIXME only Switzerland for now
 
-def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa):
+def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration):
     #############################################
     ##### database_from_csv_to_datamatrix() #####
     #############################################
@@ -5624,7 +5629,7 @@ df_manure_fxa = manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa, df
 # CalculationTree RUNNING FXA PRE-PROCESSING ---------------------------------------------------------------------------
 #fxa_preprocessing()
 # CalculationTree RUNNING PICKLE CREATION
-database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa) #Fixme duplicates in constants
+database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration) #Fixme duplicates in constants
 
 # CalculationTree NEW ENERGY REQUIREMENTS ------------------------------------------------------------------------------
 # The idea was to have energy requirements per demography (agr_kcal-req) based on the current consumption and not the

@@ -1723,6 +1723,10 @@ def energy_ghg_workflow(DM_energy_ghg, DM_crop, DM_land, DM_manure, dm_land, dm_
     dm_energy_demand = DM_energy_ghg['energy_demand'].filter({'Variables': ['agr_energy-demand_raw']})
     dm_cal_rates_energy_demand = calibration_rates(dm_energy_demand, dm_cal_energy_demand, calibration_start_year=1990,
                                                    calibration_end_year=2023, years_setting=years_setting)
+    # Fill NaN with 1.0 (when 0 & 0, issue with calibration)
+    array_temp = dm_cal_rates_energy_demand.array[:, :, :, :]
+    array_temp = np.nan_to_num(array_temp, nan=1.0)
+    dm_cal_rates_energy_demand.array[:, :, :, :] = array_temp
     DM_energy_ghg['energy_demand'].append(dm_cal_rates_energy_demand, dim='Variables')
     DM_energy_ghg['energy_demand'].operation('agr_energy-demand_raw', '*', 'cal_rate', dim='Variables',
                                              out_col='agr_energy-demand', unit='ktoe')
@@ -2414,4 +2418,4 @@ def agriculture_local_run():
     return
 
 
-#agriculture_local_run()
+agriculture_local_run()
