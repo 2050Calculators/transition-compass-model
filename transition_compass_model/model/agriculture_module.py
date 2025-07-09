@@ -123,7 +123,8 @@ def read_data(DM_agriculture, lever_setting):
     # Sub-matrix for ENERGY & GHG EMISSIONS
     dm_cal_energy_demand = DM_agriculture['fxa']['cal_agr_energy-demand']
     dm_energy_demand = DM_ots_fts['climate-smart-crop']['climate-smart-crop_energy-demand']
-    dm_cal_GHG = DM_agriculture['fxa']['cal_agr_emission_CH4']
+    dm_cal_GHG = DM_agriculture['fxa']['cal_agr_emissions']
+    dm_cal_GHG.deepen()
     dm_cal_input = DM_agriculture['fxa']['cal_input']
 
     # Aggregated Data Matrix - ENERGY & GHG EMISSIONS
@@ -1736,7 +1737,7 @@ def energy_ghg_workflow(DM_energy_ghg, DM_crop, DM_land, DM_manure, dm_land, dm_
     # Pre processing : filtering and deepening constants
     cdm_CO2 = CDM_const['cdm_CO2']
 
-    # Energy direct emission [MtCO2] = energy demand [ktoe] * fertilizer use [MtCO2/ktoe]
+    # Energy direct emission [MtCO2] = energy demand [ktoe] * emission factor [MtCO2/ktoe]
     dm_energy = DM_energy_ghg['energy_demand']
     idx_energy = dm_energy.idx
     idx_cdm = cdm_CO2.idx
@@ -1751,11 +1752,8 @@ def energy_ghg_workflow(DM_energy_ghg, DM_crop, DM_land, DM_manure, dm_land, dm_
     dm_CO2 = dm_CO2.flatten()
 
     # Unit conversion : Overall CO2 emission from fuel [Mt] => [t]
-    idx = dm_CO2.idx
-    var = 'agr_input-use_emissions-CO2_fuel'
-    dm_CO2.array[:, :, idx[var]] = dm_CO2.array[:, :, idx[var]] * 1e6
-    dm_CO2.units[var] = 't'
-
+    dm_CO2.change_unit('agr_input-use_emissions-CO2_fuel', 10 ** 6, old_unit='Mt',
+                 new_unit='t')  # Unit conversion [kt] => [t]
     dm_CO2 = dm_CO2.filter({'Variables': ['agr_input-use_emissions-CO2_fuel']})
     dm_CO2.deepen()
 
@@ -1843,11 +1841,6 @@ def energy_ghg_workflow(DM_energy_ghg, DM_crop, DM_land, DM_manure, dm_land, dm_
                      out_col='agr_emissions_raw', unit='t')
     # Dropping the intermediate values
     dm_ghg = dm_ghg.filter({'Variables': ['agr_emissions_raw']})
-
-    # Renaming for name matching
-    DM_energy_ghg['cal_GHG'].rename_col('CH4', 'CH4-emission', dim='Categories1')
-    DM_energy_ghg['cal_GHG'].rename_col('CO2', 'CO2-emission', dim='Categories1')
-    DM_energy_ghg['cal_GHG'].rename_col('N2O', 'N2O-emission', dim='Categories1')
 
     # Calibration GHG emissions: overall CO2, CH4, NO2
     dm_cal_ghg = DM_energy_ghg['cal_GHG']
@@ -2418,4 +2411,4 @@ def agriculture_local_run():
     return
 
 
-agriculture_local_run()
+#agriculture_local_run()

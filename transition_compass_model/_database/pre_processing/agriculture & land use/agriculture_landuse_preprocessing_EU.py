@@ -956,7 +956,7 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
                                         values='Value').reset_index()
 
     # Fil na with zeros
-    pivot_df[:].fillna(0.0, inplace=True)
+    #pivot_df[:].fillna(0.0, inplace=True)
 
     # Merge inputs with agricultural land
     pivot_df['Year'] = pivot_df['Year'].astype(str)
@@ -3933,7 +3933,7 @@ def energy_ghg_calibration(list_countries):
     # List of elements
     list_elements = ['Emissions (CH4)', 'Emissions (N2O)', 'Emissions (CO2)']
 
-    list_items = ['-- Agrifood systems + (Total)']
+    list_items = ['-- Emissions on agricultural land + (Total)']
 
     # 1990 - 2022
     ld = faostat.list_datasets()
@@ -4675,6 +4675,8 @@ def wood_calibration(list_countries):
 
     return df_wood_calibration
 
+
+
 # CalculationLeaf CALIBRATION FORMATTING
 def calibration_formatting(df_diet_calibration, df_domestic_supply_calibration, df_liv_population_calibration,
                      df_nitrogen_calibration, df_liv_emissions_calibration, df_feed_calibration,
@@ -4763,6 +4765,55 @@ def calibration_formatting(df_diet_calibration, df_domestic_supply_calibration, 
 
 
     return df_calibration_ext_agr
+
+# CalculationLeaf CNST  ------------------------------
+
+def constant():
+    # ----------------------------------------------------------------------------------------------------------------------
+    # EMISSION FACTOR [CO2/ktoe] ---------------------------------------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------------------------------------------
+
+    # Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
+
+    list_countries = ['Switzerland']
+    list_elements = ['Energy use in agriculture', 'Emissions (CO2)']
+    list_items = ['Total Energy > (List)']
+
+    # 1990 - 2022
+    ld = faostat.list_datasets()
+    code = 'GN'
+    pars = faostat.list_pars(code)
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+    my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+    list_years = ['2022']
+    my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+    my_pars = {
+        'area': my_countries,
+        'element': my_elements,
+        'item': my_items,
+        'year': my_years
+    }
+    df_ef = faostat.get_data_df(code, pars=my_pars, strval=False)
+
+    # Filter
+    df_ef = df_ef[['Item','Element', 'Value']]
+
+    # Pivot
+    df_ef = df_ef.pivot_table(index=['Item'],
+                              columns='Element',
+                              values='Value').reset_index()
+
+    # Add conversion factor from [TJ] to [ktoe]
+    tj_to_ktoe = 0.02388458966275  # source https://www.unitjuggler.com/convertir-energy-de-TJ-en-ktoe.html
+    df_ef['TJ to ktoe'] = tj_to_ktoe
+
+    # Compute emission factor
+    df_ef['EF [MtCO2/ktoe]'] = df_ef['Emissions (CO2)'] * 10**-3 / (df_ef['Energy use in agriculture'] * df_ef['TJ to ktoe'])
+
+    return df_ef
+
 
 
 # CalculationLeaf FXA - MANURE ------------------------------
@@ -5163,12 +5214,12 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     DM_agriculture_old['fxa']['cal_agr_energy-demand'] = dm_cal_energy_demand
 
     # Data - Fixed assumptions - Calibration factors - Agricultural emissions total (CH4, N2O, CO2)
-    dm_cal_CH4 = dm_cal.filter_w_regex({'Variables': 'cal_agr_emissions-CH4'})
-    DM_agriculture_old['fxa']['cal_agr_emissions_CH4'] = dm_cal_CH4
-    dm_cal_N2O = dm_cal.filter_w_regex({'Variables': 'cal_agr_emissions-N2O'})
-    DM_agriculture_old['fxa']['cal_agr_emissions_N2O'] = dm_cal_N2O
-    dm_cal_CO2 = dm_cal.filter_w_regex({'Variables': 'cal_agr_emissions-CO2'})
-    DM_agriculture_old['fxa']['cal_agr_emissions_CO2'] = dm_cal_CO2
+    dm_cal_CH4 = dm_cal.filter_w_regex({'Variables': 'cal_agr_CH4-emission'})
+    dm_cal_N2O = dm_cal.filter_w_regex({'Variables': 'cal_agr_N2O-emission'})
+    dm_cal_CO2 = dm_cal.filter_w_regex({'Variables': 'cal_agr_CO2-emission'})
+    dm_cal_CH4.append(dm_cal_N2O, dim='Variables')
+    dm_cal_CH4.append(dm_cal_CO2, dim='Variables')
+    DM_agriculture_old['fxa']['cal_agr_emissions'] = dm_cal_CH4
 
     # Data - Fixed assumptions - Calibration factors - CO2 emissions (fuel, liming, urea)
     dm_cal_input = dm_cal.filter_w_regex({'Variables': 'cal_agr_input-use_emissions-CO2.*'})
@@ -5624,6 +5675,7 @@ df_calibration = calibration_formatting(df_diet_calibration, df_domestic_supply_
                      df_land_use_fao_calibration, df_liming_urea_calibration, df_wood_calibration,
                      df_emissions_calibration, df_cropland_fao_calibration) # Fixme PerformanceWarning ?
 
+df_cnst = constant()
 df_manure_fxa = manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa)
 
 # CalculationTree RUNNING FXA PRE-PROCESSING ---------------------------------------------------------------------------
