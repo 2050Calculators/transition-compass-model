@@ -1094,7 +1094,7 @@ def livestock_manure_workflow(DM_manure, DM_livestock, dm_liv_pop, cdm_const, ye
                      unit='t')
     df_cal_rates_liv_CH4 = dm_to_database(dm_cal_rates_liv_CH4, 'none', 'agriculture', level=0)
 
-    return dm_liv_N2O, dm_CH4, df_cal_rates_liv_N2O, df_cal_rates_liv_CH4
+    return dm_liv_N2O, dm_CH4, df_cal_rates_liv_N2O, df_cal_rates_liv_CH4, DM_manure
 
 
 # CalculationLeaf FEED -------------------------------------------------------------------------------------------------
@@ -2091,7 +2091,7 @@ def agriculture_refinery_interface(DM_energy_ghg):
 def agriculture_TPE_interface(DM_livestock, DM_crop, dm_crop_other, DM_feed, dm_aps, dm_input_use_CO2, dm_crop_residues,
                               dm_CH4, dm_liv_N2O, dm_CH4_rice, dm_fertilizer_N2O, DM_energy_ghg, DM_bioenergy, dm_lgn,
                               dm_eth, dm_oil, dm_aps_ibp, DM_food_demand, dm_lfs_pro, dm_lfs, DM_land, dm_fiber,
-                              dm_aps_ibp_oil, dm_voil_tpe, DM_alc_bev, dm_biofuel_fdk, dm_liv_pop, DM_ssr, dm_fertilizer_co):
+                              dm_aps_ibp_oil, dm_voil_tpe, DM_alc_bev, dm_biofuel_fdk, dm_liv_pop, DM_ssr, dm_fertilizer_co, DM_manure):
     kcal_to_TWh = 1.163e-12
 
     # Livestock population
@@ -2261,6 +2261,21 @@ def agriculture_TPE_interface(DM_livestock, DM_crop, dm_crop_other, DM_feed, dm_
     dm_input = dm_fertilizer_co.filter({'Variables': ['agr_input-use']})
     dm_tpe.append(dm_input.flattest(), dim='Variables')
 
+    # Land use
+    dm_cropland = DM_land['yield']
+    dm_tpe.append(dm_cropland.flattest(), dim='Variables')
+
+    # Livestock slaughtered
+    dm_slaughtered = DM_livestock['liv_slaughtered_rate'].filter({'Variables': ['agr_liv_population_slau']})
+    dm_tpe.append(dm_slaughtered.flattest(), dim='Variables')
+
+    # Manure
+    dm_manure = DM_manure['liv_n-stock'].filter({'Variables': ['agr_liv_n-stock']})
+    dm_tpe.append(dm_manure.flattest(), dim='Variables')
+
+    # Grassland
+    dm_grassland = DM_livestock['ruminant_density'].filter({'Variables': ['agr_lus_land_raw_grassland','agr_climate-smart-livestock_density']})
+    dm_tpe.append(dm_grassland, dim='Variables')
 
     return dm_tpe
 
@@ -2321,7 +2336,7 @@ def agriculture(lever_setting, years_setting, DM_input, interface=Interface()):
                                                                                        dm_lfs_pro)
     DM_bioenergy, dm_oil, dm_lgn, dm_eth, dm_biofuel_fdk = bioenergy_workflow(DM_bioenergy, CDM_const, DM_ind, dm_bld,
                                                                               dm_tra)
-    dm_liv_N2O, dm_CH4, df_cal_rates_liv_N2O, df_cal_rates_liv_CH4 = livestock_manure_workflow(DM_manure, DM_livestock,
+    dm_liv_N2O, dm_CH4, df_cal_rates_liv_N2O, df_cal_rates_liv_CH4, DM_manure = livestock_manure_workflow(DM_manure, DM_livestock,
                                                                                                dm_liv_pop, CDM_const,
                                                                                                years_setting)
     DM_feed, dm_aps_ibp, dm_feed_req, dm_aps, dm_feed_demand, df_cal_rates_feed = feed_workflow(DM_feed, dm_liv_prod,
@@ -2386,7 +2401,7 @@ def agriculture(lever_setting, years_setting, DM_input, interface=Interface()):
                                             dm_crop_residues, dm_CH4, dm_liv_N2O, dm_CH4_rice, dm_fertilizer_N2O,
                                             DM_energy_ghg, DM_bioenergy, dm_lgn, dm_eth, dm_oil, dm_aps_ibp,
                                             DM_food_demand, dm_lfs_pro, dm_lfs, DM_land, dm_fiber, dm_aps_ibp_oil,
-                                            dm_voil_tpe, DM_alc_bev, dm_biofuel_fdk, dm_liv_pop, DM_ssr, dm_fertilizer_co)
+                                            dm_voil_tpe, DM_alc_bev, dm_biofuel_fdk, dm_liv_pop, DM_ssr, dm_fertilizer_co,DM_manure)
 
     return results_run
 
