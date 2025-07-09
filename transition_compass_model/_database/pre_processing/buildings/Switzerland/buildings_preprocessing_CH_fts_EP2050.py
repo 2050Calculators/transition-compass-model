@@ -91,8 +91,7 @@ filter_DM(DM_lifestyles,{'Country':['Switzerland']})
 #Swiss population since 2000
 #Mettre toute les modif dans le code au lieu que dans l'Excel
 dm_pop = DM_lifestyles['ots']['pop']['lfs_population_']['lfs_population_total']
-df = pd.DataFrame(dm_pop.squeeze(), columns=["lfs_population_total"])
-df.to_excel("lfs_population_total.xlsx", index=False)
+
 
 # --------------------------------------------------------------------------------
 # EP2050+ general data
@@ -113,8 +112,6 @@ dm_floor_intensity = DataMatrix.create_from_df(df_floor_intensity, num_cat=0)
 dm_floor_intensity.filter({'Years': years_fts}, inplace=True)
 
 dm_ots = DM_buildings['ots']['floor-intensity'].filter({'Variables': ['lfs_floor-intensity_space-cap']})
-
-years_fts
 
 dm_ots.append(dm_floor_intensity, dim='Years')
 idx = dm_ots.idx
