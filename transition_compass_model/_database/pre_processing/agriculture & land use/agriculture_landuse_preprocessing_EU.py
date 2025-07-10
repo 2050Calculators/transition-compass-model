@@ -3933,7 +3933,8 @@ def energy_ghg_calibration(list_countries):
     # List of elements
     list_elements = ['Emissions (CH4)', 'Emissions (N2O)', 'Emissions (CO2)']
 
-    list_items = ['-- Emissions on agricultural land + (Total)']
+    list_items = ['-- Emissions on agricultural land + (Total)', 'On-farm energy use', 'Drained organic soils']
+    list_sources = ['FAO TIER 1']
 
     # 1990 - 2022
     ld = faostat.list_datasets()
@@ -3942,6 +3943,7 @@ def energy_ghg_calibration(list_countries):
     my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+    my_sources = [faostat.get_par(code, 'sources')[i] for i in list_sources]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
                   '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013',
                   '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022']
@@ -3951,17 +3953,33 @@ def energy_ghg_calibration(list_countries):
         'area': my_countries,
         'element': my_elements,
         'item': my_items,
-        'year': my_years
+        'year': my_years,
+        'source': my_sources
     }
     df_emissions = faostat.get_data_df(code, pars=my_pars, strval=False)
+
+    # Create a column with the Element and Item
+    df_emissions['Element'] = df_emissions['Element'] + ' ' + \
+                                df_emissions['Item']
 
     # Filtering to keep wanted columns
     columns_to_filter = ['Area', 'Element', 'Year', 'Value']
     df_emissions = df_emissions[columns_to_filter].copy()
 
-    # Pivot the df
-    df_emissions = df_emissions.pivot_table(index=['Area', 'Year', 'Element'],
-                                          values='Value').reset_index()
+    # 1. Pivot to have Elements as columns for easy calculation
+    df_pivot = df_emissions.pivot_table(index=['Area', 'Year'], columns='Element',
+                              values='Value')
+
+    # 2. Perform the subtraction
+    df_pivot['Emissions (N2O) Emissions on agricultural land - Drained organic soils'] = df_pivot['Emissions (N2O) Emissions on agricultural land'] - \
+                         df_pivot['Emissions (N2O) Drained organic soils (N2O)']
+
+    # 1. Reset index to bring Area and Year back as columns
+    df_reset = df_pivot.reset_index()
+
+    # 2. Melt to long format
+    df_emissions = df_reset.melt(id_vars=['Area', 'Year'], var_name='Element',
+                              value_name='Value')
 
     # Unit conversion [kt] => [t]
     df_emissions['Value'] = df_emissions['Value'] * 10**(3)

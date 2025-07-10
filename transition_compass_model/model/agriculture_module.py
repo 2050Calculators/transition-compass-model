@@ -1814,6 +1814,16 @@ def energy_ghg_workflow(DM_energy_ghg, DM_crop, DM_land, DM_manure, dm_land, dm_
     dm_CH4_liv.add(0.0, dummy=True, col_label='CO2-emission', dim='Categories1', unit='t')
     dm_CH4_liv.add(0.0, dummy=True, col_label='N2O-emission', dim='Categories1', unit='t')
 
+    # NO2 EMISSIONS FROM FERTILIZERS -----------------------------------------------------------------------------------
+    # Filter and format
+    dm_N2O_fert = dm_n.filter({'Variables': ['agr_crop_emission_N2O-emission_fertilizer']})
+    dm_N2O_fert.rename_col('agr_crop_emission_N2O-emission_fertilizer',
+                'agr_fertilizer_N2O-emission', 'Variables')
+    dm_N2O_fert.deepen()
+    # Adding dummy columns
+    dm_N2O_fert.add(0.0, dummy=True, col_label='CO2-emission', dim='Categories1', unit='t')
+    dm_N2O_fert.add(0.0, dummy=True, col_label='CH4-emission', dim='Categories1', unit='t')
+
     # RICE EMISSIONS ---------------------------------------------------------------------------------------------------
     # Adding rice emissions
     dm_CH4_rice = DM_land['rice'].filter({'Variables': ['agr_rice_crop_CH4-emission']})
@@ -1829,8 +1839,9 @@ def energy_ghg_workflow(DM_energy_ghg, DM_crop, DM_land, DM_manure, dm_land, dm_
     dm_ghg.append(dm_CH4_liv, dim='Variables')  # CH4 from livestock
     dm_ghg.append(dm_CH4_rice, dim='Variables')  # CH4 from rice
     dm_ghg.append(dm_fuel_input, dim='Variables')  # CO2 from fuel, liming, urea
+    dm_ghg.append(dm_N2O_fert, dim='Variables')  # N2O from fertilizer
 
-    # Agriculture GHG emissions per GHG [t] =  crop + fuel + livestock + rice emissions per GHG
+    # Agriculture GHG emissions per GHG [t] =  crop + fuel + livestock + rice + fertilizer emissions per GHG
     dm_ghg.operation('agr_emission_residues', '+', 'agr_liv_N2O-emission',
                      out_col='residues_and_N2O_liv', unit='t')
     dm_ghg.operation('residues_and_N2O_liv', '+', 'agr_liv_CH4-emission',
@@ -1838,6 +1849,9 @@ def energy_ghg_workflow(DM_energy_ghg, DM_crop, DM_land, DM_manure, dm_land, dm_
     dm_ghg.operation('residues_and_N2O_liv_and_CH4_liv', '+', 'agr_rice_crop',
                      out_col='residues_and_N2O_liv_and_CH4_liv_and_rice', unit='t')
     dm_ghg.operation('residues_and_N2O_liv_and_CH4_liv_and_rice', '+', 'agr_input-use_emissions-CO2',
+                     out_col='residues_and_N2O_liv_and_CH4_liv_and_rice_and_CO2', unit='t')
+    dm_ghg.operation('residues_and_N2O_liv_and_CH4_liv_and_rice_and_CO2', '+',
+                     'agr_fertilizer',
                      out_col='agr_emissions_raw', unit='t')
     # Dropping the intermediate values
     dm_ghg = dm_ghg.filter({'Variables': ['agr_emissions_raw']})
