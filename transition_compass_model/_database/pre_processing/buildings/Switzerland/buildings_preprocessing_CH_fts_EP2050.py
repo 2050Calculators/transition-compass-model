@@ -1,7 +1,7 @@
 # -------------------------------------------------------------------------
 #    IMPLEMENTING EP2050 SCENARIO
 # -------------------------------------------------------------------------
-
+import copy
 import pickle
 import numpy as np
 import pandas as pd
@@ -87,7 +87,7 @@ bld_type_mapping = {
 #Filtering the former datamatrix in order only to consider Switzerland
 filter_DM(DM_buildings,{'Country':['Switzerland']})
 filter_DM(DM_lifestyles,{'Country':['Switzerland']})
-
+DM_buildings_old = copy.deepcopy(DM_buildings)
 #Swiss population since 2000
 #Mettre toute les modif dans le code au lieu que dans l'Excel
 dm_pop = DM_lifestyles['ots']['pop']['lfs_population_']['lfs_population_total']
@@ -121,7 +121,7 @@ dm_ots.filter({'Years': years_fts}, inplace=True)
 dm_ots.append(DM_buildings['fts']['floor-intensity'][3].filter({'Variables': ['lfs_household-size']}), dim='Variables')
 
 #Considering EP2050+ values as scenario 1 (BAU)
-DM_buildings['fts']['floor-intensity'][1] = dm_ots
+#DM_buildings['fts']['floor-intensity'][1] = dm_ots
 
 #Trasnferring former scenario 1 to scenario 2 as values are lower than EP ones
 DM_buildings['fts']['floor-intensity'][2] = DM_buildings['fts']['floor-intensity'][3]
@@ -187,7 +187,7 @@ df_bld_building_mix = pd.read_csv( csv_path + 'bld_building-mix_new_2_full.csv')
 # Increase of ~ 0.03
 dm_bld_building_mix_new = DataMatrix.create_from_df(df_bld_building_mix, num_cat=2)
 dm_bld_building_mix_new.filter({'Years': years_fts}, inplace=True)
-dm_bld_building_mix_new_adj = DM_buildings['fts']['building-renovation-rate']['bld_building-mix'][1]
+dm_bld_building_mix_new_adj = copy.deepcopy(DM_buildings['fts']['building-renovation-rate']['bld_building-mix'][1])
 dm_bld_building_mix_new_adj[0, 1:-1, 'bld_building-mix_new', :, 'B'] = np.nan
 dm_bld_building_mix_new_adj[0, -1, 'bld_building-mix_new', 'multi-family-households', 'B'] = \
     dm_bld_building_mix_new_adj[0, 0, 'bld_building-mix_new', 'multi-family-households', 'B'] + 0.01
@@ -326,7 +326,6 @@ DM_buildings['fts']['heating-technology-fuel']['bld_heating-technology'][4] = DM
 
 df_heat_dls = DM_buildings['fts']['heating-technology-fuel']['bld_heating-technology'][4].write_df()
 
-print('hello')
 
 # --------------------------------------------------------------------------------
 # 5 - HEATING EFFICIENCY
@@ -403,8 +402,11 @@ dm_renov_redistr[0, :, 'bld_renovation-redistribution-out', :] \
 
 dm_renov_redistr.drop(col_label='bld_floor-area_ren-normalised', dim='Variables')
 #finalement on ne touche pas à ce levier, on fait l'assumption que les renovations redistrob sont les memes (manque d'info)
-DM_buildings['fts']['building-renovation-rate']['bld_renovation-redistribution'][3] = DM_buildings['fts']['building-renovation-rate']['bld_renovation-redistribution'][1]
+DM_buildings['fts']['building-renovation-rate']['bld_renovation-redistribution'][3] = copy.deepcopy(DM_buildings['fts']['building-renovation-rate']['bld_renovation-redistribution'][1])
 DM_buildings['fts']['building-renovation-rate']['bld_renovation-redistribution'][4] = DM_buildings['fts']['building-renovation-rate']['bld_renovation-redistribution'][3]
+
+
+
 my_pickle_dump(DM_buildings, '../../../data/datamatrix/buildings.pickle')
 
 sort_pickle('../../../data/datamatrix/buildings.pickle')
