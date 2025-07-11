@@ -667,6 +667,10 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
     dm_fuel = dm_energy.group_all('Categories2', inplace=False)
     dm_fuel.group_all('Categories1', inplace=True)
     dm_fuel.filter({'Variables': ['bld_energy-demand_heating', 'bld_heating']})
+    dm_fuel.add(np.nan, dummy=True, dim='Categories1', col_label='ambient-heat')
+    dm_fuel[:, :, 'bld_energy-demand_heating', 'ambient-heat'] = dm_fuel[:, :, 'bld_heating', 'heat-pump'] \
+                                                                 - dm_fuel[:, :, 'bld_energy-demand_heating',
+                                                                   'heat-pump']
 
     # Heating demand by type of building
     dm_class = dm_floor_area.group_all('Categories1', inplace=False)
