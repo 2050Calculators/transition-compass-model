@@ -635,11 +635,140 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
 
 # CalculationLeaf CLIMATE SMART CROP ---------------------------------------------------------------------------------------------
 def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
-
-
     # ENERGY DEMAND --------------------------------------------------------------------------------------------------------
 
-    # BIOENERGIES
+    # Importing UNFCCC excel files and reading them with a loop (only for Switzerland) Table1.A(a)s4 ---------------------------
+    # Putting in a df in 3 dimensions (from, to, year)
+    # Define the path where the Excel files are located
+    folder_path = 'data/data_unfccc_2023'
+
+    # List all files in the folder
+    files = os.listdir(folder_path)
+
+    # Filter and sort files by the year (1990 to 2020)
+    sorted_files = sorted([f for f in files if f.startswith('CHE_2023_') and int(f.split('_')[2]) in range(1990, 2021)],
+                          key=lambda x: int(x.split('_')[2]))
+
+    # Initialize a list to store DataFrames
+    data_frames = []
+
+    # Loop through sorted files, read the required rows, and append to the list
+    for file in sorted_files:
+        # Extract the year from the filename
+        year = int(file.split('_')[2])
+
+        # Full path to the file
+        file_path = os.path.join(folder_path, file)
+
+        # Read the specific rows and sheet from the Excel file
+        df = pd.read_excel(file_path, sheet_name='Table1.A(a)s4', skiprows=53, nrows=15, header=None)
+
+        # Add a column for the year to the DataFrame
+        df['Year'] = year
+
+        # Append to the list of DataFrames
+        data_frames.append(df)
+
+    # Combine all DataFrames into a single DataFrame with a multi-index
+    combined_df = pd.concat(data_frames, axis=0).set_index(['Year'])
+
+    # Replace NO with 0
+    combined_df = combined_df.replace('NO', 0.0)
+
+    # Rename columns
+    combined_df.rename(columns={0: 'Item', 1:'Consumption [TJ]', 6:'CO2 emissions [kt]'}, inplace=True)
+    combined_df = combined_df.reset_index().rename(columns={'Year': 'timescale'})
+    my_items_list = ['i. Stationary',
+                     'ii. Off-road vehicles and other machinery']
+    combined_df = combined_df[~combined_df['Item'].isin(my_items_list)].copy() # Drop rows where Item is in my_items_list
+    df_energy = combined_df[['timescale', 'Item', 'Consumption [TJ]']].copy()
+    df_energy = df_energy.rename(columns={'Consumption [TJ]': 'value'})
+    df_CO2_cal = combined_df[['timescale', 'Item','CO2 emissions [kt]']].copy()
+
+    # Prep CO2 cal
+    df_CO2_cal = df_CO2_cal[['timescale', 'CO2 emissions [kt]']].copy()
+    df_CO2_cal = df_CO2_cal.groupby(['timescale'], as_index=False)[
+      'CO2 emissions [kt]'].sum()
+    df_CO2_cal['Item'] = 'CO2 emissions fuel'
+
+    # Sum for the same item per year
+    df_energy = df_energy.groupby(['timescale', 'Item'], as_index=False)[
+      'value'].sum()
+
+    # Keep only the correct rows
+    my_items_list = ['Liquid fuels', 'Solid fuels', 'Gaseous fuels', 'Gasoline', 'Diesel oil',
+                     'Liquefied petroleum gases (LPG)', 'Biomass(6)']
+    df_energy = df_energy[df_energy['Item'].isin(my_items_list)]
+
+    # Add dummy items
+    # Define your dummy items
+    dummy_items = ['Biogas (dummy)', 'Biodiesel (dummy)', 'Ethanol (dummy)',
+                   'Liquid oth (dummy)', 'Heat (dummy)', 'Electricity (dummy)',
+                   'Others (dummy)']
+    # Step 1: Get unique timescales
+    timescales = df_energy['timescale'].unique()
+    # Step 2: Create a list of dicts for new rows
+    new_rows = []
+    for ts in timescales:
+      for di in dummy_items:
+        new_rows.append({
+          'timescale': ts,
+          'Item': di,
+          'value': 0.0
+        })
+    # Step 3: Convert to DataFrame
+    df_dummies = pd.DataFrame(new_rows)
+    # Step 4: Concatenate
+    df_energy_demand = pd.concat([df_energy, df_dummies], ignore_index=True)
+
+    # convert from [TJ] to [ktoe]
+    tj_to_ktoe = 0.02388458966275  # source https://www.unitjuggler.com/convertir-energy-de-TJ-en-kltoe.htm
+    df_energy_demand.loc[:, df_energy_demand.columns == 'value'] *= tj_to_ktoe
+
+    '''# ENERGY DEMAND --------------------------------------------------------------------------------------------------------
+    # Read excel
+    df_energy = pd.read_excel(
+        'data/Energy_demand_agriculture_CH.xlsx',
+        sheet_name='Di und indi Energie 2021',
+        skiprows = 0,
+        nrows = 8
+    )
+    df_energy = df_energy.drop(columns=['Unit'])
+    df_energy.rename(columns={'Énergie directe': 'Item'}, inplace=True)
+
+    # Unit conversion [GJ] => [ktoe]
+    # convert from [TJ] to [ktoe]
+    gj_to_ktoe = 0.00002388458966275  # source https://www.unitjuggler.com/convertir-energy-de-TJ-en-ktoe.html
+    df_energy.loc[:, df_energy.columns != 'Item'] *= gj_to_ktoe
+
+    # Add dummy rows
+    # Identify year columns
+    year_cols = [col for col in df_energy.columns if col != 'Item']
+    # Define your dummy items
+    dummy_items = ['Biogas (dummy)', 'Biodiesel (dummy)', 'Ethanol (dummy)',
+                   'Liquid oth (dummy)', 'Heat (dummy)', 'LPG (dummy)',
+                   'Others (dummy)', 'Coal (dummy)']
+    # Create a list of dicts for each dummy
+    dummy_rows = []
+    for dummy in dummy_items:
+      row = {'Item': dummy}
+      for year in year_cols:
+        row[year] = 0.0
+      dummy_rows.append(row)
+    # Convert to DataFrame
+    df_dummies = pd.DataFrame(dummy_rows)
+    # Append to original df
+    df_energy = pd.concat([df_energy, df_dummies], ignore_index=True)
+
+    # Melt
+    df_energy_demand = df_energy.melt(
+      id_vars='Item',  # Columns to keep fixed
+      var_name='timescale',  # Name for the new 'item' column
+      value_name='value'  # Name for the new 'value' column
+    )'''
+
+
+    '''# BIOENERGIES
     # Read excel
     df_bioenergy = pd.read_excel(
         'data/statistiques_energie_2023.xlsx',
@@ -649,9 +778,9 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
     )
     df_bioenergy = df_bioenergy[['timescale', 'Biodiesel', 'Bioéthanol / Biométhanol', "Biocarburants d'aviation", 'Huiles vég. / anim.']]
 
-    # convert from [TJ] to [ktoe]
-    tj_to_ktoe = 0.02388458966275 # source https://www.unitjuggler.com/convertir-energy-de-TJ-en-ktoe.html
-    df_bioenergy.loc[:, df_bioenergy.columns != 'timescale'] *= tj_to_ktoe
+    # convert from [GWh] to [ktoe]
+    gwh_to_ktoe = 0.085984522785899  # source https://www.unitjuggler.com/convertir-energy-de-TJ-en-ktoe.html
+    df_bioenergy.loc[:, df_bioenergy.columns != 'timescale'] *= gwh_to_ktoe
 
     # OTHER ENERGIES
     df_oth_energy = pd.read_excel(
@@ -724,7 +853,7 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
         id_vars='timescale',  # Columns to keep fixed
         var_name='Item',  # Name for the new 'item' column
         value_name='value'  # Name for the new 'value' column
-    )
+    )'''
 
     # Create copy for calibration
     df_energy_demand_cal = df_energy_demand.copy()
@@ -769,9 +898,10 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
         df_land_use = df_land_use[columns_to_filter]
         df_land_use.to_csv(file_dict['land'], index=False)
 
-    # Sum to get total agricultural land
-    df_land_use = df_land_use.groupby(['Area', 'Year'], as_index=False)['Value'].sum()
-    df_land_use = df_land_use.rename(columns={'Value': 'Agricultural land [kha]', 'Area': 'geoscale', 'Year': 'timescale'})
+    # Filer land for Switzerland and drop Area
+    df_land_use = df_agri_land[df_agri_land['Area'].isin(['Switzerland'])]
+    df_land_use = df_land_use.drop(columns=['Area'])
+    df_land_use.rename(columns={'Year': 'timescale'}, inplace=True)
 
     # Merge and divide [kha]
     df_land_use['timescale'] = df_land_use['timescale'].astype(str)  # Convert to string
@@ -782,7 +912,7 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
         on='timescale',
         how='inner'  # Use 'inner' to keep only matching rows
     )
-    df_combined['value'] = df_combined['value'] / (df_combined['Agricultural land [kha]'] * 1000)
+    df_combined['value'] = df_combined['value'] / df_combined['Agricultural land [ha]']
     # Read excel file
     df_dict_csc = pd.read_excel(
         'dictionaries/dictionnary_agriculture_landuse.xlsx',
@@ -792,7 +922,10 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
     df_energy_pathwaycalc = pd.merge(df_dict_csc, df_combined, on='Item')
 
     # Drop the 'Item' column
-    df_energy_pathwaycalc = df_energy_pathwaycalc.drop(columns=['Item', 'Agricultural land [kha]'])
+    df_energy_pathwaycalc = df_energy_pathwaycalc.drop(columns=['Item', 'Agricultural land [ha]'])
+
+    # Add a geoscale column
+    df_energy_pathwaycalc['geoscale'] = 'Switzerland'
 
     # Adding the columns module, lever, level and string-pivot at the correct places
     df_energy_pathwaycalc['module'] = 'agriculture'
@@ -1385,9 +1518,7 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
     df_climate_smart_crop = df_climate_smart_crop.drop_duplicates()
     df_climate_smart_crop_pathwaycalc = linear_fitting_ots_db(df_climate_smart_crop, years_ots, countries='all')
 
-    # Fill na with zeros when the all column is NA
-
-    return df_climate_smart_crop_pathwaycalc, df_energy_demand_cal
+    return df_climate_smart_crop_pathwaycalc, df_energy_demand_cal, df_CO2_cal
 
 # CalculationLeaf CLIMATE SMART LIVESTOCK ------------------------------------------------------------------------------
 def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_density, list_countries):
@@ -3920,7 +4051,7 @@ def manure_calibration(list_countries):
 
 
 # CalculationLeaf CAL - ENERGY & GHG -----------------------------------------------------------------------------------
-def energy_ghg_calibration(list_countries):
+def energy_ghg_calibration(list_countries, df_CO2_cal):
     # ----------------------------------------------------------------------------------------------------------------------
     # TOTAL GHG EMISSIONS ---------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -4031,9 +4162,13 @@ def energy_ghg_calibration(list_countries):
     # CO2 EMISSIONS FROM ENERGY USE ---------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
 
-    # Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
+    # Format value from UNFCCC
+    df_CO2_cal.rename(columns={'CO2 emissions [kt]': 'Value', 'timescale':'Year'},
+                               inplace=True)
+    df_CO2_cal['Area'] = 'Switzerland'
 
 
+    ''''# Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
     # List of elements
     list_elements = ['Emissions (CO2)']
 
@@ -4065,7 +4200,7 @@ def energy_ghg_calibration(list_countries):
 
     # Pivot the df
     df_energy_use = df_energy_use.pivot_table(index=['Area', 'Year', 'Item'],
-                                              values='Value').reset_index()
+                                              values='Value').reset_index()'''
 
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
     # Food item name matching with dictionary
@@ -4076,7 +4211,7 @@ def energy_ghg_calibration(list_countries):
 
     # Concat
     df_emissions = pd.concat([df_emissions, df_energy_fao])
-    df_emissions = pd.concat([df_emissions, df_energy_use])
+    df_emissions = pd.concat([df_emissions, df_CO2_cal])
 
     # Merge based on 'Item'
     df_emissions_calibration = pd.merge(df_dict_calibration, df_emissions, on='Item')
@@ -4830,6 +4965,15 @@ def constant():
     # Compute emission factor
     df_ef['EF [MtCO2/ktoe]'] = df_ef['Emissions (CO2)'] * 10**-3 / (df_ef['Energy use in agriculture'] * df_ef['TJ to ktoe'])
 
+    # Filter and format
+    df_ef = df_ef[['Item', 'EF [MtCO2/ktoe]']].copy()
+    df_ef = df_ef.melt(id_vars=['Item'], var_name='Element',
+                                 value_name='Value')
+    df_ef['Item'] = df_ef['Item'] + ' ' + df_ef['Element']
+    df_ef = df_ef[['Item', 'Value']].copy()
+
+    # Merge with dict
+
     return df_ef
 
 
@@ -5244,7 +5388,7 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     dm_cal_input.deepen(based_on='Variables')
     DM_agriculture_old['fxa']['cal_agr_input-use_emissions-CO2'] = dm_cal_input
 
-    # Create a dictionnay with all the fixed assumptions (only for calibration since the other comes from pickle)
+    # Create a dictionnary with all the fixed assumptions (only for calibration since the other comes from pickle)
     """dict_fxa = {
         'cal_agr_diet': dm_cal_diet,
         'cal_agr_domestic-production-liv': dm_cal_liv_dom_prod,
@@ -5669,7 +5813,7 @@ df_land_use_fao_calibration, df_cropland_density, df_agri_land = land_calibratio
 file_dict = {'losses': 'data/faostat/losses.csv', 'yield': 'data/faostat/yield.csv','cropland': 'data/faostat/cropand.csv', 'urea': 'data/faostat/urea.csv',
              'land': 'data/faostat/land.csv', 'nitro': 'data/faostat/nitro.csv',
              'pesticide': 'data/faostat/pesticide.csv', 'liming': 'data/faostat/liming.csv'}
-df_climate_smart_crop_pathwaycalc, df_energy_demand_cal = climate_smart_crop_processing(list_countries, df_agri_land, file_dict)
+df_climate_smart_crop_pathwaycalc, df_energy_demand_cal, df_CO2_cal = climate_smart_crop_processing(list_countries, df_agri_land, file_dict)
 # Exceptionnally running livestock calibration before to use the livestock population in livestock after
 df_domestic_supply_calibration, df_liv_population_calibration, df_liv_pop = livestock_crop_calibration(df_energy_demand_cal, list_countries)
 df_climate_smart_livestock_pathwaycalc, df_csl_fxa, df_manure_n_fxa, df_manure_ch4_fxa = climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_density, list_countries)
@@ -5687,7 +5831,7 @@ df_feed_calibration = feed_calibration(list_countries)
 df_cropland_fao_calibration = cropland_calibration(list_countries)
 df_liming_urea_calibration = CO2_emissions()
 df_wood_calibration = wood_calibration(list_countries)
-df_emissions_calibration = energy_ghg_calibration(list_countries) # Fixme PerformanceWarning ?
+df_emissions_calibration = energy_ghg_calibration(list_countries, df_CO2_cal) # Fixme PerformanceWarning ?
 df_calibration = calibration_formatting(df_diet_calibration, df_domestic_supply_calibration, df_liv_population_calibration,
                      df_nitrogen_calibration, df_liv_emissions_calibration, df_feed_calibration,
                      df_land_use_fao_calibration, df_liming_urea_calibration, df_wood_calibration,
@@ -5723,6 +5867,19 @@ filter_DM(DM_agriculture, {'Country': ['Switzerland', 'Vaud', 'EU27']})
 filter_DM(DM_lifestyles, {'Country': ['Switzerland', 'Vaud', 'EU27']})
 
 # ADDING CONSTANTS ----------------------------------------------------------------------------------------
+# CP EF FUEL ----------------------------------------------------------------------------------------
+
+# convert from [TJ] to [ktoe]
+tj_to_ktoe = 0.02388458966275  # source https://www.unitjuggler.com/convertir-energy-de-TJ-en-kltoe.htm
+
+# Source : UNFCCC Table 1.1(a)s4
+DM_agriculture['constant']['cdm_CO2']['cp_emission-factor_CO2','bioenergy-solid-wood'] = 10**-6 * 72.71 / tj_to_ktoe
+DM_agriculture['constant']['cdm_CO2']['cp_emission-factor_CO2','gas-ff-natural'] = 10**-6 * 55.90 / tj_to_ktoe
+DM_agriculture['constant']['cdm_CO2']['cp_emission-factor_CO2','liquid-ff-diesel'] = 10**-6 * 73.30  / tj_to_ktoe
+DM_agriculture['constant']['cdm_CO2']['cp_emission-factor_CO2','liquid-ff-gasoline'] = 10**-6 * 73.80 / tj_to_ktoe
+DM_agriculture['constant']['cdm_CO2']['cp_emission-factor_CO2','liquid-ff-lpg'] = 10**-6 * 0.0 / tj_to_ktoe
+DM_agriculture['constant']['cdm_CO2']['cp_emission-factor_CO2','solid-ff-coal'] = 10**-6 * 0.0 / tj_to_ktoe
+
 # FXA EF NITROGEN FERTILIZER ----------------------------------------------------------------------------------------
 # Load data
 dm_emission_fert = DM_agriculture['fxa']['cal_agr_crop_emission_N2O-emission_fertilizer'].copy()

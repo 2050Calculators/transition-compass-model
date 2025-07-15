@@ -125,7 +125,7 @@ def read_data(DM_agriculture, lever_setting):
     dm_energy_demand = DM_ots_fts['climate-smart-crop']['climate-smart-crop_energy-demand']
     dm_cal_GHG = DM_agriculture['fxa']['cal_agr_emissions']
     dm_cal_GHG.deepen()
-    dm_cal_input = DM_agriculture['fxa']['cal_input']
+    dm_cal_input = DM_agriculture['fxa']['cal_agr_input-use_emissions-CO2']
 
     # Aggregated Data Matrix - ENERGY & GHG EMISSIONS
     DM_energy_ghg = {
@@ -1767,7 +1767,6 @@ def energy_ghg_workflow(DM_energy_ghg, DM_crop, DM_land, DM_manure, dm_land, dm_
     dm_cal_CO2_input = DM_energy_ghg['cal_input']
     dm_cal_CO2_input.change_unit('cal_agr_input-use_emissions-CO2', 10 ** 3, old_unit='kt',
                                  new_unit='t')  # Unit conversion [kt] => [t]
-
     dm_cal_rates_CO2_input = calibration_rates(dm_CO2, dm_cal_CO2_input, calibration_start_year=1990,
                                                calibration_end_year=2023, years_setting=years_setting)
     dm_CO2.append(dm_cal_rates_CO2_input, dim='Variables')
