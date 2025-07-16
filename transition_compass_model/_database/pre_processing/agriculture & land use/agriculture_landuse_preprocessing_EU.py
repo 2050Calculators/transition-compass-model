@@ -4051,7 +4051,7 @@ def manure_calibration(list_countries):
 
 
 # CalculationLeaf CAL - ENERGY & GHG -----------------------------------------------------------------------------------
-def energy_ghg_calibration(list_countries, df_CO2_cal):
+def energy_ghg_calibration(list_countries, df_CO2_cal, df_liming_urea):
     # ----------------------------------------------------------------------------------------------------------------------
     # TOTAL GHG EMISSIONS ---------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -4159,7 +4159,7 @@ def energy_ghg_calibration(list_countries, df_CO2_cal):
                                                   values='Value').reset_index()
 
     # ----------------------------------------------------------------------------------------------------------------------
-    # CO2 EMISSIONS FROM ENERGY USE ---------------------------------------------------------------------------------------------------
+    # CO2 EMISSIONS FROM ENERGY USE ----------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
 
     # Format value from UNFCCC
@@ -4167,6 +4167,23 @@ def energy_ghg_calibration(list_countries, df_CO2_cal):
                                inplace=True)
     df_CO2_cal['Area'] = 'Switzerland'
 
+    # ----------------------------------------------------------------------------------------------------------------------
+    # CO2 EMISSIONS TOTAL (ENERGY USE + LIMING + UREA UNFCCC)  -------------------------------------------------------------
+    # ----------------------------------------------------------------------------------------------------------------------
+    # Rename col
+    df_liming_urea = df_liming_urea.rename(columns={'geoscale': 'Area'})
+
+    # Concat
+    df_CO2_cal_total = pd.concat([df_CO2_cal, df_liming_urea])
+
+    # Sum by Year & Area
+    df_CO2_cal_total = df_CO2_cal_total.groupby(['Area','Year'])['Value'].sum().reset_index()
+
+    # Unit conversion [kt]=>[t]
+    df_CO2_cal_total['Value'] = df_CO2_cal_total['Value'] * 10**3
+
+    # Change the item name
+    df_CO2_cal_total['Item'] = 'Emissions (CO2) Fuel, liming, urea'
 
     ''''# Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
     # List of elements
@@ -4212,6 +4229,7 @@ def energy_ghg_calibration(list_countries, df_CO2_cal):
     # Concat
     df_emissions = pd.concat([df_emissions, df_energy_fao])
     df_emissions = pd.concat([df_emissions, df_CO2_cal])
+    df_emissions = pd.concat([df_emissions, df_CO2_cal_total])
 
     # Merge based on 'Item'
     df_emissions_calibration = pd.merge(df_dict_calibration, df_emissions, on='Item')
@@ -4739,7 +4757,7 @@ def CO2_emissions():
     df_liming_urea_calibration.rename(
         columns={'Area': 'geoscale', 'Year': 'timescale', 'Value': 'value'}, inplace=True)
 
-    return df_liming_urea_calibration
+    return df_liming_urea_calibration, df_liming_urea
 
 
 # CalculationLeaf CAL - WOOD ------------------------------
@@ -5829,9 +5847,9 @@ df_nitrogen_calibration = nitrogen_calibration(list_countries)
 df_liv_emissions_calibration, df_liv_emissions = manure_calibration(list_countries)
 df_feed_calibration = feed_calibration(list_countries)
 df_cropland_fao_calibration = cropland_calibration(list_countries)
-df_liming_urea_calibration = CO2_emissions()
+df_liming_urea_calibration, df_liming_urea = CO2_emissions()
 df_wood_calibration = wood_calibration(list_countries)
-df_emissions_calibration = energy_ghg_calibration(list_countries, df_CO2_cal) # Fixme PerformanceWarning ?
+df_emissions_calibration = energy_ghg_calibration(list_countries, df_CO2_cal, df_liming_urea) # Fixme PerformanceWarning ?
 df_calibration = calibration_formatting(df_diet_calibration, df_domestic_supply_calibration, df_liv_population_calibration,
                      df_nitrogen_calibration, df_liv_emissions_calibration, df_feed_calibration,
                      df_land_use_fao_calibration, df_liming_urea_calibration, df_wood_calibration,

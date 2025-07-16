@@ -1857,9 +1857,6 @@ def energy_ghg_workflow(DM_energy_ghg, DM_crop, DM_land, DM_manure, dm_land, dm_
 
     # Calibration GHG emissions: overall CO2, CH4, NO2
     dm_cal_ghg = DM_energy_ghg['cal_GHG']
-    # dm_cal_ghg.change_unit('cal_agr_input-use_emissions-CO2', 10 ** 3, old_unit='kt',
-    #                             new_unit='t')  # Unit conversion [kt] => [t]
-
     dm_cal_rates_ghg = calibration_rates(dm_ghg, dm_cal_ghg, calibration_start_year=1990,
                                          calibration_end_year=2023, years_setting=years_setting)
     dm_ghg.append(dm_cal_rates_ghg, dim='Variables')
@@ -2424,4 +2421,4 @@ def agriculture_local_run():
     return
 
 
-#agriculture_local_run()
+agriculture_local_run()
