@@ -733,8 +733,8 @@ class DataMatrix:
 
     def rename_col_regex(self, str1, str2, dim):
         # Rename all columns containing str1 with str2
-        col_in = [col for col in self.col_labels[dim] if str1 in col]
-        col_out = [word.replace(str1, str2) for word in col_in]
+        col_in = [col for col in self.col_labels[dim] if re.search(str1, col)]
+        col_out = [re.sub(str1, str2, word) for word in col_in]
         self.rename_col(col_in, col_out, dim=dim)
         return
 
