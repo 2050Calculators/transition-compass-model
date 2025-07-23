@@ -6,6 +6,107 @@ from model.common.data_matrix_class import DataMatrix
 import faostat
 import pandas as pd
 
+def feed_workflow_new():
+  # Read excel sheets
+  df_LCA_livestock = pd.read_excel('agriculture_feed_v2025.xlsx',
+                                   sheet_name='data_LCA_livestock')
+  df_LCA_feed = pd.read_excel('agriculture_feed_v2025.xlsx',
+                                   sheet_name='data_LCA_feed')
+  df_LCA_feed_yield = pd.read_excel('agriculture_feed_v2025.xlsx',
+                                   sheet_name='data_LCA_feed_yield')
+
+  # Divide all columns by the output to obtain values for 1 kg output
+  # Identify the columns to divide (exclude Year, Area, Agricultural land)
+  cols_to_divide_livestock = df_LCA_livestock.columns.difference(
+    ['Item Livestock', 'Database', 'LCA item', 'Unit'])
+  cols_to_divide_feed = df_LCA_feed.columns.difference(
+    ['Item Feed', 'Database', 'LCA item', 'Unit'])
+  cols_to_divide_feed_yield = df_LCA_feed_yield.columns.difference(
+    ['Item Feed', 'Database', 'LCA item', 'Unit'])
+  # Divide each of those columns by 'Agricultural land [ha]'
+  df_LCA_livestock[cols_to_divide_livestock] = df_LCA_livestock[cols_to_divide_livestock].div(
+    df_LCA_livestock['Output'],
+    axis=0).copy()
+  df_LCA_feed[cols_to_divide_feed] = df_LCA_feed[cols_to_divide_feed].div(
+    df_LCA_feed['Output'],
+    axis=0).copy()
+  df_LCA_feed_yield[cols_to_divide_feed_yield] = df_LCA_feed_yield[cols_to_divide_feed_yield].div(
+    df_LCA_feed_yield['Output'],
+    axis=0).copy()
+
+  # Fill Na with 0
+  df_LCA_livestock.fillna(0.0, inplace=True)
+  df_LCA_feed.fillna(0.0, inplace=True)
+  df_LCA_feed_yield.fillna(0.0, inplace=True)
+
+  # Melt dfs for feed and detailed feed
+  df_long = df_LCA_livestock.melt(
+    id_vars=['Item Livestock', 'Database', 'LCA item', 'Unit', 'Output'],
+    # columns to keep
+    var_name='Item Feed',  # new column for feed type names
+    value_name='Feed'  # new column for feed values
+  )
+  df_long = df_long[['Item Livestock', 'Item Feed', 'Feed']].copy()
+  df_feed_long = df_LCA_feed.melt(
+    id_vars=['Item Feed', 'Database', 'LCA item', 'Unit', 'Output'],
+    # columns to keep
+    var_name='Feed item',  # new column for feed type names
+    value_name='Input detailed'  # new column for feed values
+  )
+  df_feed_long = df_feed_long[['Item Feed', 'Feed item', 'Input detailed']].copy()
+
+  # Separate between feedmix per animal
+  df_long_feedmix = df_long[
+        df_long['Item Feed'].str.contains('feed', case=False, na=False)
+    ]
+  df_long_nofeed = df_long[
+    ~df_long['Item Feed'].str.contains('feed', case=False, na=False)
+  ]
+
+  # Feedmix : Merge
+  df_merge = pd.merge(df_long_feedmix, df_feed_long, on='Item Feed', how='outer')
+  df_merge.fillna(0.0, inplace=True)
+
+  # Compute the feed inside the feedmix per animal
+  df_merge['Feed'] = df_merge['Feed']* df_merge['Input detailed']
+
+  # Concat between feed and feedmix
+  df_merge = df_merge[['Item Livestock', 'Feed item', 'Feed']].copy()
+  df_merge.rename(
+    columns={'Feed item': 'Item Feed'}, inplace=True)
+  df_feed = pd.concat([df_merge, df_long_nofeed])
+
+  # Sum Feed per Item Livestock and Item Feed
+  df_feed = df_feed.groupby(['Item Livestock', 'Item Feed'], as_index=False)[
+    'Feed'].sum()
+
+  # Merge with the processing yields
+  df_LCA_feed_yield = df_LCA_feed_yield[['Item Feed', 'Output', 'Cereals', 'Oilcrops', 'Pulses', 'Sugarcrops']]
+  df_feed = pd.merge(df_feed, df_LCA_feed_yield, on='Item Feed', how='inner')
+
+  # Multiply with the processing yields
+  cols_to_multiply = df_feed.columns.difference(
+    ['Item Livestock','Item Feed', 'Output'])
+  df_feed[cols_to_multiply] = df_feed[cols_to_multiply].mul(df_feed['Output'],axis=0).copy()
+
+  # Aggregated as overall feed category raw products (cereals, oilcrops, sugarcrops, pulses)
+  feed_cols = ['Cereals', 'Pulses', 'Oilcrops',
+               'Sugarcrops']  # adjust to your actual feed columns
+  df_total_feed_per_livestock = df_feed.groupby('Item Livestock')[
+    feed_cols].sum().reset_index()
+
+  # Melt
+
+  # Format accordingly
+
+
+
+
+
+  return
+
+feed_workflow_new()
+
 
 # Load pickles
 with open('../../data/datamatrix/agriculture.pickle', 'rb') as handle:
