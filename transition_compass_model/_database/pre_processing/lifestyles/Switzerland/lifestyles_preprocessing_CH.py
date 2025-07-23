@@ -35,7 +35,7 @@ def create_fts_years_list():
 ###############################
 ### POPULATION - deprecated ###
 ###############################
-def deprecated_extract_lfs_population_total(years_ots):
+def deprecated_extract_lfs_population_total(years_ots, all_cantons):
     # Demographic balance by institutional units
     table_id = "px-x-0102020000_201"
     structure = get_data_api_CH(table_id, mode='example')
@@ -53,7 +53,7 @@ def deprecated_extract_lfs_population_total(years_ots):
     dm_lfs_pop = get_data_api_CH(table_id, mode='extract', filter=filter,
                                  mapping_dims=mapping_dim, units=['inhabitants'])
 
-    dm_lfs_pop.rename_col('- Vaud', 'Vaud', dim='Country')
+    dm_lfs_pop.rename_col_regex('- ', '', dim='Country')
     dm_lfs_pop.rename_col('Population on 1 January', 'lfs_population_total', dim='Variables')
 
     return dm_lfs_pop
@@ -95,7 +95,7 @@ def deprecated_extract_lfs_demography_age():
     dm_lfs_pop_age.rename_col('Male', 'male', dim='Categories1')
     dm_lfs_pop_age.rename_col('Female', 'female', dim='Categories1')
     # Rename Vaud
-    dm_lfs_pop_age.rename_col('- Vaud', 'Vaud', 'Country')
+    dm_lfs_pop_age.rename_col_regex('- ', '', 'Country')
     # Group permanent and non-permanent (permis C / citizenship and other)
     dm_lfs_pop_age.groupby({'lfs_demography': ['Permanent resident population', 'Non permanent resident population']},
                            dim='Variables', inplace=True, regex=False)
@@ -126,30 +126,44 @@ def extract_lfs_pop(years_ots, table_id, file):
 
         # Extract all age classes
         years_ots_str = [str(y) for y in years_ots]
-        filter = {'Year': years_ots_str,
-                  'Canton': ['Switzerland', 'Vaud'],
-                  'Citizenship (category)': 'Citizenship (category) - total',  # Swiss and non-Swiss resident
-                  'Sex': ['Male', 'Female'],
-                  'Age': structure['Age'],
-                  'Demographic component': 'Population on 1 January'}
+        dm_lfs_pop_age = None
+        for canton in structure['Canton']:
+            filter = {'Year': years_ots_str,
+                      'Canton': canton,
+                      'Citizenship (category)': 'Citizenship (category) - total',  # Swiss and non-Swiss resident
+                      'Sex': ['Male', 'Female'],
+                      'Age': structure['Age'],
+                      'Demographic component': 'Population on 1 January'}
 
-        mapping_dim = {'Country': 'Canton',
-                       'Years': 'Year',
-                       'Variables': 'Demographic component',
-                       'Categories1': 'Sex',
-                       'Categories2': 'Age'}
-        # Extract population by age group data
-        dm_lfs_pop_age = get_data_api_CH(table_id, mode='extract', filter=filter, mapping_dims=mapping_dim,
-                                         units=['inhabitants'])
+            mapping_dim = {'Country': 'Canton',
+                           'Years': 'Year',
+                           'Variables': 'Demographic component',
+                           'Categories1': 'Sex',
+                           'Categories2': 'Age'}
+            # Extract population by age group data
+            dm_lfs_pop_age_canton = get_data_api_CH(table_id, mode='extract', filter=filter, mapping_dims=mapping_dim,
+                                                    units=['inhabitants'])
+            if dm_lfs_pop_age is None:
+                dm_lfs_pop_age = dm_lfs_pop_age_canton
+            else:
+                dm_lfs_pop_age.append(dm_lfs_pop_age_canton, dim='Country')
 
+        dm_lfs_pop_age.sort('Country')
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(current_file_directory, file)
         with open(f, 'wb') as handle:
             pickle.dump(dm_lfs_pop_age, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+    dm_lfs_pop_age.rename_col_regex('Confederation', 'Switzerland', 'Country')
+    dm_lfs_pop_age.rename_col_regex(" /.*", "", dim='Country')
+    dm_lfs_pop_age.rename_col_regex("-", " ", dim='Country')
+    dm_lfs_pop_age.rename_col(cantons_fr, cantons_en, dim='Country')
+    dm_lfs_pop_age.sort('Country')
 
+    dm_lfs_pop_age.drop(col_label='No indication', dim='Country')
     dm_lfs_pop_tot = dm_lfs_pop_age.filter({'Categories2': ['Age - total']})
     dm_lfs_pop_age.drop(dim='Categories2', col_label='Age - total')
+    dm_lfs_pop_age.drop(col_label='No indication', dim='Categories2')
     dm_lfs_pop_age.rename_col_regex(' years', '', dim='Categories2')
     dm_lfs_pop_age.rename_col_regex(' year', '', dim='Categories2')
     dm_lfs_pop_age.rename_col('99 or older', '99', dim='Categories2')
@@ -202,8 +216,8 @@ def extract_lfs_pop_fts(years_fts, table_id, file):
     except OSError:
         structure, title = get_data_api_CH(table_id, mode='example', language='fr')
         # Extract buildings floor area
-        scenarios = ['Scénario de référence A-00-2020', "Scénario B-00-2020 'haut'",
-                     "Variante A-03-2020 'plus haute espérance de vie à la naissance'", "Scénario C-00-2020 'bas'"]
+        scenarios = ['Scénario de référence A-00-2025', "Scénario B-00-2025 'haut'",
+                     "Variante A-03-2025 'plus haute espérance de vie à la naissance'", "Scénario C-00-2025 'bas'"]
         filter = {'Scénario-variante': scenarios,
                   'Nationalité (catégorie)': ['Nationalité - total'],
                   'Sexe': ['Homme', 'Femme'],
@@ -220,7 +234,6 @@ def extract_lfs_pop_fts(years_fts, table_id, file):
         f = os.path.join(current_file_directory, file)
         with open(f, 'wb') as handle:
             pickle.dump(dm_pop_fts, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
 
     # Rename
     dm_pop_fts.rename_col('Nationalité - total', 'Switzerland', dim='Country')
@@ -267,10 +280,10 @@ def extract_lfs_pop_fts(years_fts, table_id, file):
     dm_pop_fts = dm_pop_fts.flatten(sep='-')
 
     # Assign levers
-    level_dict = {1: "Scénario de référence A-00-2020",
-                  2: "Scénario B-00-2020 'haut'",
-                  3: "Variante A-03-2020 'plus haute espérance de vie à la naissance'",
-                  4: "Scénario C-00-2020 'bas'"}
+    level_dict = {1: "Scénario de référence A-00-2025",
+                  2: "Scénario B-00-2025 'haut'",
+                  3: "Variante A-03-2025 'plus haute espérance de vie à la naissance'",
+                  4: "Scénario C-00-2025 'bas'"}
     dict_dm_pop_fts = dict()
     dict_dm_pop_fts_tot = dict()
     for k, v in level_dict.items():
@@ -286,31 +299,39 @@ def extract_lfs_pop_fts(years_fts, table_id, file):
 def add_vaud_fts_pop(dm_lfs_age, dm_lfs_tot_pop, dict_lfs_age_fts, dict_lfs_tot_pop_fts):
     idx = dm_lfs_tot_pop.idx
     # vaud share for last ots year available
-    vaud_share = dm_lfs_tot_pop.array[idx['Vaud'], -1, ...] / dm_lfs_tot_pop.array[idx['Switzerland'], -1, ...]
-    # Check that ots and fts are harmonised
-    for l, dm_fts in dict_lfs_tot_pop_fts.items():
-        vaud_arr = vaud_share * dm_fts.array
-        dm_fts.add(vaud_arr, dim='Country', col_label='Vaud')
-        # Remove comment to check smoothness
-        # dm_fts.append(dm_lfs_tot_pop, dim='Years')
-        # dm_fts.sort(dim='Years')
-        # dm_fts.datamatrix_plot(title=l)
+    for canton in (set(dm_lfs_tot_pop.col_labels['Country']) - {'Switzerland'}):
+        vaud_share = dm_lfs_tot_pop.array[idx[canton], -1, ...] / dm_lfs_tot_pop.array[idx['Switzerland'], -1, ...]
+        # Check that ots and fts are harmonised
+        for l, dm_fts in dict_lfs_tot_pop_fts.items():
+            vaud_arr = vaud_share * dm_fts['Switzerland', :, :]
+            dm_fts.add(vaud_arr, dim='Country', col_label=canton)
+            # Remove comment to check smoothness
+            # dm_fts.append(dm_lfs_tot_pop, dim='Years')
+            # dm_fts.sort(dim='Years')
+            # dm_fts.datamatrix_plot(title=l)
 
-    idx = dm_lfs_tot_pop.idx
-    vaud_share = dm_lfs_age.array[idx['Vaud'], -1, ...] / dm_lfs_age.array[idx['Switzerland'], -1, ...]
+        idx = dm_lfs_tot_pop.idx
+        vaud_share = dm_lfs_age.array[idx[canton], -1, ...] / dm_lfs_age.array[idx['Switzerland'], -1, ...]
+        for l, dm_fts in dict_lfs_age_fts.items():
+            vaud_arr = vaud_share[np.newaxis, np.newaxis, ...] * dm_fts['Switzerland', :, :, :]
+            dm_fts.add(vaud_arr, dim='Country', col_label=canton)
+
+            # Remove comment to check smoothness
+            # dm_fts.append(dm_lfs_age, dim='Years')
+            # dm_fts.sort(dim='Years')
+            # dm_fts.datamatrix_plot(title=l)
+    for l, dm_fts in dict_lfs_tot_pop_fts.items():
+        dm_fts.sort('Country')
     for l, dm_fts in dict_lfs_age_fts.items():
-        vaud_arr = vaud_share[np.newaxis, np.newaxis, ...] * dm_fts.array
-        dm_fts.add(vaud_arr, dim='Country', col_label='Vaud')
-        # Remove comment to check smoothness
-        # dm_fts.append(dm_lfs_age, dim='Years')
-        # dm_fts.sort(dim='Years')
-        # dm_fts.datamatrix_plot(title=l)
+        dm_fts.sort('Country')
+
     return
 
 
 ########################
 ### URBAN POPULATION ###
 ########################
+# NOT USED
 def extract_lfs_urban_share(years_ots, table_id):
     # Suisse urbaine: sélection de variables selon la typologie urbain-rural
     structure, title = get_data_api_CH(table_id, mode='example', language='fr')
@@ -374,7 +395,8 @@ def extract_lfs_floor_space(years_ots, dm_lfs_tot_pop, table_id):
     # Pre-processing
 
     ## Rename & Group
-    dm_floor_area.rename_col(['Suisse', '- Vaud'], ['Switzerland', 'Vaud'], dim='Country')
+    dm_floor_area.rename_col(['Suisse'], ['Switzerland'], dim='Country')
+    dm_floor_area.rename_col_regex('- ', '', dim='Country')
     dm_floor_area.group_all('Categories2')
     dm_floor_area.groupby({'lfs_dwellings': '.*'}, dim='Variables', regex=True, inplace=True)
     dm_num_bld = dm_floor_area.group_all('Categories1', inplace=False)
@@ -428,6 +450,7 @@ def extract_lfs_floor_space(years_ots, dm_lfs_tot_pop, table_id):
 ######################
 ### HOUSEHOLD-SIZE ###
 ######################
+# Not USED
 def extract_lfs_household_size(years_ots, table_id):
     structure, title = get_data_api_CH(table_id, mode='example')
     # Extract buildings floor area
@@ -440,8 +463,9 @@ def extract_lfs_household_size(years_ots, table_id):
     # Get api data
     dm_household = get_data_api_CH(table_id, mode='extract', filter=filter, mapping_dims=mapping_dim, units=unit_all)
 
-    dm_household.rename_col(['Schweiz / Suisse / Svizzera / Switzerland', '- Vaud'], ['Switzerland', 'Vaud'],
+    dm_household.rename_col(['Schweiz / Suisse / Svizzera / Switzerland'], ['Switzerland'],
                             dim='Country')
+    dm_household.rename_col_regex('- ', '', dim='Country')
     drop_strings = [' persons or more', ' persons', ' person']
     for drop_str in drop_strings:
         dm_household.rename_col_regex(drop_str, '', dim='Variables')
@@ -627,8 +651,11 @@ years_setting = [1990, 2023, 2050, 5]  # Set the timestep for historical years &
 years_ots = create_years_list(start_year=1990, end_year=2023, step=1)
 years_fts = create_years_list(start_year=2025, end_year=2050, step=5)
 
+cantons_en = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Geneva', 'Glarus', 'Graubünden', 'Jura', 'Lucerne', 'Neuchâtel', 'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn', 'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud', 'Zug', 'Zurich']
+cantons_fr = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Genève', 'Glarus', 'Graubünden', 'Jura', 'Luzern', 'Neuchâtel', 'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn', 'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud', 'Zug', 'Zürich']
+
 # Get population total and by age group (ots)
-filename = 'data/lfs_pop_ots.pickle'
+filename = 'data/lfs_pop_ots_all_cantons.pickle'
 dm_lfs_age, dm_lfs_tot_pop = extract_lfs_pop(years_ots, table_id='px-x-0102020000_104', file=filename)
 # Get raw fts pop data (fts)
 filename = 'data/lfs_pop_fts.pickle'
@@ -652,6 +679,10 @@ for lev in range(4):
 # Save
 current_file_directory = os.path.dirname(os.path.abspath(__file__))
 file = os.path.join(current_file_directory, '../../../data/datamatrix/lifestyles.pickle')
+
+#with open(file, 'wb') as handle:
+#  pickle.dump(DM_lfs, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
 my_pickle_dump(DM_new=DM_lfs, local_pickle_file=file)
 
 
