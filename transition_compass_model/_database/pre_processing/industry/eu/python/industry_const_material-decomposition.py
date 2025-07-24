@@ -8,18 +8,12 @@ import warnings
 import numpy as np
 warnings.simplefilter("ignore")
 
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/industry/eu/python/industry_const_material-decomposition.py"
-
-# directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
-
 #############################################
 ##### NEW CONSTANTS FROM LIT REV BY E4S #####
 #############################################
 
 # get data
-filepath = os.path.join(current_file_directory, '../data/Literature/literature_review_material_decomposition.xlsx')
+filepath = '../data/Literature/literature_review_material_composition.xlsx'
 df = pd.read_excel(filepath)
 
 # name first 2 columns
@@ -141,8 +135,8 @@ for key in dict_map.keys():
     df_agg.loc[df_agg["variable"].isin(dict_map[key]),"variable"] = key
 df_agg = df_agg.groupby(["variable","material"], as_index=False)['value'].agg(np.mean)
 
-# check
-df_check = df_agg.groupby(["variable"], as_index=False)['value'].agg(sum)
+# # check
+# df_check = df_agg.groupby(["variable"], as_index=False)['value'].agg(sum)
 
 # fix units
 df_agg.loc[df_agg["variable"] == "floor-area-new-residential[kg/m2]","value"] = \
@@ -160,6 +154,9 @@ for i in range(0, len(ls_temp)):
         df_agg.loc[df_agg["variable"] == ls_temp[i],"value"] / 1000
     df_agg.loc[df_agg["variable"] == ls_temp[i],"variable"] = ls_temp1[i]
 # df_agg["variable"].unique()
+
+# # check
+# df_check = df_agg.groupby(["variable"], as_index=False)['value'].agg(sum)
 
 # # fix units
 # import re
@@ -211,7 +208,6 @@ tmp = create_constant(df_agg, ["fridge[t/num]", "dishwasher[t/num]","wmachine[t/
 cdm_domapp = ConstantDataMatrix.create_from_constant(tmp, 1)
 cdm_check = cdm_domapp.group_all("Categories1",inplace=False)
 df_check = pd.melt(cdm_check.write_df())
-# TODO: computer is still way to heavy, at some point review its decomposition
 
 # cdm_tra_veh
 variabs = df_agg["variable"].unique()
@@ -221,7 +217,9 @@ tmp = create_constant(df_agg, variabs)
 cdm_tra_veh = ConstantDataMatrix.create_from_constant(tmp, 1)
 
 # add missing veh
-# TODO: check the literature and re do the material decomp for these missing veh
+# I assume buses to be similar to trucks, as the overall weight and material composition are similar
+# source for buses (it's a thesis): https://www.theseus.fi/bitstream/handle/10024/52377/Karna_Paivi.pdf.pdf?sequence=1
+
 idx = cdm_tra_veh.idx
 cdm_tra_veh.add(cdm_tra_veh.array[idx["HDV_BEV"],:], "Variables", "bus_BEV", unit="t/num")
 cdm_tra_veh.add(cdm_tra_veh.array[idx["HDV_FCEV"],:], "Variables", "bus_FCEV", unit="t/num")
@@ -323,7 +321,7 @@ for key in ["tra_veh","tra_bat"]:
 # CDM_matdec["tra_bat"].drop("Categories3","other")
 
 # save
-f = os.path.join(current_file_directory, '../data/datamatrix/const_material-decomposition.pickle')
+f = '../data/datamatrix/const_material-decomposition.pickle'
 with open(f, 'wb') as handle:
     pickle.dump(CDM_matdec, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
