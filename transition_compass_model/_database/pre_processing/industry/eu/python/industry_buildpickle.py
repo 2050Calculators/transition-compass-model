@@ -15,12 +15,11 @@ import plotly.io as pio
 import re
 pio.renderers.default='browser'
 import subprocess
-
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/industry/eu/python/industry_buildpickle.py"
+import warnings
+warnings.simplefilter("ignore")
 
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 ###############################################################################
 ############################### EXECUTE SCRIPTS ###############################
