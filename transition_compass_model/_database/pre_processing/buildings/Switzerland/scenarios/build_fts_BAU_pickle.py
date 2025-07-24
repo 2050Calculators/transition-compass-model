@@ -1,7 +1,7 @@
 import numpy as np
 import os
 
-from model.common.auxiliary_functions import linear_fitting, create_years_list, my_pickle_dump
+from model.common.auxiliary_functions import linear_fitting, create_years_list, my_pickle_dump, filter_DM
 
 
 def calculate_heating_eff_fts(dm_heating_eff, years_fts, maximum_eff):
@@ -16,7 +16,9 @@ def calculate_heating_eff_fts(dm_heating_eff, years_fts, maximum_eff):
   return dm_heating_eff_fts
 
 
-def run(DM_buildings, years_fts):
+def run(DM_buildings, country_list, years_fts):
+
+  filter_DM(DM_buildings, {'Country': country_list})
 
   this_dir = os.path.dirname(os.path.abspath(__file__))
   # !FIXME: use the actual values and not the calibration factor

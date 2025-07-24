@@ -54,7 +54,7 @@ print('Compile pickle ots')
 DM_buildings = ots_pickle_run(DM_floor, DM_renov, DM_heating, DM_other, years_ots)
 
 print('Compile pickle fts - all BAU')
-DM_buildings = fts_bau_pickle_run(DM_buildings, years_fts)
+DM_buildings = fts_bau_pickle_run(DM_buildings, country_list, years_fts)
 
 print('Compile Scenario Loi Energie 2025 - Vaud - level 4')
 DM_buildings = fts_loi_energie_vaud_run(DM_buildings, global_var, dm_pop, lev=4)
