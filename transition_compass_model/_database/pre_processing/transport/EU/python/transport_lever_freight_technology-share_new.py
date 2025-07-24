@@ -1,28 +1,16 @@
 
 # packages
-from model.common.data_matrix_class import DataMatrix
 from model.common.auxiliary_functions import linear_fitting
+from _database.pre_processing.routine_JRC import get_jrc_data
+from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
 import pickle
 import os
 import numpy as np
 import warnings
-import eurostat
-# from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
-import plotly.express as px
-import plotly.io as pio
-import re
-pio.renderers.default='browser'
-
-from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
-from _database.pre_processing.routine_JRC import get_jrc_data
-from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
-
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/transport/EU/python/transport_lever_freight_technology-share_new.py"
 
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 # load current transport pickle
 filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
@@ -210,10 +198,6 @@ dm_new_rail.sort("Categories1")
 
 dm_new.append(dm_avi,"Variables")
 dm_new.append(dm_new_rail,"Variables")
-
-# I do not have data on new for iww and marine, so all missing
-dm_new.add(np.nan, col_label="IWW", dummy=True, dim="Variables",unit="vehicles")
-dm_new.add(np.nan, col_label="marine", dummy=True, dim="Variables",unit="vehicles")
 dm_new.sort("Variables")
 dm_new.sort("Country")
 
@@ -426,17 +410,21 @@ dm_new_pc.sort("Categories1")
 dm_new_pc.sort("Categories2")
 dm_new_pc_final = dm_new_pc.copy()
 
-# make rest of the variables for new
-categories1_missing = DM_tra["fxa"]["freight_tech"].col_labels["Categories1"].copy()
-categories2_missing = categories2_all.copy()
-for cat in dm_new.col_labels["Categories1"]: categories1_missing.remove(cat)
-for cat in dm_new.col_labels["Categories2"]: categories2_missing.remove(cat)
-dm_new.add(np.nan, col_label=categories1_missing, dummy=True, dim="Categories1")
-dm_new.add(np.nan, col_label=categories2_missing, dummy=True, dim="Categories2")
-dm_new.sort("Categories1")
-dm_new.sort("Categories2")
-dm_new.units["tra_freight_technology-share_new"] = "number"
-dm_new_final = dm_new.copy()
+# make marine and IWW all ICE
+dm_new_pc_final[:,:,:,"IWW","ICE"] = 1
+dm_new_pc_final[:,:,:,"marine","ICE"] = 1
+
+# # make rest of the variables for new
+# categories1_missing = DM_tra["fxa"]["freight_tech"].col_labels["Categories1"].copy()
+# categories2_missing = categories2_all.copy()
+# for cat in dm_new.col_labels["Categories1"]: categories1_missing.remove(cat)
+# for cat in dm_new.col_labels["Categories2"]: categories2_missing.remove(cat)
+# dm_new.add(np.nan, col_label=categories1_missing, dummy=True, dim="Categories1")
+# dm_new.add(np.nan, col_label=categories2_missing, dummy=True, dim="Categories2")
+# dm_new.sort("Categories1")
+# dm_new.sort("Categories2")
+# dm_new.units["tra_freight_technology-share_new"] = "number"
+# dm_new_final = dm_new.copy()
 
 # check
 # dm_new.flatten().flatten().filter({"Country" : ["EU27"]}).datamatrix_plot()

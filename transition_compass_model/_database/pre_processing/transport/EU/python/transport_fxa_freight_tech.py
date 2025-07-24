@@ -8,22 +8,14 @@ import os
 import numpy as np
 import warnings
 import eurostat
-# from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
-import plotly.express as px
-import plotly.io as pio
-import re
-pio.renderers.default='browser'
 
 from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 from _database.pre_processing.routine_JRC import get_jrc_data
 from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
 
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/transport/EU/python/transport_fxa_freight_tech.py"
-
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 # load current transport pickle
 filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
@@ -183,6 +175,8 @@ for cat in dm_avi.col_labels["Categories1"]: categories2_missing.remove(cat)
 dm_avi.add(np.nan, col_label=categories2_missing, dummy=True, dim="Categories1")
 dm_avi.sort("Categories1")
 
+# TODO: probably here there is kerosene H2 missing
+
 ################
 ##### RAIL #####
 ################
@@ -205,16 +199,96 @@ for cat in dm_fleet_rail.col_labels["Categories1"]: categories2_missing.remove(c
 dm_fleet_rail.add(np.nan, col_label=categories2_missing, dummy=True, dim="Categories1")
 dm_fleet_rail.sort("Categories1")
 
+###############
+##### IWW #####
+###############
+
+# get data on total fleet from eurostat
+code = "iww_eq_loadcap"
+eurostat.get_pars(code)
+filter = {'geo\\TIME_PERIOD': list(dict_iso2.keys()),
+          'vessel': ['BAR_SP'],
+          'unit' : ['NR'],
+          'weight' : ['TOTAL']}
+mapping_dim = {'Country': 'geo\\TIME_PERIOD',
+                'Variables': 'vessel'}
+dm_iww_fleet = get_data_api_eurostat(code, filter, mapping_dim, 'num')
+dm_iww_fleet = dm_iww_fleet.filter({"Years" : list(range(1990,2023+1,1))})
+dm_iww_fleet.drop("Country","United Kingdom")
+dm_iww_fleet = dm_iww_fleet.groupby({"IWW" : ['BAR_SP']}, "Variables")
+# df = dm_iww_fleet.write_df()
+
+# make techs (we say they are all ICE, as vessels usually are some diesel and some Heavy Fuel Oil, which we do not have)
+dm_iww_fleet.rename_col("IWW","IWW_ICE","Variables")
+dm_iww_fleet.deepen()
+
+# assuming that all else is nan
+categories2_missing = categories2_all.copy()
+for cat in dm_iww_fleet.col_labels["Categories1"]: categories2_missing.remove(cat)
+dm_iww_fleet.add(np.nan, col_label=categories2_missing, dummy=True, dim="Categories1")
+dm_iww_fleet.sort("Categories1")
+
+# make EU27
+dm_iww_fleet.append(dm_iww_fleet.groupby({"EU27":dm_iww_fleet.col_labels["Country"]},"Country"),"Country")
+
+# add missing countries
+countries = dm_avi.col_labels["Country"]
+missing_countries = np.array(countries)[[c not in dm_iww_fleet.col_labels["Country"] for c in countries]]
+dm_iww_fleet.add(np.nan,"Country",missing_countries,"number",True)
+dm_iww_fleet.sort("Country")
+
+##################
+##### MARINE #####
+##################
+
+# get data
+df = pd.read_csv("../data/unctad/US_MerchantFleet.csv")
+df["Economy Label"].unique()
+countries = dm_avi.col_labels["Country"]
+missing_countries = np.array(countries)[[c not in df["Economy Label"].unique() for c in countries]]
+countries = countries + ['European Union (2020 …)','Czechia','Netherlands (Kingdom of the)']
+df = df.loc[df["Economy Label"].isin(countries),:]
+df = df.loc[df["ShipType Label"] == 'Total fleet',:]
+old_names = ['European Union (2020 …)','Czechia','Netherlands (Kingdom of the)']
+new_names = ["EU27", "Czech Republic", "Netherlands"]
+for o,n in zip(old_names, new_names):
+    df.loc[df["Economy Label"] == o,"Economy Label"] = n
+
+# make dm
+df.columns
+df = df.loc[:,["Year","Economy Label","Number of ships"]]
+df.rename(columns={"Economy Label":"Country","Year" : "Years","Number of ships":"marine[number]"},inplace=True)
+df = df.loc[df["Years"].isin(list(range(1990,2023+1))),:]
+df_temp = pd.DataFrame({"Country":np.repeat(df["Country"].unique(), len(df["Years"].unique())),
+                        "Years":np.tile(df["Years"].unique(), len(df["Country"].unique()))})
+df = df_temp.merge(df, "left", ["Country","Years"])
+dm_mar_fleet = DataMatrix.create_from_df(df, 0)
+
+# make techs (we say they are all ICE, as vessels usually are some diesel and some Heavy Fuel Oil, which we do not have)
+dm_mar_fleet.rename_col("marine","marine_ICE","Variables")
+dm_mar_fleet.deepen()
+
+# assuming that all else is nan
+categories2_missing = categories2_all.copy()
+for cat in dm_mar_fleet.col_labels["Categories1"]: categories2_missing.remove(cat)
+dm_mar_fleet.add(np.nan, col_label=categories2_missing, dummy=True, dim="Categories1")
+dm_mar_fleet.sort("Categories1")
+
+
 ########################
 ##### PUT TOGETHER #####
 ########################
 
+dm_fleet.add(np.nan, "Years", list(range(1990,1999+1)) + [2022,2023], "number", True)
+dm_fleet.sort("Years")
+dm_avi.add(np.nan, "Years", list(range(1990,1999+1)) + [2022,2023], "number", True)
+dm_avi.sort("Years")
+dm_fleet_rail.add(np.nan, "Years", list(range(1990,1999+1)) + [2022,2023], "number", True)
+dm_fleet_rail.sort("Years")
 dm_fleet.append(dm_avi,"Variables")
 dm_fleet.append(dm_fleet_rail,"Variables")
-
-# I do not have data on fleet for iww and marine, so all missing
-dm_fleet.add(np.nan, col_label="IWW", dummy=True, dim="Variables",unit="vehicles")
-dm_fleet.add(np.nan, col_label="marine", dummy=True, dim="Variables",unit="vehicles")
+dm_fleet.append(dm_iww_fleet,"Variables")
+dm_fleet.append(dm_mar_fleet,"Variables")
 dm_fleet.sort("Variables")
 dm_fleet.sort("Country")
 
@@ -263,7 +337,9 @@ dict_call = {"HDVH_BEV" : {"n_adj" : 2, "year_end_first_adj" : 2010, "year_start
              "HDVL_ICE-gasoline" : {"n_adj" : 2, "year_end_first_adj" : 2010, "year_start_second_adj" : 2020},
              "aviation_ICE" : {"n_adj" : 2, "year_end_first_adj" : 2010, "year_start_second_adj" : 2020},
              "rail_CEV" : {"n_adj" : 1},
-             "rail_ICE-diesel" : {"n_adj" : 1}}
+             "rail_ICE-diesel" : {"n_adj" : 1},
+             "marine_ICE" : {"n_adj" : 1},
+             "IWW_ICE" : {"n_adj" : 1}}
 
 for key in dict_call.keys():
     if len(dict_call[key]) > 1:
@@ -392,6 +468,8 @@ dm_fleet = make_fts(dm_fleet, "HDVL_ICE-gasoline", baseyear_start, baseyear_end,
 dm_fleet = make_fts(dm_fleet, "aviation_ICE", baseyear_start, baseyear_end, dim = "Variables")
 dm_fleet = make_fts(dm_fleet, "rail_CEV", baseyear_start, baseyear_end, dim = "Variables")
 dm_fleet = make_fts(dm_fleet, "rail_ICE-diesel", baseyear_start, baseyear_end, dim = "Variables")
+dm_fleet = make_fts(dm_fleet, "IWW_ICE", baseyear_start, baseyear_end, dim = "Variables")
+dm_fleet = make_fts(dm_fleet, "marine_ICE", baseyear_start, baseyear_end, dim = "Variables")
 
 # check
 # dm_fleet.filter({"Country" : ["EU27"]}).datamatrix_plot()
@@ -439,7 +517,7 @@ dm_fleet.units["tra_freight_technology-share_fleet"] = "number"
 dm_fleet_final = dm_fleet.copy()
 
 # check
-# dm_fleet.flatten().flatten().filter({"Country" : ["EU27"]}).datamatrix_plot()
+# dm_fleet_final.flatten().flatten().filter({"Country" : ["EU27"]}).datamatrix_plot()
 
 # clean
 del baseyear_end, baseyear_start, cat, categories2_all, categories2_missing, df, \
@@ -584,8 +662,8 @@ dm_iww.array[dm_iww.array==0] = np.nan
 # for v in dm_temp.col_labels["Variables"]: dm_temp.units[v] = "kgoe/100 km"
 # dm_iww = dm_temp.copy()
 
-# assuming most of it is diesel
-dm_iww.rename_col("IWW","IWW_ICE-diesel","Variables")
+# assuming most of it is ICE
+dm_iww.rename_col("IWW","IWW_ICE","Variables")
 
 # make other variables as missing
 dm_iww.deepen()
@@ -724,7 +802,7 @@ dict_call = {"HDVH_BEV" : {"n_adj" : 2, "year_end_first_adj" : 2010, "year_start
              "HDVM_ICE-diesel" :  {"n_adj" : 2, "year_end_first_adj" : 2010, "year_start_second_adj" : 2010},
              "HDVM_ICE-gas" : {"n_adj" : 2, "year_end_first_adj" : 2015, "year_start_second_adj" : 2015},
              "HDVM_ICE-gasoline" : {"n_adj" : 2, "year_end_first_adj" : 2010, "year_start_second_adj" : 2010},
-             "IWW_ICE-diesel" : {"n_adj" : 1},
+             "IWW_ICE" : {"n_adj" : 1},
              "aviation_ICE" : {"n_adj" : 1},
              "marine_ICE" : {"n_adj" : 1},
              "rail_CEV" : {"n_adj" : 1},

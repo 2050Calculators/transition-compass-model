@@ -4,23 +4,12 @@ import pickle
 import os
 import numpy as np
 import warnings
-import eurostat
-# from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
-import plotly.express as px
-import plotly.io as pio
-import re
-pio.renderers.default='browser'
-
-from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
-from _database.pre_processing.routine_JRC import get_jrc_data
-from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
-
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/transport/EU/python/transport_lever_passenger_utilization-rate.py"
+import pandas as pd
+from model.common.auxiliary_functions import linear_fitting
 
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 # load current transport pickle
 filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
@@ -94,6 +83,7 @@ for y in years_fts:
 dm_uti_level4.array[idx["EU27"],idx[2050],:,idx["LDV"]] = dm_uti_level4.array[idx["EU27"],idx[2023],:,idx["LDV"]]*(1+0.30) # I do not put 900% here as it would blow all the results
 dm_uti_level4.array[idx["EU27"],idx[2050],:,idx["2W"]] = dm_uti_level4.array[idx["EU27"],idx[2023],:,idx["2W"]]*(1+0.15)
 dm_uti_level4.array[idx["EU27"],idx[2050],:,idx["bus"]] = dm_uti_level4.array[idx["EU27"],idx[2023],:,idx["bus"]]*(1+0.45)
+dm_uti_level4.array[idx["EU27"],idx[2050],:,idx["aviation"]] = dm_uti_level4.array[idx["EU27"],idx[2023],:,idx["aviation"]]*(1+0.45) # TODO: temporary as bus, re do this later
 dm_uti_level4.array[idx["EU27"],idx[2050],:,idx["rail"]] = dm_uti_level4.array[idx["EU27"],idx[2023],:,idx["rail"]]*(1+0.45)
 dm_uti_level4.array[idx["EU27"],idx[2050],:,idx["metrotram"]] = dm_uti_level4.array[idx["EU27"],idx[2023],:,idx["metrotram"]]*(1+0.45)
 dm_uti_level4 = linear_fitting(dm_uti_level4, years_fts)
