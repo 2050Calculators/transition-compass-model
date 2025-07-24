@@ -1,26 +1,13 @@
 
 # packages
-from model.common.data_matrix_class import DataMatrix
 from model.common.auxiliary_functions import my_pickle_dump
-import pandas as pd
 import pickle
 import os
-import numpy as np
 import warnings
-import eurostat
-# from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
-import plotly.express as px
-import plotly.io as pio
-import re
-pio.renderers.default='browser'
-import subprocess
-
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/transport/EU/python/transport_build-pickle.py"
 
 # current file directory
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 # load current transport pickle
 filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
@@ -31,11 +18,14 @@ with open(filepath, 'rb') as handle:
 ############################### EXECUTE SCRIPTS ###############################
 ###############################################################################
 
+# import subprocess
 # subprocess.run(['python', os.path.join(current_file_directory, 'transport_fxa_passenger_tech.py')])
 # subprocess.run(['python', os.path.join(current_file_directory, 'transport_fxa_passenger_vehicle-lifetime.py')])
 # subprocess.run(['python', os.path.join(current_file_directory, 'transport_fxa_emission-factor-electricity.py')])
 # subprocess.run(['python', os.path.join(current_file_directory, 'transport_fxa_freight_tech.py')])
 # subprocess.run(['python', os.path.join(current_file_directory, 'transport_fxa_freight_mode_road.py')])
+# subprocess.run(['python', os.path.join(current_file_directory, 'transport_fxa_aviation_share-local-emissions.py')])
+# subprocess.run(['python', os.path.join(current_file_directory, 'transport_fxa_aviation_fuel-mix-availability.py')])
 
 # subprocess.run(['python', os.path.join(current_file_directory, 'transport_lever_passenger_aviation-pkm.py')])
 # subprocess.run(['python', os.path.join(current_file_directory, 'transport_lever_passenger_modal-share.py')])
@@ -108,10 +98,12 @@ DM_transport["fts"] = DM_fts.copy()
 # list(np.array(files)[[bool(re.search("fxa", i)) for i in files]])
 fxa_files = ['fxa_passenger_tech.pickle','fxa_passenger_vehicle-lifetime.pickle',
              'fxa_emission-factor-electricity.pickle','fxa_freight_tech.pickle',
-             'fxa_freight_mode_other.pickle','fxa_freight_mode_road.pickle']
+             'fxa_freight_mode_other.pickle','fxa_freight_mode_road.pickle',
+             'fxa_share-local-emissions.pickle','fxa_fuel-mix-availability.pickle']
 fxa_names = ['passenger_tech','passenger_vehicle-lifetime',
              'emission-factor-electricity','freight_tech',
-             'freight_mode_other','freight_mode_road']
+             'freight_mode_other','freight_mode_road',
+             'share-local-emissions','fuel-mix-availability']
 
 # load dms
 for i in range(0, len(fxa_files)):
