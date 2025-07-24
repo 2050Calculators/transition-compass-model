@@ -1,12 +1,7 @@
 
-# dm_waste_management
-# DataMatrix with shape (32, 33, 6, 10), variables ['cars-EV', 'cars-FCV', 'cars-ICE', 'trucks-EV', 'trucks-FCV', 'trucks-ICE'] and categories1 ['energy-recovery', 'export', 'incineration', 'landfill', 'littered', 'recovery', 'recycling', 'reuse', 'waste-collected', 'waste-uncollected']
-# dm_matrec_veh
-# DataMatrix with shape (32, 33, 6, 27), variables ['cars-EV', 'cars-FCV', 'cars-ICE', 'trucks-EV', 'trucks-FCV', 'trucks-ICE'] and categories1 ['abs', 'aluminium', 'brass', 'chromium', 'cobalt', 'copper', 'epdm', 'eps', 'ferrous', 'lithium', 'mangnesium', 'neodymium', 'pa', 'pbt', 'pcb', 'pe', 'pmma', 'pom', 'pp', 'ps', 'pur', 'pvc', 'silver', 'steel', 'tin', 'tungsten', 'zinc']
-
 # packages
 from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting, fix_jumps_in_dm
+from model.common.auxiliary_functions import linear_fitting
 import pandas as pd
 import pickle
 import os
@@ -19,11 +14,6 @@ import plotly.express as px
 import plotly.io as pio
 pio.renderers.default='browser'
 
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/industry/eu/python/industry_lever_end-of-life.py"
-
-# directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
 
 # Eurostat databases:
 # env_waselv for vehicles
@@ -549,6 +539,7 @@ dm_planes_tot[:,:,:,"waste-collected"] = 1
 dm_planes_tot[:,:,:,"export"] = 0
 dm_planes_tot[:,:,:,"waste-uncollected"] = 0
 dm_planes_tot[:,:,:,"littered"] = 0
+dm_planes_tot.rename_col("vehicles","planes","Variables")
 
 dm_planes_col = DM_wst_mgt["elv-col"].copy()
 dm_planes_col["reuse"] = 0.3
@@ -560,6 +551,709 @@ dm_planes_col.rename_col("vehicles","planes","Variables")
 
 DM_wst_mgt["planes-total"] = dm_planes_tot
 DM_wst_mgt["planes-col"] = dm_planes_col
+
+#############################################################################
+################################### SHIPS ###################################
+#############################################################################
+
+# EU study: https://environment.ec.europa.eu/document/download/f717f65b-7293-43eb-9b52-2890277bc6d8_en?filename=Support%20study%20to%20the%20evaluation%20.pdf
+# table 3.4: in 2018 (before directive) around 25 recycling facilities, today around 48 facilities
+
+# source: https://shipbreakingplatform.org/platform-publishes-list-2024/
+# following the number in the excel for 2024, of the EU owned ships, around 30% were
+# dismantled in EU facilities, while around 70% were exported to third countries (Turkey, South East Easia, etc)
+# assuming that before 2018 they were half
+
+# this is beaching vs scrapping around the world, mostly beaching: https://www.offthebeach.org/
+# we will assume that there is no "beaching" in the EU, so it's mostly scrapping, and probably we can use similar percentages
+# than planes (most of it is recycled-reused)
+
+dm_ship_tot = DM_wst_mgt["elv-total"].copy()
+
+years_before_regulation = list(range(1990,2018+1))
+years_after_regulation = list(range(2019,2023+1)) + list(range(2025,2050+5,5))
+
+for y in years_before_regulation:
+    dm_ship_tot[:,y,:,"waste-collected"] = 0.15
+    dm_ship_tot[:,y,:,"export"] = 0.85
+    dm_ship_tot[:,y,:,"waste-uncollected"] = 0
+    dm_ship_tot[:,y,:,"littered"] = 0
+
+for y in years_after_regulation:
+    dm_ship_tot[:,y,:,"waste-collected"] = 0.3
+    dm_ship_tot[:,y,:,"export"] = 0.7
+    dm_ship_tot[:,y,:,"waste-uncollected"] = 0
+    dm_ship_tot[:,y,:,"littered"] = 0
+dm_ship_tot.rename_col("vehicles","ships","Variables")
+
+dm_ship_col = DM_wst_mgt["elv-col"].copy()
+dm_ship_col["reuse"] = 0.3
+dm_ship_col["incineration"] = 0
+dm_ship_col["landfill"] = 0.02
+dm_ship_col["recycling"] = 0.6
+dm_ship_col["energy-recovery"] = 0.08
+dm_ship_col.rename_col("vehicles","ships","Variables")
+
+DM_wst_mgt["ship-total"] = dm_ship_tot
+DM_wst_mgt["ship-col"] = dm_ship_col
+
+# tomorrow: do end of life of buildings and rail - road- trolly cables, and see what to do for all fts (probably keep the levels
+# all the same for now)
+
+###############################################################################
+################################## BUILDINGS ##################################
+###############################################################################
+
+# get data
+df = eurostat.get_data_df("env_wastrt")
+
+# get geo column
+df.rename(columns={'geo\\TIME_PERIOD': 'geoscale'}, inplace=True)
+
+# filter for unit of measure: Tonne
+df = df.loc[df['unit'] == 'T',:]
+
+# get only construction waste, both hazardous and non hazardous
+df = df.loc[df["waste"] == "W121",:]
+df = df.loc[df["hazard"] == "HAZ_NHAZ",:]
+df.drop(columns=["hazard"],inplace=True)
+
+# checks
+A = df.copy()
+A["combo"] = [i + " - " + j for i, j in zip(df["wst_oper"], df["waste"])]
+list(A["combo"].unique())
+
+
+# in general for us:
+# total = littered + exported + collected + uncollected
+# collected = recycling + energy recovery + reuse + landfill + incineration
+
+# in general in eurostat
+# Waste generation: The quantity of waste, whereby ‘waste’ means any substance or object which the holder discards or intends or is required to discard.
+# Waste management: Waste management refers to the collection, transport, recovery (including sorting), and disposal of waste.
+# Treatment: Treatment means recovery or disposal operations, including preparation prior to recovery or disposal.
+# Recovery: Recovery means any operation whose main result is that waste serves a useful purpose. For example, by replacing other materials that would have been used for a particular function.
+# Disposal: Disposal means any operation that is not recovery (personal note: I guess this is either incineration or landfill)
+
+# specifically for env_wastrt
+# 'DSP_I - W121': incineration (D10)
+# 'DSP_L - W121': landfill (D1, D5, D12)
+# 'DSP_L_OTH - W121': landfill and other (D1-D7, D12)
+# 'DSP_OTH - W121': other (D2-D4, D6-D7)
+# 'RCV_B - W121': backfilling
+# 'RCV_E - W121': energy recovery (R1)
+# 'RCV_R - W121': recycling
+# 'RCV_R_B - W121': recycling and backfilling (R2-R11)
+# 'TRT - W121': waste treatment
+
+# so, formulas:
+# littered: 0
+# exported: 0
+# collected: recycling + energy recovery + reuse (backfilling) + landfill + incineration
+# uncollected: 0
+# recycling: RCV_R - W121
+# energy recovery: RCV_E - W121
+# reuse: RCV_B - W121
+# landfill: DSP_L - W121
+# incineration: DSP_I - W121
+
+# mapping
+dict_mapping = {"recycling": ["RCV_R - W121"],
+                "energy-recovery": ['RCV_E - W121'],
+                "reuse": ["RCV_B - W121"],
+                "landfill": ['DSP_L - W121'],
+                "incineration" : ["DSP_I - W121"]
+                }
+
+# make long format
+indexes = ['freq', 'wst_oper', 'waste', 'unit', 'geoscale']
+df = pd.melt(df, id_vars = indexes, var_name='year')
+
+# create column with combos
+df["combo"] = [i + " - " + j for i, j in zip(df["wst_oper"], df["waste"])]
+
+# aggregate
+indexes = ['freq', 'wst_oper', 'unit', 'geoscale','year']
+key = "energy-recovery"
+def my_aggregation(key, df, dict_mapping, indexes):
+    df_temp = df.loc[df["combo"].isin(dict_mapping[key]),:]
+    df_temp = df_temp.groupby(indexes, as_index=False)['value'].agg(sum)
+    df_temp["variable"] = key
+    return df_temp
+df_bld = pd.concat([my_aggregation(key, df, dict_mapping, indexes) for key in dict_mapping.keys()])
+
+# select countries
+df_bld = df_bld.loc[:,['geoscale', 'year', 'variable', 'unit', 'value']]
+country_list = {'AT' : "Austria", 'BE' : "Belgium", 'BG': "Bulgaria", 'HR' : "Croatia", 'CY' : "Cyprus", 
+                'CZ' : "Czech Republic", 'DK' : "Denmark", 'EE' : "Estonia", 'EU27_2020': "EU27", 'FI' : "Finland",
+                'FR' : "France", 'DE' : "Germany", 'EL' : "Greece", 'HU' : "Hungary", 'IE' : "Ireland",
+                'IT' : "Italy", 'LV' : "Latvia", 'LT' : "Lithuania", 'LU' : "Luxembourg", 
+                'MT' : "Malta", 'NL' : "Netherlands",
+                'PL' : "Poland", 'PT' : "Portugal", 'RO' : "Romania", 'SK' : "Slovakia", 'SI' : "Slovenia", 
+                'ES' : "Spain", 'SE' : "Sweden", 'UK' : 'United Kingdom'}
+for c in country_list.keys():
+    df_bld.loc[df_bld["geoscale"] == c,"geoscale"] = country_list[c]
+drops = ['AL','BA','IS', 'ME', 'EU28','MK', 'LI', 'NO', 'RS', 'TR', 'XK']
+df_bld = df_bld.loc[~df_bld["geoscale"].isin(drops),:]
+len(df_bld["geoscale"].unique())
+
+# fix variable name with unit
+df_bld["variable"] = [i + "[t]" for i in df_bld["variable"]]
+df_bld.drop(columns="unit",inplace=True)
+
+# checks
+df_temp = df_bld.pivot(index=["geoscale","year"], columns="variable", values='value').reset_index()
+
+# drop before 2008 (all zero)
+df_bld = df_bld.loc[df_bld["year"] > "2008",:]
+
+# clean
+del A, c, country_list, df, df_temp, dict_mapping, drops,\
+    indexes, key
+    
+##################################
+##### CONVERT TO DATA MATRIX #####
+##################################
+
+# rename
+df_bld.rename(columns={"geoscale":"Country","year":"Years"},inplace=True)
+
+# # put nan where is 0 (this is done to then generate values and replacing the zeroes)
+# df_bld.loc[df_bld["value"] == 0,"value"] = np.nan
+
+# make dm
+df_temp = df_bld.copy()
+df_temp = df_temp.pivot(index=["Country","Years"], columns="variable", values='value').reset_index()
+dm_bld = DataMatrix.create_from_df(df_temp, 0)
+
+# # plot
+# dm_bld.filter({"Country" : ["EU27"], "Variables" : ["recycling"]}).datamatrix_plot()
+# dm_bld.filter({"Country" : ["EU27"]}).datamatrix_plot()
+# landfill: probably consider until 2010 (when it's growing) for backward interpolation
+# df_temp = dm_bld.write_df()
+
+# clean
+del df_temp, df_bld
+
+###################
+##### FIX OTS #####
+###################
+
+# Set years range
+years_setting = [1990, 2023, 2050, 5]
+startyear = years_setting[0]
+baseyear = years_setting[1]
+lastyear = years_setting[2]
+step_fts = years_setting[3]
+years_ots = list(range(startyear, baseyear+1, 1))
+years_fts = list(range(baseyear+2, lastyear+1, step_fts))
+years_all = years_ots + years_fts
+
+# fill nas (including 2023)
+years_missing = np.array(years_ots)[[y not in dm_bld.col_labels["Years"] for y in years_ots]].tolist()
+for y in years_missing:    
+    dm_bld.add(np.nan, col_label=[y], dummy=True, dim='Years')
+dm_bld.sort("Years")
+years_fitting = dm_bld.col_labels["Years"]
+dm_bld = linear_fitting(dm_bld, years_fitting, min_t0=0, min_tb=0)
+dm_bld.array = np.round(dm_bld.array,0)
+
+# # plot
+# dm_bld.filter({"Country" : ["EU27"], "Variables" : ["reuse"]}).datamatrix_plot()
+# dm_bld.filter({"Country" : ["EU27"]}).datamatrix_plot()
+# df_temp = dm_bld.write_df()
+
+# clean
+del years_fitting, years_missing
+
+####################
+##### MAKE FTS #####
+####################
+
+# make function to fill in missing years fts for EU27 with linear fitting
+def make_fts(dm, variable, year_start, year_end, country = "EU27", dim = "Variables", 
+             min_t0=0, min_tb=0, years_fts = years_fts): # I put minimum to 1 so it does not go to zero
+    dm = dm.copy()
+    idx = dm.idx
+    based_on_yars = list(range(year_start, year_end + 1, 1))
+    dm_temp = linear_fitting(dm.filter({"Country" : [country], dim : [variable]}), 
+                             years_ots = years_fts, min_t0=min_t0, min_tb=min_tb, based_on = based_on_yars)
+    idx_temp = dm_temp.idx
+    if dim == "Variables":
+        dm.array[idx[country],:,idx[variable],...] = \
+            np.round(dm_temp.array[idx_temp[country],:,idx_temp[variable],...],0)
+    if dim == "Categories1":
+        dm.array[idx[country],:,:,idx[variable]] = \
+            np.round(dm_temp.array[idx_temp[country],:,:,idx_temp[variable]], 0)
+    if dim == "Categories2":
+        dm.array[idx[country],:,:,:,idx[variable]] = \
+            np.round(dm_temp.array[idx_temp[country],:,:,:,idx_temp[variable]], 0)
+    if dim == "Categories3":
+        dm.array[idx[country],:,:,:,:,idx[variable]] = \
+            np.round(dm_temp.array[idx_temp[country],:,:,:,:,idx_temp[variable]], 0)
+    
+    return dm
+
+# add missing years fts
+dm_bld.add(np.nan, col_label=years_fts, dummy=True, dim='Years')
+
+# set default time window for linear trend
+baseyear_start = 2010
+baseyear_end = 2023
+
+# compute fts
+dm_bld = make_fts(dm_bld, "energy-recovery", baseyear_start, baseyear_end)
+dm_bld = make_fts(dm_bld, "landfill", baseyear_start, baseyear_end)
+dm_bld = make_fts(dm_bld, "recycling", baseyear_start, baseyear_end)
+dm_bld = make_fts(dm_bld, "reuse", baseyear_start, baseyear_end)
+dm_bld = make_fts(dm_bld, "incineration", baseyear_start, baseyear_end)
+
+# # check
+# df_temp = dm_bld.write_df()
+# dm_bld.filter({"Country" : ["EU27"]}).datamatrix_plot()
+
+################################
+##### MAKE FINAL VARIABLES #####
+################################
+
+# make dm for collected waste
+dm_bld_col = dm_bld.copy()
+dm_bld_col.sort("Variables")
+dm_bld_tot = dm_bld_col.groupby(group_cols={"collected" : ['energy-recovery', 'incineration', 
+                                                           'landfill', 'recycling', 'reuse']}, 
+                                dim="Variables", aggregation = "sum", regex=False, inplace=False)
+
+# re-put nan in years fts for all countries but EU27
+idx = dm_bld_tot.idx
+countries = dm_bld_tot.col_labels["Country"]
+countries = list(np.array(countries)[[i != "EU27" for i in countries]])
+for c in countries:
+    for y in years_fts:
+            dm_bld_tot.array[idx[c],idx[y],:] = np.nan
+
+# compute the shares rounded at 2 decimals
+dm_bld_col.array = dm_bld_col.array / dm_bld_tot.array
+def adjust_shares(shares):
+    # Round shares to two decimal places
+    rounded_shares = [round(share, 2) for share in shares]
+    total = sum(rounded_shares)
+    
+    # Calculate the discrepancy
+    discrepancy = round(1.0 - total, 2)
+    
+    # Adjust the share with the largest absolute value
+    if discrepancy != 0:
+        # Find the index of the share to adjust
+        idx_to_adjust = max(range(len(rounded_shares)), key=lambda i: rounded_shares[i])
+        rounded_shares[idx_to_adjust] += discrepancy
+        # Ensure the adjustment doesn't break the two-decimal constraint
+        rounded_shares[idx_to_adjust] = round(rounded_shares[idx_to_adjust], 2)
+    
+    return rounded_shares
+idx = dm_bld_col.idx
+for c in dm_bld_col.col_labels["Country"]:
+    for y in years_all:
+            dm_bld_col.array[idx[c],idx[y],:] = adjust_shares(dm_bld_col.array[idx[c],idx[y],:])
+for v in dm_bld_col.col_labels["Variables"]: 
+    dm_bld_col.units[v] = "%"
+
+# # checks
+# dm_temp = dm_bld_col.groupby(group_cols={"total" : dm_bld_col.col_labels["Variables"]}, 
+#                               dim="Variables", aggregation = "sum", regex=False, inplace=False)
+# for c in countries:
+#     for y in years_fts:
+#             dm_temp.array[idx[c],idx[y],:] = np.nan
+# dm_temp.array
+# df_temp = dm_temp.write_df()
+# df_temp = dm_bld_col.write_df()
+# df_temp = dm_bld_tot.write_df()
+# dm_bld_col.filter({"Country" : ["EU27"]}).datamatrix_plot()
+
+# make dm for total waste
+dm_bld_tot.rename_col("collected","waste-collected","Variables")
+dm_bld_tot.add(0, col_label="waste-uncollected", dummy=True, dim='Variables', unit="t")
+dm_bld_tot.add(0, col_label="littered", dummy=True, dim='Variables', unit="t")
+dm_bld_tot.add(0, col_label="export", dummy=True, dim='Variables', unit="t")
+dm_bld_tot.sort("Variables")
+idx = dm_bld_tot.idx
+countries = dm_bld_tot.col_labels["Country"]
+countries = list(np.array(countries)[[i != "EU27" for i in countries]])
+for c in countries:
+    for y in years_fts:
+            dm_bld_tot.array[idx[c],idx[y],idx["littered"]] = np.nan
+            dm_bld_tot.array[idx[c],idx[y],idx["export"]] = np.nan
+            dm_bld_tot.array[idx[c],idx[y],idx["waste-uncollected"]] = np.nan
+
+# dm_bld_tot.filter({"Country" : ["EU27"]}).datamatrix_plot()
+
+# make shares in dm
+# compute the shares rounded at 2 decimals
+dm_temp = dm_bld_tot.groupby(group_cols={"total" : ['waste-collected', 'export', 'waste-uncollected', 'littered']}, 
+                             dim="Variables", aggregation = "sum", regex=False, inplace=False)
+idx = dm_temp.idx
+for c in countries:
+    for y in years_fts:
+            dm_temp.array[idx[c],idx[y],idx["total"]] = np.nan
+dm_bld_tot.array = dm_bld_tot.array / dm_temp.array
+for c in dm_bld_tot.col_labels["Country"]:
+    for y in years_all:
+            dm_bld_tot.array[idx[c],idx[y],:] = adjust_shares(dm_bld_tot.array[idx[c],idx[y],:])
+for v in dm_bld_tot.col_labels["Variables"]: 
+    dm_bld_tot.units[v] = "%"
+
+# dm_bld_tot.filter({"Country" : ["EU27"]}).datamatrix_plot()
+
+# rename floor-area-new-residential and floor-area-new-non-residential
+for v in dm_bld_col.col_labels["Variables"]:
+    dm_bld_col.rename_col(v,"floor-area-new-residential" + "_" + v,"Variables")
+dm_bld_col.deepen()
+dm_temp = dm_bld_col.copy()
+dm_temp.rename_col("floor-area-new-residential","floor-area-new-non-residential","Variables")
+dm_bld_col.append(dm_temp, "Variables")
+dm_bld_col.sort("Variables")
+for v in dm_bld_tot.col_labels["Variables"]:
+    dm_bld_tot.rename_col(v,"floor-area-new-residential" + "_" + v,"Variables")
+dm_bld_tot.deepen()
+dm_temp = dm_bld_tot.copy()
+dm_temp.rename_col("floor-area-new-residential","floor-area-new-non-residential","Variables")
+dm_bld_tot.append(dm_temp, "Variables")
+dm_bld_tot.sort("Variables")
+
+# clean
+del baseyear, baseyear_end, baseyear_start, c, countries, dm_bld,\
+    dm_temp, idx, lastyear, startyear, step_fts, v, y
+
+################
+##### SAVE #####
+################
+
+# store
+DM_wst_mgt["bld-total"] = dm_bld_tot
+DM_wst_mgt["bld-col"] = dm_bld_col
+
+# clean
+del dm_bld_tot, dm_bld_col
+
+###############################################################################
+#################################### ROADS ####################################
+###############################################################################
+
+# assuming same of buldings, as buildnigs are based on construction eol, which includes roads
+
+dm_road_tot = DM_wst_mgt["bld-total"].filter({"Variables" : ['floor-area-new-non-residential']})
+dm_road_tot.rename_col("floor-area-new-non-residential","road","Variables")
+DM_wst_mgt["road-total"] = dm_road_tot
+
+dm_road_col = DM_wst_mgt["bld-col"].filter({"Variables" : ['floor-area-new-non-residential']})
+dm_road_col.rename_col("floor-area-new-non-residential","road","Variables")
+DM_wst_mgt["road-col"] = dm_road_col
+
+###############################################################################
+#################################### RAILS ####################################
+###############################################################################
+
+# source: https://www.researchgate.net/publication/388232821_A_life_cycle_model_for_high-speed_rail_infrastructure_environmental_inventories_and_assessment_of_the_Tours-Bordeaux_railway_in_France
+# table 2: Components have different lifespans and possible second lives that need to be considered carefully as well as 
+# transparently explained. Assumptions regarding component replacement, maintenance and End-of-Life (EoL) are presented in TABLE 2, 
+# based on data provided by French railway experts.
+# rail: 80% recycling - 20% reuse
+
+dm_rail_tot = DM_wst_mgt["bld-total"].filter({"Variables" : ['floor-area-new-non-residential']})
+dm_rail_tot.rename_col("floor-area-new-non-residential","rail","Variables")
+DM_wst_mgt["rail-total"] = dm_rail_tot
+
+dm_rail_col = DM_wst_mgt["bld-col"].filter({"Variables" : ['floor-area-new-non-residential']})
+dm_rail_col.rename_col("floor-area-new-non-residential","rail","Variables")
+for y in years_ots:
+    dm_rail_col[:,y,:,:] = 0
+    dm_rail_col[:,y,:,"recycling"] = 0.8
+    dm_rail_col[:,y,:,"reuse"] = 0.2
+for y in years_fts:
+    dm_rail_col["EU27",y,:,:] = 0
+    dm_rail_col["EU27",y,:,"recycling"] = 0.8
+    dm_rail_col["EU27",y,:,"reuse"] = 0.2
+DM_wst_mgt["rail-col"] = dm_rail_col
+    
+del dm_rail_col, dm_rail_tot, years_ots, years_fts, years_after_regulation, years_all, years_before_regulation, years_setting
+
+###############################################################################
+################################ TROLLEY CABLES ###############################
+###############################################################################
+
+# assuming that eol of trolly cables is similar to the one of copper, which is
+# contained in env_wastrt, the variable metal wastes - non ferrous (W062)
+
+# get data
+df = eurostat.get_data_df("env_wastrt")
+df.rename(columns={'geo\\TIME_PERIOD': 'geoscale'}, inplace=True)
+df = df.loc[df['unit'] == 'T',:]
+df = df.loc[df["waste"] == "W062",:]
+df = df.loc[df["hazard"] == "HAZ_NHAZ",:]
+df.drop(columns=["hazard"],inplace=True)
+
+# formulas:
+# littered: 0
+# exported: 0
+# collected: recycling + energy recovery + reuse (backfilling) + landfill + incineration
+# uncollected: 0
+# recycling: RCV_R - W121
+# energy recovery: RCV_E - W121
+# reuse: RCV_B - W121
+# landfill: DSP_L - W121
+# incineration: DSP_I - W121
+
+# mapping
+dict_mapping = {"recycling": ["RCV_R - W062"],
+                "energy-recovery": ['RCV_E - W062'],
+                "reuse": ["RCV_B - W062"],
+                "landfill": ['DSP_L - W062'],
+                "incineration" : ["DSP_I - W062"]
+                }
+indexes = ['freq', 'wst_oper', 'waste', 'unit', 'geoscale']
+df = pd.melt(df, id_vars = indexes, var_name='year')
+df["combo"] = [i + " - " + j for i, j in zip(df["wst_oper"], df["waste"])]
+indexes = ['freq', 'wst_oper', 'unit', 'geoscale','year']
+key = "energy-recovery"
+def my_aggregation(key, df, dict_mapping, indexes):
+    df_temp = df.loc[df["combo"].isin(dict_mapping[key]),:]
+    df_temp = df_temp.groupby(indexes, as_index=False)['value'].agg(sum)
+    df_temp["variable"] = key
+    return df_temp
+df_trc = pd.concat([my_aggregation(key, df, dict_mapping, indexes) for key in dict_mapping.keys()])
+
+# select countries
+df_trc = df_trc.loc[:,['geoscale', 'year', 'variable', 'unit', 'value']]
+country_list = {'AT' : "Austria", 'BE' : "Belgium", 'BG': "Bulgaria", 'HR' : "Croatia", 'CY' : "Cyprus", 
+                'CZ' : "Czech Republic", 'DK' : "Denmark", 'EE' : "Estonia", 'EU27_2020': "EU27", 'FI' : "Finland",
+                'FR' : "France", 'DE' : "Germany", 'EL' : "Greece", 'HU' : "Hungary", 'IE' : "Ireland",
+                'IT' : "Italy", 'LV' : "Latvia", 'LT' : "Lithuania", 'LU' : "Luxembourg", 
+                'MT' : "Malta", 'NL' : "Netherlands",
+                'PL' : "Poland", 'PT' : "Portugal", 'RO' : "Romania", 'SK' : "Slovakia", 'SI' : "Slovenia", 
+                'ES' : "Spain", 'SE' : "Sweden", 'UK' : 'United Kingdom'}
+for c in country_list.keys():
+    df_trc.loc[df_trc["geoscale"] == c,"geoscale"] = country_list[c]
+drops = ['AL','BA','IS', 'ME', 'EU28','MK', 'LI', 'NO', 'RS', 'TR', 'XK']
+df_trc = df_trc.loc[~df_trc["geoscale"].isin(drops),:]
+len(df_trc["geoscale"].unique())
+
+# fix variable name with unit
+df_trc["variable"] = [i + "[t]" for i in df_trc["variable"]]
+df_trc.drop(columns="unit",inplace=True)
+
+# checks
+df_temp = df_trc.pivot(index=["geoscale","year"], columns="variable", values='value').reset_index()
+
+# drop before 2008 (all zero)
+df_trc = df_trc.loc[df_trc["year"] > "2008",:]
+
+# clean
+del c, country_list, df, df_temp, dict_mapping, drops,\
+    indexes, key
+    
+##################################
+##### CONVERT TO DATA MATRIX #####
+##################################
+
+# rename
+df_trc.rename(columns={"geoscale":"Country","year":"Years"},inplace=True)
+
+# make dm
+df_temp = df_trc.copy()
+df_temp = df_temp.pivot(index=["Country","Years"], columns="variable", values='value').reset_index()
+dm_trc = DataMatrix.create_from_df(df_temp, 0)
+
+# # plot
+# dm_trc.filter({"Country" : ["EU27"], "Variables" : ["recycling"]}).datamatrix_plot()
+# dm_trc.filter({"Country" : ["EU27"]}).datamatrix_plot()
+# landfill: probably consider until 2010 (when it's growing) for backward interpolation
+# df_temp = dm_trc.write_df()
+
+# clean
+del df_temp, df_trc
+
+###################
+##### FIX OTS #####
+###################
+
+# Set years range
+years_setting = [1990, 2023, 2050, 5]
+startyear = years_setting[0]
+baseyear = years_setting[1]
+lastyear = years_setting[2]
+step_fts = years_setting[3]
+years_ots = list(range(startyear, baseyear+1, 1))
+years_fts = list(range(baseyear+2, lastyear+1, step_fts))
+years_all = years_ots + years_fts
+
+# fill nas (including 2023)
+years_missing = np.array(years_ots)[[y not in dm_trc.col_labels["Years"] for y in years_ots]].tolist()
+for y in years_missing:    
+    dm_trc.add(np.nan, col_label=[y], dummy=True, dim='Years')
+dm_trc.sort("Years")
+years_fitting = dm_trc.col_labels["Years"]
+dm_trc = linear_fitting(dm_trc, years_fitting, min_t0=0, min_tb=0)
+dm_trc.array = np.round(dm_trc.array,0)
+
+# # plot
+# dm_trc.filter({"Country" : ["EU27"], "Variables" : ["reuse"]}).datamatrix_plot()
+# dm_trc.filter({"Country" : ["EU27"]}).datamatrix_plot()
+# df_temp = dm_trc.write_df()
+
+# clean
+del years_fitting, years_missing
+
+####################
+##### MAKE FTS #####
+####################
+
+# make function to fill in missing years fts for EU27 with linear fitting
+def make_fts(dm, variable, year_start, year_end, country = "EU27", dim = "Variables", 
+             min_t0=0, min_tb=0, years_fts = years_fts): # I put minimum to 1 so it does not go to zero
+    dm = dm.copy()
+    idx = dm.idx
+    based_on_yars = list(range(year_start, year_end + 1, 1))
+    dm_temp = linear_fitting(dm.filter({"Country" : [country], dim : [variable]}), 
+                             years_ots = years_fts, min_t0=min_t0, min_tb=min_tb, based_on = based_on_yars)
+    idx_temp = dm_temp.idx
+    if dim == "Variables":
+        dm.array[idx[country],:,idx[variable],...] = \
+            np.round(dm_temp.array[idx_temp[country],:,idx_temp[variable],...],0)
+    if dim == "Categories1":
+        dm.array[idx[country],:,:,idx[variable]] = \
+            np.round(dm_temp.array[idx_temp[country],:,:,idx_temp[variable]], 0)
+    if dim == "Categories2":
+        dm.array[idx[country],:,:,:,idx[variable]] = \
+            np.round(dm_temp.array[idx_temp[country],:,:,:,idx_temp[variable]], 0)
+    if dim == "Categories3":
+        dm.array[idx[country],:,:,:,:,idx[variable]] = \
+            np.round(dm_temp.array[idx_temp[country],:,:,:,:,idx_temp[variable]], 0)
+    
+    return dm
+
+# add missing years fts
+dm_trc.add(np.nan, col_label=years_fts, dummy=True, dim='Years')
+
+# set default time window for linear trend
+baseyear_start = 2010
+baseyear_end = 2023
+
+# compute fts
+dm_trc = make_fts(dm_trc, "energy-recovery", baseyear_start, baseyear_end)
+dm_trc = make_fts(dm_trc, "landfill", baseyear_start, baseyear_end)
+dm_trc = make_fts(dm_trc, "recycling", baseyear_start, baseyear_end)
+dm_trc = make_fts(dm_trc, "reuse", baseyear_start, baseyear_end)
+dm_trc = make_fts(dm_trc, "incineration", baseyear_start, baseyear_end)
+
+# # check
+# df_temp = dm_trc.write_df()
+# dm_trc.filter({"Country" : ["EU27"]}).datamatrix_plot()
+
+################################
+##### MAKE FINAL VARIABLES #####
+################################
+
+# make dm for collected waste
+dm_trc_col = dm_trc.copy()
+dm_trc_col.sort("Variables")
+dm_trc_tot = dm_trc_col.groupby(group_cols={"collected" : ['energy-recovery', 'incineration', 
+                                                           'landfill', 'recycling', 'reuse']}, 
+                                dim="Variables", aggregation = "sum", regex=False, inplace=False)
+
+# re-put nan in years fts for all countries but EU27
+idx = dm_trc_tot.idx
+countries = dm_trc_tot.col_labels["Country"]
+countries = list(np.array(countries)[[i != "EU27" for i in countries]])
+for c in countries:
+    for y in years_fts:
+            dm_trc_tot.array[idx[c],idx[y],:] = np.nan
+
+# compute the shares rounded at 2 decimals
+dm_trc_col.array = dm_trc_col.array / dm_trc_tot.array
+def adjust_shares(shares):
+    # Round shares to two decimal places
+    rounded_shares = [round(share, 2) for share in shares]
+    total = sum(rounded_shares)
+    
+    # Calculate the discrepancy
+    discrepancy = round(1.0 - total, 2)
+    
+    # Adjust the share with the largest absolute value
+    if discrepancy != 0:
+        # Find the index of the share to adjust
+        idx_to_adjust = max(range(len(rounded_shares)), key=lambda i: rounded_shares[i])
+        rounded_shares[idx_to_adjust] += discrepancy
+        # Ensure the adjustment doesn't break the two-decimal constraint
+        rounded_shares[idx_to_adjust] = round(rounded_shares[idx_to_adjust], 2)
+    
+    return rounded_shares
+idx = dm_trc_col.idx
+for c in dm_trc_col.col_labels["Country"]:
+    for y in years_all:
+            dm_trc_col.array[idx[c],idx[y],:] = adjust_shares(dm_trc_col.array[idx[c],idx[y],:])
+for v in dm_trc_col.col_labels["Variables"]: 
+    dm_trc_col.units[v] = "%"
+
+# # checks
+# dm_trc_col.filter({"Country" : ["EU27"]}).datamatrix_plot()
+
+# make dm for total waste
+dm_trc_tot.rename_col("collected","waste-collected","Variables")
+dm_trc_tot.add(0, col_label="waste-uncollected", dummy=True, dim='Variables', unit="t")
+dm_trc_tot.add(0, col_label="littered", dummy=True, dim='Variables', unit="t")
+dm_trc_tot.add(0, col_label="export", dummy=True, dim='Variables', unit="t")
+dm_trc_tot.sort("Variables")
+idx = dm_trc_tot.idx
+countries = dm_trc_tot.col_labels["Country"]
+countries = list(np.array(countries)[[i != "EU27" for i in countries]])
+for c in countries:
+    for y in years_fts:
+            dm_trc_tot.array[idx[c],idx[y],idx["littered"]] = np.nan
+            dm_trc_tot.array[idx[c],idx[y],idx["export"]] = np.nan
+            dm_trc_tot.array[idx[c],idx[y],idx["waste-uncollected"]] = np.nan
+
+# dm_trc_tot.filter({"Country" : ["EU27"]}).datamatrix_plot()
+
+# make shares in dm
+# compute the shares rounded at 2 decimals
+dm_temp = dm_trc_tot.groupby(group_cols={"total" : ['waste-collected', 'export', 'waste-uncollected', 'littered']}, 
+                             dim="Variables", aggregation = "sum", regex=False, inplace=False)
+idx = dm_temp.idx
+for c in countries:
+    for y in years_fts:
+            dm_temp.array[idx[c],idx[y],idx["total"]] = np.nan
+dm_trc_tot.array = dm_trc_tot.array / dm_temp.array
+for c in dm_trc_tot.col_labels["Country"]:
+    for y in years_all:
+            dm_trc_tot.array[idx[c],idx[y],:] = adjust_shares(dm_trc_tot.array[idx[c],idx[y],:])
+for v in dm_trc_tot.col_labels["Variables"]: 
+    dm_trc_tot.units[v] = "%"
+
+# dm_trc_tot.filter({"Country" : ["EU27"]}).datamatrix_plot()
+
+# rename trolley-cables
+for v in dm_trc_col.col_labels["Variables"]:
+    dm_trc_col.rename_col(v,"trolley-cables" + "_" + v,"Variables")
+dm_trc_col.deepen()
+for v in dm_trc_tot.col_labels["Variables"]:
+    dm_trc_tot.rename_col(v,"trolley-cables" + "_" + v,"Variables")
+dm_trc_tot.deepen()
+
+# clean
+del baseyear, baseyear_end, baseyear_start, c, countries, dm_trc,\
+    dm_temp, idx, lastyear, startyear, step_fts, v, years_all, \
+    years_fts, years_ots, years_setting, y
+
+################
+##### SAVE #####
+################
+
+# store
+DM_wst_mgt["trc-total"] = dm_trc_tot
+DM_wst_mgt["trc-col"] = dm_trc_col
+
+# clean
+del dm_trc_tot, dm_trc_col
+
 
 ###############################################################################
 ################### LARGER APPLIANCES, AND PC & ELECTRONICS ###################
@@ -1549,12 +2243,17 @@ for k in keys:
 ########################################################
 
 # put together
+# list(DM_wst_mgt) 
 dm = DM_wst_mgt["elv-total"].copy()
-keys = ['domapp-total','electronics-total','pack-total']
+keys = list(DM_wst_mgt)
+keys = [s for s in keys if "-total" in s]
+keys.remove('elv-total')
 for key in keys:
     dm.append(DM_wst_mgt[key], dim="Variables")
 dm_col = DM_wst_mgt["elv-col"].copy()
-keys = ['domapp-col','electronics-col','pack-col']
+keys = list(DM_wst_mgt)
+keys = [s for s in keys if "-col" in s]
+keys.remove('elv-col')
 for key in keys:
     dm_col.append(DM_wst_mgt[key], dim="Variables")
 dm.append(dm_col,"Categories1")
@@ -1677,7 +2376,7 @@ dm_fts_level3 = dm_level3.filter({"Years" : years_fts})
 DM_fts = {1: dm_fts_level1.copy(), 2: dm_fts_level2.copy(), 3: dm_fts_level3.copy(), 4: dm_fts_level4.copy()}
 DM = {"ots" : dm_ots,
       "fts" : DM_fts}
-f = os.path.join(current_file_directory, '../data/datamatrix/lever_waste-management.pickle')
+f = '../data/datamatrix/lever_waste-management.pickle'
 with open(f, 'wb') as handle:
     pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
