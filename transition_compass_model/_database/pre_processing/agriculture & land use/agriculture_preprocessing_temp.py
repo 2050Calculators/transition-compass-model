@@ -1,10 +1,32 @@
 import pickle
 
 import numpy as np
-from model.common.auxiliary_functions import filter_DM, linear_fitting, create_years_list
+from model.common.auxiliary_functions import filter_DM, linear_fitting, create_years_list, linear_fitting_ots_db
 from model.common.data_matrix_class import DataMatrix
 import faostat
 import pandas as pd
+# Ensure structure coherence
+def ensure_structure(df):
+    # Get unique values for geoscale, timescale, and variables
+    df['timescale'] = df['timescale'].astype(int)
+    df = df.drop_duplicates(subset=['geoscale', 'timescale', 'level', 'variables', 'lever', 'module'])
+    lever_name = list(set(df['lever']))[0]
+    countries = df['geoscale'].unique()
+    years = df['timescale'].unique()
+    variables = df['variables'].unique()
+    level = df['level'].unique()
+    lever = df['lever'].unique()
+    module = df['module'].unique()
+    # Create a complete multi-index from all combinations of unique values
+    full_index = pd.MultiIndex.from_product(
+         [countries, years, variables, level, lever, module],
+            names=['geoscale', 'timescale', 'variables', 'level', 'lever', 'module']
+        )
+    # Reindex the DataFrame to include all combinations, filling missing values with NaN
+    df = df.set_index(['geoscale', 'timescale', 'variables', 'level', 'lever', 'module'])
+    df = df.reindex(full_index, fill_value=np.nan).reset_index()
+
+    return df
 
 def feed_workflow_new():
   # Read excel sheets
@@ -18,7 +40,7 @@ def feed_workflow_new():
   # Divide all columns by the output to obtain values for 1 kg output
   # Identify the columns to divide (exclude Year, Area, Agricultural land)
   cols_to_divide_livestock = df_LCA_livestock.columns.difference(
-    ['Item Livestock', 'Database', 'LCA item', 'Unit'])
+    ['Item Livestock', 'Database', 'LCA item', 'Unit', 'Live weight per animal [kg]', 'LSU'])
   cols_to_divide_feed = df_LCA_feed.columns.difference(
     ['Item Feed', 'Database', 'LCA item', 'Unit'])
   cols_to_divide_feed_yield = df_LCA_feed_yield.columns.difference(
@@ -41,7 +63,7 @@ def feed_workflow_new():
 
   # Melt dfs for feed and detailed feed
   df_long = df_LCA_livestock.melt(
-    id_vars=['Item Livestock', 'Database', 'LCA item', 'Unit', 'Output'],
+    id_vars=['Item Livestock', 'Database', 'LCA item', 'Unit', 'Output', 'Live weight per animal [kg]', 'LSU'],
     # columns to keep
     var_name='Item Feed',  # new column for feed type names
     value_name='Feed'  # new column for feed values
@@ -87,7 +109,7 @@ def feed_workflow_new():
   # Multiply with the processing yields
   cols_to_multiply = df_feed.columns.difference(
     ['Item Livestock','Item Feed', 'Output'])
-  df_feed[cols_to_multiply] = df_feed[cols_to_multiply].mul(df_feed['Output'],axis=0).copy()
+  df_feed[cols_to_multiply] = df_feed[cols_to_multiply].mul(df_feed['Feed'],axis=0).copy()
 
   # Aggregated as overall feed category raw products (cereals, oilcrops, sugarcrops, pulses)
   feed_cols = ['Cereals', 'Pulses', 'Oilcrops',
@@ -95,17 +117,59 @@ def feed_workflow_new():
   df_total_feed_per_livestock = df_feed.groupby('Item Livestock')[
     feed_cols].sum().reset_index()
 
-  # Melt
+  # Convert in feed per LSU
+  df_lsu = df_LCA_livestock[['Item Livestock','Live weight per animal [kg]', 'LSU']]
+  df_feed_lsu = pd.merge(df_lsu, df_total_feed_per_livestock, on='Item Livestock', how='inner')
+  # Convert from feed per kg of live weight to feed per animal (multiplication)
+  cols_to_multiply = df_feed_lsu.columns.difference(
+    ['Item Livestock','Live weight per animal [kg]', 'LSU'])
+  df_feed_lsu[cols_to_multiply] = df_feed_lsu[cols_to_multiply].mul(df_feed_lsu['Live weight per animal [kg]'],axis=0).copy()
+  # Convert from feed per animal to feed per LSU (division)
+  cols_to_multiply = df_feed_lsu.columns.difference(
+    ['Item Livestock','Live weight per animal [kg]', 'LSU'])
+  df_feed_lsu[cols_to_multiply] = df_feed_lsu[cols_to_multiply].div(df_feed_lsu['LSU'],axis=0).copy()
 
   # Format accordingly
+  df_feed_lsu.rename(columns={'Cereals': 'crop-cereal',
+                              'Pulses': 'crop-pulse',
+                              'Oilcrops': 'crop-oilcrop',
+                              'Sugarcrops': 'crop-sugarcrop',
+                              'Item Livestock' : 'variables'}, inplace=True)
+  df_feed_lsu = df_feed_lsu[['variables','crop-cereal','crop-pulse','crop-oilcrop','crop-sugarcrop']].copy()
+  df_feed_lsu_melted = df_feed_lsu.melt(
+    id_vars=['variables'],
+    value_vars=['crop-cereal','crop-pulse','crop-oilcrop','crop-sugarcrop'],
+    var_name='Item',
+    value_name= 'value'
+  )
+  df_feed_lsu_melted['variables'] = 'cp_agr_feed_' + df_feed_lsu_melted['variables'] + '_' + df_feed_lsu_melted['Item']+ '[kg/lsu]'
+  df_feed_lsu_pathwaycalc = df_feed_lsu_melted[['variables','value']].copy()
 
+  # Pathwaycalc formatting
+  # Renaming existing columns (geoscale, timsecale, value)
+  df_feed_lsu_pathwaycalc.rename(columns={'Area': 'geoscale', 'Year': 'timescale'},
+                             inplace=True)
 
+  # Adding the columns module, lever, level and string-pivot at the correct places
+  df_feed_lsu_pathwaycalc['geoscale'] = 'Switzerland'
+  df_feed_lsu_pathwaycalc['timescale'] = '2020' #as an example but it is quite recent
+  df_feed_lsu_pathwaycalc['module'] = 'agriculture'
+  df_feed_lsu_pathwaycalc['lever'] = 'diet'
+  df_feed_lsu_pathwaycalc['level'] = 0
+  cols = df_feed_lsu_pathwaycalc.columns.tolist()
+  cols.insert(cols.index('value'), cols.pop(cols.index('module')))
+  cols.insert(cols.index('value'), cols.pop(cols.index('lever')))
+  cols.insert(cols.index('value'), cols.pop(cols.index('level')))
+  df_feed_lsu_pathwaycalc = df_feed_lsu_pathwaycalc[cols]
 
+  # Extrapolating
+  df_feed_lsu_pathwaycalc = ensure_structure(df_feed_lsu_pathwaycalc)
+  df_feed_lsu_pathwaycalc = linear_fitting_ots_db(df_feed_lsu_pathwaycalc, years_ots,
+                                              countries='all')
 
+  return df_feed_lsu_pathwaycalc
 
-  return
-
-feed_workflow_new()
+df_feed_lsu_pathwaycalc = feed_workflow_new()
 
 
 # Load pickles
