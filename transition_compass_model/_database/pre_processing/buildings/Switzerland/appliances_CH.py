@@ -5,7 +5,7 @@ import deepl
 import requests
 import os
 
-from model.common.auxiliary_functions import moving_average, linear_fitting, create_years_list, my_pickle_dump, cdm_to_dm
+from model.common.auxiliary_functions import linear_fitting, create_years_list, my_pickle_dump, add_dummy_country_to_DM
 from model.common.io_database import update_database_from_dm, csv_database_reformat, read_database_to_dm
 from _database.pre_processing.api_routines_CH import get_data_api_CH
 from model.common.data_matrix_class import DataMatrix
@@ -165,13 +165,13 @@ def households_fill_missing_years(dm_households, dm_pop, years_all):
 
   # Join dm_households and dm_pop
   dm_households.append(dm_pop.filter({'Country': dm_households.col_labels['Country']}), dim='Variables')
-  dm_households.operation('lfs_population_total', '/', 'bld_households', out_col='bld_household-size', unit='ppl')
+  dm_households.operation('lfs_population_total', '/', 'bld_households', out_col='lfs_household-size', unit='people')
 
   linear_fitting(dm_households, years_ots)
 
   dm_households.drop('Variables', 'bld_households')
 
-  dm_households.operation('lfs_population_total', '/', 'bld_household-size', out_col='bld_households', unit='number')
+  dm_households.operation('lfs_population_total', '/', 'lfs_household-size', out_col='bld_households', unit='number')
 
   dm_households.drop('Variables', 'lfs_population_total')
 
@@ -321,6 +321,14 @@ dm_appliances.fill_nans('Country')
 
 # Prepare as output the stock/household, the retirement-rate,
 # the households size, the energy-demand
+idx = dm_appliances.idx
+dm_appliances.array[:, idx[2023]:, idx['bld_appliances_electricity-demand'], idx['oven-and-stove']] = np.nan
+linear_fitting(dm_appliances, years_ots+years_fts)
 
+dm_households.filter({'Variables':['lfs_household-size']})
 
+DM = {'fxa': {'appliances': dm_appliances, 'household': dm_households}}
+add_dummy_country_to_DM(DM, 'EU27', 'Switzerland')
+
+# !FIXME add this to the pickle
 print('Hello')
