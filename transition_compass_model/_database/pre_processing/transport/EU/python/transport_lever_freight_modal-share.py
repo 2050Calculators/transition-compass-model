@@ -1,7 +1,9 @@
 
 # packages
 from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting
+from model.common.auxiliary_functions import linear_fitting, eurostat_iso2_dict, jrc_iso2_dict
+from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
+from _database.pre_processing.routine_JRC import get_jrc_data
 import pickle
 import os
 import numpy as np
@@ -9,20 +11,12 @@ import warnings
 import eurostat
 # from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
-import plotly.express as px
-import plotly.io as pio
-import re
-pio.renderers.default='browser'
-
-from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
-from _database.pre_processing.routine_JRC import get_jrc_data
-from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
+import pandas as pd
 
 # file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/transport/EU/python/transport_freight_modal-share.py"
 
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 # load current transport pickle
 filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
@@ -74,14 +68,42 @@ dm_hdvl.sort("Variables")
 ##### IWW #####
 ###############
 
-# get data on energy efficiency
-dict_extract = {"database" : "Transport",
-                "sheet" : "TrNavi_act",
-                "variable" : "Transport activity (Mtkm)",
-                "sheet_last_row" : "Inland waterways",
-                "sub_variables" : ["Inland waterways"],
-                "calc_names" : ["IWW"]}
-dm_iww = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+# # get data on energy efficiency
+# dict_extract = {"database" : "Transport",
+#                 "sheet" : "TrNavi_act",
+#                 "variable" : "Transport activity (Mtkm)",
+#                 "sheet_last_row" : "Inland waterways",
+#                 "sub_variables" : ["Inland waterways"],
+#                 "calc_names" : ["IWW"]}
+# dm_iww = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+
+# note: I get it from eurostat as jrc does not have data on fleet iww, so I will
+# get both fleet and tkm from eurostat
+
+# get data on tkm from eurostat
+code = "iww_go_atyve"
+eurostat.get_pars(code)
+filter = {'geo\\TIME_PERIOD': list(dict_iso2.keys()),
+          'tra_cov' : "TOTAL",
+          'vessel': ['BAR_SP'],
+          'unit' : ['MIO_TKM']}
+mapping_dim = {'Country': 'geo\\TIME_PERIOD',
+                'Variables': 'vessel'}
+dm_iww = get_data_api_eurostat(code, filter, mapping_dim, 'mio tkm')
+dm_iww = dm_iww.filter({"Years" : list(range(2000,2021+1,1))})
+dm_iww = dm_iww.groupby({"IWW" : ['BAR_SP']}, "Variables")
+# df = dm_iww_tkm.write_df()
+
+# add other countries as missing
+all_countries = np.array(dm_hdvl.col_labels["Country"])
+missing_countries = all_countries[[c not in dm_iww.col_labels["Country"] for c in all_countries]]
+dm_iww.add(np.nan, "Country", missing_countries, dummy=True)
+dm_iww.sort("Country")
+
+# substitute 0 with na
+dm_iww.array[dm_iww.array == 0] = np.nan
+
+# df = dm_iww.write_df()
 
 ####################
 ##### aviation #####
@@ -95,20 +117,44 @@ dict_extract = {"database" : "Transport",
                 "sub_variables" : ["Freight transport (mio tkm)"],
                 "calc_names" : ["aviation"]}
 dm_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+dm_avi.sort("Country")
 
 ####################
 ##### maritime #####
 ####################
 
-# get data on energy efficiency
-dict_extract = {"database" : "Transport",
-                "sheet" : "MBunk_act",
-                "variable" : "Transport activity (mio tkm)",
-                "sheet_last_row" : "Intra-EEA",
-                "sub_variables" : ["Intra-EEA"],
-                "calc_names" : ["marine"]}
-dm_mar = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+# # get data on energy efficiency
+# dict_extract = {"database" : "Transport",
+#                 "sheet" : "MBunk_act",
+#                 "variable" : "Transport activity (mio tkm)",
+#                 "sheet_last_row" : "Intra-EEA",
+#                 "sub_variables" : ["Intra-EEA"],
+#                 "calc_names" : ["marine"]}
+# dm_mar = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 
+# get data
+df = pd.read_csv("../data/unctad/US_SeaborneTrade.csv")
+df["Economy Label"].unique()
+countries = dm_avi.col_labels["Country"]
+missing_countries = np.array(countries)[[c not in df["Economy Label"].unique() for c in countries]]
+countries = countries + ['European Union (2020 …)','Czechia','Netherlands (Kingdom of the)']
+df = df.loc[df["Economy Label"].isin(countries),:]
+df = df.loc[df["CargoType Label"] == 'Total goods loaded',:]
+old_names = ['European Union (2020 …)','Czechia','Netherlands (Kingdom of the)']
+new_names = ["EU27", "Czech Republic", "Netherlands"]
+for o,n in zip(old_names, new_names):
+    df.loc[df["Economy Label"] == o,"Economy Label"] = n
+
+# make dm
+df.columns
+df = df.loc[:,["Year","Economy Label","Metric tons in thousands"]]
+df.rename(columns={"Economy Label":"Country","Year" : "Years","Metric tons in thousands":"marine[tmt]"},inplace=True)
+dm_mar = DataMatrix.create_from_df(df, 0)
+dm_mar.change_unit("marine", 1000, "tmt", "t") # Convert metric tons (thousands) to tonnes
+dm_mar.array = dm_mar.array*3000 # assume an average haul distance (e.g., 3000 km for Europe seaborne trade)
+dm_mar.units["marine"] = "tkm"
+dm_mar.drop("Years",[2022,2023])
+dm_mar.change_unit("marine", 1e-6, "tkm", "mio tkm") # Convert metric tons (thousands) to tonnes
 
 ################
 ##### RAIL #####
@@ -134,7 +180,6 @@ dm_tkm.append(dm_mar,"Variables")
 dm_tkm.append(dm_tkm_rail,"Variables")
 dm_tkm.sort("Variables")
 dm_tkm.sort("Country")
-dm_tkm.units["IWW"] = "mio tkm"
 
 # check
 # dm_tkm.filter({"Country" : ["EU27"]}).datamatrix_plot()

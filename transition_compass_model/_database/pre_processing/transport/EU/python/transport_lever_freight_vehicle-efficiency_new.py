@@ -1,28 +1,16 @@
 
 # packages
-from model.common.data_matrix_class import DataMatrix
 from model.common.auxiliary_functions import linear_fitting
+from _database.pre_processing.routine_JRC import get_jrc_data
+from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
 import pickle
 import os
 import numpy as np
 import warnings
-import eurostat
-# from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
-import plotly.express as px
-import plotly.io as pio
-import re
-pio.renderers.default='browser'
-
-from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
-from _database.pre_processing.routine_JRC import get_jrc_data
-from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
-
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/transport/EU/python/transport_lever_freight_vehicle-efficiency_new.py"
 
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 # load current transport pickle
 filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
@@ -160,8 +148,8 @@ dm_iww = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 # substitute 0 with nans (to avoid that zeroes get in the averages)
 dm_iww.array[dm_iww.array==0] = np.nan
 
-# assuming most of it is diesel
-dm_iww.rename_col("IWW","IWW_ICE-diesel","Variables")
+# assuming most of it is ICE
+dm_iww.rename_col("IWW","IWW_ICE","Variables")
 
 # make other variables as missing
 dm_iww.deepen()
@@ -325,7 +313,7 @@ dict_call = {"HDVH_BEV" : {"n_adj" : 2, "year_end_first_adj" : 2010, "year_start
              "HDVM_ICE-diesel" :  {"n_adj" : 1},
              "HDVM_ICE-gas" : {"n_adj" : 1},
              "HDVM_ICE-gasoline" : {"n_adj" : 1},
-             "IWW_ICE-diesel" : {"n_adj" : 1},
+             "IWW_ICE" : {"n_adj" : 1},
              "aviation_ICE" : {"n_adj" : 1},
              "marine_ICE" : {"n_adj" : 1},
              "rail_CEV" : {"n_adj" : 1},

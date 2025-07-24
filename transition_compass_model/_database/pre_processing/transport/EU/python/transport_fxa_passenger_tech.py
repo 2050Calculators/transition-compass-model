@@ -1,29 +1,18 @@
 
 # packages
-from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting
-import pandas as pd
 import pickle
 import os
 import numpy as np
 import warnings
 import eurostat
-# from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
-import plotly.express as px
-import plotly.io as pio
-import re
-pio.renderers.default='browser'
 
 from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 from _database.pre_processing.routine_JRC import get_jrc_data
-from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
-
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/transport/EU/python/transport_fxa_passenger_tech.py"
+from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict, linear_fitting
 
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 # load current transport pickle
 filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
@@ -88,11 +77,11 @@ dm_fleet_2w.sort("Categories1")
 # get data on total fleet from eurostat
 code = "road_eqs_carmot"
 eurostat.get_pars(code)
-filter = {'geo\TIME_PERIOD': list(dict_iso2.keys()),
+filter = {'geo\\TIME_PERIOD': list(dict_iso2.keys()),
           'engine': ['TOTAL'],
           'mot_nrg' : ['TOTAL'],
           'unit' : 'NR'}
-mapping_dim = {'Country': 'geo\TIME_PERIOD',
+mapping_dim = {'Country': 'geo\\TIME_PERIOD',
                 'Variables': 'mot_nrg'}
 mapping_calc = {'LDV' : 'TOTAL'}
 dm_eurostat_fleet_total = get_data_api_eurostat(code, filter, mapping_dim, 'num')
@@ -213,16 +202,42 @@ dm_fleet_rail.sort("Categories1")
 dm_fleet_rail.units["metrotram"] = "vehicles"
 dm_fleet_rail.units["rail"] = "vehicles"
 
+####################
+##### AVIATION #####
+####################
+
+# get data
+dict_extract = {"database" : "Transport",
+                "sheet" : "TrAvia_act",
+                "variable" : "Stock of aircrafts - total",
+                "sheet_last_row" : "Passenger transport",                
+                "sub_variables" : ["Passenger transport"],
+                "calc_names" : ["aviation"]}
+dm_fleet_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+
+# add techs (all kerosene)
+dm_fleet_avi.rename_col("aviation", "aviation_kerosene", "Variables")
+dm_fleet_avi.deepen()
+categories2_missing = categories2_all.copy()
+for cat in dm_fleet_avi.col_labels["Categories1"]: categories2_missing.remove(cat)
+dm_fleet_avi.add(np.nan, col_label=categories2_missing, dummy=True, dim="Categories1")
+dm_fleet_avi.sort("Categories1")
+
 ########################
 ##### PUT TOGETHER #####
 ########################
 
+# put together
 dm_fleet = dm_fleet_2w.copy()
 dm_fleet.append(dm_fleet_ldv,"Variables")
 dm_fleet.append(dm_fleet_bus,"Variables")
 dm_fleet.append(dm_fleet_rail,"Variables")
 dm_fleet.sort("Variables")
 dm_fleet.sort("Country")
+
+# add aviation
+dm_fleet.append(dm_fleet_avi,"Variables")
+dm_fleet.sort("Variables")
 
 # check
 # dm_fleet.flatten().filter({"Country" : ["EU27"]}).datamatrix_plot()
@@ -278,7 +293,8 @@ dict_call = {"2W_ICE-gasoline" : {"n_adj" : 1},
              "bus_ICE-gasoline" : {"n_adj" : 2, "year_end_first_adj" : 2010, "year_start_second_adj" : 2020},
              "metrotram_mt" :  {"n_adj" : 1},
              "rail_CEV" :  {"n_adj" : 1},
-             "rail_ICE-diesel" :  {"n_adj" : 1}}
+             "rail_ICE-diesel" :  {"n_adj" : 1},
+             "aviation_kerosene" :  {"n_adj" : 1}}
 
 for key in dict_call.keys():
     if len(dict_call[key]) > 1:
@@ -403,6 +419,10 @@ for v in dm_fleet.col_labels["Variables"]:
     dm_fleet.rename_col(v,"tra_passenger_technology-share_fleet_" + v, "Variables")
 dm_fleet.deepen_twice()
 dm_fleet_final = dm_fleet.copy()
+
+# put back h2 (disappeared as all nans)
+dm_fleet_final.add(np.nan, "Categories2", "H2", "number", True)
+dm_fleet_final.sort("Categories2")
 
 # check
 # dm_fleet_final.flatten().flatten().filter({"Country" : ["EU27"]}).datamatrix_plot()
@@ -563,16 +583,44 @@ for cat in dm_eneff_rail.col_labels["Categories1"]: categories2_missing.remove(c
 dm_eneff_rail.add(np.nan, col_label=categories2_missing, dummy=True, dim="Categories1")
 dm_eneff_rail.sort("Categories1")
 
+####################
+##### AVIATION #####
+####################
+
+# get data
+# note: I assume that all high speed passenger trains are electric, and I'll take an average
+dict_extract = {"database" : "Transport",
+                "sheet" : "TrAvia_ene",
+                "variable" : "Vehicle-efficiency - effective (kgoe/100 km)",
+                "sheet_last_row" : "Passenger transport",                
+                "sub_variables" : ["Passenger transport"],
+                "calc_names" : ["aviation"]}
+dm_eneff_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+
+# add techs (all kerosene)
+dm_eneff_avi.rename_col("aviation", "aviation_kerosene", "Variables")
+dm_eneff_avi.deepen()
+categories2_missing = categories2_all.copy()
+for cat in dm_eneff_avi.col_labels["Categories1"]: categories2_missing.remove(cat)
+dm_eneff_avi.add(np.nan, col_label=categories2_missing, dummy=True, dim="Categories1")
+dm_eneff_avi.sort("Categories1")
+
+
 ########################
 ##### PUT TOGETHER #####
 ########################
 
+# put together
 dm_eneff = dm_eneff_2w.copy()
 dm_eneff.append(dm_eneff_ldv,"Variables")
 dm_eneff.append(dm_eneff_bus,"Variables")
 dm_eneff.append(dm_eneff_rail,"Variables")
 dm_eneff.sort("Variables")
 dm_eneff.sort("Country")
+
+# add aviation
+dm_eneff.append(dm_eneff_avi,"Variables")
+dm_eneff.sort("Variables")
 
 # substitute zero values with missing
 dm_eneff.array[dm_eneff.array==0] = np.nan
@@ -583,13 +631,19 @@ dm_eneff.array[dm_eneff.array==0] = np.nan
 
 # do linear fitting of each variable with wathever is available
 # note: bus_ICE-diesel: until before 2000 until 2012, after 2021 after 2012
+# and aviation until 2000 is 2000-2011.
 dm_eneff_bus_icedie = dm_eneff.filter({"Variables" : ["bus"],"Categories1" : ["ICE-diesel"]})
+dm_eneff_avi_kero = dm_eneff.filter({"Variables" : ["aviation"],"Categories1" : ["kerosene"]})
 dm_eneff = linear_fitting(dm_eneff, years_ots, min_t0=0,min_tb=0)
 dm_eneff_bus_icedie = linear_fitting(dm_eneff_bus_icedie, list(range(startyear,1999+1)),based_on=list(range(2000,2012+1)), min_t0=0.1,min_tb=0.1)
 dm_eneff_bus_icedie = linear_fitting(dm_eneff_bus_icedie, list(range(2022,2023+1)),based_on=list(range(2012,2020+1)), min_t0=0.1,min_tb=0.1)
+dm_eneff_avi_kero = linear_fitting(dm_eneff_avi_kero, list(range(startyear,1999+1)),based_on=list(range(2000,2011+1)), min_t0=0.1,min_tb=0.1)
+dm_eneff_avi_kero = linear_fitting(dm_eneff_avi_kero, list(range(2022,2023+1)),based_on=list(range(2012,2020+1)), min_t0=0.1,min_tb=0.1)
 dm_eneff = dm_eneff.flatten()
 dm_eneff.drop("Variables","bus_ICE-diesel")
+dm_eneff.drop("Variables","aviation_kerosene")
 dm_eneff.append(dm_eneff_bus_icedie.flatten(),"Variables")
+dm_eneff.append(dm_eneff_avi_kero.flatten(),"Variables")
 dm_eneff.deepen()
 
 # check
@@ -682,6 +736,12 @@ dm_eneff.change_unit("tra_passenger_veh-efficiency_fleet", 41.868, "kgoe/100 km"
 dm_eneff.change_unit("tra_passenger_veh-efficiency_fleet", 1e-2, "MJ/100 km", "MJ/km")
 dm_eneff_final = dm_eneff.copy()
 
+# put back h2 (disappeared as all nans)
+dm_eneff_final.add(np.nan, "Categories2", "H2", "number", True)
+dm_eneff_final.sort("Categories2")
+
+# dm_eneff_final.flatten().flatten().filter({"Country":["EU27"]}).datamatrix_plot()
+
 # clean
 del cat, categories2_all, categories2_missing, dict_iso2, dict_iso2_jrc, \
     dm_eneff_2w, dm_eneff_bus, dm_eneff_ldv, dm_eneff_rail, dm_temp, \
@@ -737,11 +797,11 @@ dm_new_2w.sort("Categories1")
 # get data on total fleet from eurostat
 code = "road_eqr_carmot"
 eurostat.get_pars(code)
-filter = {'geo\TIME_PERIOD': list(dict_iso2.keys()),
+filter = {'geo\\TIME_PERIOD': list(dict_iso2.keys()),
           'engine': ['TOTAL'],
           'mot_nrg' : ['TOTAL'],
           'unit' : 'NR'}
-mapping_dim = {'Country': 'geo\TIME_PERIOD',
+mapping_dim = {'Country': 'geo\\TIME_PERIOD',
                 'Variables': 'mot_nrg'}
 mapping_calc = {'LDV' : 'TOTAL'}
 dm_eurostat_new_total = get_data_api_eurostat(code, filter, mapping_dim, 'num')
@@ -862,6 +922,30 @@ dm_new_rail.sort("Categories1")
 dm_new_rail.units["metrotram"] = "vehicles"
 dm_new_rail.units["rail"] = "vehicles"
 
+####################
+##### AVIATION #####
+####################
+
+# get data
+dict_extract = {"database" : "Transport",
+                "sheet" : "TrAvia_act",
+                "variable" : "New aircrafts",
+                "sheet_last_row" : "Passenger transport",                
+                "sub_variables" : ["Passenger transport"],
+                "calc_names" : ["aviation"]}
+dm_new_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+dm_new_avi.units["aviation"] = "number"
+dm_new_avi.array = np.round(dm_new_avi.array,0)
+# dm_new_avi.datamatrix_plot()
+
+# add techs (all kerosene)
+dm_new_avi.rename_col("aviation", "aviation_kerosene", "Variables")
+dm_new_avi.deepen()
+categories2_missing = categories2_all.copy()
+for cat in dm_new_avi.col_labels["Categories1"]: categories2_missing.remove(cat)
+dm_new_avi.add(np.nan, col_label=categories2_missing, dummy=True, dim="Categories1")
+dm_new_avi.sort("Categories1")
+
 ########################
 ##### PUT TOGETHER #####
 ########################
@@ -872,6 +956,14 @@ dm_new.append(dm_new_bus,"Variables")
 dm_new.append(dm_new_rail,"Variables")
 dm_new.sort("Variables")
 dm_new.sort("Country")
+
+# add aviation
+dm_new.append(dm_new_avi,"Variables")
+dm_new.sort("Variables")
+
+# fix units
+for v in dm_new.col_labels["Variables"]:
+    dm_new.units[v] = "number"
 
 # check
 # dm_new.flatten().filter({"Country" : ["EU27"]}).datamatrix_plot()
@@ -930,7 +1022,8 @@ dict_call = {"2W_ICE-gasoline" : {"n_adj" : 2, "year_end_first_adj" : 2007, "yea
              "bus_ICE-gasoline" : {"n_adj" : 2, "year_end_first_adj" : 2010, "year_start_second_adj" : 2020},
              "metrotram_mt" :  {"n_adj" : 1},
              "rail_CEV" :  {"n_adj" : 2, "year_end_first_adj" : 2000, "year_start_second_adj" : 2005},
-             "rail_ICE-diesel" :  {"n_adj" : 1}}
+             "rail_ICE-diesel" :  {"n_adj" : 1},
+             "aviation_kerosene" :  {"n_adj" : 1}}
 
 for key in dict_call.keys():
     if len(dict_call[key]) > 1:
@@ -1195,6 +1288,10 @@ for v in dm_new.col_labels["Variables"]:
 dm_new.deepen_twice()
 dm_new_final = dm_new.copy()
 
+# put back h2 (disappeared as all nans)
+dm_new_final.add(np.nan, "Categories2", "H2", "number", True)
+dm_new_final.sort("Categories2")
+
 # check
 # dm_new_final.flatten().flatten().filter({"Country" : ["EU27"]}).datamatrix_plot(stacked=True)
 # dm_fleet_final.flatten().flatten().filter({"Country" : ["EU27"]}).datamatrix_plot(stacked=True)
@@ -1423,6 +1520,7 @@ dm_fleet = make_fts(dm_fleet, "2W_ICE-gasoline", baseyear_start, baseyear_end, d
 dm_fleet = make_fts(dm_fleet, "metrotram_mt", baseyear_start, baseyear_end, dim = "Variables")
 dm_fleet = make_fts(dm_fleet, "rail_CEV", baseyear_start, baseyear_end, dim = "Variables")
 dm_fleet = make_fts(dm_fleet, "rail_ICE-diesel", baseyear_start, baseyear_end, dim = "Variables")
+dm_fleet = make_fts(dm_fleet, "aviation_kerosene", baseyear_start, baseyear_end, dim = "Variables")
 # dm_fleet.filter({"Country":["EU27"]}).datamatrix_plot()
 # dm_fleet.filter({"Country":["EU27"]}).datamatrix_plot(stacked=True)
 

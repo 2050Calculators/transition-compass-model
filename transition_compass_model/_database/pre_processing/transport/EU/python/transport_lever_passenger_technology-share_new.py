@@ -1,28 +1,16 @@
 
 # packages
-from model.common.data_matrix_class import DataMatrix
 from model.common.auxiliary_functions import linear_fitting
 import pickle
 import os
 import numpy as np
 import warnings
-import eurostat
+import pandas as pd
 # from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
-import plotly.express as px
-import plotly.io as pio
-import re
-pio.renderers.default='browser'
-
-from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
-from _database.pre_processing.routine_JRC import get_jrc_data
-from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
-
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/transport/EU/python/transport_lever_passenger_technology-share_new.py"
 
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 # load current transport pickle
 filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
@@ -57,6 +45,12 @@ dm_new.normalise("Categories2")
 
 # check
 # dm_new.filter({"Country" : ["EU27"]}).flatten().flatten().datamatrix_plot()
+
+# add H2 and BEV as 0 for aviation
+dm_new.add(np.nan, "Categories2", "H2","%",True)
+dm_new.sort("Categories2")
+dm_new[:,:,:,"aviation","H2"] = 0
+dm_new[:,:,:,"aviation","BEV"] = 0
 
 ###############
 ##### OTS #####
@@ -97,6 +91,9 @@ for y in range(2035,2055,5):
     dm_new_level4.array[idx["EU27"],idx[y],:,idx["metrotram_mt"]] = 1
     dm_new_level4.array[idx["EU27"],idx[y],:,idx["rail_ICE-diesel"]] = 0
     dm_new_level4.array[idx["EU27"],idx[y],:,idx["rail_CEV"]] = 1
+dm_new_level4.array[idx["EU27"],idx[2050],:,idx["aviation_kerosene"]] = 0.87 # TODO: SAF should be in here (it should be around 70%, while remaining 27% should be kerosene), to be checked with paola
+dm_new_level4.array[idx["EU27"],idx[2050],:,idx["aviation_H2"]] = 0.10
+dm_new_level4.array[idx["EU27"],idx[2050],:,idx["aviation_BEV"]] = 0.03
 dm_new_level4 = linear_fitting(dm_new_level4, years_fts)
 # dm_new_level4.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
 dm_new_fts_level4 = dm_new_level4.filter({"Years" : years_fts})

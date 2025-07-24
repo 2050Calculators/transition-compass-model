@@ -2,28 +2,17 @@
 # packages
 
 from model.common.auxiliary_functions import linear_fitting
+from _database.pre_processing.routine_JRC import get_jrc_data
+from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
 
 import pickle
 import os
 import numpy as np
 import warnings
-import eurostat
-# from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
-import plotly.express as px
-import plotly.io as pio
-import re
-pio.renderers.default='browser'
-
-from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
-from _database.pre_processing.routine_JRC import get_jrc_data
-from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
-
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/transport/EU/python/transport_lever_passenger_veh-efficiency_new.py"
 
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 # load current transport pickle
 filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
@@ -206,6 +195,31 @@ for cat in dm_eneff_new_rail.col_labels["Categories1"]: categories2_missing.remo
 dm_eneff_new_rail.add(np.nan, col_label=categories2_missing, dummy=True, dim="Categories1")
 dm_eneff_new_rail.sort("Categories1")
 
+####################
+##### AVIATION #####
+####################
+
+# note: here we do not have test efficiency of new vehicles, but we have the theoretical one,
+# which is lower than the effective (as the test efficiency is lower than effective)
+# so I will take the theoretical, and assume that it proxies the efficiency of new planes
+
+dict_extract = {"database" : "Transport",
+                "sheet" : "TrAvia_ene",
+                "variable" : "Vehicle-efficiency - theoretical (kgoe/100 km)*",
+                "sheet_last_row" : "Passenger transport",                
+                "sub_variables" : ["Passenger transport"],
+                "calc_names" : ["aviation"]}
+dm_eneff_new_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+
+# add techs (all kerosene)
+dm_eneff_new_avi.rename_col("aviation", "aviation_kerosene", "Variables")
+dm_eneff_new_avi.deepen()
+categories2_missing = categories2_all.copy()
+for cat in dm_eneff_new_avi.col_labels["Categories1"]: categories2_missing.remove(cat)
+dm_eneff_new_avi.add(np.nan, col_label=categories2_missing, dummy=True, dim="Categories1")
+dm_eneff_new_avi.sort("Categories1")
+
+
 ########################
 ##### PUT TOGETHER #####
 ########################
@@ -216,6 +230,10 @@ dm_eneff_new.append(dm_eneff_new_bus,"Variables")
 dm_eneff_new.append(dm_eneff_new_rail,"Variables")
 dm_eneff_new.sort("Variables")
 dm_eneff_new.sort("Country")
+
+# add aviation
+dm_eneff_new.append(dm_eneff_new_avi,"Variables")
+dm_eneff_new.sort("Variables")
 
 # substitute zero values with missing
 dm_eneff_new.array[dm_eneff_new.array==0] = np.nan
@@ -299,6 +317,7 @@ dm_eneff_new = make_fts(dm_eneff_new, "bus_ICE-gasoline", baseyear_start, baseye
 dm_eneff_new = make_fts(dm_eneff_new, "metrotram_mt", baseyear_start, baseyear_end, dim = "Variables")
 dm_eneff_new = make_fts(dm_eneff_new, "rail_CEV", baseyear_start, baseyear_end, dim = "Variables")
 dm_eneff_new = make_fts(dm_eneff_new, "rail_ICE-diesel", baseyear_start, baseyear_end, dim = "Variables")
+dm_eneff_new = make_fts(dm_eneff_new, "aviation_kerosene", baseyear_start, baseyear_end, dim = "Variables")
 
 # check
 # dm_eneff_new.filter({"Country" : ["EU27"]}).datamatrix_plot()
@@ -326,6 +345,10 @@ dm_eneff_new.sort("Categories2")
 
 # check
 # dm_eneff_new.flatten().flatten().filter({"Country" : ["EU27"]}).datamatrix_plot()
+
+# add back h2
+dm_eneff_new.add(np.nan, "Categories2", "H2", 'MJ/km', True)
+dm_eneff_new.sort("Categories2")
 
 ################
 ##### SAVE #####

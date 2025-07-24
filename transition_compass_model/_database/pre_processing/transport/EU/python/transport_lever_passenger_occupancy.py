@@ -1,28 +1,17 @@
 
 # packages
-from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting
+from model.common.auxiliary_functions import linear_fitting, eurostat_iso2_dict, jrc_iso2_dict
+from _database.pre_processing.routine_JRC import get_jrc_data
 import pickle
 import os
 import numpy as np
 import warnings
-import eurostat
+import pandas as pd
 # from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
-import plotly.express as px
-import plotly.io as pio
-import re
-pio.renderers.default='browser'
-
-from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
-from _database.pre_processing.routine_JRC import get_jrc_data
-from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
-
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/transport/EU/python/transport_lever_passenger_occupancy.py"
 
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 # load current transport pickle
 filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
@@ -33,6 +22,11 @@ with open(filepath, 'rb') as handle:
 filepath = os.path.join(current_file_directory, '../data/datamatrix/intermediate_files/passenger_pkm.pickle')
 with open(filepath, 'rb') as handle:
     DM_pkm = pickle.load(handle)
+    
+# load pkm for planes
+filepath = os.path.join(current_file_directory, '../data/datamatrix/intermediate_files/aviation_pkm.pickle')
+with open(filepath, 'rb') as handle:
+    dm_pkm_avi = pickle.load(handle)
 
 # Set years range
 years_setting = [1989, 2023, 2050, 5]
@@ -98,12 +92,60 @@ dm_vkm_r = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 mapping_calc = {'rail': ['train-conv', 'train-hs']}
 dm_vkm_r.groupby(mapping_calc, dim='Variables', aggregation = "sum", regex=False, inplace=True)
 
+####################
+##### AVIATION #####
+####################
+
+# note: for planes, occupancy will be pkm/skm, and skm = seats * vkm
+# the reported unit will remain pkm/vkm also for planes even though it's pkm/skm
+# for a question on how dms are structured for the model
+# update: in the method above, we would have occupancy = (pkm/vkm)/seats
+# in JRC, their occupancy ratio is (passenger/flights)/seats.
+# so my occupancy goes also above 1, while their ratio stays below 1
+# for the moment I will use my occupancy that can go above 1, to
+# be seen later if we want to update this
+
+# get data vkm
+dict_extract = {"database" : "Transport",
+                "sheet" : "TrAvia_act",
+                "variable" : "Vehicle-km (mio km)",
+                "sheet_last_row" : "Passenger transport",
+                "sub_variables" : ["Passenger transport"],
+                "calc_names" : ["vkm"]}
+dm_vkm_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+# dm_vkm_avi.filter({"Country": ["EU27"]}).datamatrix_plot()
+
+# get data seats
+dict_extract = {"database" : "Transport",
+                "sheet" : "TrAvia_png",
+                "variable" : "Seats available per flight",
+                "sheet_last_row" : "Passenger transport",
+                "sub_variables" : ["Passenger transport"],
+                "calc_names" : ["seats"]}
+dm_seats_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+dm_seats_avi.units["seats"] = "number"
+# dm_seats_avi.filter({"Country": ["EU27"]}).datamatrix_plot()
+# (dm_pkm_avi.flatten()["EU27",2021,:]*1e-6/dm_vkm_avi["EU27",2021,:]) / dm_seats_avi["EU27",2021,:]
+# dm_pkm_avi.flatten()["EU27",2021,:]*1e-6 / ( dm_vkm_avi["EU27",2021,:] * dm_seats_avi["EU27",2021,:])
+
+# make million skm
+dm_skm_avi = dm_vkm_avi.copy()
+dm_skm_avi.append(dm_seats_avi,"Variables")
+dm_skm_avi.operation("seats", "*", "vkm","Variables","aviation","mio skm")
+dm_skm_avi.filter({"Variables" : ["aviation"]},inplace=True)
+
+# check
+# df = dm_skm_avi.write_df()
+# dm_skm_avi.filter({"Country": ["EU27"]}).datamatrix_plot()
+# dm_skm_avi["EU27",2021,:]
+
 ########################
 ##### PUT TOGETHER #####
 ########################
 
 dm_vkm = dm_vkm_ltb.copy()
 dm_vkm.append(dm_vkm_r,"Variables")
+dm_vkm.append(dm_skm_avi,"Variables")
 dm_vkm.sort("Variables")
 dm_vkm.sort("Country")
 
@@ -175,6 +217,7 @@ dm_vkm = make_fts(dm_vkm, "LDV", baseyear_start, baseyear_end, dim = "Variables"
 dm_vkm = make_fts(dm_vkm, "bus", baseyear_start, baseyear_end, dim = "Variables")
 dm_vkm = make_fts(dm_vkm, "metrotram", baseyear_start, baseyear_end, dim = "Variables")
 dm_vkm = make_fts(dm_vkm, "rail", baseyear_start, baseyear_end, dim = "Variables")
+dm_vkm = make_fts(dm_vkm, "aviation", baseyear_start, baseyear_end, dim = "Variables")
 
 # check
 # dm_vkm.filter({"Country" : ["EU27"]}).datamatrix_plot()
@@ -197,6 +240,11 @@ dm_vkm.change_unit("tra_passenger_vkm", 1e6, "mio km", "vkm")
 dm_pkm = DM_pkm["ots"]["passenger_pkm"].copy()
 dm_pkm.append(DM_pkm["fts"]["passenger_pkm"][1],"Years")
 dm_pkm.sort("Years")
+dm_pkm_avi.rename_col("tra","tra_passenger_pkm","Variables")
+dm_pkm.append(dm_pkm_avi,"Categories1")
+dm_pkm.sort("Categories1")
+# dm_pkm["EU27",2021,:,"aviation"]*1e-6
+# dm_vkm["EU27",2021,:,"aviation"]*1e-6
 dm_occ = dm_pkm.copy()
 dm_vkm.drop("Years",startyear)
 dm_occ.array = dm_occ.array/dm_vkm.array
@@ -206,6 +254,7 @@ dm_occ.units["tra_passenger_occupancy"] = "pkm/vkm"
 # check
 # dm_occ.filter({"Country" : ["EU27"]}).datamatrix_plot()
 # df = dm_occ.group_all("Categories1", inplace=False).write_df()
+# dm_occ["EU27",2021,:,"aviation"]
 
 years_ots = list(range(1990,2023+1))
 years_fts = list(range(2025,2055,5))
@@ -245,6 +294,8 @@ dm_occ_level4.array[idx["EU27"],idx[2050],:,idx["metrotram"]] = \
     dm_occ_level4.array[idx["EU27"],idx[2023],:,idx["metrotram"]] * (1+rate_bus)
 dm_occ_level4.array[idx["EU27"],idx[2050],:,idx["rail"]] = \
     dm_occ_level4.array[idx["EU27"],idx[2023],:,idx["rail"]] * (1+rate_bus)
+dm_occ_level4.array[idx["EU27"],idx[2050],:,idx["aviation"]] = \
+    dm_occ_level4.array[idx["EU27"],idx[2023],:,idx["aviation"]] * (1+rate_bus)
 dm_occ_level4 = linear_fitting(dm_occ_level4, years_fts)
 # dm_occ_level4.filter({"Country" : ["EU27"], "Categories1":["LDV"]}).flatten().datamatrix_plot()
 dm_occ_fts_level4 = dm_occ_level4.filter({"Years" : years_fts})

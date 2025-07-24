@@ -1,42 +1,27 @@
 
 # packages
 from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting
-import pandas as pd
 import pickle
-import os
-import numpy as np
 import warnings
-import eurostat
-# from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
-import plotly.express as px
-import plotly.io as pio
-import re
-pio.renderers.default='browser'
-
-from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
-from _database.pre_processing.routine_JRC import get_jrc_data
-from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
-
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/transport/EU/python/transport_fxa_freight_mode_other.py"
-
-# directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
 
 # load current transport pickle
-filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
+filepath = '../../../../data/datamatrix/transport.pickle'
 with open(filepath, 'rb') as handle:
     DM_tra = pickle.load(handle)
 
 # load tkm pickle
-filepath = os.path.join(current_file_directory, '../data/datamatrix/intermediate_files/freight_tkm.pickle')
+filepath = '../data/datamatrix/intermediate_files/freight_tkm.pickle'
 with open(filepath, 'rb') as handle:
     DM_tkm = pickle.load(handle)
     
+# load freight fleet
+filepath = '../data/datamatrix/intermediate_files/freight_fleet.pickle'
+with open(filepath, 'rb') as handle:
+    dm_fleet = pickle.load(handle)
+    
 # load renewal rate pickle
-filepath = os.path.join(current_file_directory, '../data/datamatrix/intermediate_files/passenger_renewal-rate.pickle')
+filepath = '../data/datamatrix/intermediate_files/passenger_renewal-rate.pickle'
 with open(filepath, 'rb') as handle:
     dm_renrate = pickle.load(handle)
 
@@ -53,39 +38,52 @@ dm_tkm.append(DM_tkm["fts"]["freight_tkm"][1],"Years")
 # check
 # dm_tkm.filter({"Country" : ["EU27"]}).datamatrix_plot()
 
-# rename
-dm_tkm.rename_col("tra_freight_tkm","tra_freight_tkm-by-veh","Variables")
+# get fleet
+dm_fleet_agg = dm_fleet.group_all("Categories2", inplace=False)
+# df = dm_fleet_agg.write_df()
+
+# get tkm by vehicle
+dm_tkm.append(dm_fleet_agg,"Variables")
+# df_tkm = dm_tkm.write_df()
+dm_tkm.operation("tra_freight_tkm","/","tra_freight_technology-share_fleet",
+                 out_col="tra_freight_tkm-by-veh",unit="tkm")
+dm_tkm.drop("Variables",['tra_freight_tkm', 'tra_freight_technology-share_fleet'])
 
 # filter
 dm_tkm.filter({"Categories1" : ['IWW', 'aviation', 'marine', 'rail']}, inplace=True)
+
+# TODO: even though this is tkm/num, i leave it tkm as this is how the pickle is
+# currently built (to be changed at some point)
 
 ########################
 ##### RENEWAL RATE #####
 ########################
 
-# TODO: for the moment I take some values from renewal rate of passenger vehicles
-# to check with Paola what this is
+# TODO: for the moment I take some values from CH
 
-df = DM_tra["fxa"]["freight_mode_other"].filter({"Variables" : ["tra_freight_renewal-rate"]}).write_df()
-df1 = dm_renrate.write_df()
+dm_renrate = DM_tra["fxa"]["freight_mode_other"].filter({"Variables" : ["tra_freight_renewal-rate"]})
+df = dm_renrate.write_df()
+dm_renrate = DataMatrix.create_from_df(df, 1) # doing this to fix the years
 
 # take renewal rate rail CEV as proxy for renewal rate of rail and aviation, and for IWW and marine put missing
 dm_renrate_freight = dm_renrate.copy()
-dm_renrate_freight = dm_renrate_freight.flatten()
-dm_renrate_freight.filter({"Categories1" : ['rail_CEV']}, inplace=True)
-dm_renrate_freight.rename_col("rail_CEV","rail","Categories1")
-arr_temp = dm_renrate_freight.array
-dm_renrate_freight.add(arr_temp, col_label="aviation", dim="Categories1")
-dm_renrate_freight.add(np.nan, col_label="IWW", dummy=True, dim="Categories1")
-dm_renrate_freight.add(np.nan, col_label="marine", dummy=True, dim="Categories1")
-dm_renrate_freight.sort("Categories1")
-dm_renrate_freight.rename_col("tra_passenger_renewal-rate","tra_freight_renewal-rate","Variables")
+dm_renrate_freight["EU27",...] = dm_renrate_freight["Switzerland",...]
+dm_renrate_freight = dm_renrate_freight.filter({"Country" : ["EU27"]})
+countries = dm_tkm.col_labels["Country"].copy()
+countries.remove("EU27")
+for c in countries:
+    arr_temp = dm_renrate_freight["EU27",...]
+    dm_renrate_freight.add(arr_temp, "Country", c)
+dm_renrate_freight.sort("Country")
 
-# make fts
-dm_renrate_freight = linear_fitting(dm_renrate_freight, list(range(2025,2050+5,5)))
+# fix marine
+dm_renrate_freight[:,:,:,"marine"] = dm_renrate_freight[:,:,:,"marine"]-1
 
 # # check
 # dm_renrate_freight.filter({"Country" : ["EU27"]}).datamatrix_plot()
+# df = dm_renrate_freight
+
+# TODO: check the renewal rate, 15% seems a bit high for ships
 
 ########################
 ##### PUT TOGETHER #####
@@ -96,7 +94,7 @@ dm_mode_oth.append(dm_renrate_freight,"Variables")
 dm_mode_oth.sort("Variables")
 
 # save
-f = os.path.join(current_file_directory, '../data/datamatrix/fxa_freight_mode_other.pickle')
+f = '../data/datamatrix/fxa_freight_mode_other.pickle'
 with open(f, 'wb') as handle:
     pickle.dump(dm_mode_oth, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
