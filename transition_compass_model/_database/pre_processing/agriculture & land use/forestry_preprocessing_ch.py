@@ -208,6 +208,7 @@ def get_wood_energy_by_use(file_url, local_filename, clean_local_filename):
             'Wood pellets *)': 'fst_wood-energy-use_pellets[m3]',
             'Natural logs': 'fst_wood-energy-use_natural-logs[m3]',
             'Natural non-chunky wood': 'fst_wood-energy-use_natural-non-chunky-wood[m3]',
+            'Total without MWIP (Cat 1-19)': 'fst_wood-energy-use_total-without-incineration[m3]',
             'Total without KVA (Cat 1-19)': 'fst_wood-energy-use_total-without-incineration[m3]'
         })
 
@@ -236,7 +237,8 @@ def get_wood_energy_by_use(file_url, local_filename, clean_local_filename):
             'Wood pellets *)': 'fst_wood-energy-use_pellets[TJ]',
             'Natural logs': 'fst_wood-energy-use_natural-logs[TJ]',
             'Natural non-chunky wood': 'fst_wood-energy-use_natural-non-chunky-wood[TJ]',
-            'Total without KVA (Cat 1-19)': 'fst_wood-energy-use_total-without-incineration[TJ]',
+            'Total without MWIP (Cat 1-19)': 'fst_wood-energy-use_total-without-incineration[TJ]',
+            'Total without KVA (Cat 1-19)': 'fst_wood-energy-use_total-without-incineration[TJ]'
         })
 
         df.to_csv(clean_local_filename['energy-use-ghw'], sep=",", index=False)
