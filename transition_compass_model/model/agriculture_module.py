@@ -47,6 +47,7 @@ def read_data(DM_agriculture, lever_setting):
     dm_fxa_ef_liv_N2O = DM_agriculture['fxa']['ef_liv_N2O-emission']
     dm_fxa_ef_liv_CH4_treated = DM_agriculture['fxa']['ef_liv_CH4-emission_treated']
     dm_fxa_liv_nstock = DM_agriculture['fxa']['liv_manure_n-stock']
+    dm_fxa_feed = DM_agriculture['fxa']['feed']
 
     # Extract sub-data-matrices according to the flow
     # Sub-matrix for LIFESTYLE
@@ -194,7 +195,8 @@ def read_data(DM_agriculture, lever_setting):
     DM_feed = {
         'ration': dm_ration,
         'alt-protein': dm_alt_protein,
-        'cal_agr_demand_feed': dm_fxa_cal_demand_feed
+        'cal_agr_demand_feed': dm_fxa_cal_demand_feed,
+        'feed': dm_fxa_feed
     }
 
     # Aggregated Data Matrix - CROP
