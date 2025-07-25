@@ -374,7 +374,7 @@ def simulate_industry_input(write_pickle= True):
         DM_industry_to_forestry = dm
         # Write Pickle
         f = os.path.join(current_file_directory, '../../data/interface/industry_to_forestry.pickle')
-        my_pickle_dump(DM_new=DM_industry_to_forestry, local_pickle_file=f)
+        #my_pickle_dump(DM_new=DM_industry_to_forestry, local_pickle_file=f)
 
     return
 
@@ -396,7 +396,7 @@ def simulate_land_input(dm_forest_area, write_pickle= True):
         # Write Pickle
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(current_file_directory, '../../data/interface/land_to_forestry.pickle')
-        my_pickle_dump(DM_new=DM_land_to_forestry, local_pickle_file=f)
+        # my_pickle_dump(DM_new=DM_land_to_forestry, local_pickle_file=f)
 
     return
 
@@ -405,7 +405,7 @@ def simulate_industry_other_wood(refresh = True ):
     if refresh is True:
         # Path for the input from industry
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, "../../data/xls/fake_ind-to-fst.xlsx")
+        f = os.path.join(current_file_directory, "data/fake_ind-to-fst.xlsx")
         # Read the file:
         df_industry_calibration = pd.read_excel(f, sheet_name="ind-to-fst")
         dm_industry_calibration = DataMatrix.create_from_df(df_industry_calibration, num_cat=1)
@@ -938,6 +938,7 @@ DM_forestry['fts']['harvest-rate'][3] = dm_fts_3
 DM_forestry['fts']['harvest-rate'][4] = dm_fts_4
 
 add_dummy_country_to_DM(DM_forestry, ref_country='Switzerland', new_country='Vaud')
+add_dummy_country_to_DM(DM_forestry, ref_country='Switzerland', new_country='EU27')
 
 # save
 f = '../../data/datamatrix/forestry.pickle'
