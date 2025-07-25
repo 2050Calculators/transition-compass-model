@@ -1006,8 +1006,8 @@ def my_pickle_dump(DM_new, local_pickle_file):
                 dm_old.append(dm_new, dim='Country')
                 dm_old.sort('Country')
             else:
-                dm_old = dm_new
-            return dm_old
+                dm_old = dm_new.copy()
+            return dm_old.copy()
 
         def update_DM(DM_old, DM_new):
             for key in DM_new.keys():
