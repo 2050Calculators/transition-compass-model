@@ -1025,7 +1025,10 @@ def my_pickle_dump(DM_new, local_pickle_file):
         with open(local_pickle_file, 'rb') as handle:
             DM = pickle.load(handle)
 
-        update_DM(DM, DM_new)
+        if isinstance(DM_new, dict):
+          update_DM(DM, DM_new)
+        else: # if it is actually a dm
+          DM = update_data(DM, DM_new)
 
         with open(local_pickle_file, 'wb') as handle:
             pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)

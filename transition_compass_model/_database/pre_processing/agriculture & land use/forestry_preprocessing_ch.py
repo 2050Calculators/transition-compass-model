@@ -371,10 +371,11 @@ def simulate_industry_input(write_pickle= True):
         df = pd.read_excel(f, sheet_name="ind-to-fst")
         # Build DataMatrix
         dm = DataMatrix.create_from_df(df, num_cat=1)
-        DM_industry_to_forestry = dm
+        dm.add(np.nan, dim='Country', col_label='EU27', dummy=True)
+        dm['EU27', ...] = dm['Switzerland', ...]
         # Write Pickle
         f = os.path.join(current_file_directory, '../../data/interface/industry_to_forestry.pickle')
-        #my_pickle_dump(DM_new=DM_industry_to_forestry, local_pickle_file=f)
+        my_pickle_dump(DM_new=dm, local_pickle_file=f)
 
     return
 
@@ -392,11 +393,12 @@ def simulate_land_input(dm_forest_area, write_pickle= True):
         dm.add(np.nan, col_label=years_fts, dim='Years', dummy=True)
         # Linear extrapolation on future years
         linear_fitting(dm, years_fts)
-        DM_land_to_forestry = dm
+        dm.add(np.nan, dim='Country', col_label = 'EU27', dummy=True)
+        dm['EU27', ...] = dm['Switzerland', ...]
         # Write Pickle
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(current_file_directory, '../../data/interface/land_to_forestry.pickle')
-        # my_pickle_dump(DM_new=DM_land_to_forestry, local_pickle_file=f)
+        my_pickle_dump(DM_new=dm, local_pickle_file=f)
 
     return
 
@@ -433,6 +435,18 @@ def simulate_industry_other_wood(refresh = True ):
 
     return dm_fxa_wood_demand
 
+def add_dummy_EU27_energy_to_forestry_interface(file):
+  with open(file, 'rb') as handle:
+    dm = pickle.load(handle)
+
+  if "EU27" not in dm.col_labels['Country']:
+    dm.add(np.nan, col_label='EU27', dim='Country', dummy=True)
+    dm['EU27', ...] = dm['Switzerland', ...]
+
+  my_pickle_dump(dm, file)
+
+  return
+
 
 def create_dummy_Vaud_waste(dm_forest_area, dm_wood_wastes, years_ots):
     dm_tmp = dm_forest_area.copy()
@@ -457,6 +471,12 @@ def create_dummy_Vaud_waste(dm_forest_area, dm_wood_wastes, years_ots):
 
 simulate_industry_input()
 dm_fxa_wood_demand = simulate_industry_other_wood()
+# Energy to forestry pickle (add EU27)
+this_dir = os.path.dirname(os.path.abspath(__file__))
+lfs_interface_data_file = os.path.join(this_dir,
+                                       '../../data/interface/energy_to_forestry.pickle')
+add_dummy_EU27_energy_to_forestry_interface(lfs_interface_data_file)
+
 
 ######################################################################
 ######################################################################
@@ -939,6 +959,7 @@ DM_forestry['fts']['harvest-rate'][4] = dm_fts_4
 
 add_dummy_country_to_DM(DM_forestry, ref_country='Switzerland', new_country='Vaud')
 add_dummy_country_to_DM(DM_forestry, ref_country='Switzerland', new_country='EU27')
+
 
 # save
 f = '../../data/datamatrix/forestry.pickle'
