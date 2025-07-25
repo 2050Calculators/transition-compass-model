@@ -2496,6 +2496,148 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_dens
 
     return df_climate_smart_livestock_pathwaycalc, df_csl_fxa, df_manure_n_fxa, df_manure_ch4_fxa
 
+# CalculationLeaf FEED 2025 NEW VERSION ------------------------------------------------------------------------------
+def feed_processing():
+  # Read excel sheets
+  df_LCA_livestock = pd.read_excel('agriculture_feed_v2025.xlsx',
+                                   sheet_name='data_LCA_livestock')
+  df_LCA_feed = pd.read_excel('agriculture_feed_v2025.xlsx',
+                                   sheet_name='data_LCA_feed')
+  df_LCA_feed_yield = pd.read_excel('agriculture_feed_v2025.xlsx',
+                                   sheet_name='data_LCA_feed_yield')
+
+  # Divide all columns by the output to obtain values for 1 kg output
+  # Identify the columns to divide (exclude Year, Area, Agricultural land)
+  cols_to_divide_livestock = df_LCA_livestock.columns.difference(
+    ['Item Livestock', 'Database', 'LCA item', 'Unit', 'Live weight per animal [kg]', 'LSU'])
+  cols_to_divide_feed = df_LCA_feed.columns.difference(
+    ['Item Feed', 'Database', 'LCA item', 'Unit'])
+  cols_to_divide_feed_yield = df_LCA_feed_yield.columns.difference(
+    ['Item Feed', 'Database', 'LCA item', 'Unit'])
+  # Divide each of those columns by 'Agricultural land [ha]'
+  df_LCA_livestock[cols_to_divide_livestock] = df_LCA_livestock[cols_to_divide_livestock].div(
+    df_LCA_livestock['Output'],
+    axis=0).copy()
+  df_LCA_feed[cols_to_divide_feed] = df_LCA_feed[cols_to_divide_feed].div(
+    df_LCA_feed['Output'],
+    axis=0).copy()
+  df_LCA_feed_yield[cols_to_divide_feed_yield] = df_LCA_feed_yield[cols_to_divide_feed_yield].div(
+    df_LCA_feed_yield['Output'],
+    axis=0).copy()
+
+  # Fill Na with 0
+  df_LCA_livestock.fillna(0.0, inplace=True)
+  df_LCA_feed.fillna(0.0, inplace=True)
+  df_LCA_feed_yield.fillna(0.0, inplace=True)
+
+  # Melt dfs for feed and detailed feed
+  df_long = df_LCA_livestock.melt(
+    id_vars=['Item Livestock', 'Database', 'LCA item', 'Unit', 'Output', 'Live weight per animal [kg]', 'LSU'],
+    # columns to keep
+    var_name='Item Feed',  # new column for feed type names
+    value_name='Feed'  # new column for feed values
+  )
+  df_long = df_long[['Item Livestock', 'Item Feed', 'Feed']].copy()
+  df_feed_long = df_LCA_feed.melt(
+    id_vars=['Item Feed', 'Database', 'LCA item', 'Unit', 'Output'],
+    # columns to keep
+    var_name='Feed item',  # new column for feed type names
+    value_name='Input detailed'  # new column for feed values
+  )
+  df_feed_long = df_feed_long[['Item Feed', 'Feed item', 'Input detailed']].copy()
+
+  # Separate between feedmix per animal
+  df_long_feedmix = df_long[
+        df_long['Item Feed'].str.contains('feed', case=False, na=False)
+    ]
+  df_long_nofeed = df_long[
+    ~df_long['Item Feed'].str.contains('feed', case=False, na=False)
+  ]
+
+  # Feedmix : Merge
+  df_merge = pd.merge(df_long_feedmix, df_feed_long, on='Item Feed', how='outer')
+  df_merge.fillna(0.0, inplace=True)
+
+  # Compute the feed inside the feedmix per animal
+  df_merge['Feed'] = df_merge['Feed']* df_merge['Input detailed']
+
+  # Concat between feed and feedmix
+  df_merge = df_merge[['Item Livestock', 'Feed item', 'Feed']].copy()
+  df_merge.rename(
+    columns={'Feed item': 'Item Feed'}, inplace=True)
+  df_feed = pd.concat([df_merge, df_long_nofeed])
+
+  # Sum Feed per Item Livestock and Item Feed
+  df_feed = df_feed.groupby(['Item Livestock', 'Item Feed'], as_index=False)[
+    'Feed'].sum()
+
+  # Merge with the processing yields
+  df_LCA_feed_yield = df_LCA_feed_yield[['Item Feed', 'Output', 'Cereals', 'Oilcrops', 'Pulses', 'Sugarcrops']]
+  df_feed = pd.merge(df_feed, df_LCA_feed_yield, on='Item Feed', how='inner')
+
+  # Multiply with the processing yields
+  cols_to_multiply = df_feed.columns.difference(
+    ['Item Livestock','Item Feed', 'Output'])
+  df_feed[cols_to_multiply] = df_feed[cols_to_multiply].mul(df_feed['Feed'],axis=0).copy()
+
+  # Aggregated as overall feed category raw products (cereals, oilcrops, sugarcrops, pulses)
+  feed_cols = ['Cereals', 'Pulses', 'Oilcrops',
+               'Sugarcrops']  # adjust to your actual feed columns
+  df_total_feed_per_livestock = df_feed.groupby('Item Livestock')[
+    feed_cols].sum().reset_index()
+
+  # Convert in feed per LSU
+  df_lsu = df_LCA_livestock[['Item Livestock','Live weight per animal [kg]', 'LSU']]
+  df_feed_lsu = pd.merge(df_lsu, df_total_feed_per_livestock, on='Item Livestock', how='inner')
+  # Convert from feed per kg of live weight to feed per animal (multiplication)
+  cols_to_multiply = df_feed_lsu.columns.difference(
+    ['Item Livestock','Live weight per animal [kg]', 'LSU'])
+  df_feed_lsu[cols_to_multiply] = df_feed_lsu[cols_to_multiply].mul(df_feed_lsu['Live weight per animal [kg]'],axis=0).copy()
+  # Convert from feed per animal to feed per LSU (division)
+  cols_to_multiply = df_feed_lsu.columns.difference(
+    ['Item Livestock','Live weight per animal [kg]', 'LSU'])
+  df_feed_lsu[cols_to_multiply] = df_feed_lsu[cols_to_multiply].div(df_feed_lsu['LSU'],axis=0).copy()
+
+  # Format accordingly
+  df_feed_lsu.rename(columns={'Cereals': 'crop-cereal',
+                              'Pulses': 'crop-pulse',
+                              'Oilcrops': 'crop-oilcrop',
+                              'Sugarcrops': 'crop-sugarcrop',
+                              'Item Livestock' : 'variables'}, inplace=True)
+  df_feed_lsu = df_feed_lsu[['variables','crop-cereal','crop-pulse','crop-oilcrop','crop-sugarcrop']].copy()
+  df_feed_lsu_melted = df_feed_lsu.melt(
+    id_vars=['variables'],
+    value_vars=['crop-cereal','crop-pulse','crop-oilcrop','crop-sugarcrop'],
+    var_name='Item',
+    value_name= 'value'
+  )
+  df_feed_lsu_melted['variables'] = 'fxa_agr_feed_' + df_feed_lsu_melted['variables'] + '_' + df_feed_lsu_melted['Item']+ '[kg/lsu]'
+  df_feed_lsu_pathwaycalc = df_feed_lsu_melted[['variables','value']].copy()
+
+  # Pathwaycalc formatting
+  # Renaming existing columns (geoscale, timsecale, value)
+  df_feed_lsu_pathwaycalc.rename(columns={'Area': 'geoscale', 'Year': 'timescale'},
+                             inplace=True)
+
+  # Adding the columns module, lever, level and string-pivot at the correct places
+  df_feed_lsu_pathwaycalc['geoscale'] = 'Switzerland'
+  df_feed_lsu_pathwaycalc['timescale'] = '2020' #as an example but it is quite recent
+  df_feed_lsu_pathwaycalc['module'] = 'agriculture'
+  df_feed_lsu_pathwaycalc['lever'] = 'diet'
+  df_feed_lsu_pathwaycalc['level'] = 0
+  cols = df_feed_lsu_pathwaycalc.columns.tolist()
+  cols.insert(cols.index('value'), cols.pop(cols.index('module')))
+  cols.insert(cols.index('value'), cols.pop(cols.index('lever')))
+  cols.insert(cols.index('value'), cols.pop(cols.index('level')))
+  df_feed_lsu_pathwaycalc = df_feed_lsu_pathwaycalc[cols]
+
+  # Extrapolating
+  df_feed_lsu_pathwaycalc = ensure_structure(df_feed_lsu_pathwaycalc)
+  df_feed_lsu_pathwaycalc = linear_fitting_ots_db(df_feed_lsu_pathwaycalc, years_ots,
+                                              countries='all')
+
+  return df_feed_lsu_pathwaycalc
+
 # CalculationLeaf CLIMATE SMART FORESTRY -------------------------------------------------------------------------------
 def climate_smart_forestry_processing():
 
@@ -5142,7 +5284,7 @@ def fxa_preprocessing():
 # CalculationLeaf Pickle creation
 #  FIXME only Switzerland for now
 
-def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration):
+def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration, df_feed_lsu_pathwaycalc):
     #############################################
     ##### database_from_csv_to_datamatrix() #####
     #############################################
@@ -5201,6 +5343,13 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     dm = DataMatrix.create_from_df(df_ots, num_cat=1)
     # Replace for Switzerland
     DM_agriculture_old['fxa']['ef_liv_CH4-emission_treated']['Switzerland', :, 'fxa_ef_liv_CH4-emission_treated', :] = dm['Switzerland', :, 'fxa_ef_liv_CH4-emission_treated', :]
+
+    # Feed
+    lever = 'diet'
+    df_ots, df_fts = database_to_df(df_feed_lsu_pathwaycalc, lever, level='all')
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm = DataMatrix.create_from_df(df_ots, num_cat=2)
+    DM_agriculture_old['fxa']['feed'] = dm
 
     # LeversToDatamatrix FTS based on EuCalc fts
     dm_fts = DM_agriculture_old['fts'].copy()
@@ -5813,6 +5962,7 @@ years_fts = create_years_list(2025, 2050, 5)
 if not os.path.exists('data/faostat'):
     os.makedirs('data/faostat')
 
+df_feed_lsu_pathwaycalc = feed_processing()
 list_countries = ['Austria', 'Belgium', 'Bulgaria', 'Croatia', 'Cyprus', 'Czechia', 'Denmark',
                   'Estonia', 'Finland', 'France', 'Germany', 'Greece', 'Hungary', 'Ireland', 'Italy', 'Latvia',
                   'Lithuania', 'Luxembourg', 'Malta', 'Netherlands (Kingdom of the)', 'Poland', 'Portugal',
@@ -5861,7 +6011,7 @@ df_manure_fxa = manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa, df
 # CalculationTree RUNNING FXA PRE-PROCESSING ---------------------------------------------------------------------------
 #fxa_preprocessing()
 # CalculationTree RUNNING PICKLE CREATION
-database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration) #Fixme duplicates in constants
+database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration, df_feed_lsu_pathwaycalc) #Fixme duplicates in constants
 
 # CalculationTree NEW ENERGY REQUIREMENTS ------------------------------------------------------------------------------
 # The idea was to have energy requirements per demography (agr_kcal-req) based on the current consumption and not the
