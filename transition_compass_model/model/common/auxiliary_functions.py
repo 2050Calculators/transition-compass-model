@@ -1196,3 +1196,19 @@ def get_lever_data_to_plot(lever_name, DM_input):
       print(f'The lever {lever_name} controls more than one variable and cannot be plotted')
 
   return DM_clean
+
+
+def load_pop(country_list, years_list):
+
+  this_dir = os.path.dirname(os.path.abspath(__file__))
+  filepath = os.path.join(this_dir, '../../_database/data/datamatrix/lifestyles.pickle')
+  # population
+  with open(filepath, 'rb') as handle:
+    DM_lfs = pickle.load(handle)
+  dm_pop = DM_lfs["ots"]["pop"]["lfs_population_"].copy()
+  dm_pop.append(DM_lfs["fts"]["pop"]["lfs_population_"][1], "Years")
+  dm_pop = dm_pop.filter({"Country": country_list})
+  dm_pop.sort("Years")
+  dm_pop.filter({"Years": years_list}, inplace=True)
+
+  return dm_pop
