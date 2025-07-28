@@ -14,6 +14,17 @@ filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/tra
 with open(filepath, 'rb') as handle:
     DM_tra = pickle.load(handle)
 
+# # fix fts years if needed
+# for key in DM_tra["fts"].keys():
+#     for level in range(1,4+1):
+#         dm = DM_tra["fts"][key][level]
+#         years = dm.col_labels["Years"].copy()
+#         for y in years:
+#             arr_temp = dm[:,y,...]
+#             dm.drop("Years",int(y))
+#             dm.add(arr_temp, "Years", [int(y)])
+#         dm.sort("Years")
+
 ###############################################################################
 ############################### EXECUTE SCRIPTS ###############################
 ###############################################################################
@@ -156,6 +167,11 @@ f = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.
 my_pickle_dump(DM_transport, f)
 
 # # check
+
+# DM_transport["ots"]["passenger_veh-efficiency_new"].col_labels["Years"]
+# DM_tra["ots"]["passenger_veh-efficiency_new"].col_labels["Years"]
+# DM_transport["fts"]["passenger_veh-efficiency_new"][1].col_labels["Years"]
+# DM_tra["fts"]["passenger_veh-efficiency_new"][1].col_labels["Years"]
 
 # list(DM_transport["fxa"])
 # DM_transport["fxa"]["passenger_tech"].filter({"Variables" : ['tra_passenger_technology-share_fleet']}).flatten().flatten().datamatrix_plot()
