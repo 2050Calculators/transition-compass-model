@@ -1292,8 +1292,6 @@ def tra_industry_interface(
     dm_freight_veh, dm_passenger_veh, dm_infrastructure, write_pickle=False
 ):
 
-    # passenger
-    # TODO: check with Paola why aviation is not here
     if "aviation" not in dm_passenger_veh.col_labels["Categories1"]:
         dm_passenger_veh.add(
             np.nan, dim="Categories1", col_label="aviation", dummy=True
@@ -1349,9 +1347,19 @@ def tra_industry_interface(
     dm_infra_ind = dm_infrastructure.copy()
     dm_infra_ind.rename_col_regex("infra-", "", dim="Categories1")
     dm_infra_ind.rename_col(
-        "tra_new_infrastructure", "tra_product-demand", dim="Variables"
+        ['tra_infrastructure_waste',"tra_new_infrastructure",'tra_tot-infrastructure'], 
+        ["tra_product-waste","tra_product-demand",'tra_product-stock'], dim="Variables"
     )
-
+    
+    # fix years in dm_veh
+    # TODO: to remove this when we fix it in pre processing
+    years = dm_veh.col_labels["Years"].copy()
+    for y in years:
+        arr_temp = dm_veh[:,y,...]
+        dm_veh.drop("Years",int(y))
+        dm_veh.add(arr_temp, "Years", [int(y)])
+    dm_veh.sort("Years")
+    
     # ! FIXME add infrastructure in km
     DM_industry = {
         "tra-veh": dm_veh.filter({"Variables": ["tra_product-demand"]}),
@@ -1622,7 +1630,7 @@ def dummy_tra_infrastructure_workflow(dm_pop):
         new_col="tra_new_infrastructure",
     )
 
-    return dm_infra.filter({"Variables": ["tra_new_infrastructure"]})
+    return dm_infra.filter({"Variables": ["tra_new_infrastructure","tra_infrastructure_waste","tra_tot-infrastructure"]})
 
 
 def tra_emissions_interface(
