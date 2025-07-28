@@ -1,9 +1,13 @@
 import numpy as np
-from model.common.auxiliary_functions import create_years_list
+
+from model.common.auxiliary_functions import create_years_list, load_pop
 from _database.pre_processing.buildings.Switzerland.get_data_functions.heating_technology_CH import (
   extract_heating_technologies_old, extract_heating_technologies, prepare_heating_mix_by_archetype,
   compute_heating_mix_F_E_D_categories, compute_heating_mix_C_B_categories, compute_heating_mix_by_category,
   clean_heating_cat, extract_heating_efficiency, compute_heating_efficiency_by_archetype)
+
+from _database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import load_construction_period_param
+
 import os
 
 
@@ -91,27 +95,13 @@ if __name__ == "__main__":
   from renovation_pipeline_CH import run as renovation_run
 
   years_ots = create_years_list(1990, 2023, 1)
-  construction_period_envelope_cat_sfh = {
-    'F': ['Avant 1919', '1919-1945', '1946-1960', '1961-1970'],
-    'E': ['1971-1980'],
-    'D': ['1981-1990', '1991-2000'],
-    'C': ['2001-2005', '2006-2010'],
-    'B': ['2011-2015', '2016-2020', '2021-2023']}
-  construction_period_envelope_cat_mfh = {
-    'F': ['Avant 1919', '1919-1945', '1946-1960', '1961-1970', '1971-1980'],
-    'E': ['1981-1990'],
-    'D': ['1991-2000'],
-    'C': ['2001-2005', '2006-2010'],
-    'B': ['2011-2015', '2016-2020', '2021-2023']}
-  envelope_cat_new = {'D': (1990, 2000), 'C': (2001, 2010), 'B': (2011, 2023)}
 
-  global_var = {
-    'envelope construction sfh': construction_period_envelope_cat_sfh,
-    'envelope construction mfh': construction_period_envelope_cat_mfh,
-    'envelope cat new': envelope_cat_new}
+  global_var = load_construction_period_param()
+  country_list = ['Switzerland', 'Vaud']
+  dm_pop =load_pop(country_list=country_list, years_list=years_ots)
 
   print("Running floor area pipeline")
-  DM_floor = floor_area_run(years_ots)
+  DM_floor = floor_area_run(dm_pop, global_var, country_list, years_ots)
   dm_stock_tot = DM_floor['stock tot']
   dm_stock_cat = DM_floor['stock cat']
   dm_new_cat = DM_floor['new cat']
