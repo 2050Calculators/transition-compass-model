@@ -98,7 +98,7 @@ def compute_renovation_loi_energie(dm_stock_area, dm_num_bld, dm_stock_cat, env_
 
 
 
-def run(DM_buildings, global_var, dm_pop, lev=4):
+def run(DM_buildings, dm_pop, global_var, country_list, lev=4):
 
   construction_period_envelope_cat_sfh = global_var['envelope construction sfh']
   construction_period_envelope_cat_mfh = global_var['envelope construction mfh']
@@ -130,7 +130,7 @@ def run(DM_buildings, global_var, dm_pop, lev=4):
 
   # SECTION: Loi energy - Heating tech
   # Plus de gaz, mazout, charbon dans les prochain 15-20 ans. Pas de gaz, mazout, charbon dans les nouvelles constructions
-  dm_heating_cat_fts_2 = DM_buildings['fts']['heating-technology-fuel']['bld_heating-technology'][2].copy()
+  dm_heating_cat_fts_2 = DM_buildings['fts']['heating-technology-fuel']['bld_heating-technology'][1].copy()
   idx = dm_heating_cat_fts_2.idx
   idx_fossil = [idx['coal'], idx['heating-oil'], idx['gas'], idx['electricity']]
   dm_heating_cat_fts_2.array[idx['Vaud'], :, idx['bld_heating-mix'], :, idx['B'], idx_fossil] = 0
@@ -181,4 +181,4 @@ if __name__ == "__main__":
 
   dm_pop = load_pop(filepath, country_list, years_ots)
 
-  DM_buildings = run(DM_buildings, global_var, dm_pop, lev=4)
+  DM_buildings = run(DM_buildings, dm_pop, global_var, country_list, lev=4)

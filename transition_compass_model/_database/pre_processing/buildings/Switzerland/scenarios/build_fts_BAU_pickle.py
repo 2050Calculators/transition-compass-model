@@ -5,12 +5,12 @@ from model.common.auxiliary_functions import linear_fitting, create_years_list, 
 
 
 def calculate_heating_eff_fts(dm_heating_eff, years_fts, maximum_eff):
-  dm_heat_pump = dm_heating_eff.filter({'Categories1': ['heat-pump']})
-  dm_heating_eff.drop(dim='Categories1', col_label='heat-pump')
+  dm_heat_pump = dm_heating_eff.filter({'Categories2': ['heat-pump']})
+  dm_heating_eff.drop(dim='Categories2', col_label='heat-pump')
   linear_fitting(dm_heating_eff, years_fts, based_on=list(range(2015, 2023)))
   dm_heating_eff.array = np.minimum(dm_heating_eff.array, maximum_eff)
   linear_fitting(dm_heat_pump, years_fts, based_on=list(range(2015, 2023)))
-  dm_heating_eff.append(dm_heat_pump, dim='Categories1')
+  dm_heating_eff.append(dm_heat_pump, dim='Categories2')
   dm_heating_eff_fts = dm_heating_eff.filter({'Years': years_fts})
 
   return dm_heating_eff_fts
@@ -134,7 +134,7 @@ def run(DM_buildings, country_list, years_fts):
   DM_buildings['fts']['heating-efficiency'] = dict()
   for lev in range(4):
     lev = lev + 1
-    DM_buildings['fts']['heating-efficiency'][lev] = dm_heating_eff_fts
+    DM_buildings['fts']['heating-efficiency'][lev] = dm_heating_eff_fts.copy()
 
   my_pickle_dump(DM_buildings, file)
 

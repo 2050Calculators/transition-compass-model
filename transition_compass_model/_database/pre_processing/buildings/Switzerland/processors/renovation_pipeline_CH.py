@@ -1,4 +1,7 @@
-from model.common.auxiliary_functions import create_years_list
+from model.common.auxiliary_functions import create_years_list, load_pop
+
+from _database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import load_construction_period_param
+
 from _database.pre_processing.buildings.Switzerland.get_data_functions.renovation_CH import (
   extract_number_of_buildings, compute_renovated_buildings, compute_renovation_rate,
   extract_renovation_redistribuition, compute_floor_area_renovated, compute_stock_area_by_cat)
@@ -69,15 +72,23 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
   return DM_renov
 
 if __name__ == "__main__":
+
   from floor_area_pipeline_CH import run as floor_area_run
   years_ots = create_years_list(1990, 2023, 1)
+
+  country_list = ['Switzerland', 'Vaud']
+  dm_pop = load_pop(country_list=country_list, years_list=years_ots)
+
+  global_vars = load_construction_period_param()
+
   # Run floor area pipeline
   print("Running floor area pipeline")
-  DM = floor_area_run(years_ots)
+  DM = floor_area_run(dm_pop, global_vars=global_vars, years_ots=years_ots, country_list=country_list)
   dm_stock_tot = DM['stock tot']
   dm_stock_cat = DM['stock cat']
   dm_new_cat = DM['new cat']
   dm_waste_cat = DM['waste cat']
+
   # Run renovation pipeline
   print("Running renovation pipeline")
   DM_renov = run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots)

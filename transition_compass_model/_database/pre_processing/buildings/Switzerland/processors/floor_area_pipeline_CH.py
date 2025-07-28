@@ -2,37 +2,24 @@ import numpy as np
 import pickle
 import os
 
-from model.common.auxiliary_functions import create_years_list
+from model.common.auxiliary_functions import create_years_list, load_pop
 
 from _database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH import (
   compute_floor_area_stock_v2, extract_bld_new_buildings_2,
   compute_bld_floor_area_new, extract_bld_new_buildings_1, compute_waste,
   compute_floor_area_waste_cat, compute_floor_area_new_cat)
+
+from _database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import load_construction_period_param
 from src.api.routes import country_list
 
 
-def load_pop(filepath, country_list, years_ots):
-  # population
-  with open(filepath, 'rb') as handle:
-    DM_lfs = pickle.load(handle)
-  dm_pop = DM_lfs["ots"]["pop"]["lfs_population_"].copy()
-  dm_pop.append(DM_lfs["fts"]["pop"]["lfs_population_"][1], "Years")
-  dm_pop = dm_pop.filter({"Country": country_list})
-  dm_pop.sort("Years")
-  dm_pop.filter({"Years": years_ots}, inplace=True)
-  return dm_pop
-
-
-def run(global_vars, country_list, years_ots):
+def run(dm_pop, global_vars, country_list, years_ots):
   # Stock
 
   # __file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/buildings/Switzerland/buildings_preprocessing_CH.py"
   #filename = 'data/bld_household_size.pickle'
   #dm_lfs_household_size = extract_lfs_household_size(years_ots, table_id='px-x-0102020000_402', file=filename)
   this_dir = os.path.dirname(os.path.abspath(__file__))
-  filepath = os.path.join(this_dir, "../../../../data/datamatrix/lifestyles.pickle")
-
-  dm_pop = load_pop(filepath, country_list, years_ots)
 
   construction_period_envelope_cat_sfh = global_vars['envelope construction sfh']
   construction_period_envelope_cat_mfh = global_vars['envelope construction mfh']
@@ -79,30 +66,17 @@ def run(global_vars, country_list, years_ots):
   DM = {'stock tot': dm_stock_tot,
         'stock cat': dm_stock_cat,
         'new cat': dm_new_cat,
-        'waste cat': dm_waste_cat,
-        'pop': dm_pop}
+        'waste cat': dm_waste_cat}
 
   return DM
 
 
 if __name__ == "__main__":
 
-  construction_period_envelope_cat_sfh = {'F': ['Avant 1919', '1919-1945', '1946-1960', '1961-1970'],
-                                          'E': ['1971-1980'],
-                                          'D': ['1981-1990', '1991-2000'],
-                                          'C': ['2001-2005', '2006-2010'],
-                                          'B': ['2011-2015', '2016-2020', '2021-2023']}
-  construction_period_envelope_cat_mfh = {'F': ['Avant 1919', '1919-1945', '1946-1960', '1961-1970', '1971-1980'],
-                                          'E': ['1981-1990'],
-                                          'D': ['1991-2000'],
-                                          'C': ['2001-2005', '2006-2010'],
-                                          'B': ['2011-2015', '2016-2020', '2021-2023']}
-  envelope_cat_new = {'D': (1990, 2000), 'C': (2001, 2010), 'B': (2011, 2023)}
-
-  global_vars = { 'envelope construction sfh': construction_period_envelope_cat_sfh,
-                  'envelope construction mfh': construction_period_envelope_cat_mfh,
-                  'envelope cat new': envelope_cat_new}
+  global_vars = load_construction_period_param()
 
   years_ots = create_years_list(1990, 2023, 1)
   country_list = ['Switzerland', 'Vaud']
-  DM = run(global_vars, country_list, years_ots)
+  dm_pop = load_pop(country_list, years_ots)
+
+  DM = run(dm_pop, global_vars, country_list, years_ots)

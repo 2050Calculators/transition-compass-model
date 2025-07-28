@@ -4,6 +4,7 @@ from model.common.auxiliary_functions import cdm_to_dm, create_years_list
 from model.common.constant_data_matrix_class import ConstantDataMatrix
 from model.common.data_matrix_class import DataMatrix
 
+
 def run(country_list, years_ots, years_fts):
   # SECTION U-values - fixed assumption
   # Definition of Building Archetypes Based on the Swiss Energy Performance Certificates Database
@@ -26,7 +27,7 @@ def run(country_list, years_ots, years_fts):
   for bld, dict_val in envelope_cat_u_value.items():
       for cat, val in dict_val.items():
           cdm_u_value.array[idx['bld_u-value'], idx[bld], idx[cat]] = val
-  dm_u_value = cdm_to_dm(cdm_u_value, country_list, years_ots+years_fts)
+  dm_u_value = cdm_to_dm(cdm_u_value, country_list, ['All'])
 
   # SECTION Surface to Floorarea factor - fixed assumption
   # From the same dataset we obtain also the floor to surface area
@@ -39,7 +40,7 @@ def run(country_list, years_ots, years_fts):
   for cat, val in surface_to_floorarea.items():
       cdm_s2f.array[idx['bld_surface-to-floorarea'], idx[cat]] = val
   cdm_s2f.units["bld_surface-to-floorarea"] = "%"
-  dm_s2f = cdm_to_dm(cdm_s2f, country_list, years_ots+ years_fts)
+  dm_s2f = cdm_to_dm(cdm_s2f, country_list, ['All'])
 
   # SECTION: Heating-cooling behaviour (Temperature)
   #########################################

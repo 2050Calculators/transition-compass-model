@@ -2,7 +2,8 @@
 import numpy as np
 import pickle
 
-from model.common.auxiliary_functions import linear_fitting, my_pickle_dump
+from model.common.auxiliary_functions import linear_fitting, my_pickle_dump, \
+  add_dummy_country_to_DM
 from _database.pre_processing.api_routines_CH import get_data_api_CH
 from model.common.data_matrix_class import DataMatrix
 
@@ -79,6 +80,7 @@ def extract_lfs_household_size(years_ots, table_id, file):
 
   return dm_household_size
 
+
 def compute_building_mix(dm_all):
 
     dm_building_mix = dm_all.filter(
@@ -96,7 +98,7 @@ def compute_building_mix(dm_all):
     return dm_building_mix
 
 
-def run(DM_floor, DM_renov, DM_heating, DM_other, years_ots):
+def run(dm_pop, DM_renov, DM_heating, DM_other, DM_appliances, years_ots, years_fts):
 
   this_dir = os.path.dirname(os.path.abspath(__file__))
   # !FIXME: use the actual values and not the calibration factor
@@ -127,7 +129,6 @@ def run(DM_floor, DM_renov, DM_heating, DM_other, years_ots):
   dm_heating_cat = DM_heating['heating-tech-split']
 
   # FLOOR AREA
-  dm_pop = DM_floor['pop']
 
   # SECTION: fxa - bld_age
   DM_buildings['fxa']['bld_age'] = dm_age
@@ -144,6 +145,17 @@ def run(DM_floor, DM_renov, DM_heating, DM_other, years_ots):
   # SECTION: fxa - emission-factor-electricity
   DM_buildings['fxa']['emission-factor-electricity'] = dm_elec
 
+  # SECTION: fxa - appliances
+  DM_buildings['fxa']['appliances'] = DM_appliances['fxa']['appliances'].copy()
+
+  # add_dummy_country_to_DM(DM_appliances, 'EU27', 'Switzerland')
+  #file = os.path.join(this_dir , '../../../../data/datamatrix/buildings.pickle')
+  #with open(file, 'rb') as handle:
+  #  DM_B = pickle.load(handle)
+  #DM_B['fxa']['appliances'] = DM_appliances['fxa']['appliances'].copy()
+  #with open(file, 'wb') as handle:
+  #  pickle.dump(DM_B, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
   # CALIBRATION
   # SECTION: fxa - heating-energy-calibration
   DM_buildings['fxa']['heating-energy-calibration'] = DM_bld['fxa'][
@@ -152,11 +164,11 @@ def run(DM_floor, DM_renov, DM_heating, DM_other, years_ots):
 
   # OTS
   # SECTION: ots - floor-intensity
-  filename = os.path.join(this_dir, '../data/bld_household_size.pickle')
-  dm_lfs_household_size = extract_lfs_household_size(years_ots, table_id='px-x-0102020000_402', file=filename)
+  #filename = os.path.join(this_dir, '../data/bld_household_size.pickle')
+  dm_lfs_household_size = DM_appliances['fxa']['household'].filter({'Variables': ['lfs_household-size']})
 
   dm_space_cap = recompute_floor_area_per_capita(dm_all, dm_pop)
-  dm_space_cap.append(dm_lfs_household_size, dim='Variables')
+  dm_space_cap.append(dm_lfs_household_size.filter({'Years': years_ots}), dim='Variables')
   DM_buildings['ots']['floor-intensity'] = dm_space_cap.copy()
 
   DM_buildings['ots']['heatcool-behaviour'] = dm_Tint_heat.filter(
@@ -164,8 +176,10 @@ def run(DM_floor, DM_renov, DM_heating, DM_other, years_ots):
 
   # SECTION: fxa - bld_type
   dm_building_mix = compute_building_mix(dm_all)
-  DM_buildings['fxa']['bld_type'] = dm_building_mix.filter(
-    {'Variables': ['bld_building-mix_stock']})
+  dm_bld_type = dm_building_mix.filter({'Variables': ['bld_building-mix_stock']})
+  dm_bld_type.add(np.nan, dummy=True, dim='Years', col_label=years_fts)
+
+  DM_buildings['fxa']['bld_type'] =  dm_bld_type.copy()
 
   # SECTION: ots - renovation-rate -> building-mix
   DM_buildings['ots']['building-renovation-rate'] = dict()
