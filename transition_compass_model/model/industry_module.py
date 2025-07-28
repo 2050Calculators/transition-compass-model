@@ -13,6 +13,8 @@ import warnings
 from model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
 import time
 warnings.simplefilter("ignore")
+import plotly.io as pio
+pio.renderers.default='browser'
 
 def read_data(DM_industry, lever_setting):
 
@@ -56,16 +58,12 @@ def product_production(dm_demand_bld_floor, dm_demand_tra_infra, dm_demand_tra_v
     # production [unit] = demand [unit] - net import [unit]
     
     # buildings
-    variabs = dm_demand_bld_floor.col_labels["Variables"]
-    for v in variabs:
-        dm_demand_bld_floor.rename_col(v, "product-demand_" + v, "Variables")
-    dm_demand_bld_floor.deepen()
-    dm_netimport_bld_floor = dm_import.filter_w_regex({"Categories1": "floor-area"})
+    dm_netimport_bld_floor = dm_import.filter({"Categories1": ["floor-area-new-residential"]})
     dm_netimport_bld_floor.array = dm_netimport_bld_floor.array * dm_demand_bld_floor.array
-    dm_netimport_bld_floor.units["product-net-import"] = dm_demand_bld_floor.units["product-demand"]
+    dm_netimport_bld_floor.units["product-net-import"] = dm_demand_bld_floor.units["bld_floor-area_new"]
     dm_prod_bld_floor = dm_demand_bld_floor.copy()
     dm_prod_bld_floor.array = dm_demand_bld_floor.array - dm_netimport_bld_floor.array
-    dm_prod_bld_floor.rename_col("product-demand","product-production","Variables")
+    dm_prod_bld_floor.rename_col("bld_floor-area_new","product-production","Variables")
     
     # transport infra
     dm_netimport_tra_infra = dm_import.filter({"Categories1": ['rail', 'road', 'trolley-cables']})
@@ -147,7 +145,8 @@ def apply_material_decomposition(dm_production_bld_floor,
     dm_tra_veh_matdec = cdm_to_dm(cdm_matdec_tra_veh, countries, years)
     dm_tra_bat_matdec = cdm_to_dm(cdm_matdec_tra_bat, countries, years)
     dm_tra_veh_matdec.append(dm_tra_bat_matdec,"Categories1")
-    dm_tra_veh_matdec.groupby({"HDV" : ["HDV","battery-lion-HDV"], "LDV" : ["LDV","battery-lion-LDV"]}, 
+    dm_tra_veh_matdec.groupby({"HDV" : ["HDV","battery-lion-HDV"], "LDV" : ["LDV","battery-lion-LDV"],
+                               "bus" : ["bus","battery-lion-bus"]}, 
                               "Categories1", inplace=True)
     
     # do material decomp
@@ -337,117 +336,337 @@ def calibration_material_production(DM_cal, dm_material_production_bymat, DM_mat
     
     return
 
-def end_of_life(dm_transport_waste, dm_waste_management, 
-                dm_matrec_veh, cdm_matdec_veh, 
-                dm_matrec_bat, cdm_matdec_bat,
+def make_pack_waste(dm_paperpack, dm_pop):
+    dm_pack_waste = dm_paperpack.copy()
+    dm_pack_waste.rename_col("product-demand","product-waste","Variables")
+    dm_pack_waste.array = dm_pack_waste.array * dm_pop[...,np.newaxis]
+    dm_pack_waste.units["product-waste"] = "t"
+    return dm_pack_waste
+
+def end_of_life(dm_tra_waste, dm_tra_infra_waste, dm_bld_waste, dm_pack_waste, dm_domapp_waste, dm_elec_waste,
+                dm_waste_management, 
+                dm_matrec,
+                cdm_matdec_floor, cdm_matdec_tra_infra, cdm_matdec_tra_veh, cdm_matdec_pack, cdm_matdec_tra_bat, cdm_matdec_domapp, cdm_matdec_elec,
                 dm_material_production_bymat):
     
     # in general:
-    # littered + export + uncolleted + collected = 1
-    # recycling + energy recovery + reuse + landfill + incineration = 1
+    # littered + export + uncolleted + collected = 1 (layer 1)
+    # recycling + energy recovery + reuse + landfill + incineration = 1 (layer 2)
     # note on incineration: transport will not have incineration, while electric waste yes
     
-    # TODO: for the moment I am doing waste management only for cars and trucks. I am
-    # also adding the recycling of batteries of the cars that are recycled.
-    # this will have to be done
-    # for 'planes', 'ships', 'trains', batteries (to understand if to treat them as a separate product), 
-    # appliances (for which we'll have to update buildings) and
-    # buildings (which is already present in buildings, though we need to develop the data on their eol).
-    # So far, the split of waste categories should be the same for transport and appliances, with the
-    # only difference that incineration will be positive values for appliances. That should be the only
-    # difference, so same formulas should apply.
+    # TODO: do batteries for electronics, and appliances
+    # assumption: for the moment we assume 1 battery pack per eol bev vehicle
     
-    # make waste-collected, waste-uncollected, export, littered
+    # note: we'll do both units and materials (usually it's in materials or weight,
+    # but we'll keep units to be used in case later)
+    
     layer1 = ["export","littered","waste-collected","waste-uncollected"]
-    dm_waste_layer1 = dm_waste_management.filter({"Categories1" : layer1})
-    arr_temp = dm_transport_waste.array[...,np.newaxis] * dm_waste_layer1.array[:,:,np.newaxis,:,np.newaxis,:]
-    dm_transport_waste_bywsm_layer1 = DataMatrix.based_on(arr_temp, dm_transport_waste, 
-                                                          {'Categories3': layer1}, 
-                                                          units = dm_transport_waste.units)
-    
-    # do material decomp of layer 1 (to be used in stock and flow analysis)
-    dm_temp = dm_transport_waste_bywsm_layer1.copy()
-    arr_temp = dm_temp.array[...,np.newaxis] * cdm_matdec_veh.array[np.newaxis,np.newaxis,:,:,:,np.newaxis,:] / 1000
-    dm_transport_waste_bymat = DataMatrix.based_on(arr_temp, dm_temp, 
-                                                   {'Categories4': cdm_matdec_veh.col_labels["Categories3"]}, 
-                                                   units = "kt")
-    dm_transport_waste_bymat.units["tra_product-waste"] = "kt"
-    dm_transport_waste_bymat.group_all("Categories2")
-    dm_transport_waste_bymat.group_all("Categories1")
-    
-    # make recycling, energy recovery, reuse, landfill, incineration
     layer2 = ["energy-recovery","incineration","landfill","recycling","reuse"]
-    dm_waste_layer2 = dm_waste_management.filter({"Categories1" : layer2})
-    dm_waste_collected = dm_transport_waste_bywsm_layer1.filter({"Categories3" : ["waste-collected"]})
-    arr_temp = dm_waste_collected.array * dm_waste_layer2.array[:,:,np.newaxis,:,np.newaxis,:]
-    dm_transport_waste_bywsm_layer2 = DataMatrix.based_on(arr_temp, dm_waste_collected, 
-                                                          {'Categories3': layer2}, 
-                                                          units = dm_waste_collected.units)
-
-    # do material decomposition of layer 2 (to be used in material flow analysis, and recycling to be used below)
-    dm_temp = dm_transport_waste_bywsm_layer2.copy()
-    dm_veh_eol_to_recycling = dm_temp.copy()
-    arr_temp = dm_temp.array[...,np.newaxis] * cdm_matdec_veh.array[np.newaxis,np.newaxis,:,:,:,np.newaxis,:]
-    dm_transport_waste_collect_bymat = DataMatrix.based_on(arr_temp, dm_temp, 
-                                                   {'Categories4': cdm_matdec_veh.col_labels["Categories3"]}, 
-                                                   units = "t")
-    dm_transport_waste_collect_bymat.units["tra_product-waste"] = "t"
-    dm_transport_waste_collect_bymat.group_all("Categories2")
-    dm_transport_waste_collect_bymat.group_all("Categories1")
+    materials = cdm_matdec_tra_veh.col_labels["Categories3"]
     
-    # get material recovered from recycling
-    dm_transport_matrecovered_veh = dm_transport_waste_collect_bymat.filter({"Categories1" : ["recycling"]})
-    dm_transport_matrecovered_veh.array = dm_transport_matrecovered_veh.array * \
-        dm_matrec_veh.array
-        
-    # add material recovered from battery recycling
-    # note: assuming 1 battery pack per vehicle
-    dm_tra_batteries_torecy = dm_transport_waste_bywsm_layer2.filter(
-        {"Categories1" : ['HDV', 'LDV'], 
-         "Categories3" : ['recycling']})
-    arr_temp = dm_tra_batteries_torecy.array * cdm_matdec_bat.array[np.newaxis,np.newaxis,...]
-    dm_batteries_matrecovered = DataMatrix.based_on(arr_temp, dm_tra_batteries_torecy, 
-                                                         {'Categories3': cdm_matdec_bat.col_labels["Categories3"]}, 
-                                                         units = "t")
-    dm_batteries_matrecovered.units["tra_product-waste"] = "t"
-    dm_batteries_matrecovered.array = dm_batteries_matrecovered.array * dm_matrec_bat.array[:,:,:,:,np.newaxis,:]
+    ####################
+    ##### VEHICLES #####
+    ####################
     
-    # sum across products
-    dm_transport_matrecovered_veh.group_all("Categories1")
-    dm_transport_matrecovered_veh.rename_col('tra_product-waste','vehicles',"Variables")
-    # dm_transport_matrecovered_veh = dm_transport_matrecovered_veh.flatten()
-    # dm_transport_matrecovered_veh.rename_col_regex("vehicles_","","Variables")
-    dm_batteries_matrecovered.group_all("Categories2")
-    dm_batteries_matrecovered.group_all("Categories1")
-    dm_batteries_matrecovered.rename_col('tra_product-waste','batteries',"Variables")
+    # get layers in %
+    dm_tra_waste_layer1 = dm_waste_management.filter({"Variables" : ["vehicles"], "Categories1" : layer1})
+    dm_tra_waste_layer2 = dm_waste_management.filter({"Variables" : ["vehicles"], "Categories1" : layer2})
     
-    # get material recovered across sectors
-    # TODO!: later on add here the other sectors, like buildings
-    dm_matrecovered = dm_transport_matrecovered_veh.copy()
-    dm_matrecovered.append(dm_batteries_matrecovered,"Variables")
-    dm_matrecovered.groupby({"material-recovered" : ["vehicles","batteries"]}, "Variables", inplace=True)
-    dm_matrecovered.change_unit('material-recovered', factor=1e-3, old_unit='t', new_unit='kt')
+    # layer 1 units
+    arr_temp = dm_tra_waste[...,np.newaxis] * dm_tra_waste_layer1[:,:,:,np.newaxis,np.newaxis,:]
+    dm_tra_waste_bywsm_layer1 = DataMatrix.based_on(arr_temp, dm_tra_waste, {'Categories3': layer1}, 
+                                                    units = dm_tra_waste.units)
+    
+    # layer 1 materials
+    arr_temp = dm_tra_waste_bywsm_layer1[...,np.newaxis] * cdm_matdec_tra_veh[np.newaxis,np.newaxis,:,:,:,np.newaxis,:]
+    dm_tra_waste_bywsm_layer1_bymat = DataMatrix.based_on(arr_temp, dm_tra_waste_bywsm_layer1, {'Categories4': materials}, 
+                                                          units = "t")
+    dm_tra_waste_bywsm_layer1_bymat.units["tra_product-waste"] = "t"
+    dm_tra_waste_bywsm_layer1_bymat.switch_categories_order("Categories3","Categories4")
+    
+    # layer 2 units
+    dm_collected = dm_tra_waste_bywsm_layer1.filter({"Categories3" : ['waste-collected']}).group_all("Categories3",inplace=False)
+    arr_temp = dm_collected[...,np.newaxis] * dm_tra_waste_layer2[:,:,:,np.newaxis,np.newaxis,:]
+    dm_tra_waste_bywsm_layer2 = DataMatrix.based_on(arr_temp, dm_collected, {'Categories3': layer2}, 
+                                                    units = dm_collected.units)
+    
+    # layer 2 materials
+    dm_collected_bymat = dm_tra_waste_bywsm_layer1_bymat.filter({"Categories4" : ['waste-collected']}).group_all("Categories4",inplace=False)
+    arr_temp = dm_collected_bymat[...,np.newaxis] * dm_tra_waste_layer2[:,:,:,np.newaxis,np.newaxis,np.newaxis,:]
+    dm_tra_waste_bywsm_layer2_bymat = DataMatrix.based_on(arr_temp, dm_collected_bymat, {'Categories4': layer2}, 
+                                                    units = dm_collected_bymat.units)
+    
+    ##############################
+    ##### BATTERIES VEHICLES #####
+    ##############################
+    
+    # layer 1 units
+    dm_tra_batt_waste_bywsm_layer1 = dm_tra_waste_bywsm_layer1.filter({"Categories1" : ['HDV', 'LDV', 'bus']})
+    
+    # layer 1 materials
+    arr_temp = dm_tra_batt_waste_bywsm_layer1[...,np.newaxis] * cdm_matdec_tra_bat[np.newaxis,np.newaxis,:,:,:,np.newaxis,:]
+    dm_tra_batt_waste_bywsm_layer1_bymat = DataMatrix.based_on(arr_temp, dm_tra_batt_waste_bywsm_layer1, {'Categories4': materials}, 
+                                                          units = "t")
+    dm_tra_batt_waste_bywsm_layer1_bymat.units["tra_product-waste"] = "t"
+    dm_tra_batt_waste_bywsm_layer1_bymat.switch_categories_order("Categories3","Categories4")
+    
+    # layer 2 units
+    dm_tra_batt_waste_bywsm_layer2 = dm_tra_waste_bywsm_layer2.filter({"Categories1" : ['HDV', 'LDV', 'bus']})
+    
+    # layer 2 materials
+    dm_collected_bymat = dm_tra_batt_waste_bywsm_layer1_bymat.filter({"Categories4" : ['waste-collected']}).group_all("Categories4",inplace=False)
+    arr_temp = dm_collected_bymat[...,np.newaxis] * dm_tra_waste_layer2[:,:,:,np.newaxis,np.newaxis,np.newaxis,:]
+    dm_tra_batt_waste_bywsm_layer2_bymat = DataMatrix.based_on(arr_temp, dm_collected_bymat, {'Categories4': layer2}, 
+                                                               units = dm_collected_bymat.units)
+    
+    ####################################
+    ##### TRANSPORT INFRASTRUCTURE #####
+    ####################################
+    
+    # get layers in %
+    dm_tra_infra_waste_layer1 = dm_waste_management.filter({"Variables" : ['rail', 'road', 'trolley-cables'], "Categories1" : layer1})
+    dm_tra_infra_waste_layer2 = dm_waste_management.filter({"Variables" : ['rail', 'road', 'trolley-cables'], "Categories1" : layer2})
+    
+    # layer 1 units
+    arr_temp = dm_tra_infra_waste[...,np.newaxis] * dm_tra_infra_waste_layer1[:,:,np.newaxis,:,:]
+    dm_tra_infra_waste_bywsm_layer1 = DataMatrix.based_on(arr_temp, dm_tra_infra_waste, {'Categories2': layer1}, 
+                                                          units = dm_tra_infra_waste.units)
+    
+    # layer 1 materials
+    arr_temp = dm_tra_infra_waste_bywsm_layer1[...,np.newaxis] * cdm_matdec_tra_infra[np.newaxis,np.newaxis,:,:,np.newaxis,:]
+    dm_tra_infra_waste_bywsm_layer1_bymat = DataMatrix.based_on(arr_temp, dm_tra_infra_waste_bywsm_layer1, {'Categories3': materials}, 
+                                                          units = "t")
+    dm_tra_infra_waste_bywsm_layer1_bymat.units["tra_product-waste"] = "t"
+    dm_tra_infra_waste_bywsm_layer1_bymat.switch_categories_order("Categories2","Categories3")
+    
+    # layer 2 units
+    dm_collected = dm_tra_infra_waste_bywsm_layer1.filter({"Categories2" : ['waste-collected']}).group_all("Categories2",inplace=False)
+    arr_temp = dm_collected[...,np.newaxis] * dm_tra_infra_waste_layer2[:,:,np.newaxis,:,:]
+    dm_tra_infra_waste_bywsm_layer2 = DataMatrix.based_on(arr_temp, dm_collected, {'Categories2': layer2}, 
+                                                          units = dm_collected.units)
+    
+    # layer 2 materials
+    dm_collected_bymat = dm_tra_infra_waste_bywsm_layer1_bymat.filter({"Categories3" : ['waste-collected']}).group_all("Categories3",inplace=False)
+    arr_temp = dm_collected_bymat[...,np.newaxis] * dm_tra_infra_waste_layer2[:,:,np.newaxis,:,np.newaxis,:]
+    dm_tra_infra_waste_bywsm_layer2_bymat = DataMatrix.based_on(arr_temp, dm_collected_bymat, {'Categories3': layer2}, 
+                                                                units = dm_collected_bymat.units)
+    
+    #####################
+    ##### BUILDINGS #####
+    #####################
+    
+    # get layers in %
+    dm_bld_waste_layer1 = dm_waste_management.filter({"Variables" : ['floor-area-new-residential'], "Categories1" : layer1})
+    dm_bld_waste_layer2 = dm_waste_management.filter({"Variables" : ['floor-area-new-residential'], "Categories1" : layer2})
+    
+    # layer 1 units
+    arr_temp = dm_bld_waste[...,np.newaxis] * dm_bld_waste_layer1[:,:,:,np.newaxis,:]
+    dm_bld_waste_bywsm_layer1 = DataMatrix.based_on(arr_temp, dm_bld_waste, {'Categories2': layer1}, 
+                                                    units = dm_bld_waste.units)
+    
+    # layer 1 materials
+    cdm_temp = cdm_matdec_floor.filter({"Categories1" : ["floor-area-new-residential"]})
+    arr_temp = dm_bld_waste_bywsm_layer1[...,np.newaxis] * cdm_temp[np.newaxis,np.newaxis,np.newaxis,...]
+    dm_bld_waste_bywsm_layer1_bymat = DataMatrix.based_on(arr_temp, dm_bld_waste_bywsm_layer1, {'Categories3': materials}, 
+                                                    units = "t")
+    dm_bld_waste_bywsm_layer1_bymat.units["bld_floor-area_waste"] = "t"
+    dm_bld_waste_bywsm_layer1_bymat.switch_categories_order("Categories2","Categories3")
+    
+    # layer 2 units
+    dm_collected = dm_bld_waste_bywsm_layer1.filter({"Categories2" : ['waste-collected']}).group_all("Categories2",inplace=False)
+    arr_temp = dm_collected[...,np.newaxis] * dm_bld_waste_layer2[:,:,:,np.newaxis,:]
+    dm_bld_waste_bywsm_layer2 = DataMatrix.based_on(arr_temp, dm_collected, {'Categories2': layer2}, 
+                                                    units = dm_collected.units)
+    
+    # layer 2 materials
+    dm_collected_bymat = dm_bld_waste_bywsm_layer1_bymat.filter({"Categories3" : ['waste-collected']}).group_all("Categories3",inplace=False)
+    arr_temp = dm_collected_bymat[...,np.newaxis] * dm_bld_waste_layer2[:,:,np.newaxis,:,np.newaxis,:]
+    dm_bld_waste_bywsm_layer2_bymat = DataMatrix.based_on(arr_temp, dm_collected_bymat, {'Categories3': layer2}, 
+                                                          units = dm_collected_bymat.units)
+    
+    ####################
+    ##### PACKAGES #####
+    ####################
+    
+    # get layers in %
+    dm_pack_waste_layer1 = dm_waste_management.filter({"Variables" : dm_pack_waste.col_labels["Categories1"], 
+                                                       "Categories1" : layer1})
+    dm_pack_waste_layer2 = dm_waste_management.filter({"Variables" : dm_pack_waste.col_labels["Categories1"], 
+                                                       "Categories1" : layer2})
+    
+    # layer 1 units
+    arr_temp = dm_pack_waste[...,np.newaxis] * dm_pack_waste_layer1[:,:,np.newaxis,:,:]
+    dm_pack_waste_bywsm_layer1 = DataMatrix.based_on(arr_temp, dm_pack_waste, {'Categories2': layer1}, 
+                                                     units = dm_pack_waste.units)
+    
+    # layer 1 materials
+    arr_temp = dm_pack_waste_bywsm_layer1[...,np.newaxis] * cdm_matdec_pack[np.newaxis,np.newaxis,:,:,np.newaxis,:]
+    dm_pack_waste_bywsm_layer1_bymat = DataMatrix.based_on(arr_temp, dm_pack_waste_bywsm_layer1, {'Categories3': materials}, 
+                                                    units = "t")
+    dm_pack_waste_bywsm_layer1_bymat.switch_categories_order("Categories2","Categories3")
+    
+    # layer 2 units
+    dm_collected = dm_pack_waste_bywsm_layer1.filter({"Categories2" : ['waste-collected']}).group_all("Categories2",inplace=False)
+    arr_temp = dm_collected[...,np.newaxis] * dm_pack_waste_layer2[:,:,np.newaxis,:,:]
+    dm_pack_waste_bywsm_layer2 = DataMatrix.based_on(arr_temp, dm_collected, {'Categories2': layer2}, 
+                                                     units = dm_collected.units)
+    
+    # layer 2 materials
+    dm_collected_bymat = dm_pack_waste_bywsm_layer1_bymat.filter({"Categories3" : ['waste-collected']}).group_all("Categories3",inplace=False)
+    arr_temp = dm_collected_bymat[...,np.newaxis] * dm_pack_waste_layer2[:,:,np.newaxis,:,np.newaxis,:]
+    dm_pack_waste_bywsm_layer2_bymat = DataMatrix.based_on(arr_temp, dm_collected_bymat, {'Categories3': layer2}, 
+                                                           units = dm_collected_bymat.units)
+    
+    ###############################
+    ##### DOMESTIC APPLIANCES #####
+    ###############################
+    
+    # get layers in %
+    dm_domapp_waste_layer1 = dm_waste_management.filter({"Variables" : ["domapp"], "Categories1" : layer1})
+    dm_domapp_waste_layer2 = dm_waste_management.filter({"Variables" : ["domapp"], "Categories1" : layer2})
+    
+    # layer 1 units
+    arr_temp = dm_domapp_waste[...,np.newaxis] * dm_domapp_waste_layer1[:,:,:,np.newaxis,:]
+    dm_domapp_waste_bywsm_layer1 = DataMatrix.based_on(arr_temp, dm_domapp_waste, {'Categories2': layer1}, 
+                                                       units = dm_domapp_waste.units)
+    
+    # layer 1 materials
+    arr_temp = dm_domapp_waste_bywsm_layer1[...,np.newaxis] * cdm_matdec_domapp[np.newaxis,np.newaxis,:,:,np.newaxis,:]
+    dm_domapp_waste_bywsm_layer1_bymat = DataMatrix.based_on(arr_temp, 
+                                                             dm_domapp_waste_bywsm_layer1, {'Categories3': materials}, 
+                                                             units = "t")
+    dm_domapp_waste_bywsm_layer1_bymat.units["bld_domapp_waste"] = "t"
+    dm_domapp_waste_bywsm_layer1_bymat.switch_categories_order("Categories2","Categories3")
+    
+    # layer 2 units
+    dm_collected = dm_domapp_waste_bywsm_layer1.filter({"Categories2" : ['waste-collected']}).group_all("Categories2",inplace=False)
+    arr_temp = dm_collected[...,np.newaxis] * dm_domapp_waste_layer2[:,:,np.newaxis,:,:]
+    dm_domapp_waste_bywsm_layer2 = DataMatrix.based_on(arr_temp, dm_collected, {'Categories2': layer2}, 
+                                                       units = dm_collected.units)
+    
+    # layer 2 materials
+    dm_collected_bymat = dm_domapp_waste_bywsm_layer1_bymat.filter({"Categories3" : ['waste-collected']}).group_all("Categories3",inplace=False)
+    arr_temp = dm_collected_bymat[...,np.newaxis] * dm_domapp_waste_layer2[:,:,:,np.newaxis,np.newaxis,:]
+    dm_domapp_waste_bywsm_layer2_bymat = DataMatrix.based_on(arr_temp, dm_collected_bymat, {'Categories3': layer2}, 
+                                                             units = dm_collected_bymat.units)
+    
+    #######################
+    ##### ELECTRONICS #####
+    #######################
+    
+    # get layers in %
+    dm_elec_waste_layer1 = dm_waste_management.filter({"Variables" : ["electronics"], "Categories1" : layer1})
+    dm_elec_waste_layer2 = dm_waste_management.filter({"Variables" : ["electronics"], "Categories1" : layer2})
+    
+    # layer 1 units
+    arr_temp = dm_elec_waste[...,np.newaxis] * dm_elec_waste_layer1[:,:,:,np.newaxis,:]
+    dm_elec_waste_bywsm_layer1 = DataMatrix.based_on(arr_temp, dm_elec_waste, {'Categories2': layer1}, 
+                                                       units = dm_elec_waste.units)
+    
+    # layer 1 materials
+    arr_temp = dm_elec_waste_bywsm_layer1[...,np.newaxis] * cdm_matdec_elec[np.newaxis,np.newaxis,:,:,np.newaxis,:]
+    dm_elec_waste_bywsm_layer1_bymat = DataMatrix.based_on(arr_temp, 
+                                                           dm_elec_waste_bywsm_layer1, {'Categories3': materials}, 
+                                                           units = "t")
+    dm_elec_waste_bywsm_layer1_bymat.units["bld_electronics_waste"] = "t"
+    dm_elec_waste_bywsm_layer1_bymat.switch_categories_order("Categories2","Categories3")
+    
+    # layer 2 units
+    dm_collected = dm_elec_waste_bywsm_layer1.filter({"Categories2" : ['waste-collected']}).group_all("Categories2",inplace=False)
+    arr_temp = dm_collected[...,np.newaxis] * dm_elec_waste_layer2[:,:,:,np.newaxis,:]
+    dm_elec_waste_bywsm_layer2 = DataMatrix.based_on(arr_temp, dm_collected, {'Categories2': layer2}, 
+                                                     units = dm_collected.units)
+    
+    # layer 2 materials
+    dm_collected_bymat = dm_elec_waste_bywsm_layer1_bymat.filter({"Categories3" : ['waste-collected']}).group_all("Categories3",inplace=False)
+    arr_temp = dm_collected_bymat[...,np.newaxis] * dm_elec_waste_layer2[:,:,:,np.newaxis,np.newaxis,:]
+    dm_elec_waste_bywsm_layer2_bymat = DataMatrix.based_on(arr_temp, dm_collected_bymat, {'Categories3': layer2}, 
+                                                           units = dm_collected_bymat.units)
+    
+    #############################
+    ##### MATERIAL RECOVERY #####
+    #############################
+    
+    # infra
+    dm_rec = dm_tra_infra_waste_bywsm_layer2_bymat.filter({"Categories3" : ["recycling"]}).group_all("Categories3",inplace=False)
+    dm_rec.array = dm_rec.array * dm_matrec.filter({"Categories1" : ['rail', 'road', 'trolley-cables']}).array
+    dm_rec.rename_col(dm_rec.col_labels["Variables"][0], "material-recovered", "Variables")
+    
+    # buildings
+    dm_temp = dm_bld_waste_bywsm_layer2_bymat.filter({"Categories3" : ["recycling"]}).group_all("Categories3",inplace=False)
+    dm_temp.array = dm_temp.array * dm_matrec.filter({"Categories1" : ['floor-area']}).array
+    dm_temp.rename_col(dm_temp.col_labels["Variables"][0], "material-recovered", "Variables")
+    dm_rec.append(dm_temp,"Categories1")
+    
+    # packaging
+    dm_temp = dm_pack_waste_bywsm_layer2_bymat.filter({"Categories3" : ["recycling"]}).group_all("Categories3",inplace=False)
+    dm_temp.array = dm_temp.array * dm_matrec.filter({"Categories1" : ['aluminium-pack', 'glass-pack', 'paper-pack', 'paper-print', 'paper-san','plastic-pack']}).array
+    dm_temp.rename_col(dm_temp.col_labels["Variables"][0], "material-recovered", "Variables")
+    dm_rec.append(dm_temp,"Categories1")
+    
+    # domestic appliances
+    dm_temp = dm_domapp_waste_bywsm_layer2_bymat.filter({"Categories3" : ["recycling"]}).group_all("Categories3",inplace=False)
+    dm_temp.array = dm_temp.array * dm_matrec.filter({"Categories1" : ['dishwasher', 'dryer','freezer', 'fridge','wmachine']}).array
+    dm_temp.rename_col(dm_temp.col_labels["Variables"][0], "material-recovered", "Variables")
+    dm_rec.append(dm_temp,"Categories1")
+    
+    # electronics
+    dm_temp = dm_elec_waste_bywsm_layer2_bymat.filter({"Categories3" : ["recycling"]}).group_all("Categories3",inplace=False)
+    dm_temp.array = dm_temp.array * dm_matrec.filter({"Categories1" : ['electronics']}).array
+    dm_temp.rename_col(dm_temp.col_labels["Variables"][0], "material-recovered", "Variables")
+    dm_rec.append(dm_temp,"Categories1")
+    
+    # vehicles
+    dm_rec_veh = dm_tra_waste_bywsm_layer2_bymat.filter({"Categories1" : ['HDV', 'LDV', 'bus'], 
+                                                         "Categories4" : ["recycling"]}).group_all("Categories4",inplace=False)
+    dm_rec_veh.array = dm_rec_veh.array * dm_matrec.filter({"Categories1" : ["vehicles"]})[:,:,:,:,np.newaxis,:]
+    dm_temp = dm_tra_waste_bywsm_layer2_bymat.filter({"Categories1" : ['planes','ships','trains'], 
+                                                         "Categories4" : ["recycling"]}).group_all("Categories4",inplace=False)
+    dm_temp.array = dm_temp.array * dm_matrec.filter({"Categories1" : ['planes','ships','trains']})[:,:,:,:,np.newaxis,:]
+    dm_rec_veh.append(dm_temp,"Categories1")
+    
+    # batteries from vehicles
+    dm_temp = dm_tra_batt_waste_bywsm_layer2_bymat.filter({"Categories4" : ["recycling"]}).group_all("Categories4",inplace=False)
+    dm_temp.array = dm_temp.array * dm_matrec.filter({"Categories1" : ['battery-lion']})[:,:,:,:,np.newaxis,:]
+    dm_temp.rename_col(['HDV', 'LDV', 'bus'],['battery-HDV', 'battery-LDV', 'battery-bus'],"Categories1")
+    dm_rec_veh.append(dm_temp,"Categories1")
+    dm_rec_veh.rename_col("tra_product-waste", "material-recovered", "Variables")
+    
+    # put together
+    dm_rec_veh.array[dm_rec_veh.array == 0] = np.nan
+    dm_rec_veh = dm_rec_veh.flatten().flatten()
+    dm_rec_veh.deepen()
+    missing = np.array(materials)[[m not in dm_rec_veh.col_labels["Categories2"] for m in materials]]
+    dm_rec_veh.add(0, "Categories2", missing.tolist(), dummy=True)
+    dm_rec_veh.sort("Categories2")
+    dm_rec.append(dm_rec_veh,"Categories1")
+    dm_rec.sort("Categories1")
+    
+    # aggregate
+    dm_rec_agg = dm_rec.group_all("Categories1",inplace=False)
+    dm_rec_agg.change_unit("material-recovered", factor=1e-3, old_unit='t', new_unit='kt')
     
     # if material recovered is larger than material produced, impose material recovered to be equal to material produced
-    materials = dm_matrecovered.col_labels["Categories1"]
-    dm_temp = dm_matrecovered.copy()
+    dm_temp = dm_rec_agg.copy()
     dm_temp1 = dm_material_production_bymat.filter({"Categories1" : materials})
-    dm_temp.array = dm_matrecovered.array - dm_temp1.array # create a dm in which you do the difference
+    dm_temp.array = dm_rec_agg.array - dm_temp1.array # create a dm in which you do the difference
     dm_temp.array[dm_temp.array > 0] = 0 # where the difference is > 0, put difference = 0
     dm_temp.array = dm_temp.array + dm_temp1.array # sum back the material production, so where the difference > 0, the value of material recovered now equals the value of material production
-    dm_matrecovered_corrected = dm_temp
+    dm_rec_agg_corrected = dm_temp
     
-    # reshape dm_veh_eol_to_recycling
-    dm_veh_eol_to_recycling.group_all("Categories3")
+    # checks
+    # dm_rec_agg.flatten().filter({"Country":["EU27"]}).datamatrix_plot()
+    # dm_rec_agg_corrected.flatten().filter({"Country":["EU27"]}).datamatrix_plot()
+    # dm_material_production_bymat.flatten().filter({"Country":["EU27"]}).datamatrix_plot()
     
     # save
     DM_eol = {
-        "material-towaste": dm_transport_waste_bymat,
-        "material-towaste-collected" : dm_transport_waste_collect_bymat,
-        "material-recovered" : dm_matrecovered_corrected,
-        "veh_eol_to_wst_mgt" : dm_transport_waste_bywsm_layer1,
-        "veh_el_to_collection" : dm_transport_waste_bywsm_layer2,
-        "veh_eol_to_recycling" : dm_veh_eol_to_recycling
+        # "material-towaste": dm_transport_waste_bymat,
+        # "material-towaste-collected" : dm_transport_waste_collect_bymat,
+        "material-recovered" : dm_rec_agg_corrected,
+        # "veh_eol_to_wst_mgt" : dm_transport_waste_bywsm_layer1,
+        # "veh_el_to_collection" : dm_transport_waste_bywsm_layer2,
+        # "veh_eol_to_recycling" : dm_veh_eol_to_recycling
         }
     
     return DM_eol
@@ -461,27 +680,52 @@ def material_production_by_technology(dm_technology_share, dm_material_productio
     # secondary and steel made from scrap steel, represent the pre-consumer material
     # recovery.
     
+    # Note: 
+    
+    # Note: for paper, pulp is the raw material for making paper. When we recycle
+    # paper, the EOL paper is turned into pulp, which then is turned into paper.
+    
     # subtract material recovered from material production
     # note: in eol we have already adjusted for the cases when recovery > production (we have set recovery = production)
-    dm_material_production_bymat_adj = dm_material_production_bymat.copy()
+    dm_material_production_bymat_primary = dm_material_production_bymat.copy()
     materials_recovered = dm_material_recovered.col_labels["Categories1"]
-    idx_matprod_bymat = dm_material_production_bymat_adj.idx
-    idx_recovered = dm_material_recovered.idx
     for m in materials_recovered:
-        dm_material_production_bymat_adj.array[...,idx_matprod_bymat[m]] = \
-        dm_material_production_bymat_adj.array[...,idx_matprod_bymat[m]] - \
-        dm_material_recovered.array[...,idx_recovered[m]]
+        dm_material_production_bymat_primary[...,m] = \
+            dm_material_production_bymat_primary[...,m] - dm_material_recovered[...,m]
         
     # add timber to wood and wooden products (wwp), and other ot other industrial sector (ois)
     dm_material_production_bymat.groupby({'wwp': 'timber|wwp', 'ois' : 'other|ois'}, 
-                                          dim='Categories1', aggregation = "sum", regex=True, inplace=True)
-    dm_material_production_bymat_adj.groupby({'wwp': 'timber|wwp', 'ois' : 'other|ois'}, 
-                                              dim='Categories1', aggregation = "sum", regex=True, inplace=True)
+                                         dim='Categories1', aggregation = "sum", regex=True, inplace=True)
+    dm_material_production_bymat_primary.groupby({'wwp': 'timber|wwp', 'ois' : 'other|ois'}, 
+                                                 dim='Categories1', aggregation = "sum", regex=True, inplace=True)
+    
+    # make material production by tech
+    dm_material_production_bytech = dm_material_production_bymat_primary.copy()
+    dm_material_production_bytech.rename_col(
+        ['aluminium', 'cement', 'chem', 'copper', 'fbt', 'glass', 'lime', 'mae', 
+         'ois', 'paper', 'steel', 'textiles', 'tra-equip', 'wwp'],
+        ['aluminium-prim','cement-dry-kiln','chem-chem-tech','copper-tech','fbt-tech','glass-glass','lime-lime','mae-tech',
+         'ois-tech','paper-tech','steel-BF-BOF','textiles-tech', 'tra-equip-tech', 'wwp-tech'],
+        "Categories1")
+    
+    # add primary techs for cement and steel
+    dict_missing = {"cement-dry-kiln" : ['cement-geopolym','cement-wet-kiln'],
+                    "steel-BF-BOF" : ['steel-hisarna', 'steel-hydrog-DRI']}
+    for key in dict_missing:
+        missing = dict_missing[key]
+        for m in missing:
+            dm_temp = dm_material_production_bytech.filter({"Categories1" : [key]})
+            dm_temp.rename_col(key,m,"Categories1")
+            dm_material_production_bytech.append(dm_temp,"Categories1")
+    dm_material_production_bytech.sort("Categories1")
+    
+    # add secondary techs
+    
     
     # create dm_material_production_bytech with production data and shape of tech share
     dm_material_production_bytech = dm_technology_share.copy()
     idx_matprod_bytech = dm_material_production_bytech.idx
-    idx_matprod_bymat = dm_material_production_bymat_adj.idx
+    idx_matprod_bymat = dm_material_production_bymat_primary.idx
     techs = dm_material_production_bytech.col_labels["Categories1"].copy()
     techs.remove("pulp-tech") # doing pulp-tech later as the code below would not work for that 
     for tech in techs:
@@ -489,9 +733,9 @@ def material_production_by_technology(dm_technology_share, dm_material_productio
         if material == "tra":
             material = "tra-equip"
         dm_material_production_bytech.array[...,idx_matprod_bytech[tech]] =\
-            dm_material_production_bymat_adj.array[...,idx_matprod_bymat[material]]
+            dm_material_production_bymat_primary.array[...,idx_matprod_bymat[material]]
     dm_material_production_bytech.array[...,idx_matprod_bytech["pulp-tech"]] = \
-        dm_material_production_bymat_adj.array[...,idx_matprod_bymat["paper"]]
+        dm_material_production_bymat_primary.array[...,idx_matprod_bymat["paper"]]
     dm_material_production_bytech.rename_col("technology-share","material-production","Variables")
     dm_material_production_bytech.units["material-production"] = dm_material_production_bymat.units["material-production"]    
     
@@ -1446,8 +1690,11 @@ def industry(lever_setting, years_setting, DM_input, interface = Interface(), ca
     dm_import = DM_ots_fts["product-net-import"]
     
     # get product production
-    DM_production = product_production(DM_buildings["floor-demand"], DM_transport["tra-infra"], DM_transport["tra-veh"], 
-                                       DM_lfs["pop"], DM_ots_fts["paperpack"], 
+    DM_production = product_production(DM_buildings["floor-area"].filter({"Variables" : ['bld_floor-area_new']}), 
+                                       DM_transport["tra-infra"].filter({"Variables" : ["tra_product-demand"]}), 
+                                       DM_transport["tra-veh"], 
+                                       DM_lfs["pop"], 
+                                       DM_ots_fts["paperpack"], 
                                        dm_import)
     
     # get material demand
@@ -1475,13 +1722,25 @@ def industry(lever_setting, years_setting, DM_input, interface = Interface(), ca
         calibration_material_production(DM_cal, DM_material_production["bymat"], DM_material_production,
                                         years_setting)
         
+    # make packaging waste (assuming 100% of packaged used in one year, i.e. pack demand, goes to waste)
+    dm_pack_waste = make_pack_waste(DM_ots_fts["paperpack"], DM_lfs["pop"])
+        
     # get end of life
-    DM_eol = end_of_life(DM_transport["tra-waste"].filter({"Categories1" : ["HDV","LDV","bus"]}), 
-                         DM_ots_fts['eol-waste-management'].filter({"Variables" : ['vehicles']}),
-                         DM_ots_fts['eol-material-recovery'].filter({"Categories1" : ['vehicles']}),
-                         CDM_const["material-decomposition_veh"].filter({"Categories1" : ["HDV","LDV","bus"]}),
-                         DM_ots_fts['eol-material-recovery'].filter({"Categories1" : ['battery-lion']}),
-                         CDM_const["material-decomposition_bat"].filter({"Categories1" : ['battery-lion-HDV', 'battery-lion-LDV']}),
+    DM_eol = end_of_life(DM_transport["tra-waste"], 
+                         DM_transport["tra-infra"].filter({"Variables": ["tra_product-waste"]}),
+                         DM_buildings["floor-area"].filter({"Variables" : ["bld_floor-area_waste"]}),
+                         dm_pack_waste,
+                         DM_buildings["domapp"].filter({"Variables" : ["bld_domapp_waste"]}),
+                         DM_buildings["electronics"].filter({"Variables" : ["bld_electronics_waste"]}),
+                         DM_ots_fts['eol-waste-management'],
+                         DM_ots_fts['eol-material-recovery'],
+                         CDM_const["material-decomposition_floor"],
+                         CDM_const["material-decomposition_infra"], 
+                         CDM_const["material-decomposition_veh"], 
+                         CDM_const["material-decomposition_pack"],
+                         CDM_const["material-decomposition_bat"],
+                         CDM_const["material-decomposition_domapp"],
+                         CDM_const["material-decomposition_electronics"],
                          DM_material_production["bymat"])
         
     # get material production by technology (writes in DM_material_production)
@@ -1588,9 +1847,9 @@ def industry(lever_setting, years_setting, DM_input, interface = Interface(), ca
     # dm_gtap = industry_gtap_interface(DM_energy_demand, DM_material_production)
     # interface.add_link(from_sector='industry', to_sector='gtap', dm=dm_gtap)
     
-    # interface minerals
-    DM_ind = industry_minerals_interface(DM_production, DM_eol["veh_eol_to_recycling"])
-    interface.add_link(from_sector='industry', to_sector='minerals', dm=DM_ind)
+    # # interface minerals
+    # DM_ind = industry_minerals_interface(DM_production, DM_eol["veh_eol_to_recycling"])
+    # interface.add_link(from_sector='industry', to_sector='minerals', dm=DM_ind)
     
     # # interface employment
     # dm_emp = industry_employment_interface(DM_material_demand, DM_energy_demand, DM_material_production, DM_cost, DM_ots_fts)
@@ -1626,7 +1885,7 @@ def local_industry_run():
     return results_run
 
 # # run local
-# __file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/model/industry_module.py"
+# __file__ = "/Users/echiarot/Documents/GitHub/leure-speed-to-zero/backend/model/industry_module.py"
 # start = time.time()
 # results_run = local_industry_run()
 # end = time.time()
