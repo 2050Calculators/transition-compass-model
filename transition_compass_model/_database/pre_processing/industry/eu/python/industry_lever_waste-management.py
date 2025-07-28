@@ -218,7 +218,6 @@ years_fts = list(range(baseyear+2, lastyear+1, step_fts))
 years_all = years_ots + years_fts
 
 # fill nas (including 2023)
-dm_elv.add(np.nan, col_label=[2023], dummy=True, dim='Years')
 years_fitting = dm_elv.col_labels["Years"]
 dm_elv = linear_fitting(dm_elv, years_fitting, min_t0=0, min_tb=0)
 dm_elv.array = np.round(dm_elv.array,0)
@@ -1993,10 +1992,10 @@ years_ots = list(range(startyear, baseyear+1, 1))
 years_fts = list(range(baseyear+2, lastyear+1, step_fts))
 years_all = years_ots + years_fts
 
-# fill 2023 based on 2022
-dm_pack.add(np.nan, col_label=[2023], dummy=True, dim='Years')
-years_fitting = [2023]
-dm_pack = linear_fitting(dm_pack, years_fitting, min_t0=0, min_tb=0, based_on=[2022])
+# # fill 2023 based on 2022
+# dm_pack.add(np.nan, col_label=[2023], dummy=True, dim='Years')
+# years_fitting = [2023]
+# dm_pack = linear_fitting(dm_pack, years_fitting, min_t0=0, min_tb=0, based_on=[2022])
 
 # # plot
 # dm_pack.filter({"Country" : ["EU27"]}).datamatrix_plot() 
@@ -2104,6 +2103,14 @@ dm_pack = make_fts(dm_pack, "plastic-pack_reuse", baseyear_start, baseyear_end)
 # deepen back
 dm_pack.deepen()
 
+# make paper-print and paper-san (same of paper-pack)
+variables = ["paper-print","paper-san"]
+for v in variables:
+    dm_temp = dm_pack.filter({"Variables" : ["paper-pack"]})
+    dm_temp.rename_col("paper-pack",v,"Variables")
+    dm_pack.append(dm_temp,"Variables")
+dm_pack.sort("Variables")
+
 ################################
 ##### MAKE FINAL VARIABLES #####
 ################################
@@ -2185,7 +2192,7 @@ for v in dm_pack_tot.col_labels["Variables"]:
 # clean
 del baseyear, baseyear_end, baseyear_start, c, countries, dm_pack, \
     dm_temp, idx, lastyear, startyear, step_fts, v, years_all, \
-    years_fts, years_ots, years_setting, y, years_fitting
+    years_fts, years_ots, years_setting, y
 
 ################
 ##### SAVE #####
