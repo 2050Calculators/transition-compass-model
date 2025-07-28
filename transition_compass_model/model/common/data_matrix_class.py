@@ -1,10 +1,8 @@
 import numpy as np
 import re
 import pandas as pd
-import matplotlib.pyplot as plt
 import plotly.express as px
-import itertools
-import copy
+
 
 # DataMatrix is the by-default class used by the calculator.
 # DataMatrix contains:
