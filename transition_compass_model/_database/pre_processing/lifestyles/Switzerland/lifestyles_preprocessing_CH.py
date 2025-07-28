@@ -447,41 +447,6 @@ def extract_lfs_floor_space(years_ots, dm_lfs_tot_pop, table_id):
     return dm_floor_area
 
 
-######################
-### HOUSEHOLD-SIZE ###
-######################
-# Not USED
-def extract_lfs_household_size(years_ots, table_id):
-    structure, title = get_data_api_CH(table_id, mode='example')
-    # Extract buildings floor area
-    filter = {'Year': structure['Year'],
-              'Canton (-) / District (>>) / Commune (......)': ['Schweiz / Suisse / Svizzera / Switzerland', '- Vaud'],
-              'Household size': ['1 person', '2 persons', '3 persons', '4 persons', '5 persons', '6 persons or more']}
-    mapping_dim = {'Country': 'Canton (-) / District (>>) / Commune (......)', 'Years': 'Year',
-                   'Variables': 'Household size'}
-    unit_all = ['people'] * len(filter['Household size'])
-    # Get api data
-    dm_household = get_data_api_CH(table_id, mode='extract', filter=filter, mapping_dims=mapping_dim, units=unit_all)
-
-    dm_household.rename_col(['Schweiz / Suisse / Svizzera / Switzerland'], ['Switzerland'],
-                            dim='Country')
-    dm_household.rename_col_regex('- ', '', dim='Country')
-    drop_strings = [' persons or more', ' persons', ' person']
-    for drop_str in drop_strings:
-        dm_household.rename_col_regex(drop_str, '', dim='Variables')
-    # dm_household contains the number of household per each household-size
-    # Compute the average household size by doing the weighted average
-    sizes = np.array([int(num_ppl) for num_ppl in dm_household.col_labels['Variables']])
-    arr_weighted_size = dm_household.array * sizes[np.newaxis, np.newaxis, :]
-    arr_avg_size = np.nansum(arr_weighted_size, axis=-1, keepdims=True) / np.nansum(dm_household.array, axis=-1,
-                                                                                    keepdims=True)
-    # Create new datamatrix
-    dm_household_size = DataMatrix.based_on(arr_avg_size, dm_household, change={'Variables': ['lfs_household-size']},
-                                            units={'lfs_household-size': 'people'})
-    linear_fitting(dm_household_size, years_ots)
-    return dm_household_size
-
-
 #######################
 ### COOL-AREA-SHARE ###
 #######################
