@@ -10,7 +10,6 @@ from _database.pre_processing.buildings.Switzerland.get_data_functions.floor_are
   compute_floor_area_waste_cat, compute_floor_area_new_cat)
 
 from _database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import load_construction_period_param
-from src.api.routes import country_list
 
 
 def run(dm_pop, global_vars, country_list, years_ots):
