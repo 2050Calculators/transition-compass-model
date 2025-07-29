@@ -91,8 +91,10 @@ def climate_buildings_interface(DM_ots_fts, write_pickle = False):
     if write_pickle is True:
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(current_file_directory, '../_database/data/interface/climate_to_buildings.pickle')
+        DM_bld = {}
+        DM_bld["cdd-hdd"] = dm_bld.copy()
         with open(f, 'wb') as handle:
-            pickle.dump(dm_bld, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(DM_bld, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     # return
     return dm_bld
@@ -157,7 +159,6 @@ def local_climate_run():
     return results_run
 
 # # local
-# __file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/model/climate_module.py"
 #results_run = local_climate_run()
 
 
