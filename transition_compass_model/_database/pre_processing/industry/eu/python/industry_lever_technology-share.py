@@ -1,6 +1,7 @@
 
 # packages
 from model.common.data_matrix_class import DataMatrix
+from model.common.auxiliary_functions import linear_fitting
 import pandas as pd
 import pickle
 import os
@@ -43,9 +44,9 @@ dm[:,:,'steel-hisarna'] = 0
 dm[:,:,'steel-hydrog-DRI'] = 0
 
 # cement: it's mostly dry (91% dry vs 9% wet), and geopolymer is zero in bau
-dm[:,:,'steel-BF-BOF'] = 0.91
-dm[:,:,'steel-hisarna'] = 0.9
-dm[:,:,'steel-hydrog-DRI'] = 0
+dm[:,:,'cement-dry-kiln'] = 0.91
+dm[:,:,'cement-wet-kiln'] = 0.09
+dm[:,:,'cement-geopolym'] = 0
 
 # make nan for other than EU27 for fts
 countries_oth = np.array(countries)[[i not in "EU27" for i in countries]].tolist()
@@ -61,6 +62,8 @@ df = dm.write_df()
 for i in variabs:
     dm.rename_col(i, "technology-share_" + i, "Variables")
 dm.deepen()
+
+# dm.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot(stacked=True)
 
 # set years
 years_ots = list(range(1990,2023+1))
@@ -87,30 +90,58 @@ dm_fts_level1 = dm.filter({"Years" : years_fts})
 
 # create a dm level4
 dm_level4 = dm.copy()
-years_fts = list(range(2025,2055,5))
-for y in years_fts:
-    dm_level4.array[idx["EU27"],idx[y],:,:] = np.nan
-for tech in dm_level4.col_labels["Categories1"]:
-    dm_level4.array[idx["EU27"],idx[2050],:,idx[tech]] = df.loc[df["material-tech"] == tech,"value"]
+years = list(range(2030,2055,5))
+for y in years:
+    dm_level4["EU27",y,:,:] = np.nan
+dm_level4["EU27",2050,:,"steel-hisarna"] = 0.1
+dm_level4["EU27",2050,:,"steel-hydrog-DRI"] = 0.1
+dm_level4["EU27",2050,:,"steel-BF-BOF"] = 0.8
+dm_level4["EU27",2050,:,'cement-dry-kiln'] = 0.8
+dm_level4["EU27",2050,:,'cement-wet-kiln'] = 0
+dm_level4["EU27",2050,:,'cement-geopolym'] = 0.2
 dm_level4 = linear_fitting(dm_level4, years_fts)
 # dm_level4.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot(stacked=True)
 dm_fts_level4 = dm_level4.filter({"Years" : years_fts})
 # dm_fts_level4.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
 
+# get levels for 2 and 3
+variabs = dm_fts_level1.col_labels["Categories1"]
+df_temp = pd.DataFrame({"level" : np.tile(range(1,4+1),len(variabs)), 
+                        "variable": np.repeat(variabs, 4)})
+df_temp["value"] = np.nan
+df_temp = df_temp.pivot(index=['level'], 
+                        columns=['variable'], values="value").reset_index()
+for v in variabs:
+    level1 = dm_fts_level1["EU27",2050,:,v][0]
+    level4 = dm_fts_level4["EU27",2050,:,v][0]
+    arr = np.array([level1,np.nan,np.nan,level4])
+    df_temp[v] = pd.Series(arr).interpolate().to_numpy()
+
 #######################
 ##### FTS LEVEL 2 #####
 #######################
 
-# TODO: level 2 to do, for the moment we set it continuing as is
-dm_fts_level2 = dm.filter({"Years" : years_fts})
+dm_level2 = dm.copy()
+for y in range(2030,2055,5): dm_level2["EU27",y,:,:] = np.nan
+for v in variabs:
+    dm_level2["EU27",2050,:,v] = df_temp.loc[df_temp["level"] == 2,v]
+dm_level2 = linear_fitting(dm_level2, years_fts)
+# dm_level2.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot(stacked=True)
+dm_fts_level2 = dm_level2.filter({"Years" : years_fts})
+# dm_fts_level2.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot(stacked=True)
 
 #######################
 ##### FTS LEVEL 3 #####
 #######################
 
-# TODO: level 3 to do, for the moment we set it continuing as is
-dm_fts_level3 = dm.filter({"Years" : years_fts})
-
+dm_level3 = dm.copy()
+for y in range(2030,2055,5): dm_level3["EU27",y,:,:] = np.nan
+for v in variabs:
+    dm_level3["EU27",2050,:,v] = df_temp.loc[df_temp["level"] == 3,v]
+dm_level3 = linear_fitting(dm_level3, years_fts)
+# dm_level3.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot(stacked=True)
+dm_fts_level3 = dm_level3.filter({"Years" : years_fts})
+# dm_fts_level3.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot(stacked=True)
 
 ################
 ##### SAVE #####
