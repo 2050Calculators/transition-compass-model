@@ -42,7 +42,7 @@ print("Running other pipeline")
 DM_other = other_run(country_list, years_ots, years_fts)
 
 print('Running appliances pipeline')
-DM_appliances = appliances_run(dm_pop, country_list, years_ots, years_fts)
+DM_appliances = appliances_run(dm_pop.copy(), country_list, years_ots, years_fts)
 
 print('Compile pickle ots')
 DM_buildings = ots_pickle_run(dm_pop_ots, DM_renov, DM_heating, DM_other, DM_appliances, years_ots, years_fts)
@@ -51,4 +51,4 @@ print('Compile pickle fts - all BAU')
 DM_buildings = fts_bau_pickle_run(DM_buildings, country_list, years_fts)
 
 print('Compile Scenario Loi Energie 2025 - Vaud - level 4')
-DM_buildings = fts_loi_energie_vaud_run(DM_buildings, dm_pop, global_var, country_list, lev=4)
+DM_buildings = fts_loi_energie_vaud_run(DM_buildings, dm_pop_ots, global_var, country_list, lev=4)
