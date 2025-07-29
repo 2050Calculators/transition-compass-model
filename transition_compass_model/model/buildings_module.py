@@ -4,7 +4,9 @@ from model.common.interface_class import Interface
 from model.common.constant_data_matrix_class import ConstantDataMatrix
 from model.common.io_database import read_database, read_database_fxa, edit_database, read_database_w_filter
 from model.common.io_database import read_database_to_ots_fts_dict, read_database_to_ots_fts_dict_w_groups
-from model.common.auxiliary_functions import read_level_data, filter_country_and_load_data_from_pickles, create_years_list
+from model.common.auxiliary_functions import read_level_data, \
+  filter_country_and_load_data_from_pickles, create_years_list, dm_add_missing_variables
+
 import pickle
 import json
 import os
@@ -216,6 +218,9 @@ def read_data(DM_buildings, lever_setting):
     DM_floor_area['bld_age'] = DM_buildings['fxa']['bld_age']
     DM_floor_area['floor-intensity'] = DM_ots_fts['floor-intensity']
 
+    DM_appliances = {'demand': DM_buildings['fxa']['appliances'],
+                     'household-size': DM_ots_fts['floor-intensity'].filter({'Variables':['lfs_household-size']})}
+
     DM_energy = {'heating-efficiency': DM_ots_fts['heating-efficiency'],
                  'heating-technology': DM_ots_fts['heating-technology-fuel']['bld_heating-technology'],
                  'heatcool-behaviour': DM_ots_fts['heatcool-behaviour'],
@@ -226,7 +231,7 @@ def read_data(DM_buildings, lever_setting):
 
     cdm_const = DM_buildings['constant']
 
-    return DM_floor_area, DM_energy, cdm_const
+    return DM_floor_area, DM_appliances, DM_energy, cdm_const
 
 
 def simulate_lifestyles_to_buildings_input():
@@ -717,31 +722,46 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
     return DM_energy_out
 
 
-def bld_appliances_workflow(DM_appliances):
-    dm_appliance = DM_appliances['appliances']
-    # Lifetime adj by people substitution rate
-    dm_appliance.operation('lfs_product-substitution-rate', '*', 'bld_appliance-lifetime',
-                           out_col='bld_appliance-lifetime-adj', unit='a')
-    # New appliances
-    dm_appliance.operation('lfs_appliance-own', '/', 'bld_appliance-lifetime-adj', out_col='bld_appliance-new',
-                           unit='num', div0='error')
-    # Energy demand
-    dm_appliance.operation('lfs_total-appliance-use', '*', 'bld_appliance-efficiency',
-                           out_col='bld_energy-demand_appliances', unit='KWh')
-    # Total energy demand
-    dm_energy = dm_appliance.filter({'Variables': ['bld_energy-demand_appliances']})
-    dm_energy.group_all(dim='Categories1')
-    dm_energy.rename_col('bld_energy-demand_appliances', 'bld_power-demand_residential_appliances', dim='Variables')
-    dm_energy.array = dm_energy.array / 1e6
-    dm_energy.units['bld_power-demand_residential_appliances'] = 'GWh'
+def bld_appliances_workflow(DM_appliances, dm_pop):
 
-    DM_appliance_out = {
-        'wf_costs': dm_appliance.filter({'Variables': ['bld_appliance-new']}),
-        'power': dm_energy,
-        'industry': dm_appliance.filter({'Variables': ['bld_appliance-new']})
-    }
+  dm_households = DM_appliances['household-size']
+  dm_households.append(dm_pop, dim='Variables')
+  dm_households.operation('lfs_population_total', '/', 'lfs_household-size', out_col='bld_households', unit='household')
 
-    return DM_appliance_out
+  dm_appliance = DM_appliances['demand']
+
+  # Total number of appliances = appliances * nb households
+  dm_appliance[:, :, 'bld_appliances_stock', :] = (dm_appliance[:, :, 'bld_appliances_stock', :]
+                                                   * dm_households[:, :, 'bld_households', np.newaxis])
+  dm_appliance.change_unit('bld_appliances_stock', old_unit='unit/household', new_unit='unit', factor=1)
+
+  # Total electricity demand = appliances * appliance elec demand
+  dm_appliance.operation('bld_appliances_stock', '*', 'bld_appliances_electricity-demand', out_col='bld_appliances_tot-elec-demand', unit='kWh')
+
+  # w(t) = rr(t) * s(t-1)
+  # Add missing years
+  start_yr = dm_pop.col_labels['Years'][0]
+  end_yr = dm_pop.col_labels['Years'][-1]
+  years_all = create_years_list(start_yr, end_yr, 1)
+  dm_add_missing_variables(dm_appliance, dict_all={'Years': years_all}, fill_nans=True)
+  # Lag variable
+  dm_appliance.lag_variable('bld_appliances_stock', 1, '_tm1')
+  dm_appliance.operation('bld_appliances_stock_tm1', '*', 'bld_appliances_retirement-rate', out_col='bld_appliances_waste', unit='unit')
+  # s(t) = s(t-1) + n(t) - w(t) -> n(t) = s(t) - s(t-1) + w(t)
+  arr = (dm_appliance[:, :, 'bld_appliances_stock', :]
+         - dm_appliance[:, :, 'bld_appliances_stock_tm1', :]
+         + dm_appliance[:, :, 'bld_appliances_waste', :])
+  dm_appliance.add(arr, dim= 'Variables', col_label= 'bld_appliances_new', unit='unit')
+  dm_appliance[:, :, 'bld_appliances_new', :] = np.maximum(0, dm_appliance[:, :, 'bld_appliances_new', :])
+
+  dm_appliance.filter({'Years': dm_pop.col_labels['Years']}, inplace=True)
+
+  DM_appliance_out = {
+      'power': dm_appliance.filter({'Variables': ['bld_appliances_tot-elec-demand']}).group_all('Categories1', inplace=False),
+      'industry': dm_appliance.filter({'Variables': ['bld_appliances_new', 'bld_appliances_waste']})
+  }
+
+  return DM_appliance_out
 
 
 def bld_costs_workflow(DM_costs, dm_district_heat_supply, dm_new_appliance, dm_floor_renovated):
@@ -1297,7 +1317,7 @@ def bld_TPE_interface(DM_energy, DM_area):
 def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     # Read data into workflow datamatrix dictionaries
-    DM_floor_area, DM_energy, cdm_const = read_data(DM_input, lever_setting)
+    DM_floor_area, DM_appliances, DM_energy, cdm_const = read_data(DM_input, lever_setting)
     years_ots = create_years_list(years_setting[0], years_setting[1], 1)
     years_fts = create_years_list(years_setting[2], years_setting[3], 5)
 
@@ -1330,7 +1350,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     # Floor Area, Comulated floor area, Construction material
     DM_floor_out = bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots, years_fts)
 
-
+    DM_appliances_out = bld_appliances_workflow(DM_appliances, dm_lfs)
     #print('You are missing appliances (that should run before energy, so that you have the missing term of the equation')
     #print('You are missing the calibration of the energy results.')
     #print('The heating-mix between 2000 and 2018 or so is bad, maybe it should be improved before calibrating '
@@ -1372,6 +1392,5 @@ def buildings_local_run():
     buildings(lever_setting, years_setting, DM_input['buildings'])
     return
 
-
-# database_from_csv_to_datamatrix()
-#buildings_local_run()
+if __name__ == "__main__":
+  buildings_local_run()
