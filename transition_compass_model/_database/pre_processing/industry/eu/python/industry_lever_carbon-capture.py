@@ -1,7 +1,8 @@
 
 # packages
 from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting, fix_jumps_in_dm
+from model.common.auxiliary_functions import linear_fitting
+# from _database.pre_processing.fix_jumps import fix_jumps_in_dm
 import pandas as pd
 import pickle
 import os
@@ -18,11 +19,8 @@ pio.renderers.default='browser'
 # NOTE: for the business as usual, we will put no improvement on the energy efficiency.
 # TODO: use documentation EUCalc to do level 1 etc.
 
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/industry/eu/python/industry_lever_carbon-capture.py"
-
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 # create dm
 countries = ['Austria','Belgium','Bulgaria','Croatia','Cyprus','Czech Republic','Denmark',
@@ -52,7 +50,7 @@ for i in range(0, len(years)):
     index_dict[years[i]] = i
 for i in range(0, len(variabs)):
     index_dict[variabs[i]] = i
-dm = DataMatrix()
+dm = DataMatrix(empty=True)
 dm.col_labels = {"Country" : countries, "Years" : years, "Variables" : variabs}
 dm.units = units_dict
 dm.idx = index_dict

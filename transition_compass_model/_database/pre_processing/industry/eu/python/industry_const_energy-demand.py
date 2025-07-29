@@ -50,11 +50,8 @@ import plotly.express as px
 import plotly.io as pio
 pio.renderers.default='browser'
 
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/industry/eu/python/industry_const_energy-demand.py"
-
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 ###########################################################
 ############## CATEGORIES OF ENERGY CARRIERS ##############
@@ -359,13 +356,13 @@ df_dri.loc[df_dri["variable"] == "steel-hydrog-DRI_hydrogen[TWh/Mt]","value"] = 
 df_dri["value"] = df_dri["value"]*df_dri["total"]
 df = pd.concat([df, df_dri.loc[:,["variable","value","tech"]]])
 
-# create steel post consumer
-# assumption: same energy demand of electric arc furnace for scrap
-# TODO: check the literature and re-do this
-df_temp = df.loc[df["tech"] == "steel-scrap-EAF",:]
-df_temp["tech"] = "steel-sec-post-consumer"
-df_temp["variable"] = [i.replace("steel-scrap-EAF","steel-sec-post-consumer") for i in df_temp["variable"]]
-df = pd.concat([df, df_temp])
+# # create steel post consumer
+# # assumption: same energy demand of electric arc furnace for scrap
+# # TODO: check the literature and re-do this
+# df_temp = df.loc[df["tech"] == "steel-scrap-EAF",:]
+# df_temp["tech"] = "steel-sec-post-consumer"
+# df_temp["variable"] = [i.replace("steel-scrap-EAF","steel-sec-post-consumer") for i in df_temp["variable"]]
+# df = pd.concat([df, df_temp])
 
 # store
 df_final = df.copy()
