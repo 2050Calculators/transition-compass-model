@@ -87,6 +87,5 @@ def local_lifestyles_run(write_pickle=False):
     return
 
 # Update/Create the Pickle
-# __file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/model/lifestyles_module.py"
 #local_lifestyles_run()  # to un-comment to run in local
 
