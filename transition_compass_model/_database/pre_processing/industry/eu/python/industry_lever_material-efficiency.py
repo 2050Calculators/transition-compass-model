@@ -11,11 +11,8 @@ import pandas as pd
 import warnings
 warnings.simplefilter("ignore")
 
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/industry/eu/python/industry_lever_material-efficiency.py"
-
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 # create dm
 countries = ['Austria','Belgium','Bulgaria','Croatia','Cyprus','Czech Republic','Denmark',
@@ -38,7 +35,7 @@ for i in range(0, len(years)):
     index_dict[years[i]] = i
 for i in range(0, len(variabs)):
     index_dict[variabs[i]] = i
-dm = DataMatrix()
+dm = DataMatrix(empty=True)
 dm.col_labels = {"Country" : countries, "Years" : years, "Variables" : variabs}
 dm.units = units_dict
 dm.idx = index_dict

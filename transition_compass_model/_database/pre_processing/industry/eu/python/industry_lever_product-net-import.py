@@ -15,11 +15,8 @@ import plotly.express as px
 import plotly.io as pio
 pio.renderers.default='browser'
 
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/industry/eu/python/industry_lever_product-net-import.py"
-
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 #########################################
 ##### GET CLEAN DATAFRAME WITH DATA #####
@@ -767,7 +764,7 @@ dm_trade_netshare.sort("Categories1")
 # for the population, we upload the population data in lifestyles
 
 # load DM_pack
-filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/lifestyles.pickle')
+filepath = os.path.join(current_file_directory, '../../../../pre_processing/lifestyles/Europe/data/lifestyles_allcountries.pickle')
 with open(filepath, 'rb') as handle:
     DM_pack = pickle.load(handle)
     
@@ -791,7 +788,7 @@ dm_pack.sort("Categories1")
 dm_pack.change_unit('product-demand', factor=1e-3, old_unit='kg', new_unit='t')
 
 # make tonne per capita
-dm_pop.drop("Country",['Switzerland','Vaud'])
+# dm_pop.drop("Country",['Switzerland','Vaud'])
 dm_pack.array = dm_pack.array / dm_pop.array[...,np.newaxis]
 dm_pack.units["product-demand"] = "t/cap"
 

@@ -7,11 +7,8 @@ import numpy as np
 import warnings
 warnings.simplefilter("ignore")
 
-# file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/industry/eu/python/industry_const_material-switch-ratio.py"
-
 # directories
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 
 # make constant
 names = ['tec_material-switch-ratios_cement-to-timber', 'tec_material-switch-ratios_chem-to-natfibers', 
