@@ -14,6 +14,14 @@ from model.common.auxiliary_functions import load_pop
 def run(dm_pop, country_list, years_ots, years_fts):
 
   this_dir = os.path.dirname(os.path.abspath(__file__))
+  years_fts_orig = years_fts
+  years_fts = create_years_list(years_ots[-1]+1, years_fts_orig[-1], 1)
+
+  missing_years = list(set(years_fts) - set(years_fts_orig))
+  dm_pop.add(np.nan, dim='Years', col_label=missing_years, dummy = True)
+  dm_pop.sort('Years')
+  dm_pop.fill_nans('Years')
+
   ########################################################
   ###    APPLIANCES NEW, STOCK, ENERGY CONSUMPTION    ####
   ########################################################
@@ -86,9 +94,22 @@ def run(dm_pop, country_list, years_ots, years_fts):
   dm_appliances.operation('bld_appliances_retirement-rate', '*', 'bld_appliances_stock_tm1', out_col='bld_appliances_waste', unit='%')
   # Determine the waste
   # s(t) = s(t-1) + n(t) - w(t)
-  # n(t) = w(t) - (s(t-1) -s(t))
-  dm_appliances.operation('bld_appliances_stock_tm1', '-', 'bld_appliances_stock', out_col='bld_delta_stock', unit='unit')
-  dm_appliances.operation('bld_appliances_waste' , '-', 'bld_delta_stock', out_col='bld_appliances_new', unit='unit')
+  # n(t) = w(t) - s(t-1) + s(t)
+  arr = (dm_appliances[:, :, 'bld_appliances_waste', :]
+         - dm_appliances[:, :, 'bld_appliances_stock_tm1', :]
+         + dm_appliances[:, :, 'bld_appliances_stock', :])
+  dm_appliances.add(arr, dim='Variables', col_label='bld_appliances_new', unit='unit')
+
+  dm_appliances[:, :, 'bld_appliances_new', :] \
+    = np.maximum(dm_appliances[:, :, 'bld_appliances_new', :], 0)
+
+  for yr in dm_appliances.col_labels['Years'][1:]:
+    dm_appliances[:, yr, 'bld_appliances_stock', :] \
+      = (dm_appliances[:, yr-1, 'bld_appliances_stock', :]
+         + dm_appliances[:, yr, 'bld_appliances_new', :]
+         - dm_appliances[:, yr-1, 'bld_appliances_stock', :]
+         * dm_appliances[:, yr, 'bld_appliances_retirement-rate', :])
+
   dm_appliances.filter({'Variables': ['bld_appliances_stock', 'bld_appliances_retirement-rate', 'bld_appliances_electricity-demand']}, inplace=True)
 
   # Compute stock per households
@@ -112,8 +133,8 @@ def run(dm_pop, country_list, years_ots, years_fts):
 
   DM = {'fxa':
           {
-            'appliances': dm_appliances,
-            'household': dm_households
+            'appliances': dm_appliances.filter({'Years':years_ots + years_fts_orig}),
+            'household': dm_households.filter({'Years':years_ots + years_fts_orig})
           }
   }
 
