@@ -11,7 +11,8 @@ from os import listdir
 from os.path import isfile, join
 import pickle
 from scipy.stats import linregress
-
+import requests
+import deepl
 
 def add_missing_ots_years(dm, startyear, baseyear):
     
@@ -1224,3 +1225,81 @@ def dm_add_missing_variables(dm, dict_all, fill_nans=False):
       dm.fill_nans(dim)
 
   return
+
+def save_url_to_file(file_url, local_filename):
+  # Loop for URL
+  if not os.path.exists(local_filename):
+    response = requests.get(file_url, stream=True)
+    # Check if the request was successful
+    if response.status_code == 200:
+      with open(local_filename, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=8192):
+          if chunk:
+            f.write(chunk)
+      print(f"File downloaded successfully as {local_filename}")
+    else:
+      print(f"Error: {response.status_code}, {response.text}")
+  else:
+    print(
+      f'File {local_filename} already exists. If you want to download again delete the file')
+
+  return
+
+def translate_text(text):
+  # Initialize the Deepl Translator
+  deepl_api_key = '9ecffb3f-5386-4254-a099-8bfc47167661:fx'
+  translator = deepl.Translator(deepl_api_key)
+  if isinstance(text, str):
+    translation = translator.translate_text(text, target_lang='EN-GB')
+    out = translation.text
+  else:
+    out = text
+  return out
+
+
+def df_excel_to_dm(df, names_dict, var_name, unit, num_cat, keep_first=False,
+                   country='Switzerland'):
+  # df from excel to dm
+  # Remove nans and empty columns/rows
+  if np.nan in df.columns:
+    df.drop(columns=np.nan, inplace=True)
+  # Change headers
+  df.rename(columns={df.columns[0]: 'Variables'}, inplace=True)
+  df.set_index('Variables', inplace=True)
+  df.dropna(axis=0, how='all', inplace=True)
+  df.dropna(axis=1, how='all', inplace=True)
+  # Filter rows that contain at least one number (integer or float)
+  df = df[
+    df.apply(lambda row: row.map(pd.api.types.is_number), axis=1).any(axis=1)]
+  df_clean = df.loc[:,
+             df.apply(lambda col: col.map(pd.api.types.is_number)).any(
+               axis=0)].copy()
+  # Extract only the data we are interested in:
+  df_filter = df_clean.loc[names_dict.keys()].copy()
+  df_filter = df_filter.apply(lambda col: pd.to_numeric(col, errors='coerce'))
+  # df_filter = df_filter.applymap(lambda x: pd.to_numeric(x, errors='coerce'))
+  df_filter.reset_index(inplace=True)
+  # Keep only first 10 caracters
+  df_filter['Variables'] = df_filter['Variables'].replace(names_dict)
+  if keep_first:
+    df_filter = df_filter.drop_duplicates(subset=['Variables'], keep='first')
+  df_filter = df_filter.groupby(['Variables']).sum()
+  df_filter.reset_index(inplace=True)
+
+  # Pivot the dataframe
+  df_filter['Country'] = country
+  df_T = pd.melt(df_filter, id_vars=['Variables', 'Country'],
+                 var_name='Years', value_name='values')
+  df_pivot = df_T.pivot_table(index=['Country', 'Years'],
+                              columns=['Variables'], values='values',
+                              aggfunc='sum')
+  df_pivot = df_pivot.add_suffix('[' + unit + ']')
+  df_pivot = df_pivot.add_prefix(var_name + '_')
+  df_pivot.reset_index(inplace=True)
+
+  # Drop non numeric values in Years col
+  df_pivot['Years'] = pd.to_numeric(df_pivot['Years'], errors='coerce')
+  df_pivot = df_pivot.dropna(subset=['Years'])
+
+  dm = DataMatrix.create_from_df(df_pivot, num_cat=num_cat)
+  return dm
