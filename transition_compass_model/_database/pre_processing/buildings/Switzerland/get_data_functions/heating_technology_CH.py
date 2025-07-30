@@ -391,7 +391,7 @@ def clean_heating_cat(dm_heating_cat, envelope_cat_new):
     return dm_heating_cat
 
 
-def extract_heating_efficiency(file, sheet_name, years_ots):
+def extract_heating_efficiency_JRC(file, sheet_name, years_ots):
     df = pd.read_excel(file, sheet_name=sheet_name)
     df = df[0:13].copy()
     names_map = {'Ratio of energy service to energy consumption': 'remove', 'Space heating': 'other-tech', 'Solids': 'coal',
