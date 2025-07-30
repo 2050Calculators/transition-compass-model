@@ -75,7 +75,7 @@ def run(global_var, dm_all, years_ots):
   #######      HEATING EFFICIENCY     ###########
   file =os.path.join(this_dir, '../data/JRC-IDEES-2021_Residential_EU27.xlsx')
   sheet_name = 'RES_hh_eff'
-  dm_heating_eff = extract_heating_efficiency(file, sheet_name, years_ots)
+  dm_heating_eff = extract_heating_efficiency_JRC(file, sheet_name, years_ots)
   dm_heating_eff[:, :, 'bld_heating-efficiency', 'electricity'] = 1
   dm_heating_eff_cat = compute_heating_efficiency_by_archetype(dm_heating_eff, dm_all, envelope_cat_new,
                                                                categories=dm_all.col_labels['Categories2'])
