@@ -193,6 +193,8 @@ with open(filepath, 'rb') as handle:
     CDM = pickle.load(handle)
 CDM_const["energy_excl-feedstock"] = CDM["energy-demand-excl-feedstock"]
 CDM_const["energy_feedstock"] = CDM["energy-demand-feedstock"]
+CDM_const["energy_excl-feedstock_eleclight-split"] = CDM["energy-demand-excl-feedstock-eleclight-split"]
+CDM_const["energy_efficiency"] = CDM["energy-efficiency"]
 
 # emission factors
 filepath = os.path.join(current_file_directory, '../data/datamatrix/' + 'const_emissions-factors.pickle')
@@ -303,6 +305,10 @@ my_pickle_dump(DM_industry, f)
 # with open(f, 'wb') as handle:
 #     pickle.dump(DM_industry, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-
-
-
+# filepath = os.path.join(current_file_directory, '../../../../data/interface/industry_to_energy.pickle')
+# with open(filepath, 'rb') as handle:
+#     DM = pickle.load(handle)
+    
+# DM
+# DM["ind-serv-energy-demand"].units
+# df = DM["ind-serv-energy-demand"].write_df()
