@@ -588,6 +588,14 @@ dm_matprod_calib = dm_matprod.filter({"Years" : years_ots})
 # dm_matprod_fxa.filter({"Country" : ["EU27"]}).datamatrix_plot()
 # dm_matprod_calib.filter({"Country" : ["EU27"]}).datamatrix_plot()
 
+#######################################
+##### MAKE MATERIAL DEMAND OF WWP #####
+#######################################
+
+dm_temp = dm_mat.filter({"Variables" : ["material-demand"], "Categories1" : ["wwp"]})
+dm_temp.change_unit('material-demand', factor=1e-3, old_unit='kg', new_unit='t')
+dm_matdem_fxa = dm_temp.copy()
+
 ################
 ##### SAVE #####
 ################
@@ -608,6 +616,11 @@ with open(f, 'wb') as handle:
 f = os.path.join(current_file_directory, '../data/datamatrix/fxa_material-production.pickle')
 with open(f, 'wb') as handle:
     pickle.dump(dm_matprod_fxa, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+# fxa material demand
+f = os.path.join(current_file_directory, '../data/datamatrix/fxa_material-demand.pickle')
+with open(f, 'wb') as handle:
+    pickle.dump(dm_matdem_fxa, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 # calib material production
 f = os.path.join(current_file_directory, '../data/datamatrix/calibration_material-production.pickle')

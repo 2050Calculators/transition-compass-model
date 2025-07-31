@@ -141,6 +141,12 @@ with open(filepath, 'rb') as handle:
     DM = pickle.load(handle)
 DM_fxa["prod"] = DM
 
+# material demand
+filepath = os.path.join(current_file_directory, '../data/datamatrix/' + 'fxa_material-demand.pickle')
+with open(filepath, 'rb') as handle:
+    DM = pickle.load(handle)
+DM_fxa["demand"] = DM
+
 # drop ammonia-tech
 DM_fxa["cost-matprod"].drop("Categories1","ammonia-tech")
 DM_fxa["cost-CC"].drop("Categories1","ammonia-tech")
@@ -312,3 +318,8 @@ my_pickle_dump(DM_industry, f)
 # DM
 # DM["ind-serv-energy-demand"].units
 # df = DM["ind-serv-energy-demand"].write_df()
+
+# filepath = os.path.join(current_file_directory, '../../../../data/interface/industry_to_forestry.pickle')
+# with open(filepath, 'rb') as handle:
+#     dm = pickle.load(handle)
+# dm.units
