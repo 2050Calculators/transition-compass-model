@@ -1,18 +1,11 @@
 
 # packages
 from model.common.data_matrix_class import DataMatrix
-import pandas as pd
 import pickle
 import os
 import numpy as np
 import warnings
-import eurostat
-import re
-# from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
-import plotly.express as px
-import plotly.io as pio
-pio.renderers.default='browser'
 
 # NOTE: for the business as usual, we will put no improvement on the energy efficiency.
 # TODO: use documentation EUCalc to do level 1 etc.
@@ -27,15 +20,14 @@ countries = ['Austria','Belgium','Bulgaria','Croatia','Cyprus','Czech Republic',
              'Romania','Slovakia','Slovenia','Spain','Sweden','United Kingdom']
 years = list(range(1990,2023+1,1))
 years = years + list(range(2025, 2050+1, 5))
-variabs = ['aluminium-prim', 'aluminium-sec', 'aluminium-sec-post-consumer', 
-           'cement-dry-kiln', 'cement-geopolym', 'cement-sec-post-consumer', 
-           'cement-wet-kiln', 'chem-chem-tech', 'chem-sec-post-consumer', 
-           'copper-sec-post-consumer', 'copper-tech', 'fbt-tech', 'glass-glass', 
-           'glass-sec-post-consumer', 'lime-lime',
-           'mae-tech', 'ois-tech', 'paper-sec-post-consumer', 'paper-tech', 
-           'pulp-tech', 'steel-BF-BOF', 'steel-hisarna', 'steel-hydrog-DRI', 
-           'steel-scrap-EAF', 'steel-sec-post-consumer', 'textiles-tech', 
-           'tra-equip-tech', 'wwp-tech']
+variabs = ['aluminium-prim', 'aluminium-sec',
+           'cement-dry-kiln', 'cement-geopolym', 'cement-sec-post-consumer', 'cement-wet-kiln', 
+           'chem-chem-tech', 'chem-sec', 
+           'copper-sec', 'copper-tech', 'fbt-tech', 'glass-glass', 
+           'glass-sec', 'lime-lime',
+           'mae-tech', 'ois-sec', 'ois-tech', 'paper-tech', 'pulp-tech', 
+           'steel-BF-BOF', 'steel-hisarna', 'steel-hydrog-DRI', 'steel-scrap-EAF',
+           'textiles-tech', 'tra-equip-tech', 'wwp-sec', 'wwp-tech']
 variabs = ["technology-development_" + i for i in variabs]
 units = list(np.repeat("%", len(variabs)))
 units_dict = dict()
