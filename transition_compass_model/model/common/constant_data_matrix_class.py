@@ -593,6 +593,61 @@ class ConstantDataMatrix:
                         df[col_name] = col_value
         return df
     
+    def groupby(
+        self, group_cols={}, dim=str, aggregation="sum", regex=False, inplace=False
+    ):
+        # Sum values in group, e.g.
+        # dm.groupby({'road': ['LDV', '2W']}, dim='Categories1') sums LDV and 2W and calls it road
+        # dm.groupby({'freight': 'HDV.*|marine.*', 'passenger': 'LDV|bus|aviation'}, dim='Categories2', regex = True)
+        # It works also on Variables as long as they have the same unit
+        # It works as well for Country and Years if need be
+        i = 0
+        for out_col, col_to_group in group_cols.items():
+            # Extract only the dm with the categories or variables to group
+            if regex:
+                dm_to_group = self.filter_w_regex({dim: col_to_group})
+            else:
+                dm_to_group = self.filter({dim: col_to_group})
+            # if inplace, drop col_to_group from self
+            if inplace:
+                self.drop(dim=dim, col_label=col_to_group)
+            a = self.dim_labels.index(dim)  # extract the index of the dimension
+            new_array = np.moveaxis(dm_to_group.array, a, -1)  # move dimension to end
+            if aggregation == "sum":  # nansum
+                new_array = np.nansum(new_array, axis=-1, keepdims=True)
+            if aggregation == "mean":  # mean
+                new_array = np.nanmean(new_array, axis=-1, keepdims=True)
+            dm_to_group.array = np.moveaxis(
+                new_array, -1, a
+            )  # put dimension back to right place
+            # remove the idx of the grouped columns
+            for col in dm_to_group.col_labels[dim]:
+                dm_to_group.idx.pop(col)
+            # col_label[dim] should only contain the new name
+            dm_to_group.col_labels[dim] = [out_col]
+            # Add idx of new column name using iterator
+            dm_to_group.idx[out_col] = i
+            if dim == "Variables":
+                # Check that all the variables have the same unit
+                new_unit_set = set(dm_to_group.units.values())
+                if len(new_unit_set) != 1:
+                    raise ValueError(
+                        f"the Variables {col_to_group} in groupby do not have the same unit"
+                    )
+                dm_to_group.units = {out_col: new_unit_set.pop()}
+            if i == 0:
+                dm_out = dm_to_group
+            else:
+                dm_out.append(dm_to_group, dim=dim)
+            i = i + 1
+        if inplace:
+            self.append(dm_out, dim=dim)
+            self.sort(dim=dim)
+            return
+        else:
+            dm_out.sort(dim=dim)
+            return dm_out
+    
     def group_all(self, dim=str, inplace=True, aggregation = "sum"):
         # Function to drop a dimension by summing all categories
         # Call example: dm_to_group.group_all(dim='Categories2', inplace=True)
