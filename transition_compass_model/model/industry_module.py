@@ -1707,6 +1707,25 @@ def industry_airpollution_interface(DM_material_production, DM_energy_demand, wr
     # return
     return dm_airpoll
 
+def industry_forestry_interface(dm_material_demand, dm_fxa_demand_wwp):
+    
+    # get pulp and timber
+    dm_temp = dm_material_demand.group_all("Categories1",inplace=False)
+    dm_temp = dm_temp.filter({"Categories1" : ["paper","timber"]})
+    dm_temp[...,"paper"] = dm_temp[...,"paper"] * 0.95 # for the moment I assume this coefficient to get pulp
+    dm_temp.rename_col("paper", "pulp", "Categories1")
+    
+    # get other-industrial (demand)
+    dm_temp1 = dm_fxa_demand_wwp.copy()
+    dm_temp1.rename_col("material-demand","material-decomp","Variables")
+    dm_temp.append(dm_temp1,"Categories1")
+    dm_temp.rename_col("wwp", "other-industrial", "Categories1")
+    dm_temp.rename_col("material-decomp", "ind_wood", "Variables")
+    dm_temp.sort("Categories1")
+    
+    return dm_temp
+    
+
 def industry(lever_setting, years_setting, DM_input, interface = Interface(), calibration = False):
 
     # industry data file
@@ -1844,19 +1863,23 @@ def industry(lever_setting, years_setting, DM_input, interface = Interface(), ca
     DM_agr = industry_agriculture_interface(DM_material_production, DM_energy_demand)
     interface.add_link(from_sector='industry', to_sector='agriculture', dm=DM_agr)
     
-    # interface ammonia
-    DM_amm = industry_ammonia_interface(DM_material_production, DM_energy_demand)
-    interface.add_link(from_sector='industry', to_sector='ammonia', dm=DM_amm)
+    # # interface ammonia
+    # DM_amm = industry_ammonia_interface(DM_material_production, DM_energy_demand)
+    # interface.add_link(from_sector='industry', to_sector='ammonia', dm=DM_amm)
     
-    # interface landuse
-    DM_lus = industry_landuse_interface(DM_material_production, DM_energy_demand)
-    interface.add_link(from_sector='industry', to_sector='land-use', dm=DM_lus)
+    # # interface landuse
+    # DM_lus = industry_landuse_interface(DM_material_production, DM_energy_demand)
+    # interface.add_link(from_sector='industry', to_sector='land-use', dm=DM_lus)
     
-    # interface power
+    # interface energy
     DM_ene = industry_energy_interface(DM_energy_demand["bycarr"], 
                                        CDM_const['energy_excl-feedstock_eleclight-split'],
                                        CDM_const['energy_efficiency'])
     interface.add_link(from_sector='industry', to_sector='energy', dm=DM_ene)
+    
+    # interface forestry
+    dm_for = industry_forestry_interface(DM_material_demand["material-demand"], DM_fxa["demand"])
+    interface.add_link(from_sector='industry', to_sector='forestry', dm=dm_for)
     
     # # interface refinery
     # dm_refinery = industry_refinery_interface(DM_energy_demand)
