@@ -718,52 +718,42 @@ def material_production_by_technology(dm_technology_share, dm_material_productio
             dm_temp.rename_col(key,m,"Categories1")
             dm_material_production_bytech.append(dm_temp,"Categories1")
     dm_material_production_bytech.sort("Categories1")
-    
-    # add secondary techs
-    
-    
-    # create dm_material_production_bytech with production data and shape of tech share
-    dm_material_production_bytech = dm_technology_share.copy()
-    idx_matprod_bytech = dm_material_production_bytech.idx
-    idx_matprod_bymat = dm_material_production_bymat_primary.idx
-    techs = dm_material_production_bytech.col_labels["Categories1"].copy()
-    techs.remove("pulp-tech") # doing pulp-tech later as the code below would not work for that 
-    for tech in techs:
-        material = tech.split("-")[0]
-        if material == "tra":
-            material = "tra-equip"
-        dm_material_production_bytech.array[...,idx_matprod_bytech[tech]] =\
-            dm_material_production_bymat_primary.array[...,idx_matprod_bymat[material]]
-    dm_material_production_bytech.array[...,idx_matprod_bytech["pulp-tech"]] = \
-        dm_material_production_bymat_primary.array[...,idx_matprod_bymat["paper"]]
-    dm_material_production_bytech.rename_col("technology-share","material-production","Variables")
-    dm_material_production_bytech.units["material-production"] = dm_material_production_bymat.units["material-production"]    
-    
-    # get material production by technology (as tech share * (material production net of recovered))
-    dm_material_production_bytech.array = dm_material_production_bytech.array * dm_technology_share.array
-    
-    # put in dm_material_production_bytech the material recovered as post consumer tech
-    dm_temp = dm_material_recovered.copy()
-    dm_temp.rename_col("timber","wwp","Categories1") # rename timber as wwp as it will be called wwp-tech-sec-post-consumer
-    dm_temp.rename_col("other","ois","Categories1") # rename other as ois as it will be called ois-tech-sec-post-consumer
-    for material in dm_temp.col_labels["Categories1"]:
-        dm_temp.rename_col(material, material + "-sec-post-consumer","Categories1")
-    dm_temp.rename_col('material-recovered','material-production','Variables')
+    primary_techs = ['cement-dry-kiln','cement-geopolym','cement-wet-kiln',
+                     'steel-BF-BOF', 'steel-hisarna', 'steel-hydrog-DRI']
+    dm_temp = dm_material_production_bytech.filter({"Categories1" : primary_techs})
+    dm_temp.sort("Categories1")
+    dm_technology_share.sort("Categories1")
+    dm_temp.array = dm_temp.array * dm_technology_share.array
+    dm_material_production_bytech.drop("Categories1",primary_techs)
     dm_material_production_bytech.append(dm_temp,"Categories1")
     dm_material_production_bytech.sort("Categories1")
     
+    # add secondary techs
+    dm_material_recovered.rename_col(["other","timber"],["ois","wwp"],"Categories1")
+    secondary_techs = dm_material_recovered.col_labels["Categories1"]
+    for s in secondary_techs:
+        dm_material_recovered.rename_col(s,s + "-sec","Categories1")
+    dm_material_recovered.rename_col("paper-sec","pulp-tech","Categories1") # recycled paper is recycled pulp, which will then turned back to paper
+    dm_material_recovered.rename_col("steel-sec","steel-scrap-EAF","Categories1") # secondary steel is made is electric arc furnace using scrap steel
+    dm_material_recovered.rename_col("material-recovered","material-production","Variables")
+    dm_material_production_bytech.append(dm_material_recovered,"Categories1")
+    dm_material_production_bytech.sort("Categories1")
+    
+    # TODO: you'll have to update names and review some techs (for example wwp-sec would be timber-sec,
+    # and you would need to get the properties of that technology, i.e. energy consumed, emissions, etc)
+    
     # # checks
-    # # production = primary + secondary pre consumer + secondary post consumer
+    # # production = primary + secondary
     # dm_material_production_bytech.array[dm_material_production_bytech.array < 0]
-    # dict_aggregation = {"aluminium" : ['aluminium-prim', 'aluminium-sec', 'aluminium-sec-post-consumer'],
-    #                     "cement" : ['cement-dry-kiln', 'cement-geopolym', 'cement-sec-post-consumer', 'cement-wet-kiln'],
-    #                     "chem" : ['chem-chem-tech', 'chem-sec-post-consumer'],
-    #                     "copper" : ['copper-sec-post-consumer', 'copper-tech'],
-    #                     "glass" : ['glass-glass', 'glass-sec-post-consumer'],
-    #                     "lime" : ['lime-lime', 'lime-sec-post-consumer'],
-    #                     "paper" : ['paper-sec-post-consumer', 'paper-tech', 'pulp-tech'],
-    #                     "steel" : ['steel-BF-BOF', 'steel-hisarna', 'steel-hydrog-DRI', 'steel-scrap-EAF', 'steel-sec-post-consumer'],
-    #                     "wwp" : ['wwp-sec-post-consumer', 'wwp-tech']}
+    # dict_aggregation = {"aluminium" : ['aluminium-prim', 'aluminium-sec'],
+    #                     "cement" : ['cement-dry-kiln', 'cement-geopolym', 'cement-sec', 'cement-wet-kiln'],
+    #                     "chem" : ['chem-chem-tech', 'chem-sec'],
+    #                     "copper" : ['copper-sec', 'copper-tech'],
+    #                     "glass" : ['glass-glass', 'glass-sec'],
+    #                     "lime" : ['lime-lime', 'lime-sec'],
+    #                     "paper" : ['paper-tech', 'pulp-tech'],
+    #                     "steel" : ['steel-BF-BOF', 'steel-hisarna', 'steel-hydrog-DRI', 'steel-scrap-EAF'],
+    #                     "wwp" : ['wwp-sec', 'wwp-tech']}
     # checks = {}
     # for key in dict_aggregation.keys():
     #     dm_temp1 = dm_material_production_bymat.filter({"Country" : ["EU27"], "Categories1" : [key]})
@@ -781,13 +771,8 @@ def energy_demand(dm_material_production_bytech, CDM_const):
     
     # this is by material-technology and carrier
     
-    # drop post consumer techs for lime and wood, as we assume they are not
-    # widely used at the moment. Also drop ois-sec-post-consumer, as for the
-    # moment we assume that it negligible for energy demand and emissions.
-    # TODO: do the energy demand and emissions for these and their respective pre consumer techs
-    dm_material_production_bytech.drop("Categories1",['lime-sec-post-consumer',
-                                                      'wwp-sec-post-consumer',
-                                                      'ois-sec-post-consumer'])
+    # drop post consumer techs for lime as recycling lime does not seem feasible with current techs
+    dm_material_production_bytech.drop("Categories1",['lime-sec'])
 
     # get energy demand for material production by technology both without and with feedstock
     feedstock = ["excl-feedstock", "feedstock"]
@@ -1040,11 +1025,6 @@ def emissions(cdm_const_emission_factor_process, cdm_const_emission_factor,
     DM_emissions = {"bygastech" : dm_emissions_bygastech,
                     "combustion_bio" : dm_emissions_combustion_bio,
                     "bygastech_beforecc" : dm_emissions_bygastech}
-
-    # clean
-    del cdm_temp1, cdm_temp2, arr_temp, bio, \
-        dm_emissions_bygastech, dm_emissions_combustion_bio, dm_emissions_process, \
-        dm_emissions_combustion
     
     # return
     return DM_emissions
@@ -1107,11 +1087,6 @@ def carbon_capture(dm_ots_fts_cc, dm_emissions_bygastech, dm_emissions_combustio
     
     # store also bygas (which is used in calibration if it's done)
     DM_emissions["bygas"] = dm_emissions_bygastech.group_all("Categories2", inplace = False)
-
-    # clean
-    del arr_temp, dm_emissions_combustion_bio_capt_w_cc, \
-        dm_temp, idx, dm_emissions_combustion_bio_capt_w_cc_neg_bymat, \
-        dm_emissions_capt_w_cc_bytech
         
     # return
     return
@@ -1354,31 +1329,89 @@ def industry_landuse_interface(DM_material_production, DM_energy_demand, write_p
     # return
     return DM_lus
 
-def industry_power_interface(DM_energy_demand, write_pickle = False):
+def industry_energy_interface(dm_energy_demand_by_carr, cdm_split, cdm_eneff, write_pickle = False):
     
-    # dm_elc
-    dm_elc = DM_energy_demand["bycarr"].filter(
-        {"Categories1" : ['electricity','hydrogen']})
-    dm_elc.rename_col("energy-demand", "ind_energy-demand", "Variables")
-    dm_elc = dm_elc.flatten()
-
-    dm_elc.change_unit('ind_energy-demand_electricity', factor=1e3, old_unit='TWh', new_unit='GWh')
-    dm_elc.change_unit('ind_energy-demand_hydrogen', factor=1e3, old_unit='TWh', new_unit='GWh')
-
-    DM_pow = {
-        'electricity': dm_elc.filter({'Variables': ['ind_energy-demand_electricity']}),
-        'hydrogen': dm_elc.filter({'Variables': ['ind_energy-demand_hydrogen']})
-    }
+    # split between electricity and lighting
+    dm_temp = dm_energy_demand_by_carr.filter({"Categories1" : ["electricity"]})
+    dm_temp.rename_col("electricity","lighting","Categories1")
+    dm_energy_demand_by_carr.append(dm_temp,"Categories1")
+    
+    # reshape
+    dm_temp = dm_energy_demand_by_carr.copy()
+    dm_temp.drop("Categories1","lighting")
+    for c in dm_temp.col_labels["Variables"]:
+        dm_temp.rename_col(c, c + "_process-heat", "Variables")
+    dm_temp.deepen("_","Variables")
+    dm_temp.switch_categories_order("Categories1","Categories2")
+    dm_temp[:,:,:,"electricity"] = 0
+    dm_temp1 = dm_energy_demand_by_carr.filter({"Categories1" : ["lighting","electricity"]})
+    dm_temp1.rename_col(["lighting","electricity"], ["lighting_electricity","elec_electricity"], "Categories1")
+    dm_temp1.deepen()
+    missing = dm_temp.col_labels["Categories2"].copy()
+    missing.remove("electricity")
+    for m in missing:
+        dm_temp1.add(0, "Categories2", m, dummy=True)
+    dm_temp1.sort("Categories2")
+    dm_temp.append(dm_temp1, "Categories1")
+    dm_temp.sort("Categories1")
+    dm_energy_demand_by_carr_reshaped = dm_temp.copy()
+    
+    # get useful enery demand
+    dm_useful_energy_demand_by_carr = dm_energy_demand_by_carr_reshaped.copy()
+    dm_useful_energy_demand_by_carr.array = dm_useful_energy_demand_by_carr.array * cdm_eneff[np.newaxis,np.newaxis,...]
+    
+    # rename energy carriers to match energy ones
+    dm_useful_energy_demand_by_carr.rename_col(
+        ['electricity', 'gas-bio', 'gas-ff-natural', 'hydrogen', 'liquid-bio', 'solid-bio', 'solid-ff-coal', 'solid-waste'], 
+        ['electricity', 'biogas',  'gas',            'other',    'renewables', 'biomass',   'coal',          'waste'], 
+        "Categories2")
+    dm_useful_energy_demand_by_carr.groupby({"heating-oil" : ['liquid-ff-diesel', 'liquid-ff-oil']},"Categories2",inplace=True)
+    
+    # for the moment add zero for the missing carrier
+    # TODO: in pre-processing, you could get constants to get 'district-heating', 'heat-pump' and 'solar'
+    # out of electricity (for the moment they have been aggregated to electricity). For 'wood', probably
+    # a constant that separates it from biomass, but that's not in JRC. And 'nuclear-fuel' also not in JRC,
+    # not sure how we could do itn (probably with some nuclear mix of how electricity is produced by country).
+    missing = ['district-heating', 'heat-pump', 'nuclear-fuel', 'solar', 'wood']
+    for m in missing:
+        dm_useful_energy_demand_by_carr.add(0, "Categories2", m, dummy=True)
+    dm_useful_energy_demand_by_carr.sort("Categories2")
+    
+    # add zero for 'hot-water' and 'space-heating'
+    # TODO: they will either come from bld or we'll do something by tonne in industry
+    dm_useful_energy_demand_by_carr.add(0, "Categories1", "hot-water", dummy=True)
+    dm_useful_energy_demand_by_carr.add(0, "Categories1", "space-heating", dummy=True)
+    dm_useful_energy_demand_by_carr.sort("Categories1")
+    dm_useful_energy_demand_by_carr.rename_col('energy-demand', 'ind_energy-end-use', "Variables")
+    
+    # pass energy efficiency ratios
+    cmd_temp = cdm_eneff.copy()
+    missing = ['district-heating', 'heat-pump', 'nuclear-fuel', 'solar'] # for these ones assumed to be same of electricity
+    for m in missing:
+        cmd_temp.add(cmd_temp[...,"electricity"], "Categories2", m)
+    cmd_temp.add(cmd_temp[...,"solid-bio"], "Categories2", "wood") # for wood assumed to be the same of biomass
+    cmd_temp.rename_col(
+        ['electricity', 'gas-bio', 'gas-ff-natural', 'hydrogen', 'liquid-bio', 'solid-bio', 'solid-ff-coal', 'solid-waste'], 
+        ['electricity', 'biogas',  'gas',            'other',    'renewables', 'biomass',   'coal',          'waste'], 
+        "Categories2")
+    cmd_temp.groupby({"heating-oil" : ['liquid-ff-diesel', 'liquid-ff-oil']},"Categories2",inplace=True, aggregation="mean")
+    cmd_temp.sort("Categories2")
+    cmd_temp.add(cmd_temp[:,"process-heat",:], "Categories1", "hot-water") # put same of process heat for now
+    cmd_temp.add(cmd_temp[:,"process-heat",:], "Categories1", "space-heating") # put same of process heat for now
+    cmd_temp.sort("Categories1")
+    
+    DM_ene = {'ind-energy-demand' : dm_useful_energy_demand_by_carr,
+              "ind-energy-efficiency-const" : cmd_temp}
 
     # of write_pickle is True, write pickle
     if write_pickle is True:
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, '../_database/data/interface/industry_to_power.pickle')
+        f = os.path.join(current_file_directory, '../_database/data/interface/industry_to_energy.pickle')
         with open(f, 'wb') as handle:
-            pickle.dump(DM_pow, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(DM_ene, handle, protocol=pickle.HIGHEST_PROTOCOL)
         
     # return
-    return DM_pow
+    return DM_ene
 
 def industry_refinery_interface(DM_energy_demand, write_pickle = False):
     
@@ -1820,16 +1853,18 @@ def industry(lever_setting, years_setting, DM_input, interface = Interface(), ca
     interface.add_link(from_sector='industry', to_sector='land-use', dm=DM_lus)
     
     # interface power
-    DM_pow = industry_power_interface(DM_energy_demand)
-    interface.add_link(from_sector='industry', to_sector='power', dm=DM_pow)
+    DM_ene = industry_energy_interface(DM_energy_demand["bycarr"], 
+                                       CDM_const['energy_excl-feedstock_eleclight-split'],
+                                       CDM_const['energy_efficiency'])
+    interface.add_link(from_sector='industry', to_sector='energy', dm=DM_ene)
     
-    # interface refinery
-    dm_refinery = industry_refinery_interface(DM_energy_demand)
-    interface.add_link(from_sector='industry', to_sector='oil-refinery', dm=dm_refinery)
+    # # interface refinery
+    # dm_refinery = industry_refinery_interface(DM_energy_demand)
+    # interface.add_link(from_sector='industry', to_sector='oil-refinery', dm=dm_refinery)
     
-    # interface district heating
-    dm_dh = industry_district_heating_interface(DM_energy_demand)
-    interface.add_link(from_sector='industry', to_sector='district-heating', dm=dm_dh)
+    # # interface district heating
+    # dm_dh = industry_district_heating_interface(DM_energy_demand)
+    # interface.add_link(from_sector='industry', to_sector='district-heating', dm=dm_dh)
     
     # interface emissions
     dm_ems = industry_emissions_interface(DM_emissions)
@@ -1885,7 +1920,6 @@ def local_industry_run():
     return results_run
 
 # # run local
-# __file__ = "/Users/echiarot/Documents/GitHub/leure-speed-to-zero/backend/model/industry_module.py"
 # start = time.time()
 # results_run = local_industry_run()
 # end = time.time()
