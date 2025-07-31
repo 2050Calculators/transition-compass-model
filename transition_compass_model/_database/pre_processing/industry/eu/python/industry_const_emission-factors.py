@@ -1,18 +1,12 @@
 
 # packages
-from model.common.data_matrix_class import DataMatrix
 import pandas as pd
 import pickle
 import os
 import numpy as np
 import warnings
-import eurostat
 import re
-# from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
-import plotly.express as px
-import plotly.io as pio
-pio.renderers.default='browser'
 
 # directories
 current_file_directory = os.getcwd()
@@ -66,11 +60,11 @@ cdm.deepen()
 # store
 CDM_emissions = {"combustion-emissions" : cdm}
 
-df = cdm.write_df()
-df["country"] = "all"
-df_temp = pd.melt(df, id_vars = ['country'], var_name='variable')
-name = "temp.xlsx"
-df_temp.to_excel("~/Desktop/" + name)
+# df = cdm.write_df()
+# df["country"] = "all"
+# df_temp = pd.melt(df, id_vars = ['country'], var_name='variable')
+# name = "temp.xlsx"
+# df_temp.to_excel("~/Desktop/" + name)
 
 ###################################################################################
 ################################ PROCESS EMISSIONS ################################
@@ -273,12 +267,12 @@ df_temp = pd.DataFrame({"variable" : ["process-emissions_steel-hisarna_CO2[Mt/Mt
 df = pd.concat([df, df_temp])
 df.sort_values(by=["variable"],inplace=True)
 
-# aluminium-sec-post-consumer
-# assumption: same of alluminium sec
-# TODO: check the literature and re-do this
-df_temp = df.loc[df["variable"] == "process-emissions_aluminium-sec_CO2[Mt/Mt]",:]
-df_temp["variable"] = "process-emissions_aluminium-sec-post-consumer_CO2[Mt/Mt]"
-df = pd.concat([df, df_temp])
+# # aluminium-sec-post-consumer
+# # assumption: same of alluminium sec
+# # TODO: check the literature and re-do this
+# df_temp = df.loc[df["variable"] == "process-emissions_aluminium-sec_CO2[Mt/Mt]",:]
+# df_temp["variable"] = "process-emissions_aluminium-sec-post-consumer_CO2[Mt/Mt]"
+# df = pd.concat([df, df_temp])
 
 # cement-sec-post-consumer
 # source: https://www.sciencedirect.com/science/article/pii/S235255412300044X
@@ -289,15 +283,15 @@ df = pd.concat([df, df_temp])
 ec_perc_less = np.mean(np.array([0,0.8]))
 df_temp = df.loc[df["variable"] == "process-emissions_cement-dry-kiln_CO2[Mt/Mt]",:]
 df_temp["value"] = df_temp["value"]*(1-ec_perc_less)
-df_temp["variable"] = "process-emissions_cement-sec-post-consumer_CO2[Mt/Mt]"
+df_temp["variable"] = "process-emissions_cement-sec_CO2[Mt/Mt]"
 df = pd.concat([df, df_temp])
 
-# chem-sec-post-consumer
+# chem-sec
 # it seems that energy consumption and emissions in post consumer recycling can differ a lot from chemical to chemial
 # so for the moment I will put it the same of chemicals primary
 # TODO: check the literature and re-do this
 df_temp = df.loc[df["variable"] == "process-emissions_chem-chem-tech_CO2[Mt/Mt]",:]
-df_temp["variable"] = "process-emissions_chem-sec-post-consumer_CO2[Mt/Mt]"
+df_temp["variable"] = "process-emissions_chem-sec_CO2[Mt/Mt]"
 df = pd.concat([df, df_temp])
 
 # copper-sec-post-consumer
@@ -307,7 +301,7 @@ df = pd.concat([df, df_temp])
 # I will assign the same of process emissions for primary copper
 # TODO: check the literature and re-do this
 df_temp = df.loc[df["variable"] == "process-emissions_copper-tech_CO2[Mt/Mt]",:]
-df_temp["variable"] = "process-emissions_copper-sec-post-consumer_CO2[Mt/Mt]"
+df_temp["variable"] = "process-emissions_copper-sec_CO2[Mt/Mt]"
 df = pd.concat([df, df_temp])
 
 # glass-sec-post-consumer
@@ -318,7 +312,7 @@ df = pd.concat([df, df_temp])
 # no clear answer, so I will put the same of glass production for now
 # TODO: check the literature and re-do this
 df_temp = df.loc[df["variable"] == "process-emissions_glass-glass-tech_CO2[Mt/Mt]",:]
-df_temp["variable"] = "process-emissions_glass-sec-post-consumer_CO2[Mt/Mt]"
+df_temp["variable"] = "process-emissions_glass-sec_CO2[Mt/Mt]"
 df = pd.concat([df, df_temp])
 
 # paper-sec-post-consumer
@@ -326,17 +320,28 @@ df = pd.concat([df, df_temp])
 # here they do not mention process emissions, so I assume that all the reduction in emissions
 # comes from the lower energy demand, and that process emissions are the same
 # TODO: check the literature and re-do this
-df_temp = df.loc[df["variable"] == "process-emissions_paper-tech_CO2[Mt/Mt]",:]
-df_temp["variable"] = "process-emissions_paper-sec-post-consumer_CO2[Mt/Mt]"
+# note: for the moment we assume that recycled paper is pulp (so it will have the emissions of pulp tech)
+# df_temp = df.loc[df["variable"] == "process-emissions_paper-tech_CO2[Mt/Mt]",:]
+# df_temp["variable"] = "process-emissions_paper-sec_CO2[Mt/Mt]"
+# df = pd.concat([df, df_temp])
+
+# # steel-sec-post-consumer
+# # assumption: same process emissions of scrap EAF
+# df_temp = df.loc[df["variable"] == "process-emissions_steel-scrap-EAF_CO2[Mt/Mt]",:]
+# df_temp["variable"] = "process-emissions_steel-sec-post-consumer_CO2[Mt/Mt]"
+# df = pd.concat([df, df_temp])
+
+# ois-sec
+# assuming same of wwp-tech
+df_temp = df.loc[df["variable"] == "process-emissions_ois-tech_CO2[Mt/Mt]",:]
+df_temp["variable"] = "process-emissions_ois-sec_CO2[Mt/Mt]"
 df = pd.concat([df, df_temp])
 
-# steel-sec-post-consumer
-# assumption: same process emissions of scrap EAF
-df_temp = df.loc[df["variable"] == "process-emissions_steel-scrap-EAF_CO2[Mt/Mt]",:]
-df_temp["variable"] = "process-emissions_steel-sec-post-consumer_CO2[Mt/Mt]"
+# wwp-sec-post-consumer
+# assuming same of wwp-tech
+df_temp = df.loc[df["variable"] == "process-emissions_wwp-tech_CO2[Mt/Mt]",:]
+df_temp["variable"] = "process-emissions_wwp-sec_CO2[Mt/Mt]"
 df = pd.concat([df, df_temp])
-
-# wwp-sec-post-consumer: assuming no wooden products post consumer for now
 
 # sort
 df.sort_values(by=["variable"],inplace=True)
@@ -363,13 +368,13 @@ df_N2O = pd.DataFrame({"variable" : ["process-emissions_ammonia-tech_N2O[Mt/Mt]"
 # we assign 0 N2O process emissions to chemicals.
 value = 0
 df_temp = pd.DataFrame({"variable" : ["process-emissions_chem-chem-tech_N2O[Mt/Mt]",
-                                      "process-emissions_chem-sec-post-consumer_N2O[Mt/Mt]"], # I assume post consumer it's the same for process emissions N2O
+                                      "process-emissions_chem-sec_N2O[Mt/Mt]"], # I assume post consumer it's the same for process emissions N2O
                         "value" : [value, value]})
 df_N2O = pd.concat([df_N2O, df_temp])
 
 # assign 0 to others
 techs = [i.split("_")[1].split("_")[0] for i in df["variable"]]
-drops = ["ammonia-tech","chem-chem-tech","chem-sec-post-consumer"]
+drops = ["ammonia-tech","chem-chem-tech","chem-sec"]
 idx = [i not in drops for i in techs]
 techs = list(np.array(techs)[idx])
 variabs = ["process-emissions_" + t + "_N2O[Mt/Mt]" for t in techs]
