@@ -134,9 +134,8 @@ dm.sort("Categories1")
 # make the secondary techs (simple assumptions for now)
 # TODO: check literature and re-do this
 idx = dm.idx
-techs = ['aluminium-sec','cement-dry-kiln','chem-chem-tech', 'copper-tech', 'glass-glass', 'paper-tech','steel-scrap-EAF']
-techs_sec = ['aluminium-sec-post-consumer','cement-sec-post-consumer','chem-sec-post-consumer', 
-             'copper-sec-post-consumer', 'glass-sec-post-consumer', 'paper-sec-post-consumer','steel-sec-post-consumer']
+techs = ['cement-dry-kiln','chem-chem-tech', 'copper-tech', 'glass-glass']
+techs_sec = ['cement-sec','chem-sec', 'copper-sec', 'glass-sec']
 for i in range(0,len(techs)):
     arr_temp = dm.array[...,idx[techs[i]]]
     dm.add(arr_temp, "Categories1", techs_sec[i])
@@ -152,8 +151,8 @@ dm_cc.sort("Categories1")
 # make the secondary techs for cc (simple assumptions for now)
 # TODO: check literature and re-do this
 idx = dm_cc.idx
-techs = ['cement-dry-kiln','chem-chem-tech','steel-scrap-EAF']
-techs_sec = ['cement-sec-post-consumer','chem-sec-post-consumer', 'steel-sec-post-consumer']
+techs = ['cement-dry-kiln','chem-chem-tech']
+techs_sec = ['cement-sec','chem-sec']
 for i in range(0,len(techs)):
     arr_temp = dm_cc.array[...,idx[techs[i]]]
     dm_cc.add(arr_temp, "Categories1", techs_sec[i])

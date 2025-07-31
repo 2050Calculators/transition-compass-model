@@ -35,20 +35,13 @@
 # ['electricity', 'gas-bio', 'gas-ff-natural', 'hydrogen', 'liquid-bio', 'liquid-ff-oil', 'solid-bio', 'solid-ff-coal', 'solid-waste']
 
 # packages
-from model.common.data_matrix_class import DataMatrix
-
 import pandas as pd
 import pickle
 import os
 import numpy as np
 import warnings
-
-import re
-# from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
-import plotly.express as px
-import plotly.io as pio
-pio.renderers.default='browser'
+import re
 
 # directories
 current_file_directory = os.getcwd()
@@ -192,96 +185,124 @@ def get_energy_intensity(filepath, techs_code, techs, techs_calc, dict_subtechs_
         ls_temp = list(df.iloc[:,0].isin(["Market shares of energy uses (%)"]))
         index_row_end = [i-1 for i, x in enumerate(ls_temp) if x]
     df = df.loc[range(index_row_start[0], index_row_end[0]),:]
+    DF = {"fec" : df.copy()}
+    
+    # get specific data on useful energy demand (ued)
+    df = pd.read_excel(filepath, techs_code + "_ued")
+    id_var = df.columns[0]
+    df = df.loc[:,[id_var] + years]
+    ls_temp = list(df.iloc[:,0].isin(["Detailed split of useful energy demand by subsector (ktoe)"]))
+    index_row_start = [i +1 for i, x in enumerate(ls_temp) if x]
+    if techs_code in ["FBT","TRE","MAE","TEL","WWP","OIS"]:
+        ls_temp = list(df.iloc[:,0].isin(["Detailed split of useful energy demand (ktoe)"]))
+        index_row_start = [i +2 for i, x in enumerate(ls_temp) if x]
+    ls_temp = list(df.iloc[:,0].isin(["Market shares of useful energy demand by subsector (%)"]))
+    index_row_end = [i-2 for i, x in enumerate(ls_temp) if x]
+    if techs_code in ["FBT","TRE","MAE","TEL","WWP","OIS"]:
+        ls_temp = list(df.iloc[:,0].isin(["Market shares of useful energy demand (%)"]))
+        index_row_end = [i-1 for i, x in enumerate(ls_temp) if x]
+    df = df.loc[range(index_row_start[0], index_row_end[0]),:]
+    DF["ued"] = df.copy()
 
     # do operations on each df
-    DF = {}
-    for i in range(0,len(techs)):
+    DF_techs = {}
+    for energy_key in DF.keys():
         
-        # subset
-        ls_temp = list(df.iloc[:,0].isin([techs[i]]))
-        index_row_start = [i +1 for i, x in enumerate(ls_temp) if x]
-        if i != len(techs)-1:
-            ls_temp = list(df.iloc[:,0].isin([techs[i+1]]))
-            if techs_code == "PPA": # this is because with PPA_fec there is a row less between techs
-                index_row_end = [i -1 for i, x in enumerate(ls_temp) if x]
-            else:
-                index_row_end = [i -2 for i, x in enumerate(ls_temp) if x]
-        else:
-            index_row_end = list()
-            index_row_end.append(len(df))
-        df_temp = df.iloc[range(index_row_start[0],index_row_end[0]),:]
+        df = DF[energy_key].copy()
         
-        # get aggregates
-        df_temp = df_temp.loc[df_temp[id_var].isin(enercarr_jrc + dict_subtechs_elec[techs[i]]),:]
-        df_temp.loc[df_temp[id_var].isin(dict_subtechs_elec[techs[i]]),id_var] = "Electricity"
-        df_temp = df_temp.groupby([id_var], as_index=False).agg(sum)
-        
-        # take average across years
-        df_temp = pd.melt(df_temp, id_vars = id_var, var_name='year')
-        df_temp = df_temp.groupby([id_var], as_index=False)['value'].agg(np.mean)
-        df_temp.columns = ["energy_carrier","value"]
-        
-        # check
-        df_check = df_temp.copy()
-        df_check[id_var] = "total"
-        df_check = df_check.groupby([id_var], as_index=False)["value"].agg(sum)
-        
-        # apply aggrgates JRC
-        for idx in range(0,len(enercarr_jrc)):
-            df_temp.loc[df_temp["energy_carrier"] == enercarr_jrc[idx],"energy_carrier"] = enercarr_jrc_agg_map[idx]
-        
-        # adjust some categories with total shares
-        for key in enercarr_jrc_agg_map_adj.keys():
-            for idx in range(0, len(enercarr_jrc_agg_map_adj[key])):
-                adj_value = df_temp.loc[df_temp["energy_carrier"] == key,"value"] * \
-                    np.array(df_ec.loc[df_ec["energy_carrier"] == enercarr_jrc_agg_map_adj[key][idx],"value"]) / \
-                        np.array(sum(df_ec.loc[df_ec["energy_carrier"].isin(enercarr_jrc_agg_map_adj[key]),"value"]))
-                df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : enercarr_jrc_agg_map_adj[key][idx], 
-                                                            "value" : adj_value})])
-            df_temp = df_temp.loc[df_temp["energy_carrier"] != key,:]
+        for i in range(0,len(techs)):
             
-        # check
-        df_check = df_temp.copy()
-        df_check[id_var] = "total"
-        df_check = df_check.groupby([id_var], as_index=False)["value"].agg(sum)
-        
-        # make aggregates as in calculator
-        for idx in range(0, len(enercarr_jrc_agg)):
-            df_temp.loc[df_temp["energy_carrier"] == enercarr_jrc_agg[idx],"energy_carrier"] = enercarr_calc_map[idx]
-        df_temp = df_temp.groupby(["energy_carrier"], as_index=False).agg(sum)
-        
-        # split biomass and waste
-        for key in dict_adj_biomass_waste.keys():
-            adj_value = df_temp.loc[df_temp["energy_carrier"] == "Biomass and waste","value"] * \
-                dict_adj_biomass_waste[key]
-            df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : key, "value" : adj_value})])
-        df_temp = df_temp.loc[df_temp["energy_carrier"] != "Biomass and waste",:]
-
-        # check
-        df_check = df_temp.copy()
-        df_check[id_var] = "total"
-        df_check = df_check.groupby([id_var], as_index=False)["value"].agg(sum)
-        
-        # add hydrogen
-        df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : ["hydrogen"], "value" : [0]})])
-        
-        # store
-        DF[techs[i]] = df_temp
+            # subset
+            ls_temp = list(df.iloc[:,0].isin([techs[i]]))
+            index_row_start = [i +1 for i, x in enumerate(ls_temp) if x]
+            if i != len(techs)-1:
+                ls_temp = list(df.iloc[:,0].isin([techs[i+1]]))
+                if techs_code == "PPA": # this is because with PPA_fec there is a row less between techs
+                    index_row_end = [i -1 for i, x in enumerate(ls_temp) if x]
+                else:
+                    index_row_end = [i -2 for i, x in enumerate(ls_temp) if x]
+            else:
+                index_row_end = list()
+                index_row_end.append(len(df))
+            df_temp = df.iloc[range(index_row_start[0],index_row_end[0]),:]
+            
+            # get aggregates
+            # note: you can take Lighting out of dict_subtechs_elec (to avoid aggregation together with elec)
+            id_var = df_temp.columns[0]
+            df_temp = df_temp.loc[df_temp[id_var].isin(enercarr_jrc + dict_subtechs_elec[techs[i]]),:]
+            mysubset = dict_subtechs_elec[techs[i]].copy()
+            mysubset.remove('Lighting')
+            df_temp.loc[df_temp[id_var].isin(mysubset),id_var] = "Electricity"
+            df_temp = df_temp.groupby([id_var], as_index=False).agg(sum)
+            
+            # take average across years
+            df_temp = pd.melt(df_temp, id_vars = id_var, var_name='year')
+            df_temp = df_temp.groupby([id_var], as_index=False)['value'].agg(np.mean)
+            df_temp.columns = ["energy_carrier","value"]
+            
+            # check
+            df_check = df_temp.copy()
+            df_check[id_var] = "total"
+            df_check = df_check.groupby([id_var], as_index=False)["value"].agg(sum)
+            
+            # apply aggrgates JRC
+            for idx in range(0,len(enercarr_jrc)):
+                df_temp.loc[df_temp["energy_carrier"] == enercarr_jrc[idx],"energy_carrier"] = enercarr_jrc_agg_map[idx]
+            
+            # adjust some categories with total shares
+            for key in enercarr_jrc_agg_map_adj.keys():
+                for idx in range(0, len(enercarr_jrc_agg_map_adj[key])):
+                    adj_value = df_temp.loc[df_temp["energy_carrier"] == key,"value"] * \
+                        np.array(df_ec.loc[df_ec["energy_carrier"] == enercarr_jrc_agg_map_adj[key][idx],"value"]) / \
+                            np.array(sum(df_ec.loc[df_ec["energy_carrier"].isin(enercarr_jrc_agg_map_adj[key]),"value"]))
+                    df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : enercarr_jrc_agg_map_adj[key][idx], 
+                                                                "value" : adj_value})])
+                df_temp = df_temp.loc[df_temp["energy_carrier"] != key,:]
+                
+            # check
+            df_check = df_temp.copy()
+            df_check[id_var] = "total"
+            df_check = df_check.groupby([id_var], as_index=False)["value"].agg(sum)
+            
+            # make aggregates as in calculator
+            for idx in range(0, len(enercarr_jrc_agg)):
+                df_temp.loc[df_temp["energy_carrier"] == enercarr_jrc_agg[idx],"energy_carrier"] = enercarr_calc_map[idx]
+            df_temp = df_temp.groupby(["energy_carrier"], as_index=False).agg(sum)
+            df_temp.loc[df_temp["energy_carrier"] == "Lighting","energy_carrier"] = "lighting"
+            
+            # split biomass and waste
+            for key in dict_adj_biomass_waste.keys():
+                adj_value = df_temp.loc[df_temp["energy_carrier"] == "Biomass and waste","value"] * \
+                    dict_adj_biomass_waste[key]
+                df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : key, "value" : adj_value})])
+            df_temp = df_temp.loc[df_temp["energy_carrier"] != "Biomass and waste",:]
+    
+            # check
+            df_check = df_temp.copy()
+            df_check[id_var] = "total"
+            df_check = df_check.groupby([id_var], as_index=False)["value"].agg(sum)
+            
+            # add hydrogen
+            df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : ["hydrogen"], "value" : [0]})])
+            
+            # store
+            DF_techs[energy_key + "_" + techs[i]] = df_temp
 
     # put together
-    df = DF[techs[0]]
-    df["tech"] = techs[0]
-    df.loc[df["tech"] == techs[0],"tech"] = techs_calc[0]
-    for i in range(1, len(techs)):
-        df_temp = DF[techs[i]].copy()
-        df_temp["tech"] = techs[i]
-        df_temp.loc[df_temp["tech"] == techs[i],"tech"] = techs_calc[i]
-        df = pd.concat([df, df_temp])
+    def get_df(t, t_calc, e):
+        df_temp = DF_techs[e + "_" + t].copy()
+        df_temp["tech"] = t
+        df_temp["energy_demand_type"] = e
+        df_temp.loc[df_temp["tech"] == t,"tech"] = t_calc
+        return df_temp
+    df_fec = pd.concat([get_df(t, t_calc, e = "fec") for t, t_calc in zip(techs, techs_calc)])
+    df_ued = pd.concat([get_df(t, t_calc, e = "ued") for t, t_calc in zip(techs, techs_calc)])
+    df = pd.concat([df_fec,df_ued])
         
     # make df to check code output
     df_tot = df.copy()
     df_po.columns = ["tech","total","unit_production"]
-    df_temp = df.groupby(["tech"], as_index=False)['value'].agg(sum)
+    df_temp = df_fec.groupby(["tech"], as_index=False)['value'].agg(sum)
     df_temp = pd.merge(df_temp, df_po, how="left", on=["tech"])
     df_temp["ratio"] = df_temp["value"]/df_temp["total"]
     df_energyint_check = df_temp.copy()
@@ -298,7 +319,7 @@ def get_energy_intensity(filepath, techs_code, techs, techs_calc, dict_subtechs_
     df["variable"] = [tech + "_" + enercarr + "[" + unit + "/" + unit_production + "]" for \
                       tech, enercarr, unit, unit_production in \
                           zip(df["tech"], df["energy_carrier"], df["unit"], df["unit_production"])]
-    df = df.loc[:,["variable","value","tech"]]
+    df = df.loc[:,["variable","value","tech","energy_demand_type"]]
     
     # return
     DF = {"tot" : df_tot,
@@ -354,7 +375,7 @@ df_dri["total"] = 3.48
 df_dri.loc[df_dri["variable"] == "steel-hydrog-DRI_electricity[TWh/Mt]","value"] = 0.5
 df_dri.loc[df_dri["variable"] == "steel-hydrog-DRI_hydrogen[TWh/Mt]","value"] = 0.5
 df_dri["value"] = df_dri["value"]*df_dri["total"]
-df = pd.concat([df, df_dri.loc[:,["variable","value","tech"]]])
+df = pd.concat([df, df_dri.loc[:,["variable","value","tech","energy_demand_type"]]])
 
 # # create steel post consumer
 # # assumption: same energy demand of electric arc furnace for scrap
@@ -408,9 +429,13 @@ df = df.loc[df["tech"] != "ceramics",:]
 
 # adding 0 for solid waste and solid bio for glass
 df = pd.concat([df, pd.DataFrame({"variable" : ["glass-glass_solid-waste[TWh/Mt]",
+                                               "glass-glass_solid-bio[TWh/Mt]",
+                                               "glass-glass_solid-waste[TWh/Mt]",
                                                "glass-glass_solid-bio[TWh/Mt]"],
-                                 "value" : [0,0],
-                                 "tech" : ["glass-glass","glass-glass"]})])
+                                 "value" : [0,0,0,0],
+                                 "tech" : ["glass-glass","glass-glass","glass-glass","glass-glass"],
+                                 "energy_demand_type" : ["fec","fec","ued","ued"]})])
+df.sort_values(["energy_demand_type","tech"],inplace=True)
 
 # making 'cement-dry-kiln', 'cement-wet-kiln', with values from
 # JRC (2013) page 137: https://op.europa.eu/en/publication-detail/-/publication/f5b60dd9-a0a1-447d-a64a-11c436f84492/language-en 
@@ -419,28 +444,41 @@ ls_cement_tech_ec = {'cement-dry-kiln' : 3.38 * gj_to_twh * 1000000,
                      'cement-wet-kiln' : 6.34 * gj_to_twh * 1000000, 
                      'cement-geopolym' : 0.65}
 for key in ls_cement_tech_ec.keys():
-    df_temp = df.loc[df["tech"] == "cement",:]
-    df_temp["total"] = sum(df_temp["value"])
+    df_temp = df.loc[(df["tech"] == "cement") & (df["energy_demand_type"] == "fec"),:]
+    df_temp["total"] = np.sum(df_temp["value"])
     df_temp["share"] = df_temp["value"]/df_temp["total"]
     df_temp["literature"] = ls_cement_tech_ec[key]
     df_temp["value"] = df_temp["share"]*df_temp["literature"]
-    df_temp = df_temp.loc[:,["variable","value","tech"]]
+    df_temp = df_temp.loc[:,["variable","value","tech","energy_demand_type"]]
     df_temp["tech"] = key
     df_temp["variable"] = [i.replace("cement",key) for i in df_temp["variable"]]
     df = pd.concat([df, df_temp])
+
+# make ued for 'cement-dry-kiln', 'cement-wet-kiln' and 'cement-geopolym' using efficiency of cement
+df_efficiency = df.loc[df["tech"] == "cement",:]
+df_efficiency = df_efficiency.pivot(index=['variable'], 
+                                    columns=['energy_demand_type'], values="value").reset_index()
+df_efficiency["efficiency"] = df_efficiency["ued"]/df_efficiency["fec"]
+df_efficiency.loc[df_efficiency["variable"] == "cement_hydrogen[TWh/Mt]","efficiency"] = 0.5
+df.sort_values(["tech","energy_demand_type","variable"],inplace=True)
+for key in ls_cement_tech_ec.keys():
+    df_temp = df.loc[df["tech"] == key,:]
+    df_temp["value"] = df_temp.loc[:,"value"] * df_efficiency.loc[:,"efficiency"]
+    df_temp["energy_demand_type"] = "ued"
+    df = pd.concat([df, df_temp])
 df = df.loc[df["tech"] != "cement",:]
 
-# create cement post consumer
+# create cement secondary
 # cement: https://www.sciencedirect.com/science/article/pii/S235255412300044X
 # from abstract: there are marginal energy and emissions reduction with the wet method (so zero), while dry and air methods consume only 30%–40% of the energy for clinker production..
 ec_perc_less = np.mean(np.array([0,0.30,0.40]))
 df_temp = df.loc[df["tech"] == "cement-dry-kiln",:]
 df_temp["value"] = df_temp["value"]*(1-ec_perc_less)
-df_temp["tech"] = "cement-sec-post-consumer"
-df_temp["variable"] = [i.replace("cement-dry-kiln","cement-sec-post-consumer") for i in df_temp["variable"]]
+df_temp["tech"] = "cement-sec"
+df_temp["variable"] = [i.replace("cement-dry-kiln","cement-sec") for i in df_temp["variable"]]
 df = pd.concat([df, df_temp])
 
-# create glass post consumer
+# create glass secondary
 # sources:
 # https://www.nrel.gov/docs/legosti/old/5703.pdf
 # https://www.gpi.org/facts-about-glass-recycling
@@ -448,8 +486,8 @@ df = pd.concat([df, df_temp])
 # no clear answer, so I will put the same of glass production for now
 # TODO: check the literature and re-do this
 df_temp = df.loc[df["tech"] == "glass-glass",:]
-df_temp["tech"] = "glass-sec-post-consumer"
-df_temp["variable"] = [i.replace("glass-glass","glass-sec-post-consumer") for i in df_temp["variable"]]
+df_temp["tech"] = "glass-sec"
+df_temp["variable"] = [i.replace("glass-glass","glass-sec") for i in df_temp["variable"]]
 df = pd.concat([df, df_temp])
 
 # store
@@ -517,188 +555,216 @@ index_row_start = [i +1 for i, x in enumerate(ls_temp) if x]
 ls_temp = list(df.iloc[:,0].isin(["Market shares of energy uses by subsector (%)"]))
 index_row_end = [i-2 for i, x in enumerate(ls_temp) if x]
 df = df.loc[range(index_row_start[0], index_row_end[0]),:]
+DF_temp = {}
+DF_temp["fec"] = df.copy()
 
-# do operations
-DF = {}
-i = 0
-
-# subset
-ls_temp = list(df.iloc[:,0].isin([techs[i]]))
+# get specific data on useful energy demand (ued)
+df = pd.read_excel(filepath, techs_code + "_ued")
+id_var = df.columns[0]
+df = df.loc[:,[id_var] + years]
+ls_temp = list(df.iloc[:,0].isin(["Detailed split of useful energy demand by subsector (ktoe)"]))
 index_row_start = [i +1 for i, x in enumerate(ls_temp) if x]
-ls_temp = list(df.iloc[:,0].isin(["Other chemicals"]))
-index_row_end = [i -2 for i, x in enumerate(ls_temp) if x]
-df_temp = df.iloc[range(index_row_start[0],index_row_end[0]),:]
+ls_temp = list(df.iloc[:,0].isin(["Market shares of useful energy demand by subsector (%)"]))
+index_row_end = [i-2 for i, x in enumerate(ls_temp) if x]
+df = df.loc[range(index_row_start[0], index_row_end[0]),:]
+DF_temp["ued"] = df.copy()
 
-# get feedstock
-ls_temp = list(df.iloc[:,0].isin(["Chemicals: Feedstock (energy used as raw material)"]))
-index_row_start = [i +1 for i, x in enumerate(ls_temp) if x][0]
-index_row_end = index_row_start + 8
-df_temp_fs = df.iloc[range(index_row_start,index_row_end),:]
-ls_temp = list(df_temp.iloc[:,0].isin(["Chemicals: Feedstock (energy used as raw material)"]))
-index_row_start = [i +1 for i, x in enumerate(ls_temp) if x][0]
-index_row_end = index_row_start + 8
-df_temp = df_temp.loc[[i not in range(index_row_start-1,index_row_end) for i in range(0,len(df_temp))],:]
+# do operations for "fec","ued"
+df_final_feedstock = pd.DataFrame()
+for energy_demand_type in ["fec","ued"]:
 
-# separate Chemicals: Process cooling - Natural gas and biogas
-df_temp_coolinggas = df_temp.loc[df_temp.iloc[:,0] == "Chemicals: Process cooling - Natural gas and biogas",:]
-df_temp = df_temp.loc[df_temp.iloc[:,0] != "Chemicals: Process cooling - Natural gas and biogas",:]
-
-# get aggregates
-df_temp = df_temp.loc[df_temp[id_var].isin(enercarr_jrc + dict_subtechs_elec[techs[i]]),:]
-df_temp.loc[df_temp[id_var].isin(dict_subtechs_elec[techs[i]]),id_var] = "Electricity"
-df_temp = df_temp.groupby([id_var], as_index=False).agg(sum)
-
-# add Chemicals: Process cooling - Natural gas and biogas to natural gas and biogas
-for y in years:
-    df_temp.loc[df_temp[id_var] == "Natural gas and biogas",y] = \
-        sum(np.array(df_temp.loc[df_temp[id_var] == "Natural gas and biogas",y]),
-            np.array(df_temp_coolinggas.loc[:,y]))
-
-# take average across years
-df_temp = pd.melt(df_temp, id_vars = id_var, var_name='year')
-df_temp = df_temp.groupby([id_var], as_index=False)['value'].agg(np.mean)
-df_temp.columns = ["energy_carrier","value"]
-df_temp_fs = pd.melt(df_temp_fs, id_vars = id_var, var_name='year')
-df_temp_fs = df_temp_fs.groupby([id_var], as_index=False)['value'].agg(np.mean)
-df_temp_fs.columns = ["energy_carrier","value"]
-
-# # check
-# df_check = df_temp.copy()
-# df_check[id_var] = "total"
-# df_check = df_check.groupby([id_var], as_index=False)["value"].agg(sum)
-
-# apply aggrgates JRC
-for idx in range(0,len(enercarr_jrc)):
-    df_temp.loc[df_temp["energy_carrier"] == enercarr_jrc[idx],"energy_carrier"] = enercarr_jrc_agg_map[idx]
-
-# adjust some categories with total shares
-for key in enercarr_jrc_agg_map_adj.keys():
-    for idx in range(0, len(enercarr_jrc_agg_map_adj[key])):
-        adj_value = df_temp.loc[df_temp["energy_carrier"] == key,"value"] * \
-            np.array(df_ec.loc[df_ec["energy_carrier"] == enercarr_jrc_agg_map_adj[key][idx],"value"]) / \
-                np.array(sum(df_ec.loc[df_ec["energy_carrier"].isin(enercarr_jrc_agg_map_adj[key]),"value"]))
-        df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : enercarr_jrc_agg_map_adj[key][idx], 
-                                                    "value" : adj_value})])
-    df_temp = df_temp.loc[df_temp["energy_carrier"] != key,:]
+    # do operations
+    df = DF_temp[energy_demand_type].copy()
     
-# # check
-# df_check = df_temp.copy()
-# df_check[id_var] = "total"
-# df_check = df_check.groupby([id_var], as_index=False)["value"].agg(sum)
-
-# make aggregates as in calculator
-for idx in range(0, len(enercarr_jrc_agg)):
-    df_temp.loc[df_temp["energy_carrier"] == enercarr_jrc_agg[idx],"energy_carrier"] = enercarr_calc_map[idx]
-df_temp = df_temp.groupby(["energy_carrier"], as_index=False).agg(sum)
-
-# split biomass and waste
-for key in dict_adj_biomass_waste.keys():
-    adj_value = df_temp.loc[df_temp["energy_carrier"] == "Biomass and waste","value"] * \
-        dict_adj_biomass_waste[key]
-    df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : key, "value" : adj_value})])
-df_temp = df_temp.loc[df_temp["energy_carrier"] != "Biomass and waste",:]
-
-# # check
-# df_check = df_temp.copy()
-# df_check[id_var] = "total"
-# df_check = df_check.groupby([id_var], as_index=False)["value"].agg(sum)
-
-# add hydrogen
-df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : ["hydrogen"], "value" : [0]})])
-
-# store
-df_temp["tech"] = techs_calc[0]
-df_exclfeedstock = df_temp.copy()
-
-# make df to check code output
-df = df_exclfeedstock.copy()
-df_tot = df.copy()
-df_po.columns = ["tech","total","unit_production"]
-df_temp = df.groupby(["tech"], as_index=False)['value'].agg(sum)
-df_temp = pd.merge(df_temp, df_po, how="left", on=["tech"])
-df_temp["ratio"] = df_temp["value"]/df_temp["total"]
-df_energyint_check = df_temp.copy()
-
-# convert toe to TWh, and divide by mega tonnes of production (objective is TWh/Mt)
-df_po["total"] = df_po["total"]/1000
-df_po["unit_production"] = "Mt"
-df["value"] = df["value"] * ktoe_to_twh
-df["unit"] = "TWh"
-df = pd.merge(df, df_po, how="left", on=["tech"])
-df["value"] = df["value"]/df["total"]
-
-# clean df
-df["variable"] = [tech + "_" + enercarr + "[" + unit + "/" + unit_production + "]" for \
-                  tech, enercarr, unit, unit_production in \
-                      zip(df["tech"], df["energy_carrier"], df["unit"], df["unit_production"])]
-df = df.loc[:,["variable","value","tech"]]
-
-# create chemicals post consumer
-# it seems that energy consumption in post consumer recycling can differ a lot from chemical to chemial
-# so for the moment I will put it the same of chemicals primary
-# TODO: check the literature and re-do this
-df_temp = df.loc[df["tech"] == "chem-chem-tech",:]
-df_temp["tech"] = "chem-sec-post-consumer"
-df_temp["variable"] = [i.replace("chem-chem-tech","chem-sec-post-consumer") for i in df_temp["variable"]]
-df = pd.concat([df, df_temp])
-
-# append
-df_final = pd.concat([df_final, df])
-
-# do feedstock
-df_temp = df_temp_fs.copy()
-for idx in range(0,len(enercarr_jrc)):
-    df_temp.loc[df_temp["energy_carrier"] == enercarr_jrc[idx],"energy_carrier"] = enercarr_jrc_agg_map[idx]
-for key in enercarr_jrc_agg_map_adj.keys():
-    for idx in range(0, len(enercarr_jrc_agg_map_adj[key])):
-        adj_value = df_temp.loc[df_temp["energy_carrier"] == key,"value"] * \
-            np.array(df_ec_fs.loc[df_ec_fs["energy_carrier"] == enercarr_jrc_agg_map_adj[key][idx],"value"]) / \
-                np.array(sum(df_ec_fs.loc[df_ec_fs["energy_carrier"].isin(enercarr_jrc_agg_map_adj[key]),"value"]))
-        df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : enercarr_jrc_agg_map_adj[key][idx], 
-                                                    "value" : adj_value})])
-    df_temp = df_temp.loc[df_temp["energy_carrier"] != key,:]
-for idx in range(0, len(enercarr_jrc_agg)):
-    df_temp.loc[df_temp["energy_carrier"] == enercarr_jrc_agg[idx],"energy_carrier"] = enercarr_calc_map[idx]
-df_temp = df_temp.groupby(["energy_carrier"], as_index=False).agg(sum)
-for key in dict_adj_biomass_waste.keys():
-    adj_value = df_temp.loc[df_temp["energy_carrier"] == "Biomass and waste","value"] * \
-        dict_adj_biomass_waste[key]
-    df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : key, "value" : adj_value})])
-df_temp = df_temp.loc[df_temp["energy_carrier"] != "Biomass and waste",:]
-df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : ["hydrogen"], "value" : [0]})])
-df_temp.loc[df_temp["energy_carrier"] == "Diesel oil","energy_carrier"] = "liquid-ff-diesel"
-df_temp.loc[df_temp["energy_carrier"] == "Naphtha","energy_carrier"] = "liquid-ff-oil"
-df_temp = df_temp.groupby(["energy_carrier"], as_index=False).agg(sum)
-# df_check = df_temp.copy()
-# df_check[id_var] = "total"
-# df_check = df_check.groupby([id_var], as_index=False)["value"].agg(sum)
-df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : ["electricity","gas-bio","liquid-bio","solid-waste","solid-bio"],
-                                            "value" : [0,0,0,0,0]})])
-df_temp["tech"] = techs_calc[0]
-df_feedstock = df_temp.copy()
-df = df_feedstock.copy()
-df["value"] = df["value"] * ktoe_to_twh
-df["unit"] = "TWh"
-df = pd.merge(df, df_po, how="left", on=["tech"])
-df["value"] = df["value"]/df["total"]
-df["variable"] = [tech + "_" + enercarr + "[" + unit + "/" + unit_production + "]" for \
-                  tech, enercarr, unit, unit_production in \
-                      zip(df["tech"], df["energy_carrier"], df["unit"], df["unit_production"])]
-df = df.loc[:,["variable","value","tech"]]
-
-# create chemicals feedstock post consumer
-# it seems that energy consumption in post consumer recycling can differ a lot from chemical to chemial
-# so for the moment I will put it the same of chemicals primary
-# TODO: check the literature and re-do this
-df_temp = df.loc[df["tech"] == "chem-chem-tech",:]
-df_temp["tech"] = "chem-sec-post-consumer"
-df_temp["variable"] = [i.replace("chem-chem-tech","chem-sec-post-consumer") for i in df_temp["variable"]]
-df = pd.concat([df, df_temp])
-
-df_final_feedstock = df.copy()
+    # subset
+    i = 0
+    ls_temp = list(df.iloc[:,0].isin([techs[i]]))
+    index_row_start = [i +1 for i, x in enumerate(ls_temp) if x]
+    ls_temp = list(df.iloc[:,0].isin(["Other chemicals"]))
+    index_row_end = [i -2 for i, x in enumerate(ls_temp) if x]
+    df_temp = df.iloc[range(index_row_start[0],index_row_end[0]),:]
+    
+    # get feedstock
+    ls_temp = list(df.iloc[:,0].isin(["Chemicals: Feedstock (energy used as raw material)"]))
+    index_row_start = [i +1 for i, x in enumerate(ls_temp) if x][0]
+    index_row_end = index_row_start + 8
+    df_temp_fs = df.iloc[range(index_row_start,index_row_end),:]
+    ls_temp = list(df_temp.iloc[:,0].isin(["Chemicals: Feedstock (energy used as raw material)"]))
+    index_row_start = [i +1 for i, x in enumerate(ls_temp) if x][0]
+    index_row_end = index_row_start + 8
+    df_temp = df_temp.loc[[i not in range(index_row_start-1,index_row_end) for i in range(0,len(df_temp))],:]
+    
+    # separate Chemicals: Process cooling - Natural gas and biogas
+    df_temp_coolinggas = df_temp.loc[df_temp.iloc[:,0] == "Chemicals: Process cooling - Natural gas and biogas",:]
+    df_temp = df_temp.loc[df_temp.iloc[:,0] != "Chemicals: Process cooling - Natural gas and biogas",:]
+    
+    # get aggregates
+    id_var = df_temp.columns[0]
+    df_temp = df_temp.loc[df_temp[id_var].isin(enercarr_jrc + dict_subtechs_elec[techs[i]]),:]
+    mytechs = dict_subtechs_elec[techs[i]].copy()
+    mytechs.remove("Lighting")
+    df_temp.loc[df_temp[id_var].isin(mytechs),id_var] = "Electricity"
+    df_temp = df_temp.groupby([id_var], as_index=False).agg(sum)
+    
+    # add Chemicals: Process cooling - Natural gas and biogas to natural gas and biogas
+    for y in years:
+        df_temp.loc[df_temp[id_var] == "Natural gas and biogas",y] = \
+            sum(np.array(df_temp.loc[df_temp[id_var] == "Natural gas and biogas",y]),
+                np.array(df_temp_coolinggas.loc[:,y]))
+    
+    # take average across years
+    df_temp = pd.melt(df_temp, id_vars = id_var, var_name='year')
+    df_temp = df_temp.groupby([id_var], as_index=False)['value'].agg(np.mean)
+    df_temp.columns = ["energy_carrier","value"]
+    df_temp_fs = pd.melt(df_temp_fs, id_vars = id_var, var_name='year')
+    df_temp_fs = df_temp_fs.groupby([id_var], as_index=False)['value'].agg(np.mean)
+    df_temp_fs.columns = ["energy_carrier","value"]
+    
+    # # check
+    # df_check = df_temp.copy()
+    # df_check[id_var] = "total"
+    # df_check = df_check.groupby([id_var], as_index=False)["value"].agg(sum)
+    
+    # apply aggrgates JRC
+    for idx in range(0,len(enercarr_jrc)):
+        df_temp.loc[df_temp["energy_carrier"] == enercarr_jrc[idx],"energy_carrier"] = enercarr_jrc_agg_map[idx]
+    
+    # adjust some categories with total shares
+    for key in enercarr_jrc_agg_map_adj.keys():
+        for idx in range(0, len(enercarr_jrc_agg_map_adj[key])):
+            adj_value = df_temp.loc[df_temp["energy_carrier"] == key,"value"] * \
+                np.array(df_ec.loc[df_ec["energy_carrier"] == enercarr_jrc_agg_map_adj[key][idx],"value"]) / \
+                    np.array(sum(df_ec.loc[df_ec["energy_carrier"].isin(enercarr_jrc_agg_map_adj[key]),"value"]))
+            df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : enercarr_jrc_agg_map_adj[key][idx], 
+                                                        "value" : adj_value})])
+        df_temp = df_temp.loc[df_temp["energy_carrier"] != key,:]
+        
+    # # check
+    # df_check = df_temp.copy()
+    # df_check[id_var] = "total"
+    # df_check = df_check.groupby([id_var], as_index=False)["value"].agg(sum)
+    
+    # make aggregates as in calculator
+    for idx in range(0, len(enercarr_jrc_agg)):
+        df_temp.loc[df_temp["energy_carrier"] == enercarr_jrc_agg[idx],"energy_carrier"] = enercarr_calc_map[idx]
+    df_temp = df_temp.groupby(["energy_carrier"], as_index=False).agg(sum)
+    df_temp.loc[df_temp["energy_carrier"] == "Lighting","energy_carrier"] = "lighting"
+    
+    # split biomass and waste
+    for key in dict_adj_biomass_waste.keys():
+        adj_value = df_temp.loc[df_temp["energy_carrier"] == "Biomass and waste","value"] * \
+            dict_adj_biomass_waste[key]
+        df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : key, "value" : adj_value})])
+    df_temp = df_temp.loc[df_temp["energy_carrier"] != "Biomass and waste",:]
+    
+    # # check
+    # df_check = df_temp.copy()
+    # df_check[id_var] = "total"
+    # df_check = df_check.groupby([id_var], as_index=False)["value"].agg(sum)
+    
+    # add hydrogen
+    df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : ["hydrogen"], "value" : [0]})])
+    
+    # store
+    df_temp["tech"] = techs_calc[0]
+    df_exclfeedstock = df_temp.copy()
+    
+    # make df to check code output
+    df = df_exclfeedstock.copy()
+    df_tot = df.copy()
+    df_po.columns = ["tech","total","unit_production"]
+    df_temp = df.groupby(["tech"], as_index=False)['value'].agg(sum)
+    df_temp = pd.merge(df_temp, df_po, how="left", on=["tech"])
+    df_temp["ratio"] = df_temp["value"]/df_temp["total"]
+    df_energyint_check = df_temp.copy()
+    
+    # convert toe to TWh, and divide by mega tonnes of production (objective is TWh/Mt)
+    df_po_temp = df_po.copy()
+    df_po_temp["total"] = df_po_temp["total"]/1000
+    df_po_temp["unit_production"] = "Mt"
+    df["value"] = df["value"] * ktoe_to_twh
+    df["unit"] = "TWh"
+    df = pd.merge(df, df_po_temp, how="left", on=["tech"])
+    df["value"] = df["value"]/df["total"]
+    
+    # clean df
+    df["variable"] = [tech + "_" + enercarr + "[" + unit + "/" + unit_production + "]" for \
+                      tech, enercarr, unit, unit_production in \
+                          zip(df["tech"], df["energy_carrier"], df["unit"], df["unit_production"])]
+    df = df.loc[:,["variable","value","tech"]]
+    
+    # create chemicals secondary
+    # it seems that energy consumption in post consumer recycling can differ a lot from chemical to chemial
+    # so for the moment I will put it the same of chemicals primary
+    # TODO: check the literature and re-do this
+    df_temp = df.loc[df["tech"] == "chem-chem-tech",:]
+    df_temp["tech"] = "chem-sec"
+    df_temp["variable"] = [i.replace("chem-chem-tech","chem-sec") for i in df_temp["variable"]]
+    df = pd.concat([df, df_temp])
+    
+    # make energy_demand_type
+    df["energy_demand_type"] = energy_demand_type
+    
+    # append
+    df_final = pd.concat([df_final, df])
+    
+    # do feedstock
+    df_temp = df_temp_fs.copy()
+    for idx in range(0,len(enercarr_jrc)):
+        df_temp.loc[df_temp["energy_carrier"] == enercarr_jrc[idx],"energy_carrier"] = enercarr_jrc_agg_map[idx]
+    for key in enercarr_jrc_agg_map_adj.keys():
+        for idx in range(0, len(enercarr_jrc_agg_map_adj[key])):
+            adj_value = df_temp.loc[df_temp["energy_carrier"] == key,"value"] * \
+                np.array(df_ec_fs.loc[df_ec_fs["energy_carrier"] == enercarr_jrc_agg_map_adj[key][idx],"value"]) / \
+                    np.array(sum(df_ec_fs.loc[df_ec_fs["energy_carrier"].isin(enercarr_jrc_agg_map_adj[key]),"value"]))
+            df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : enercarr_jrc_agg_map_adj[key][idx], 
+                                                        "value" : adj_value})])
+        df_temp = df_temp.loc[df_temp["energy_carrier"] != key,:]
+    for idx in range(0, len(enercarr_jrc_agg)):
+        df_temp.loc[df_temp["energy_carrier"] == enercarr_jrc_agg[idx],"energy_carrier"] = enercarr_calc_map[idx]
+    df_temp = df_temp.groupby(["energy_carrier"], as_index=False).agg(sum)
+    for key in dict_adj_biomass_waste.keys():
+        adj_value = df_temp.loc[df_temp["energy_carrier"] == "Biomass and waste","value"] * \
+            dict_adj_biomass_waste[key]
+        df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : key, "value" : adj_value})])
+    df_temp = df_temp.loc[df_temp["energy_carrier"] != "Biomass and waste",:]
+    df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : ["hydrogen"], "value" : [0]})])
+    df_temp.loc[df_temp["energy_carrier"] == "Diesel oil","energy_carrier"] = "liquid-ff-diesel"
+    df_temp.loc[df_temp["energy_carrier"] == "Naphtha","energy_carrier"] = "liquid-ff-oil"
+    df_temp = df_temp.groupby(["energy_carrier"], as_index=False).agg(sum)
+    # df_check = df_temp.copy()
+    # df_check[id_var] = "total"
+    # df_check = df_check.groupby([id_var], as_index=False)["value"].agg(sum)
+    df_temp = pd.concat([df_temp, pd.DataFrame({"energy_carrier" : ["electricity","gas-bio","liquid-bio","solid-waste","solid-bio"],
+                                                "value" : [0,0,0,0,0]})])
+    df_temp["tech"] = techs_calc[0]
+    df_feedstock = df_temp.copy()
+    df = df_feedstock.copy()
+    df["value"] = df["value"] * ktoe_to_twh
+    df["unit"] = "TWh"
+    df = pd.merge(df, df_po_temp, how="left", on=["tech"])
+    df["value"] = df["value"]/df["total"]
+    df["variable"] = [tech + "_" + enercarr + "[" + unit + "/" + unit_production + "]" for \
+                      tech, enercarr, unit, unit_production in \
+                          zip(df["tech"], df["energy_carrier"], df["unit"], df["unit_production"])]
+    df = df.loc[:,["variable","value","tech"]]
+    
+    # create chemicals feedstock secondary
+    # it seems that energy consumption in post consumer recycling can differ a lot from chemical to chemial
+    # so for the moment I will put it the same of chemicals primary
+    # TODO: check the literature and re-do this
+    df_temp = df.loc[df["tech"] == "chem-chem-tech",:]
+    df_temp["tech"] = "chem-sec"
+    df_temp["variable"] = [i.replace("chem-chem-tech","chem-sec") for i in df_temp["variable"]]
+    df = pd.concat([df, df_temp])
+    
+    # make energy_demand_type
+    df["energy_demand_type"] = energy_demand_type
+    
+    df_final_feedstock = pd.concat([df_final_feedstock, df])
 
 # clean
-del adj_value, df, DF, df_ec, df_ec_fs, df_exclfeedstock, df_feedstock, df_po,\
+del adj_value, df, df_ec, df_ec_fs, df_exclfeedstock, df_feedstock, df_po,\
     df_temp, df_temp_coolinggas, df_temp_fs, df_tot, i, id_var, idx, index_row_end, \
     index_row_start, key, ls_temp, techs, techs_calc, techs_code, y
 
@@ -715,16 +781,18 @@ del adj_value, df, DF, df_ec, df_ec_fs, df_exclfeedstock, df_feedstock, df_po,\
 # assuming that other utilities run also on electricity
 
 # do excluding feedstock
-df = pd.DataFrame({"energy_carrier" : ['electricity', 'gas-bio', 'gas-ff-natural', 'hydrogen', 
+df = pd.DataFrame({"energy_carrier" : ['lighting','electricity', 'gas-bio', 'gas-ff-natural', 'hydrogen', 
                      'liquid-bio', 'liquid-ff-oil', 'liquid-ff-diesel', 'solid-bio', 
                      'solid-ff-coal', 'solid-waste'], 
-                   "value" : [0.74+5+1.7-4.3,0,0,0,
+                   "value" : [0, 0.74+5+1.7-4.3,0,0,0,
                               0,10.9,0,0,
                               0,0]})
 df["value"] = df["value"] * gj_to_twh * 1000000
 df["tech"] = "ammonia-tech"
 df["energy_carrier"] = [tech + "_" + ec + "[TWh/Mt]" for tech, ec in zip(df["tech"], df["energy_carrier"])]
 df.columns = ['variable', 'value', 'tech']
+df["energy_demand_type"] = "fec"
+
 df_final = pd.concat([df_final, df])
 
 # do feedstock
@@ -733,16 +801,17 @@ df_final = pd.concat([df_final, df])
 # split what we have (from page 57 Table 11 of above link) among those 3 carriers (regardless of the percentage reported,
 # which I am not sure on what should be applied)
 energy_feedstock_gj = 21
-df = pd.DataFrame({"energy_carrier" : ['electricity', 'gas-bio', 'gas-ff-natural', 'hydrogen', 
+df = pd.DataFrame({"energy_carrier" : ['lighting','electricity', 'gas-bio', 'gas-ff-natural', 'hydrogen', 
                      'liquid-bio', 'liquid-ff-oil', 'liquid-ff-diesel', 'solid-bio', 
                      'solid-ff-coal', 'solid-waste'], 
-                   "value" : [0, energy_feedstock_gj/3, energy_feedstock_gj/3, energy_feedstock_gj/3,
+                   "value" : [0, 0, energy_feedstock_gj/3, energy_feedstock_gj/3, energy_feedstock_gj/3,
                               0, 0, 0, 0,
                               0, 0]})
 df["value"] = df["value"] * gj_to_twh * 1000000
 df["tech"] = "ammonia-tech"
 df["energy_carrier"] = [tech + "_" + ec + "[TWh/Mt]" for tech, ec in zip(df["tech"], df["energy_carrier"])]
 df.columns = ['variable', 'value', 'tech']
+df["energy_demand_type"] = "fec"
 df_final_feedstock = pd.concat([df_final_feedstock, df])
 
 # # check
@@ -753,6 +822,25 @@ df_final_feedstock = pd.concat([df_final_feedstock, df])
 # clean
 del df, energy_feedstock_gj
 
+# make ued using same difference that there is for chemicals
+df_efficiency = df_final.loc[df_final["tech"] == "chem-chem-tech",:]
+df_efficiency = df_efficiency.pivot(index=['variable'], 
+                                    columns=['energy_demand_type'], values="value").reset_index()
+df_efficiency["efficiency"] = df_efficiency["ued"]/df_efficiency["fec"]
+df_efficiency.loc[df_efficiency["variable"] == "chem-chem-tech_hydrogen[TWh/Mt]","efficiency"] = 0.5
+
+df_final.sort_values(["tech","energy_demand_type","variable"],inplace=True)
+df_final_feedstock.sort_values(["tech","energy_demand_type","variable"],inplace=True)
+
+df_temp = df_final.loc[df_final["tech"] == "ammonia-tech",:]
+df_temp["value"] = df_temp.loc[df_temp["tech"] == "ammonia-tech","value"] * df_efficiency.loc[:,"efficiency"]
+df_temp["energy_demand_type"] = "ued"
+df_final = pd.concat([df_final, df_temp])
+
+df_temp = df_final_feedstock.loc[df_final_feedstock["tech"] == "ammonia-tech",:]
+df_temp["value"] = df_temp.loc[df_temp["tech"] == "ammonia-tech","value"] * df_efficiency.loc[:,"efficiency"]
+df_temp["energy_demand_type"] = "ued"
+df_final_feedstock = pd.concat([df_final_feedstock, df_temp])
 
 ###########################################################
 ################ PULP AND PAPER PRODUCTION ################
@@ -794,14 +882,14 @@ df_check = df.groupby(["tech"], as_index=False)["value"].agg(np.mean)
 # drop printing and media
 df = df.loc[df["tech"] != "printing-media-tech",:]
 
-# create paper post consumer
-# source: https://ocshredding.com/blog/does-it-take-more-energy-to-produce-recycled-paper/#:~:text=According%20to%20the%20Environmental%20Paper,takes%20about%2022%20million%20BTUs.
-ec_perc_less = 0.31
-df_temp = df.loc[df["tech"] == "paper-tech",:]
-df_temp["value"] = df_temp["value"]*(1-ec_perc_less)
-df_temp["tech"] = "paper-sec-post-consumer"
-df_temp["variable"] = [i.replace("paper-tech","paper-sec-post-consumer") for i in df_temp["variable"]]
-df = pd.concat([df, df_temp])
+# # create paper post consumer
+# # source: https://ocshredding.com/blog/does-it-take-more-energy-to-produce-recycled-paper/#:~:text=According%20to%20the%20Environmental%20Paper,takes%20about%2022%20million%20BTUs.
+# ec_perc_less = 0.31
+# df_temp = df.loc[df["tech"] == "paper-tech",:]
+# df_temp["value"] = df_temp["value"]*(1-ec_perc_less)
+# df_temp["tech"] = "paper-sec-post-consumer"
+# df_temp["variable"] = [i.replace("paper-tech","paper-sec-post-consumer") for i in df_temp["variable"]]
+# df = pd.concat([df, df_temp])
 
 # save
 df_final = pd.concat([df_final, df])
@@ -858,21 +946,13 @@ df.loc[df["tech"] == "other-nfm","tech"] = 'copper-tech'
 df["variable"] = [i.replace("other-nfm",'copper-tech') for i in df["variable"]]
 # sum(df.loc[df["tech"] == "copper","value"])
 
-# create aluminium post consumer
-# for the moment I will put it the same of aluminium secondary
-# TODO: check the literature and re-do this
-df_temp = df.loc[df["tech"] == "aluminium-sec",:]
-df_temp["tech"] = "aluminium-sec-post-consumer"
-df_temp["variable"] = [i.replace("aluminium-sec","aluminium-sec-post-consumer") for i in df_temp["variable"]]
-df = pd.concat([df, df_temp])
-
 # create copper post consumer
 # source: https://internationalcopper.org/policy-focus/climate-environment/recycling/#:~:text=Recycled%20copper%20requires%2085%20percent,production%20and%20reduces%20CO2%20emissions.
 ec_perc_less = 0.85
 df_temp = df.loc[df["tech"] == "copper-tech",:]
 df_temp["value"] = df_temp["value"]*(1-ec_perc_less)
-df_temp["tech"] = "copper-sec-post-consumer"
-df_temp["variable"] = [i.replace("copper-tech","copper-sec-post-consumer") for i in df_temp["variable"]]
+df_temp["tech"] = "copper-sec"
+df_temp["variable"] = [i.replace("copper-tech","copper-sec") for i in df_temp["variable"]]
 df = pd.concat([df, df_temp])
 
 # put together
@@ -892,10 +972,10 @@ energy_consumption_gj_per_tonne = 4.25
 electricity = 4.25*0.05
 ec_minus_electricity = energy_consumption_gj_per_tonne - electricity
 
-df = pd.DataFrame({"energy_carrier" : ['gas-bio','gas-ff-natural', 'hydrogen', 
+df = pd.DataFrame({"energy_carrier" : ['lighting','gas-bio','gas-ff-natural', 'hydrogen', 
                                        'liquid-bio','liquid-ff-diesel','liquid-ff-oil',
                                        'solid-bio', 'solid-ff-coal', 'solid-waste'],
-                   "value" : [0, 0.34, 0, 
+                   "value" : [0, 0, 0.34, 0, 
                               0, 0.025, 0.025, # I am assuming equal split between diesel and oil
                               0.02, 0.51, 0.08]}) # I am also assuming that fossil solid fuels is coal (solid ff)
 df["value"] = df["value"] * ec_minus_electricity
@@ -905,7 +985,21 @@ df["value"] = df["value"] * gj_to_twh * 1000000
 df.columns = ["variable","value"]
 df["variable"] = ["lime-lime_" + v + "[TWh/Mt]" for v in df["variable"]]
 df["tech"] = "lime-lime"
+df["energy_demand_type"] = "fec"
+df.sort_values(["tech","energy_demand_type","variable"],inplace=True)
 df_final = pd.concat([df_final, df])
+
+# get ued with efficiency factor of cement
+df_efficiency = df_final.loc[df_final["tech"] == "cement-dry-kiln",:]
+df_efficiency = df_efficiency.pivot(index=['variable'], 
+                                    columns=['energy_demand_type'], values="value").reset_index()
+df_efficiency["efficiency"] = df_efficiency["ued"]/df_efficiency["fec"]
+df_efficiency.loc[df_efficiency["variable"] == "cement-dry-kiln_hydrogen[TWh/Mt]","efficiency"] = 0.5
+df = df.reset_index(drop=True)
+df_temp = df.copy()
+df_temp["value"] = df_temp.loc[df_temp["tech"] == "lime-lime","value"] * df_efficiency.loc[:,"efficiency"]
+df_temp["energy_demand_type"] = "ued"
+df_final = pd.concat([df_final, df_temp])
 
 # note for recycling: we will just drop lime post consumer recycling for now
 # as it does not seem feasible / largely done at the moment
@@ -1044,6 +1138,13 @@ df_check = df_check.groupby(["tech"], as_index=False)["value"].agg(sum)
 df_check = DF["energy-intensity-check"].copy()
 df_check = df.groupby(["tech"], as_index=False)["value"].agg(np.mean)
 
+# make ois secondary
+# assume: same of primary
+df_temp = df.copy()
+df_temp["tech"] = "ois-sec"
+df_temp["variable"] = [i.replace("ois-tech","ois-sec") for i in df_temp["variable"]]
+df = pd.concat([df,df_temp])
+
 # save
 df_final = pd.concat([df_final, df])
 
@@ -1155,8 +1256,11 @@ df_check = df.groupby(["tech"], as_index=False)["value"].agg(np.mean)
 # it does not seem to be very spread at the moment (it's mostly used to be burned)
 # one article is here: https://www.nature.com/articles/s41467-023-42499-6
 # they say it requires less energy, but not how much less
-# for the moment I will drop it as a technology in the model
-# TODO: come back and check the literature
+# for the moment i will assume the same of wwp primary
+df_temp = df.copy()
+df_temp["tech"] = "wwp-sec"
+df_temp["variable"] = [i.replace("wwp-tech","wwp-sec") for i in df_temp["variable"]]
+df = pd.concat([df,df_temp])
 
 # save
 df_final = pd.concat([df_final, df])
@@ -1164,6 +1268,14 @@ df_final = pd.concat([df_final, df])
 # clean
 del DF, df, df_check, techs, techs_calc, techs_code
 
+
+df_final = df_final.sort_values(["tech","energy_demand_type","variable"])
+
+# # checks
+# df_efficiency = df_final.copy()
+# df_efficiency = df_efficiency.pivot(index=['variable'], 
+#                                     columns=['energy_demand_type'], values="value").reset_index()
+# df_efficiency["efficiency"] = df_efficiency["ued"]/df_efficiency["fec"]
 
 ###########################################################
 ############# CONVERT TO CONSTANT DATA MATRIX #############
@@ -1189,16 +1301,58 @@ def create_constant(df, variables):
     # return
     return const
 
+# reshape for efficiency ratios
+def reshape_energy_constant(cdm):
+    cdm_temp = cdm.copy()
+    cdm_temp.drop("Categories2","lighting")
+    for c in cdm_temp.col_labels["Categories1"]:
+        cdm_temp.rename_col(c, c + "_process-heat", "Categories1")
+    cdm_temp.deepen("_","Categories1")
+    cdm_temp.switch_categories_order("Categories2","Categories3")
+    cdm_temp[:,:,:,"electricity"] = 0
+    cdm_temp1 = cdm.filter({"Categories2" : ["lighting","electricity"]})
+    cdm_temp1.rename_col(["lighting","electricity"], ["lighting_electricity","elec_electricity"], "Categories2")
+    cdm_temp1.deepen()
+    missing = cdm_temp.col_labels["Categories3"].copy()
+    missing.remove("electricity")
+    for m in missing:
+        cdm_temp1.add(0, "Categories3", m, dummy=True)
+    cdm_temp1.sort("Categories3")
+    cdm_temp.append(cdm_temp1, "Categories2")
+    cdm_temp.sort("Categories2")
+    return cdm_temp
+
+####################################
+##### FINAL ENERGY CONSUMPTION #####
+####################################
+
 # excluding feedstock
-tmp = create_constant(df_final, df_final["variable"])
+df_temp = df_final.loc[df_final["energy_demand_type"] == "fec",:]
+tmp = create_constant(df_temp, df_temp["variable"])
 cdm_enerdem_exclfeed = ConstantDataMatrix.create_from_constant(tmp, 0)
 variabs = cdm_enerdem_exclfeed.col_labels["Variables"]
 for v in variabs:
     cdm_enerdem_exclfeed.rename_col(v, "energy-demand-excl-feedstock_" + v, "Variables")
 cdm_enerdem_exclfeed.deepen_twice()
 
+# reshape to be used for efficiency ratios
+cdm_enerdem_exclfeed_reshaped = reshape_energy_constant(cdm_enerdem_exclfeed)
+
+# aggregate lighting and electricity, and get split
+cdm_temp = cdm_enerdem_exclfeed.filter({"Categories2" : ["lighting","electricity"]})
+cdm_enerdem_exclfeed.groupby({"electricity" : ["lighting","electricity"]}, "Categories2", inplace=True)
+cdm_temp.append(cdm_temp.groupby({"total" : ["lighting","electricity"]}, "Categories2"),"Categories2")
+cdm_temp.group_all("Categories1")
+cdm_temp[...,"lighting"] = cdm_temp[...,"lighting"]/cdm_temp[...,"total"]
+cdm_temp[...,"electricity"] = cdm_temp[...,"electricity"]/cdm_temp[...,"total"]
+cdm_temp.drop("Categories1","total")
+cdm_temp.units["energy-demand-excl-feedstock"] = "%"
+df_check = cdm_temp.write_df()
+cdm_enerdem_exclfeed_eleclight_split = cdm_temp.copy()
+
 # feedstock
-tmp = create_constant(df_final_feedstock, df_final_feedstock["variable"])
+df_temp = df_final_feedstock.loc[df_final_feedstock["energy_demand_type"] == "fec",:]
+tmp = create_constant(df_temp, df_temp["variable"])
 cdm_enerdem_feedstock = ConstantDataMatrix.create_from_constant(tmp, 1)
 variabs_missing = cdm_enerdem_feedstock.col_labels["Variables"]
 variabs_missing = [i not in variabs_missing for i in cdm_enerdem_exclfeed.col_labels["Categories1"]]
@@ -1211,12 +1365,81 @@ variabs = cdm_enerdem_feedstock.col_labels["Variables"]
 for v in variabs:
     cdm_enerdem_feedstock.rename_col(v, "energy-demand-feedstock_" + v, "Variables")
 cdm_enerdem_feedstock.deepen_twice()
+cdm_enerdem_feedstock.units["energy-demand-feedstock"] = 'TWh/Mt'
 
-# put together
+# reshape to be used for efficiency ratios
+cdm_enerdem_feedstock_reshaped = reshape_energy_constant(cdm_enerdem_feedstock)
+
+# aggregate lighting and electricity
+cdm_enerdem_feedstock.groupby({"electricity" : ["lighting","electricity"]}, "Categories2", inplace=True)
+
+# put together excl feedstock and feedstock (to be used for efficiency rations)
+cdm_enerdem_fec = cdm_enerdem_exclfeed_reshaped.copy()
+cdm_enerdem_fec.append(cdm_enerdem_feedstock_reshaped,"Variables")
+cdm_enerdem_fec.groupby({"energy-demand-fec" : ['energy-demand-excl-feedstock','energy-demand-feedstock']},
+                        "Variables", inplace=True)
+cdm_enerdem_fec.group_all("Categories1")
+
+# save
 CDM_energy_demand = {
     "energy-demand-excl-feedstock" : cdm_enerdem_exclfeed,
-    "energy-demand-feedstock" : cdm_enerdem_feedstock
+    "energy-demand-feedstock" : cdm_enerdem_feedstock,
+    "energy-demand-excl-feedstock-eleclight-split" : cdm_enerdem_exclfeed_eleclight_split
     }
+
+####################################
+##### ENERGY EFFICIENCY RATIOS #####
+####################################
+
+# ued excluding feedstock
+df_temp = df_final.loc[df_final["energy_demand_type"] == "ued",:]
+tmp = create_constant(df_temp, df_temp["variable"])
+cdm_enerdem_exclfeed = ConstantDataMatrix.create_from_constant(tmp, 0)
+variabs = cdm_enerdem_exclfeed.col_labels["Variables"]
+for v in variabs:
+    cdm_enerdem_exclfeed.rename_col(v, "energy-demand-excl-feedstock_" + v, "Variables")
+cdm_enerdem_exclfeed.deepen_twice()
+
+# reshape
+cdm_enerdem_exclfeed_reshaped = reshape_energy_constant(cdm_enerdem_exclfeed)
+
+# ued feedstock
+df_temp = df_final_feedstock.loc[df_final_feedstock["energy_demand_type"] == "ued",:]
+tmp = create_constant(df_temp, df_temp["variable"])
+cdm_enerdem_feedstock = ConstantDataMatrix.create_from_constant(tmp, 1)
+variabs_missing = cdm_enerdem_feedstock.col_labels["Variables"]
+variabs_missing = [i not in variabs_missing for i in cdm_enerdem_exclfeed.col_labels["Categories1"]]
+variabs_missing = list(np.array(cdm_enerdem_exclfeed.col_labels["Categories1"])[variabs_missing])
+for v in variabs_missing:
+    cdm_enerdem_feedstock.add(0, "Variables", v, dummy=True)
+cdm_enerdem_feedstock.sort("Variables")
+cdm_enerdem_feedstock = cdm_enerdem_feedstock.flatten()
+variabs = cdm_enerdem_feedstock.col_labels["Variables"]
+for v in variabs:
+    cdm_enerdem_feedstock.rename_col(v, "energy-demand-feedstock_" + v, "Variables")
+cdm_enerdem_feedstock.deepen_twice()
+cdm_enerdem_feedstock.units["energy-demand-feedstock"] = 'TWh/Mt'
+
+# reshape to be used for efficiency ratios
+cdm_enerdem_feedstock_reshaped = reshape_energy_constant(cdm_enerdem_feedstock)
+
+# put together excl feedstock and feedstock (to be used for efficiency rations)
+cdm_enerdem_ued = cdm_enerdem_exclfeed_reshaped.copy()
+cdm_enerdem_ued.append(cdm_enerdem_feedstock_reshaped,"Variables")
+cdm_enerdem_ued.groupby({"energy-demand-fec" : ['energy-demand-excl-feedstock','energy-demand-feedstock']},
+                        "Variables", inplace=True)
+cdm_enerdem_ued.group_all("Categories1")
+
+# make ratios
+cdm_enerdem_eff = cdm_enerdem_fec.copy()
+cdm_enerdem_eff.array = cdm_enerdem_ued.array / cdm_enerdem_fec.array
+cdm_enerdem_eff.rename_col("energy-demand-fec", "energy-efficiency", "Variables")
+cdm_enerdem_eff.units["energy-efficiency"] = "%"
+df_check = cdm_enerdem_eff.write_df()
+df_check.melt()
+
+# save
+CDM_energy_demand["energy-efficiency"] = cdm_enerdem_eff.copy()
 
 # save
 f = os.path.join(current_file_directory, '../data/datamatrix/const_energy-demand.pickle')
