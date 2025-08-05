@@ -4,7 +4,7 @@ from model.common.auxiliary_functions import create_years_list, load_pop
 from _database.pre_processing.buildings.Switzerland.get_data_functions.heating_technology_CH import (
   extract_heating_technologies_old, extract_heating_technologies, prepare_heating_mix_by_archetype,
   compute_heating_mix_F_E_D_categories, compute_heating_mix_C_B_categories, compute_heating_mix_by_category,
-  clean_heating_cat, extract_heating_efficiency, compute_heating_efficiency_by_archetype)
+  clean_heating_cat, extract_heating_efficiency_JRC, compute_heating_efficiency_by_archetype)
 
 from _database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import load_construction_period_param
 
