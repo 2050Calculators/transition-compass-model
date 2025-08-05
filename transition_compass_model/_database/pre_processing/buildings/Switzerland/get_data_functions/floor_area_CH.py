@@ -320,3 +320,46 @@ def compute_floor_area_new_cat(dm_new_tot, cat_map):
     return dm_new_cat
 
 
+def extract_nb_of_apartments_per_building_type(table_id, file, cantons_fr, cantons_en):
+  try:
+    with open(file, 'rb') as handle:
+      dm = pickle.load(handle)
+  except OSError:
+    structure, title = get_data_api_CH(table_id, mode='example', language='fr')
+    cantons_list = [c for c in structure['Canton (-) / District (>>) / Commune (......)'] if '- ' in c]
+    mapping_dim = {'Country': 'Canton (-) / District (>>) / Commune (......)',
+                   'Years': 'Année',
+                   'Variables': 'Surface du logement',
+                   'Categories1': 'Catégorie de bâtiment'}
+    dm = None
+    for e in structure['Époque de construction']:
+      # Extract buildings floor area
+      filter = {'Année': structure['Année'],
+                'Canton (-) / District (>>) / Commune (......)': ['Suisse'] + cantons_list,
+                'Catégorie de bâtiment': structure['Catégorie de bâtiment'],
+                'Surface du logement': structure['Surface du logement'],
+                'Époque de construction': [e]}
+      unit_all = ['number'] * len(structure['Surface du logement'])
+      # Get api data
+      dm_e = get_data_api_CH(table_id, mode='extract', filter=filter, mapping_dims=mapping_dim, units=unit_all, language='fr')
+      if dm is None:
+        dm = dm_e
+      else:  # Sum all construction periods
+        dm.array = dm.array + dm_e.array
+      dm.groupby({'bld_apartments': '.*'}, regex=True, dim='Variables', inplace=True)
+      dm.groupby({'single-family-house': ['Maisons individuelles'],
+                  'multi-family-house': ['Maisons à plusieurs logements', "Bâtiments d'habitation avec usage annexe", "Bâtiments partiellement à usage d'habitation"]},
+                 dim='Categories1', inplace=True)
+      dm.drop(col_label = '......5892 Blonay - Saint-Légier', dim='Country')
+      dm.rename_col_regex('- ', '', dim='Country')
+      dm.rename_col_regex(" /.*", "", dim='Country')
+      dm.rename_col_regex("-", " ", dim='Country')
+      cantons_in = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Genève', 'Glarus', 'Graubünden', 'Jura', 'Luzern', 'Neuchâtel', 'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn', 'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud', 'Zug', 'Zürich']
+
+      dm.rename_col(cantons_in, cantons_en, dim='Country')
+      dm.rename_col('Suisse', 'Switzerland', dim='Country')
+      dm.sort('Country')
+      with open(file, 'wb') as handle:
+        pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+  return dm
