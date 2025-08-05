@@ -674,14 +674,6 @@ def end_of_life(dm_tra_waste, dm_tra_infra_waste, dm_bld_waste, dm_pack_waste, d
 def material_production_by_technology(dm_technology_share, dm_material_production_bymat, 
                                       dm_material_recovered):
     
-    # Note: now that we have the material recovered via the end of life module (which
-    # is post-consumer recovery), the technology shares will be applied to whatever
-    # produced material that is left. It follows that the percentage share of aluminium
-    # secondary and steel made from scrap steel, represent the pre-consumer material
-    # recovery.
-    
-    # Note: 
-    
     # Note: for paper, pulp is the raw material for making paper. When we recycle
     # paper, the EOL paper is turned into pulp, which then is turned into paper.
     
@@ -1863,9 +1855,9 @@ def industry(lever_setting, years_setting, DM_input, interface = Interface(), ca
     DM_agr = industry_agriculture_interface(DM_material_production, DM_energy_demand)
     interface.add_link(from_sector='industry', to_sector='agriculture', dm=DM_agr)
     
-    # # interface ammonia
-    # DM_amm = industry_ammonia_interface(DM_material_production, DM_energy_demand)
-    # interface.add_link(from_sector='industry', to_sector='ammonia', dm=DM_amm)
+    # interface ammonia
+    DM_amm = industry_ammonia_interface(DM_material_production, DM_energy_demand)
+    interface.add_link(from_sector='industry', to_sector='ammonia', dm=DM_amm)
     
     # # interface landuse
     # DM_lus = industry_landuse_interface(DM_material_production, DM_energy_demand)
@@ -1942,9 +1934,6 @@ def local_industry_run():
     # return
     return results_run
 
-# # run local
-# start = time.time()
-# results_run = local_industry_run()
-# end = time.time()
-# print(end-start)
+# run local
+if __name__ == "__main__": results_run = local_industry_run()
 
