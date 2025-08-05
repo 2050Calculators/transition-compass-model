@@ -1,6 +1,6 @@
 import pickle
 import os
-
+import numpy as np
 import pandas as pd
 import zipfile
 
@@ -9,9 +9,32 @@ from model.common.auxiliary_functions import translate_text, save_url_to_file, d
 from model.common.data_matrix_class import DataMatrix
 
 
+def clean_country_names(dm):
+  cantons_en = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden',
+                'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Geneva',
+                'Glarus', 'Graubünden', 'Jura', 'Lucerne', 'Neuchâtel',
+                'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn',
+                'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud',
+                'Zug', 'Zurich']
+  cantons_fr =  ['Argovie', 'Appenzell Rh. Ext.', 'Appenzell Rh. Int.',
+                 'Bâle Campagne', 'Bâle Ville', 'Berne', 'Fribourg', 'Genève',
+                 'Glaris', 'Grisons', 'Jura', 'Lucerne', 'Neuchâtel', 'Nidwald',
+                 'Obwald', 'Schaffhouse', 'Schwytz', 'Soleure', 'Saint Gall',
+                 'Thurgovie', 'Tessin', 'Uri', 'Valais', 'Vaud', 'Zoug', 'Zurich']
+
+  dm.rename_col_regex('Suisse', 'Switzerland', 'Country')
+  dm.rename_col_regex(" /.*", "", dim='Country')
+  dm.rename_col_regex("-", " ", dim='Country')
+  dm.rename_col('Luzern','Lucerne', dim='Country')
+  dm.rename_col('Genève','Geneva', dim='Country')
+  dm.rename_col('Zürich','Zurich', dim='Country')
+
+  dm.sort('Country')
+  return dm
+
 def extract_hotwater_technologies(table_id, file):
     # Domaine de l'énergie: bâtiments selon le canton, le type de bâtiment, l'époque de construction, le type de chauffage,
-    # la production d'eau chaude, les agents énergétiques utilisés pour le chauffage et l'eau chaude, 1990 et 2000
+    # la production d'eau chaude, les agents énergétiques utilisés pour le chauffage et l'eau chaude
     try:
         with open(file, 'rb') as handle:
             dm_hw = pickle.load(handle)
@@ -36,21 +59,89 @@ def extract_hotwater_technologies(table_id, file):
                 dm_hw.array += dm_hw_t.array
 
         dm_hw.rename_col(['Suisse'], ['Switzerland'], dim='Country')
-        dm_hw.groupby({'bld_households_hot-water': '.*'}, regex=True,
+        dm_hw.groupby({'bld_hot-water_tech_single-family-house': ['Maisons individuelles'],
+                       'bld_hot-water_tech_multi-family-house': ['Maisons à plusieurs logements',
+                                              "Bâtiments d'habitation avec usage annexe",
+                                              "Bâtiments partiellement à usage d'habitation"]},
                       dim='Variables', inplace=True)
+        dm_hw.deepen(based_on='Variables')
+        dm_hw.switch_categories_order()
 
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, file)
-        with open(f, 'wb') as handle:
+        with open(file, 'wb') as handle:
             pickle.dump(dm_hw, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    dm_hw.groupby({'other': ['Autre', 'Aucune']}, dim='Categories1', inplace=True)
+    dm_hw.groupby({'other': ['Autre', 'Aucune']}, dim='Categories2', inplace=True)
     dm_hw.rename_col(['Mazout', 'Bois', 'Pompe à chaleur', 'Electricité', 'Gaz', 'Chaleur produite à distance',
                            'Soleil (thermique)'],
                           ['heating-oil', 'wood', 'heat-pump', 'electricity', 'gas', 'district-heating', 'solar'],
-                          dim='Categories1')
-    #dm_hw.normalise('Categories1', inplace=True)
+                          dim='Categories2')
+    clean_country_names(dm_hw)
+    
     return dm_hw
+
+
+def extract_hotwater_technologies_old(table_id, file):
+  # Domaine de l'énergie: bâtiments selon le canton, le type de bâtiment, l'époque de construction, le type de chauffage,
+  # la production d'eau chaude, les agents énergétiques utilisés pour le chauffage et l'eau chaude, 1990 et 2000
+  try:
+    with open(file, 'rb') as handle:
+      dm_heating_old = pickle.load(handle)
+  except OSError:
+    structure, title = get_data_api_CH(table_id, mode='example', language='fr')
+    # Extract buildings floor area
+    filter = structure.copy()
+    mapping_dim = {'Country': 'Canton', 'Years': 'Année',
+                   'Variables': 'Type de bâtiment',
+                   'Categories1': "Agent énergétique pour l'eau chaude"}
+    dm_heating_old = None
+    tot_bld = 0
+    for t in structure['Type de chauffage']:
+      for a in structure["Agent énergétique pour le chauffage"]:
+        filter['Type de chauffage'] = [t]
+        filter["Agent énergétique pour le chauffage"] = [a]
+        unit_all = ['number'] * len(structure['Type de bâtiment'])
+        dm_heating_old_t = get_data_api_CH(table_id, mode='extract',
+                                           filter=filter,
+                                           mapping_dims=mapping_dim,
+                                           units=unit_all, language='fr')
+        if dm_heating_old is None:
+          dm_heating_old = dm_heating_old_t.copy()
+        else:
+          assert dm_heating_old.col_labels['Country'] == dm_heating_old_t.col_labels['Country']
+          assert dm_heating_old.col_labels['Categories1'] == dm_heating_old_t.col_labels['Categories1']
+
+          dm_heating_old.array = dm_heating_old_t.array + dm_heating_old.array
+
+
+    #dm_heating_old.rename_col(['Suisse'], ['Switzerland'], dim='Country')
+    dm_heating_old.groupby(
+      {'bld_hot-water_tech_single-family-households': ['Maisons individuelles'],
+       'bld_hot-water_tech_multi-family-households': ['Maisons à plusieurs logements',
+                                   "Bâtiments d'habitation avec usage annexe",
+                                   "Bâtiments partiellement à usage d'habitation"]},
+      dim='Variables', inplace=True)
+    dm_heating_old.deepen(based_on='Variables')
+    dm_heating_old.switch_categories_order()
+
+    with open(file, 'wb') as handle:
+      pickle.dump(dm_heating_old, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+  dm_heating_old.groupby(
+    {'other': ['Autre agent énergétique (eau ch.)', "Sans production d'eau chaude"]},
+    dim='Categories2', inplace=True)
+  dm_heating_old.rename_col(
+    ['Mazout (eau ch.)', 'Bois (eau ch.)', 'Pompe à chaleur (eau ch.)',
+     'Electricité (eau ch.)', 'Gaz (eau ch.)', 'Chaleur à distance (eau ch.)',
+     'Charbon (eau ch.)', 'Capteur solaire (eau ch.)'],
+    ['heating-oil', 'wood', 'heat-pump', 'electricity', 'gas',
+     'district-heating', 'coal', 'solar'],
+    dim='Categories2')
+  clean_country_names(dm_heating_old)
+
+  dm_heating_old.rename_col('single-family-households', 'single-family-house', dim='Categories1')
+  dm_heating_old.rename_col('multi-family-households', 'multi-family-house', dim='Categories1')
+
+  return dm_heating_old
 
 
 def extract_EP2050_hot_water_energy_consumption(file_raw, file_pickle):
@@ -92,6 +183,8 @@ def extract_EP2050_hot_water_energy_consumption(file_raw, file_pickle):
 
     with open(file_pickle, 'wb') as handle:
       pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+  dm.sort('Categories1')
 
   return dm
 
