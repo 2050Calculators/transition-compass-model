@@ -98,7 +98,7 @@ def compute_building_mix(dm_all):
     return dm_building_mix
 
 
-def run(dm_pop, DM_renov, DM_heating, DM_other, DM_appliances, years_ots, years_fts):
+def run(dm_pop, DM_renov, DM_heating, DM_other, DM_appliances, DM_hotwater, years_ots, years_fts):
 
   this_dir = os.path.dirname(os.path.abspath(__file__))
   # !FIXME: use the actual values and not the calibration factor
@@ -147,6 +147,15 @@ def run(dm_pop, DM_renov, DM_heating, DM_other, DM_appliances, years_ots, years_
 
   # SECTION: fxa - appliances
   DM_buildings['fxa']['appliances'] = DM_appliances['fxa']['appliances'].copy()
+
+  # SECTION: fxa - hot water demand
+  # Determine fts years for hot water variables
+  # !FIXME: link hot water technology to space-heating - in module ?
+  dm_hw_demand = DM_hotwater['hw-energy-demand']
+  linear_fitting(dm_hw_demand, years_fts)
+  DM_buildings['fxa']['hot-water'] = dm_hw_demand.copy()
+  #
+  #DM_buildings['fxa']['hot-water'] =
 
   # add_dummy_country_to_DM(DM_appliances, 'EU27', 'Switzerland')
   #file = os.path.join(this_dir , '../../../../data/datamatrix/buildings.pickle')
@@ -208,10 +217,16 @@ def run(dm_pop, DM_renov, DM_heating, DM_other, DM_appliances, years_ots, years_
   dm_heating_cat.sort('Categories3')
   DM_buildings['ots']['heating-technology-fuel'][
     'bld_heating-technology'] = dm_heating_cat.copy()
+  DM_buildings['ots']['heating-technology-fuel'][
+    'bld_hot-water-technology'] = DM_hotwater['hw-tech-mix'].copy()
 
   # SECTION: ots - heating-efficiency
-  DM_buildings['ots']['heating-efficiency'] = dm_heating_eff_cat.copy()
+  DM_buildings['ots']['heating-efficiency'] = dict()
+  DM_buildings['ots']['heating-efficiency']['bld_heating-efficiency'] \
+    = dm_heating_eff_cat.copy()
+  DM_buildings['ots']['heating-efficiency']['bld_hot-water-efficiency'] \
+    = DM_hotwater['hw-efficiency'].copy()
 
-  my_pickle_dump(DM_buildings, file)
+  #my_pickle_dump(DM_buildings, file)
 
   return DM_buildings

@@ -3,12 +3,14 @@ from processors.floor_area_pipeline_CH import run as floor_area_run
 from processors.renovation_pipeline_CH import run as renovation_run
 from processors.heating_technology_pipeline_CH import run as heating_tech_run
 from processors.others_pipeline_CH import run as other_run
+from processors.hot_water_pipeline_CH import run as hotwater_run
 from processors.build_ots_pickle import run as ots_pickle_run
 from processors.buildings_interfaces_CH import run as load_interface_run
 from processors.appliances_pipeline_CH import run as appliances_run
 from scenarios.build_fts_BAU_pickle import run as fts_bau_pickle_run
 from scenarios.build_fts_LoiEnergie_Vaud_pickle import run as fts_loi_energie_vaud_run
 from get_data_functions.construction_period_param import load_construction_period_param
+
 
 years_ots = create_years_list(1990, 2023, 1)
 years_fts = create_years_list(2025, 2050, 5)
@@ -44,8 +46,11 @@ DM_other = other_run(country_list, years_ots, years_fts)
 print('Running appliances pipeline')
 DM_appliances = appliances_run(dm_pop.copy(), country_list, years_ots, years_fts)
 
+print('Running hot water pipeline')
+DM_hotwater = hotwater_run(country_list, years_ots)
+
 print('Compile pickle ots')
-DM_buildings = ots_pickle_run(dm_pop_ots, DM_renov, DM_heating, DM_other, DM_appliances, years_ots, years_fts)
+DM_buildings = ots_pickle_run(dm_pop_ots, DM_renov, DM_heating, DM_other, DM_appliances, DM_hotwater, years_ots, years_fts)
 
 print('Compile pickle fts - all BAU')
 DM_buildings = fts_bau_pickle_run(DM_buildings, country_list, years_fts)

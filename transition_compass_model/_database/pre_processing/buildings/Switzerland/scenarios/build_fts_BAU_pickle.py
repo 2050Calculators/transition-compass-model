@@ -4,13 +4,14 @@ import os
 from model.common.auxiliary_functions import linear_fitting, create_years_list, my_pickle_dump, filter_DM
 
 
-def calculate_heating_eff_fts(dm_heating_eff, years_fts, maximum_eff):
-  dm_heat_pump = dm_heating_eff.filter({'Categories2': ['heat-pump']})
-  dm_heating_eff.drop(dim='Categories2', col_label='heat-pump')
+def calculate_heating_eff_fts(dm_heating_eff, years_fts, maximum_eff, fuel_cat='Categories2'):
+
+  dm_heat_pump = dm_heating_eff.filter({fuel_cat: ['heat-pump']})
+  dm_heating_eff.drop(dim=fuel_cat, col_label='heat-pump')
   linear_fitting(dm_heating_eff, years_fts, based_on=list(range(2015, 2023)))
   dm_heating_eff.array = np.minimum(dm_heating_eff.array, maximum_eff)
   linear_fitting(dm_heat_pump, years_fts, based_on=list(range(2015, 2023)))
-  dm_heating_eff.append(dm_heat_pump, dim='Categories2')
+  dm_heating_eff.append(dm_heat_pump, dim=fuel_cat)
   dm_heating_eff_fts = dm_heating_eff.filter({'Years': years_fts})
 
   return dm_heating_eff_fts
@@ -128,14 +129,26 @@ def run(DM_buildings, country_list, years_fts):
   ############################################
   ######       HEATING EFFICIENCY       ######
   ############################################
-  dm_heating_eff = DM_buildings['ots']['heating-efficiency'].copy()
+  dm_heating_eff = DM_buildings['ots']['heating-efficiency']['bld_heating-efficiency'].copy()
   dm_heating_eff_fts = calculate_heating_eff_fts(dm_heating_eff.copy(),
                                                  years_fts, maximum_eff=0.98)
+  dm_heating_eff_fts[:, :, 'bld_heating-efficiency', :, 'electricity'] = 1
   DM_buildings['fts']['heating-efficiency'] = dict()
+  DM_buildings['fts']['heating-efficiency']['bld_heating-efficiency'] = dict()
   for lev in range(4):
     lev = lev + 1
-    DM_buildings['fts']['heating-efficiency'][lev] = dm_heating_eff_fts.copy()
+    DM_buildings['fts']['heating-efficiency']['bld_heating-efficiency'][lev] = dm_heating_eff_fts.copy()
 
+  dm_hw_eff = DM_buildings['ots']['heating-efficiency']['bld_hot-water-efficiency'].copy()
+  dm_hw_eff_fts = calculate_heating_eff_fts(dm_hw_eff.copy(),years_fts, maximum_eff=0.98, fuel_cat='Categories1')
+  dm_hw_eff_fts[:, :, 'bld_hot-water_efficiency', 'electricity'] = 1
+
+  DM_buildings['fts']['heating-efficiency']['bld_hot-water-efficiency'] = dict()
+  for lev in range(4):
+    lev = lev + 1
+    DM_buildings['fts']['heating-efficiency']['bld_hot-water-efficiency'][lev] = dm_hw_eff_fts.copy()
+
+  # FIXME : overwrite buindings.pickle and do a normal run (make sure you add EU dummy)
   my_pickle_dump(DM_buildings, file)
 
   return DM_buildings
