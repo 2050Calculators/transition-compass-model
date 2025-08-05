@@ -10,7 +10,7 @@ from model.agriculture_module import agriculture
 from model.emissions_module import emissions
 from model.climate_module import climate
 
-# from model.ammonia_module import ammonia
+from model.ammonia_module import ammonia
 from model.industry_module import industry
 from model.power_module import power
 from model.landuse_module import land_use
@@ -61,6 +61,10 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
       start_time = time.time()
       TPE['agriculture'] = agriculture(lever_setting, years_setting, DM_input['agriculture'], interface)
       logger.info('Execution time Agriculture: {0:.3g} s'.format(time.time() - start_time))
+    if 'ammonia' in sectors:
+        start_time = time.time()
+        TPE['ammonia'] = ammonia(lever_setting, years_setting, DM_input['ammonia'], interface)
+        logger.info('Execution time Ammonia: {0:.3g} s'.format(time.time() - start_time))
     #start_time = time.time()
     #TPE['agriculture'] = agriculture(lever_setting, years_setting, interface)
     #logger.info('Execution time Agriculture: {0:.3g} s'.format(time.time() - start_time))
