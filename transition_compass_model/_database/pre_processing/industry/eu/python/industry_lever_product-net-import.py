@@ -243,11 +243,17 @@ df_temp = df_sub.loc[df_sub["selection"].isin(['aluminium-pack']),
 df_temp = df_temp.pivot(index=["Country","Years"], columns="variable", values='value').reset_index()
 dm_pack_unit = DataMatrix.create_from_df(df_temp, 1)
 
+# dm_fert
+df_temp = df_sub.loc[df_sub["selection"].isin(['fertilizer']),["Country","Years","variable","value"]]
+df_temp = df_temp.pivot(index=["Country","Years"], columns="variable", values='value').reset_index()
+dm_fert_kg = DataMatrix.create_from_df(df_temp, 1)
+
 # put together
 dm_trade = dm_bld_domapp.flatten()
 dm_trade.append(dm_tra_veh.flatten().flatten(),"Variables")
 dm_trade.append(dm_pack_kg.flatten(),"Variables")
 dm_trade.append(dm_pack_unit.flatten(),"Variables")
+dm_trade.append(dm_fert_kg.flatten(),"Variables")
 dm_trade.sort("Variables")
 
 # check
@@ -332,6 +338,7 @@ dict_call = {"product-demand_HDV_BEV" : None,
              "product-demand_bus_ICE-diesel": None,
              "product-demand_computer" : list(range(2003,2011+1)),
              "product-demand_dishwasher" : None,
+             "product-demand_fertilizer" : None,
              "product-demand_freezer" : None,
              "product-demand_fridge" : None,
              "product-demand_glass-pack" : list(range(2010,2023+1)),
@@ -358,6 +365,7 @@ dict_call = {"product-demand_HDV_BEV" : None,
              "product-export_bus_ICE-diesel": None,
              "product-export_computer" : list(range(2003,2011+1)),
              "product-export_dishwasher" : None,
+             "product-export_fertilizer" : None,
              "product-export_freezer" : None,
              "product-export_fridge" : None,
              "product-export_glass-pack" : list(range(2011,2014+1)),
@@ -383,6 +391,7 @@ dict_call = {"product-demand_HDV_BEV" : None,
              "product-import_bus_ICE-diesel": None,
              "product-import_computer" : list(range(2003,2011+1)),
              "product-import_dishwasher" : None,
+             "product-import_fertilizer" : None,
              "product-import_freezer" : None,
              "product-import_fridge" : None,
              "product-import_glass-pack" : None,
@@ -464,6 +473,11 @@ dm_temp = dm_trade.filter({"Variables" : ['product-demand_glass-pack','product-d
                                           'product-import_plastic-pack']})
 dm_temp.deepen()
 DM_trade["pack"] = dm_temp
+dm_temp = dm_trade.filter({"Variables" : ['product-demand_fertilizer',
+                                          'product-export_fertilizer',
+                                          'product-import_fertilizer']})
+dm_temp.deepen()
+DM_trade["fertilizer"] = dm_temp
 
 # note: for the variables that we do not have, in general import and export will be set
 # to zero, and demand will be set to nan
@@ -662,11 +676,15 @@ DM_trade["domapp"] = make_fts(DM_trade["domapp"], "wmachine", 2000, 2007) # here
 # pipes
 DM_trade["pipe"] = make_fts(DM_trade["pipe"], "new-dhg-pipe", baseyear_start, baseyear_end)
 
+# fertilizer
+DM_trade["fertilizer"] = make_fts(DM_trade["fertilizer"], "fertilizer", baseyear_start, baseyear_end)
+
 # check
 # DM_trade['tra-veh'].filter({"Country" : ["EU27"]}).datamatrix_plot()
 # DM_trade['pack-alu'].filter({"Country" : ["EU27"]}).datamatrix_plot()
 # DM_trade['domapp'].filter({"Country" : ["EU27"]}).datamatrix_plot()
 # DM_trade['pack'].filter({"Country" : ["EU27"]}).datamatrix_plot()
+# DM_trade["fertilizer"].filter({"Country" : ["EU27"]}).datamatrix_plot()
 
 ###################################
 ##### MAKE PRODUCT NET IMPORT #####
@@ -684,7 +702,7 @@ DM_trade["pipe"] = make_fts(DM_trade["pipe"], "new-dhg-pipe", baseyear_start, ba
 
 # product-net-import[%] = (product-import - product-export)/product-demand
 DM_trade_net_share = {}
-keys = ['domapp', 'tra-veh', 'pack', 'pack-alu', 'pipe', 'tra-infra', 'bld-floor']
+keys = ['domapp', 'tra-veh', 'pack', 'pack-alu', 'pipe', 'tra-infra', 'bld-floor','fertilizer']
 for key in keys:
     dm_temp = DM_trade[key].copy() 
 
@@ -705,7 +723,7 @@ for key in keys:
     DM_trade_net_share[key] = dm_temp
 
 dm_trade_netshare = DM_trade_net_share["domapp"].copy()
-keys = ['tra-veh', 'pack', 'pack-alu', 'pipe', 'tra-infra', 'bld-floor']
+keys = ['tra-veh', 'pack', 'pack-alu', 'pipe', 'tra-infra', 'bld-floor','fertilizer']
 for key in keys:
     dm_trade_netshare.append(DM_trade_net_share[key], "Categories1")
 dm_trade_netshare.sort("Categories1")

@@ -20,7 +20,7 @@ countries = ['Austria','Belgium','Bulgaria','Croatia','Cyprus','Czech Republic',
              'Romania','Slovakia','Slovenia','Spain','Sweden','United Kingdom']
 years = list(range(1990,2023+1,1))
 years = years + list(range(2025, 2050+1, 5))
-variabs = ['aluminium-prim', 'aluminium-sec',
+variabs = ['aluminium-prim', 'aluminium-sec', 'ammonia-tech',
            'cement-dry-kiln', 'cement-geopolym', 'cement-sec-post-consumer', 'cement-wet-kiln', 
            'chem-chem-tech', 'chem-sec', 
            'copper-sec', 'copper-tech', 'fbt-tech', 'glass-glass', 

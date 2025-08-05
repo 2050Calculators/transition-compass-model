@@ -213,8 +213,8 @@ def make_dm(df):
     # check
     # dm.filter({"Country" : ["EU27"]}).flatten().flatten().datamatrix_plot()
 
-    # drop ammonia
-    dm.drop("Categories2", ["ammonia"])
+    # # drop ammonia
+    # dm.drop("Categories2", ["ammonia"])
     
     # dm units
     dm.units["waste-material-recovery"] = "%"
