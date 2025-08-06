@@ -667,16 +667,19 @@ class DataMatrix:
             col_in = [col_in]
             col_out = [col_out]
         for i in range(len(col_in)):
-            # Rename column labels
-            ci = self.idx[col_in[i]]
-            self.col_labels[dim][ci] = col_out[i]
-            # Rename key for units
-            if dim == "Variables":
-                self.units[col_out[i]] = self.units[col_in[i]]
-                self.units.pop(col_in[i])
-            # Rename idx
-            self.idx[col_out[i]] = self.idx[col_in[i]]
-            self.idx.pop(col_in[i])
+            if col_in[i] != col_out[i]:
+                # Rename column labels
+                ci = self.idx[col_in[i]]
+                self.col_labels[dim][ci] = col_out[i]
+                # Rename key for units
+                if dim == "Variables":
+                    self.units[col_out[i]] = self.units[col_in[i]]
+                    self.units.pop(col_in[i])
+                # Rename idx
+                self.idx[col_out[i]] = self.idx[col_in[i]]
+                self.idx.pop(col_in[i])
+            else:
+                continue
 
         return
 
