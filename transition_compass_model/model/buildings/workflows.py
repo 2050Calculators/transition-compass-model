@@ -470,12 +470,8 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
   dm_fuel.group_all('Categories1', inplace=True)
   dm_fuel.filter({'Variables': ['bld_energy-demand_heating', 'bld_heating']})
   dm_fuel.add(np.nan, dummy=True, dim='Categories1', col_label='ambient-heat')
-  dm_fuel[:, :, 'bld_energy-demand_heating', 'ambient-heat'] = dm_fuel[:, :,
-                                                               'bld_heating',
-                                                               'heat-pump'] \
-                                                               - dm_fuel[:, :,
-                                                                 'bld_energy-demand_heating',
-                                                                 'heat-pump']
+  dm_fuel[:, :, 'bld_energy-demand_heating', 'ambient-heat'] \
+    = dm_fuel[:, :,'bld_heating', 'heat-pump'] - dm_fuel[:, :, 'bld_energy-demand_heating', 'heat-pump']
 
   # Heating demand by type of building
   dm_class = dm_floor_area.group_all('Categories1', inplace=False)
@@ -496,10 +492,7 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
      'Categories1': ['electricity', 'heat-pump']}, inplace=True)
 
   DM_energy_out = {'TPE': {'energy-emissions-by-class': dm_class,
-                           'energy-demand-heating': dm_fuel.filter({
-                                                                     'Variables': [
-                                                                       'bld_energy-demand_heating',
-                                                                       'bld_heating']}),
+                           'energy-demand-heating': dm_fuel.filter({'Variables': ['bld_energy-demand_heating', 'bld_heating']}),
                            'energy-demand-cooling': dm_fuel.filter(
                              {'Variables': ['bld_energy-demand_cooling'],
                               'Categories1': ['heat-pump']}),
@@ -997,3 +990,98 @@ def bld_emissions_appliances_workflow(DM_cooking_cooling, dm_hot_water,
   DM_emissions_appliances_out = {'emissions': dm_em_appliances}
 
   return DM_emissions_appliances_out
+
+def compute_hw_tech_fts_based_on_heat_tech(dm_heating, dm_hw_tech, years_ots, years_fts):
+  dm_heat_tech  = dm_heating.filter({'Variables': ['bld_heating'],
+                                     'Categories1': dm_hw_tech.col_labels['Categories1']})
+  dm_heat_tech.normalise(dim='Categories1')
+
+  dm_heat_tech.append(dm_hw_tech, dim='Variables')
+
+  # Normalise hw and heat tech so that are comparable in 2023
+  dm_heat_tech_norm = dm_heat_tech.copy()
+  baseyear = years_ots[-1]
+  dm_heat_tech_norm[:, :, :, :] = (dm_heat_tech_norm[:, :, :, :]
+                                  / dm_heat_tech_norm[:, baseyear, np.newaxis, :, :])
+
+  # Normalised hot-water fts trends matchning heating trends
+  idx = dm_heat_tech_norm.idx
+  dm_heat_tech_norm[:, idx[years_fts[0]]:, 'bld_hw_tech-mix', :] \
+    = dm_heat_tech_norm[:, idx[years_fts[0]]:, 'bld_heating', :]
+
+  # Return to actual values
+  dm_heat_tech[:, idx[years_fts[0]]:, 'bld_hw_tech-mix', :] \
+    = (dm_heat_tech_norm[:, idx[years_fts[0]]:, 'bld_hw_tech-mix', :]
+       * dm_heat_tech[:, baseyear, np.newaxis, 'bld_hw_tech-mix', :])
+
+  dm_heat_tech.normalise('Categories1', inplace=True)
+  dm_heat_tech.filter({'Variables': ['bld_hw_tech-mix']}, inplace=True)
+
+  return dm_heat_tech
+
+
+def compute_hw_eff_fts_based_on_heat_eff(dm_heating, dm_hw_eff,  years_ots, years_fts):
+  # Hot water efficiency fts scenario is created based on the heating efficiency fts
+
+  # Compute heat efficiency
+  dm_heating.operation('bld_heating', '/', 'bld_energy-demand_heating',
+                       out_col='bld_heating-efficiency', unit='%')
+
+  dm_heat_eff = dm_heating.filter({'Variables': ['bld_heating-efficiency'],
+                                   'Categories1': dm_hw_eff.col_labels[
+                                     'Categories1']})
+
+  dm_heat_eff.append(dm_hw_eff, dim='Variables')
+
+  # Normalise hw and heat efficiency so that the are comparable in 2023
+  dm_heat_eff_norm = dm_heat_eff.copy()
+  baseyear = years_ots[-1]
+  dm_heat_eff_norm[:, :, :, :] = (dm_heat_eff_norm[:, :, :, :]
+                                  / dm_heat_eff_norm[:, baseyear, np.newaxis, :, :])
+
+  # Normalised hot-water fts trends matchning heating trends
+  idx = dm_heat_eff_norm.idx
+  dm_heat_eff_norm[:, idx[years_fts[0]]:, 'bld_hot-water_efficiency', :] \
+    = dm_heat_eff_norm[:, idx[years_fts[0]]:, 'bld_heating-efficiency', :]
+
+  dm_heat_eff.filter({'Variables': ['bld_hot-water_efficiency']}, inplace=True)
+
+  # Return to actual values
+  dm_heat_eff[:, idx[years_fts[0]]:, 'bld_hot-water_efficiency', :] \
+    = (dm_heat_eff_norm[:, idx[years_fts[0]]:, 'bld_hot-water_efficiency', :]
+       * dm_heat_eff[:, baseyear, np.newaxis, 'bld_hot-water_efficiency', :])
+
+  # Efficiency can not be above 0.98 (except for electricity and heat-pump)
+  standard_cat = [cat for cat in dm_heat_eff.col_labels['Categories1'] if
+                  ('heat-pump' not in cat) and ('electricity' not in cat)]
+  dm_heat_eff_std = dm_heat_eff.filter({'Categories1': standard_cat})
+  dm_heat_eff.drop(col_label=standard_cat, dim='Categories1')
+  dm_heat_eff_std.array = np.minimum(dm_heat_eff_std.array, 0.98)
+  dm_heat_eff.append(dm_heat_eff_std, dim='Categories1')
+
+  dm_heat_eff.sort('Categories1')
+
+  return dm_heat_eff
+
+def bld_hotwater_workflow(DM_hotwater, dm_heating, dm_lfs, years_ots, years_fts):
+
+  dm_hw_eff = DM_hotwater['efficiency'].copy()
+  dm_hw_eff = compute_hw_eff_fts_based_on_heat_eff(dm_heating, dm_hw_eff,  years_ots, years_fts)
+
+  dm_hw_tech = DM_hotwater['tech-mix'].copy()
+  dm_hw_tech = compute_hw_tech_fts_based_on_heat_tech(dm_heating, dm_hw_tech, years_ots, years_fts)
+
+  dm_hw_demand = DM_hotwater['demand'].copy()
+
+  arr = (dm_hw_tech[:, :, 'bld_hw_tech-mix', :]
+         * dm_hw_demand[:, :, 'bld_hw_demand', np.newaxis]
+         * dm_lfs[:, :, 'lfs_population_total', np.newaxis])
+  dm_hw_tech.add(arr, dim='Variables', col_label='bld_hw_useful-energy', unit='MWh')
+  dm_hw_tech.change_unit('bld_hw_useful-energy', old_unit='MWh', new_unit='TWh', factor=1e-6)
+
+  dm_hw_tech.append(dm_hw_eff, dim='Variables')
+  dm_hw_tech.operation('bld_hw_useful-energy', '/', 'bld_hot-water_efficiency', out_col='bld_hot-water_energy-demand', unit='TWh')
+
+  DM_hotwater_out = {'power': dm_hw_tech}
+
+  return DM_hotwater_out

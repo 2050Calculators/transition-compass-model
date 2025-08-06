@@ -37,7 +37,7 @@ def read_data(DM_buildings, lever_setting):
                      'household-size': DM_ots_fts['floor-intensity'].filter({'Variables':['lfs_household-size']})}
 
     DM_hotwater = {'demand': DM_buildings['fxa']['hot-water']['hw-energy-demand'],
-                   'efficiency': DM_buildings['fxa']['hot-water']['hw-energy-demand'],
+                   'efficiency': DM_buildings['fxa']['hot-water']['hw-efficiency'],
                    'tech-mix': DM_buildings['fxa']['hot-water']['hw-tech-mix']}
 
     DM_energy = {'heating-efficiency': DM_ots_fts['heating-efficiency'],
@@ -100,7 +100,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     # Total Energy demand, Renovation and Construction per depth, GHG emissions (for Space Heating)
     DM_energy_out = wkf.bld_energy_workflow(DM_energy, dm_clm, DM_floor_out['wf-energy'], cdm_const)
 
-    #DM_hotwater_out = wkf.bld_hotwater_workflow(DM_hotwater, DM_energy_out, dm_lfs)
+    DM_hotwater_out = wkf.bld_hotwater_workflow(DM_hotwater, DM_energy_out['TPE']['energy-demand-heating'].copy(), dm_lfs, years_ots, years_fts)
 
     # TPE
     results_run, KPI = inter.bld_TPE_interface(DM_energy_out['TPE'], DM_floor_out['TPE'])
