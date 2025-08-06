@@ -3,7 +3,7 @@ import numpy as np
 import pickle
 
 from model.common.auxiliary_functions import linear_fitting, my_pickle_dump, \
-  add_dummy_country_to_DM
+  add_dummy_country_to_DM, dm_add_missing_variables
 from _database.pre_processing.api_routines_CH import get_data_api_CH
 from model.common.data_matrix_class import DataMatrix
 
@@ -153,7 +153,17 @@ def run(dm_pop, DM_renov, DM_heating, DM_other, DM_appliances, DM_hotwater, year
   # !FIXME: link hot water technology to space-heating - in module ?
   dm_hw_demand = DM_hotwater['hw-energy-demand']
   linear_fitting(dm_hw_demand, years_fts)
-  DM_buildings['fxa']['hot-water'] = dm_hw_demand.copy()
+  dm_hw_efficiency =  DM_hotwater['hw-efficiency']
+  dm_add_missing_variables(dm_hw_efficiency, {'Years': years_fts}, fill_nans=False)
+  dm_hw_tech_mix = DM_hotwater['hw-tech-mix'].copy()
+  dm_add_missing_variables(dm_hw_tech_mix, {'Years': years_fts}, fill_nans=False)
+
+  DM_buildings['fxa']['hot-water'] = \
+    {
+      'hw-energy-demand': dm_hw_demand.copy(),
+      'hw-efficiency':  dm_hw_efficiency.copy(),
+      'hw-tech-mix': dm_hw_tech_mix.copy()
+     }
   #
   #DM_buildings['fxa']['hot-water'] =
 
@@ -217,16 +227,17 @@ def run(dm_pop, DM_renov, DM_heating, DM_other, DM_appliances, DM_hotwater, year
   dm_heating_cat.sort('Categories3')
   DM_buildings['ots']['heating-technology-fuel'][
     'bld_heating-technology'] = dm_heating_cat.copy()
-  DM_buildings['ots']['heating-technology-fuel'][
-    'bld_hot-water-technology'] = DM_hotwater['hw-tech-mix'].copy()
 
   # SECTION: ots - heating-efficiency
-  DM_buildings['ots']['heating-efficiency'] = dict()
-  DM_buildings['ots']['heating-efficiency']['bld_heating-efficiency'] \
+  DM_buildings['ots']['heating-efficiency'] \
     = dm_heating_eff_cat.copy()
-  DM_buildings['ots']['heating-efficiency']['bld_hot-water-efficiency'] \
-    = DM_hotwater['hw-efficiency'].copy()
 
-  #my_pickle_dump(DM_buildings, file)
+
+  my_pickle_dump(DM_buildings, file)
+  #add_dummy_country_to_DM(DM_buildings, new_country='EU27', ref_country='Switzerland')
+  #DM_bld['fxa']['hot-water'] = DM_buildings['fxa']['hot-water']
+
+  #with open(file, 'wb') as handle:
+  #  pickle.dump(DM_bld, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
   return DM_buildings
