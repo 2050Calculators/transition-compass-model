@@ -3,7 +3,7 @@ import numpy as np
 import pickle
 
 from model.common.auxiliary_functions import linear_fitting, my_pickle_dump, \
-  add_dummy_country_to_DM, dm_add_missing_variables
+  add_dummy_country_to_DM, dm_add_missing_variables, sort_pickle
 from _database.pre_processing.api_routines_CH import get_data_api_CH
 from model.common.data_matrix_class import DataMatrix
 
@@ -98,7 +98,15 @@ def compute_building_mix(dm_all):
     return dm_building_mix
 
 
-def run(dm_pop, DM_renov, DM_heating, DM_other, DM_appliances, DM_hotwater, years_ots, years_fts):
+def run(dm_pop, DM_all, years_ots, years_fts):
+
+  DM_renov = DM_all['floor_renov']
+  DM_heating = DM_all['space-heat']
+  DM_other = DM_all['misc']
+  DM_appliances = DM_all['appliances']
+  DM_hotwater = DM_all['hot-water']
+  dm_light = DM_all['lighting'].copy()
+  DM_services = DM_all['services']
 
   this_dir = os.path.dirname(os.path.abspath(__file__))
   # !FIXME: use the actual values and not the calibration factor
@@ -150,7 +158,6 @@ def run(dm_pop, DM_renov, DM_heating, DM_other, DM_appliances, DM_hotwater, year
 
   # SECTION: fxa - hot water demand
   # Determine fts years for hot water variables
-  # !FIXME: link hot water technology to space-heating - in module ?
   dm_hw_demand = DM_hotwater['hw-energy-demand']
   linear_fitting(dm_hw_demand, years_fts)
   dm_hw_efficiency =  DM_hotwater['hw-efficiency']
@@ -164,8 +171,27 @@ def run(dm_pop, DM_renov, DM_heating, DM_other, DM_appliances, DM_hotwater, year
       'hw-efficiency':  dm_hw_efficiency.copy(),
       'hw-tech-mix': dm_hw_tech_mix.copy()
      }
-  #
-  #DM_buildings['fxa']['hot-water'] =
+
+  # SECTION: fxa - lighting
+  # According to EP2050 "Consommation d’énergie finale en fonction de l’application"
+  # https://www.uvek-gis.admin.ch/BFE/storymaps/AP_Energieperspektiven/index.html?lang=de&selectedSzenario=ZB&selectedSektor=HH&selectedDimension=ET&selectedFly=01
+  fts_light = {2025: 2.5/3.6, 2030: 2.1/3.6, 2035: 2/3.6, 2040: 1.9/3.6, 2045: 1.8/3.6, 2050: 1.7/3.6}
+  arr = (dm_light[:, :, 'bld_residential-lighting']
+         / dm_light['Switzerland', np.newaxis, :, 'bld_residential-lighting'])
+  shares = arr.mean(axis=1)
+
+  dm_add_missing_variables(dm_light, {'Years': years_fts}, fill_nans=False)
+  for yr, value in fts_light.items():
+    dm_light['Switzerland', yr, 'bld_residential-lighting'] = value
+    dm_light[:, yr, 'bld_residential-lighting'] = shares * dm_light['Switzerland', np.newaxis, yr, 'bld_residential-lighting']
+
+  DM_buildings['fxa']['lighting'] = dm_light
+
+  # SECTION: fxa - services
+  linear_fitting(DM_services['services_demand'], years_fts, based_on=list(range(2012, 2023)))
+  dm_add_missing_variables(DM_services['services_tech-mix'], {'Years': years_fts}, fill_nans=False)
+  dm_add_missing_variables(DM_services['services_efficiencies'], {'Years': years_fts}, fill_nans=False)
+  DM_buildings['fxa']['services'] = DM_services
 
   # add_dummy_country_to_DM(DM_appliances, 'EU27', 'Switzerland')
   #file = os.path.join(this_dir , '../../../../data/datamatrix/buildings.pickle')
@@ -234,8 +260,11 @@ def run(dm_pop, DM_renov, DM_heating, DM_other, DM_appliances, DM_hotwater, year
 
 
   my_pickle_dump(DM_buildings, file)
+  sort_pickle(file)
+
   #add_dummy_country_to_DM(DM_buildings, new_country='EU27', ref_country='Switzerland')
-  #DM_bld['fxa']['hot-water'] = DM_buildings['fxa']['hot-water']
+  #DM_bld['fxa']['services'] = DM_buildings['fxa']['services']
+  #DM_bld['fxa']['lighting'] = DM_buildings['fxa']['lighting']
 
   #with open(file, 'wb') as handle:
   #  pickle.dump(DM_bld, handle, protocol=pickle.HIGHEST_PROTOCOL)
