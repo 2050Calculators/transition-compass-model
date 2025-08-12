@@ -137,6 +137,7 @@ def bld_TPE_interface(DM_energy, DM_area):
 
     # Energy demand in TWh
     dm_tot_enr = DM_energy['energy-demand-heating'].filter({'Variables': ['bld_energy-demand_heating']})
+    dm_tot_enr.drop('Categories1', ['solar', 'ambient-heat'])
     dm_tot_enr.group_all('Categories1', inplace=True)
     value = dm_tot_enr[0, yr, 'bld_energy-demand_heating']
     KPI.append({'title': 'Energy Demand for Space Heating', 'value': value, 'unit': 'TWh'})
@@ -149,7 +150,7 @@ def bld_TPE_interface(DM_energy, DM_area):
 
     # Unrenovated buildings
     dm_tot_area = DM_area['floor-area-cumulated'].groupby({'bld_tot-area': '.*'}, dim='Variables', regex=True, inplace=False)
-    value = DM_area['floor-area-cumulated'][0, yr, 'bld_floor-area_unrenovated-cumulated'] / dm_tot_area[0, yr, 'bld_tot-area']
+    value = DM_area['floor-area-cumulated'][0, yr, 'bld_floor-area_unrenovated-cumulated'] / dm_tot_area[0, yr, 'bld_tot-area']*100
     KPI.append({'title': 'Unrenovated Envelope Share', 'value': value, 'unit': '%'})
 
     return dm_tpe, KPI
