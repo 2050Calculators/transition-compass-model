@@ -296,6 +296,8 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots,
   DM_industry["electronics"] = dm_elec.copy()
 
   dm_stock = dm_bld_tot.filter({'Variables': ['bld_floor-area_stock']})
+  dm_stock.array = np.maximum(dm_stock.array, 0)
+
   DM_floor_out = \
     {'TPE': {'floor-area-cumulated': dm_cumulated,
              'floor-area-cat': dm_stock.group_all('Categories1', inplace=False),
