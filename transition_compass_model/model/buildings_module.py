@@ -40,6 +40,10 @@ def read_data(DM_buildings, lever_setting):
                    'efficiency': DM_buildings['fxa']['hot-water']['hw-efficiency'],
                    'tech-mix': DM_buildings['fxa']['hot-water']['hw-tech-mix']}
 
+    DM_services = DM_buildings['fxa']['services']
+
+    dm_light = DM_buildings['fxa']['lighting']
+
     DM_energy = {'heating-efficiency': DM_ots_fts['heating-efficiency'],
                  'heating-technology': DM_ots_fts['heating-technology-fuel']['bld_heating-technology'],
                  'heatcool-behaviour': DM_ots_fts['heatcool-behaviour'],
@@ -48,16 +52,17 @@ def read_data(DM_buildings, lever_setting):
                  "u-value" :  DM_buildings['fxa']["u-value"],
                  "surface-to-floorarea" : DM_buildings['fxa']["surface-to-floorarea"]}
 
+
     cdm_const = DM_buildings['constant']
 
-    return DM_floor_area, DM_appliances, DM_energy, DM_hotwater, cdm_const
+    return DM_floor_area, DM_appliances, DM_energy, DM_hotwater, DM_services, dm_light, cdm_const
 
 
 
 def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     # Read data into workflow datamatrix dictionaries
-    DM_floor_area, DM_appliances, DM_energy, DM_hotwater, cdm_const = read_data(DM_input, lever_setting)
+    DM_floor_area, DM_appliances, DM_energy, DM_hotwater, DM_services, dm_light, cdm_const = read_data(DM_input, lever_setting)
     years_ots = create_years_list(years_setting[0], years_setting[1], 1)
     years_fts = create_years_list(years_setting[2], years_setting[3], 5)
 
@@ -102,6 +107,10 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
 
     DM_hotwater_out = wkf.bld_hotwater_workflow(DM_hotwater, DM_energy_out['TPE']['energy-demand-heating'].copy(), dm_lfs, years_ots, years_fts)
 
+    DM_services_out = wkf.bld_services_workflow(DM_services, DM_energy_out['TPE']['energy-demand-heating'].copy(), years_ots, years_fts)
+
+    DM_light_out = {'TPE': dm_light.copy(), 'energy': dm_light.copy()}
+    
     # TPE
     results_run, KPI = inter.bld_TPE_interface(DM_energy_out['TPE'], DM_floor_out['TPE'])
 
