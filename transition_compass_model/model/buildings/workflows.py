@@ -1,6 +1,6 @@
 import numpy as np
 from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import create_years_list, dm_add_missing_variables
+from model.common.auxiliary_functions import create_years_list, dm_add_missing_variables, moving_average
 
 def compute_stock_fts(DM, years_ots, years_fts):
   dm = DM['ots'].copy()
@@ -991,65 +991,81 @@ def bld_emissions_appliances_workflow(DM_cooking_cooling, dm_hot_water,
 
   return DM_emissions_appliances_out
 
-def compute_hw_tech_fts_based_on_heat_tech(dm_heating, dm_hw_tech, years_ots, years_fts):
+def compute_tech_fts_based_on_heat_tech(dm_heating, dm_hw_tech, years_ots, years_fts, var_name='bld_hw_tech-mix'):
   dm_heat_tech  = dm_heating.filter({'Variables': ['bld_heating'],
                                      'Categories1': dm_hw_tech.col_labels['Categories1']})
+  window_size = 3  # Change window size to control the smoothing effect
+  data_smooth = moving_average(dm_heat_tech.array, window_size,
+                               axis=dm_heat_tech.dim_labels.index('Years'))
+  dm_heat_tech.array[:, 1:-1, ...] = data_smooth
+
   dm_heat_tech.normalise(dim='Categories1')
 
-  dm_heat_tech.append(dm_hw_tech, dim='Variables')
+  dm_tech = dm_hw_tech.copy()
+  window_size = 3  # Change window size to control the smoothing effect
+  data_smooth = moving_average(dm_tech.array, window_size,
+                               axis=dm_tech.dim_labels.index('Years'))
+  dm_tech.array[:, 1:-1, ...] = data_smooth
+
+  dm_heat_tech.append(dm_tech, dim='Variables')
 
   # Normalise hw and heat tech so that are comparable in 2023
   dm_heat_tech_norm = dm_heat_tech.copy()
-  baseyear = years_ots[-1]
+  baseyear = years_ots[-2]
   dm_heat_tech_norm[:, :, :, :] = (dm_heat_tech_norm[:, :, :, :]
                                   / dm_heat_tech_norm[:, baseyear, np.newaxis, :, :])
 
   # Normalised hot-water fts trends matchning heating trends
   idx = dm_heat_tech_norm.idx
-  dm_heat_tech_norm[:, idx[years_fts[0]]:, 'bld_hw_tech-mix', :] \
+  dm_heat_tech_norm[:, idx[years_fts[0]]:, var_name, :] \
     = dm_heat_tech_norm[:, idx[years_fts[0]]:, 'bld_heating', :]
 
   # Return to actual values
-  dm_heat_tech[:, idx[years_fts[0]]:, 'bld_hw_tech-mix', :] \
-    = (dm_heat_tech_norm[:, idx[years_fts[0]]:, 'bld_hw_tech-mix', :]
-       * dm_heat_tech[:, baseyear, np.newaxis, 'bld_hw_tech-mix', :])
+  dm_heat_tech[:, idx[years_fts[0]]:, var_name, :] \
+    = (dm_heat_tech_norm[:, idx[years_fts[0]]:, var_name, :]
+       * dm_heat_tech[:, baseyear, np.newaxis, var_name, :])
 
-  dm_heat_tech.normalise('Categories1', inplace=True)
-  dm_heat_tech.filter({'Variables': ['bld_hw_tech-mix']}, inplace=True)
+  assert dm_hw_tech.col_labels['Categories1'] == dm_heat_tech.col_labels['Categories1']
+  dm_hw_tech[:, idx[years_fts[0]]:, var_name, :] = dm_heat_tech[:, idx[years_fts[0]]:, var_name, :]
 
-  return dm_heat_tech
+  dm_hw_tech.normalise('Categories1', inplace=True)
+  dm_hw_tech.filter({'Variables': [var_name]}, inplace=True)
+
+  return dm_hw_tech
 
 
-def compute_hw_eff_fts_based_on_heat_eff(dm_heating, dm_hw_eff,  years_ots, years_fts):
+def compute_eff_fts_based_on_heat_eff(dm_heating, dm_hw_eff,  years_ots, years_fts, var_name='bld_hot-water_efficiency'):
   # Hot water efficiency fts scenario is created based on the heating efficiency fts
 
   # Compute heat efficiency
   dm_heating.operation('bld_heating', '/', 'bld_energy-demand_heating',
                        out_col='bld_heating-efficiency', unit='%')
 
+  matching_cat = set(dm_hw_eff.col_labels['Categories1']).intersection(set(dm_heating.col_labels['Categories1']))
+
   dm_heat_eff = dm_heating.filter({'Variables': ['bld_heating-efficiency'],
-                                   'Categories1': dm_hw_eff.col_labels[
-                                     'Categories1']})
+                                   'Categories1': list(matching_cat)})
+  dm_hw_eff.filter({'Categories1': list(matching_cat)}, inplace=True)
 
   dm_heat_eff.append(dm_hw_eff, dim='Variables')
 
-  # Normalise hw and heat efficiency so that the are comparable in 2023
+  # Normalise hw and heat efficiency so that they are comparable in 2023
   dm_heat_eff_norm = dm_heat_eff.copy()
   baseyear = years_ots[-1]
   dm_heat_eff_norm[:, :, :, :] = (dm_heat_eff_norm[:, :, :, :]
                                   / dm_heat_eff_norm[:, baseyear, np.newaxis, :, :])
 
-  # Normalised hot-water fts trends matchning heating trends
+  # Normalised hot-water fts trends matching heating trends
   idx = dm_heat_eff_norm.idx
-  dm_heat_eff_norm[:, idx[years_fts[0]]:, 'bld_hot-water_efficiency', :] \
+  dm_heat_eff_norm[:, idx[years_fts[0]]:, var_name, :] \
     = dm_heat_eff_norm[:, idx[years_fts[0]]:, 'bld_heating-efficiency', :]
 
-  dm_heat_eff.filter({'Variables': ['bld_hot-water_efficiency']}, inplace=True)
+  dm_heat_eff.filter({'Variables': [var_name]}, inplace=True)
 
   # Return to actual values
-  dm_heat_eff[:, idx[years_fts[0]]:, 'bld_hot-water_efficiency', :] \
-    = (dm_heat_eff_norm[:, idx[years_fts[0]]:, 'bld_hot-water_efficiency', :]
-       * dm_heat_eff[:, baseyear, np.newaxis, 'bld_hot-water_efficiency', :])
+  dm_heat_eff[:, idx[years_fts[0]]:, var_name, :] \
+    = (dm_heat_eff_norm[:, idx[years_fts[0]]:, var_name, :]
+       * dm_heat_eff[:, baseyear, np.newaxis, var_name, :])
 
   # Efficiency can not be above 0.98 (except for electricity and heat-pump)
   standard_cat = [cat for cat in dm_heat_eff.col_labels['Categories1'] if
@@ -1066,10 +1082,10 @@ def compute_hw_eff_fts_based_on_heat_eff(dm_heating, dm_hw_eff,  years_ots, year
 def bld_hotwater_workflow(DM_hotwater, dm_heating, dm_lfs, years_ots, years_fts):
 
   dm_hw_eff = DM_hotwater['efficiency'].copy()
-  dm_hw_eff = compute_hw_eff_fts_based_on_heat_eff(dm_heating, dm_hw_eff,  years_ots, years_fts)
+  dm_hw_eff = compute_eff_fts_based_on_heat_eff(dm_heating, dm_hw_eff,  years_ots, years_fts)
 
   dm_hw_tech = DM_hotwater['tech-mix'].copy()
-  dm_hw_tech = compute_hw_tech_fts_based_on_heat_tech(dm_heating, dm_hw_tech, years_ots, years_fts)
+  dm_hw_tech = compute_tech_fts_based_on_heat_tech(dm_heating, dm_hw_tech, years_ots, years_fts)
 
   dm_hw_demand = DM_hotwater['demand'].copy()
 
@@ -1085,3 +1101,55 @@ def bld_hotwater_workflow(DM_hotwater, dm_heating, dm_lfs, years_ots, years_fts)
   DM_hotwater_out = {'power': dm_hw_tech}
 
   return DM_hotwater_out
+
+
+def bld_services_workflow(DM_services, dm_heating, years_ots, years_fts):
+
+  dm_eff = DM_services['services_efficiencies'].copy()
+  dm_eff = compute_eff_fts_based_on_heat_eff(dm_heating, dm_eff,  years_ots, years_fts, var_name='bld_services_efficiency')
+  dm_eff.fill_nans('Years')
+
+  # Forecast how water tech-mix based on household heating
+  dm_srv_hw_tech = DM_services['services_tech-mix'].filter({'Categories1': ['hot-water']})
+  dm_srv_hw_tech.group_all('Categories1', inplace=True)
+  matching_cat = set(dm_srv_hw_tech.col_labels['Categories1']).intersection(set(dm_heating.col_labels['Categories1']))
+  dm_srv_hw_tech.filter({'Categories1': list(matching_cat)}, inplace=True)
+  dm_srv_hw_tech = compute_tech_fts_based_on_heat_tech(dm_heating, dm_srv_hw_tech, years_ots, years_fts, var_name='bld_services_tech-mix')
+  dm_srv_hw_tech.rename_col('bld_services_tech-mix', 'bld_services_tech-mix_hot-water', dim='Variables')
+  dm_srv_hw_tech.deepen(based_on='Variables')
+  dm_srv_hw_tech.switch_categories_order()
+
+  # Forecast space heating services tech-mix based on household heating
+  dm_srv_sh_tech = DM_services['services_tech-mix'].filter({'Categories1': ['space-heating']})
+  dm_srv_sh_tech.group_all('Categories1', inplace=True)
+  matching_cat = set(dm_srv_sh_tech.col_labels['Categories1']).intersection(set(dm_heating.col_labels['Categories1']))
+  dm_srv_sh_tech.filter({'Categories1': list(matching_cat)}, inplace=True)
+  dm_srv_sh_tech = compute_tech_fts_based_on_heat_tech(dm_heating, dm_srv_sh_tech, years_ots, years_fts, var_name='bld_services_tech-mix')
+  dm_srv_sh_tech.rename_col('bld_services_tech-mix', 'bld_services_tech-mix_space-heating', dim='Variables')
+  dm_srv_sh_tech.deepen(based_on='Variables')
+  dm_srv_sh_tech.switch_categories_order()
+
+  dm_elec = DM_services['services_tech-mix'].filter({'Categories1': ['elec', 'lighting']})
+  dm_elec.fill_nans('Years')
+
+  dm_tech_mix = dm_elec.copy()
+  dm_tech_mix.filter({'Categories2': dm_srv_sh_tech.col_labels['Categories2']}, inplace=True)
+  dm_tech_mix.append(dm_srv_sh_tech, dim='Categories1')
+  dm_tech_mix.append(dm_srv_hw_tech, dim='Categories1')
+  dm_tech_mix.sort('Categories1')
+
+  dm_demand = DM_services['services_demand']
+  dm_demand.sort('Categories1')
+
+  arr_energy_consumption = (dm_demand[:, :, 'bld_services_useful-energy', :, np.newaxis]
+                            * dm_tech_mix[:, :, 'bld_services_tech-mix', :, :]
+                            / dm_eff[:, :, 'bld_services_efficiency', np.newaxis, :])
+
+  dm_tech_mix.add(arr_energy_consumption, dim='Variables', col_label='bld_services_energy-consumption', unit='TWh')
+
+  DM_services_out = {
+    'TPE' : dm_tech_mix.filter({'Variables': ['bld_services_energy-consumption']}),
+    'energy': dm_demand.filter({'Categories1': ['elec', 'lighting'], 'Categories2': ['electricity']})
+                     }
+
+  return DM_services_out
