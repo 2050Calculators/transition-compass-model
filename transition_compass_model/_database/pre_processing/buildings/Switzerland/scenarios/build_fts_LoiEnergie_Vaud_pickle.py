@@ -1,7 +1,7 @@
 import numpy as np
 import pickle
 
-from model.common.auxiliary_functions import my_pickle_dump, create_years_list
+from model.common.auxiliary_functions import my_pickle_dump, create_years_list, sort_pickle
 from _database.pre_processing.api_routines_CH import get_data_api_CH
 from _database.pre_processing.buildings.Switzerland.processors.floor_area_pipeline_CH import load_pop
 
@@ -145,6 +145,7 @@ def run(DM_buildings, dm_pop, global_var, country_list, lev=4):
   file = os.path.join(this_dir, '../../../../data/datamatrix/buildings.pickle')
 
   my_pickle_dump(DM_buildings, file)
+  sort_pickle(file)
 
   return DM_buildings
 
@@ -182,3 +183,4 @@ if __name__ == "__main__":
   dm_pop = load_pop(filepath, country_list, years_ots)
 
   DM_buildings = run(DM_buildings, dm_pop, global_var, country_list, lev=4)
+

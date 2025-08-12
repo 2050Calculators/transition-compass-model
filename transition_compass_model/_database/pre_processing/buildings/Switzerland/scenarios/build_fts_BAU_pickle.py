@@ -1,7 +1,8 @@
 import numpy as np
 import os
 
-from model.common.auxiliary_functions import linear_fitting, create_years_list, my_pickle_dump, filter_DM
+from model.common.auxiliary_functions import linear_fitting, create_years_list, \
+  my_pickle_dump, filter_DM, sort_pickle
 
 
 def calculate_heating_eff_fts(dm_heating_eff, years_fts, maximum_eff, fuel_cat='Categories2'):
@@ -148,5 +149,6 @@ def run(DM_buildings, country_list, years_fts):
     DM_buildings['fts']['heating-efficiency']['bld_hot-water-efficiency'][lev] = dm_hw_eff_fts.copy()'''
 
   my_pickle_dump(DM_buildings, file)
+  sort_pickle(file)
 
   return DM_buildings
