@@ -64,7 +64,7 @@ def determine_mapping_dict(cat_list_ref, cat_list_match):
   return mapping_dict, mapping_sectors
 
 
-def map_national_energy_demand_by_sector_to_cantons(dm_energy, dm_employees, mapping_dict, mapping_sectors):
+def map_national_energy_demand_by_sector_to_cantons(dm_energy, dm_employees, mapping_dict, mapping_sectors, years_ots):
 
 
   dm_employees_mapped = dm_employees.groupby(mapping_dict, dim='Categories1', inplace=False)
@@ -190,7 +190,7 @@ def energy_split_from_fuel_to_tech(dm_energy, dm_water_CH, dm_space_heat_CH, dm_
 #####################################
 ##   SERVICES TO ENERGY INTERFACE  ##
 #####################################
-def run(years_ots):
+def run(country_list, years_ots):
 
   this_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -268,7 +268,7 @@ def run(years_ots):
   # energy consumption (heat-pump) = COP * useful energy
 
   # Group employees by sector and canton (dm_employees_mapped)
-  dm_fuels_cantons, dm_employees_mapped = map_national_energy_demand_by_sector_to_cantons(dm_energy, dm_employees, mapping_dict, mapping_sectors)
+  dm_fuels_cantons, dm_employees_mapped = map_national_energy_demand_by_sector_to_cantons(dm_energy, dm_employees, mapping_dict, mapping_sectors, years_ots)
   rename_cantons(dm_fuels_cantons)
 
   # Agiculture demand is << than services, I will not split it here. I do have agriculture data by fuel
@@ -303,6 +303,7 @@ def run(years_ots):
   dm_eff.add(arr_eff_gas, dim='Categories1', col_label='biogas')
   arr_eff_wood = dm_eff[:, :, :, 'wood']
   dm_eff.add(arr_eff_wood, dim='Categories1', col_label='biomass')
+  dm_eff.rename_col('bld_hot-water_efficiency', 'bld_services_efficiency', dim='Variables')
 
   dm_add_missing_variables(dm_eff, {'Categories1': dm_services_fuels_eud_cantons_FSO.col_labels['Categories2']})
   dm_eff.array = np.nan_to_num(x=dm_eff.array, nan=1)
@@ -312,28 +313,40 @@ def run(years_ots):
   dm_demand[:, :, :, :, :] = dm_demand[:, :, :, :, :] * dm_eff[:, :, :, np.newaxis, : ]
 
   dm_tot_demand = dm_demand.group_all('Categories2', inplace=False)
+  dm_tot_demand.rename_col('enr_services-energy-eud', 'bld_services_useful-energy', dim='Variables')
+
   dm_tech_mix = dm_demand.normalise('Categories2', inplace=False, keep_original=False)
 
   # Extrapolate 1990-2000 years
   linear_fitting(dm_tech_mix, years_ots)
   dm_tech_mix.array = np.maximum(dm_tech_mix.array, 0)
   dm_tech_mix.normalise('Categories2')
+  dm_tech_mix.rename_col('enr_services-energy-eud_share', 'bld_services_tech-mix', dim='Variables')
 
   idx = dm_tot_demand.idx
-  dm_tot_demand[:, 0:idx[2001], ...] = np.nan
-  linear_fitting(dm_tot_demand, years_ots)
+  dm_tot_demand[:, 0:idx[2000], ...] = np.nan
+  linear_fitting(dm_tot_demand, years_ots, based_on=create_years_list(2000, 2010, 1))
   dm_tot_demand.array = np.maximum(dm_tot_demand.array, 0)
 
 
+
   #dm_fuels_eud_cantons.flattest().datamatrix_plot({'Country': ['Switzerland']})
-  DM = {'services_demand': dm_tot_demand,
-        'services_tech-mix': dm_tech_mix,
-        'services_efficiencies': dm_efficiency}
+  DM = {'services_demand': dm_tot_demand.filter({'Country': country_list}),
+        'services_tech-mix': dm_tech_mix.filter({'Country': country_list}),
+        'services_efficiencies': dm_eff.filter({'Country': country_list})}
 
   return DM
 
 
 if __name__ == '__main__':
+  cantons_en = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden',
+                'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Geneva',
+                'Glarus', 'Graubünden', 'Jura', 'Lucerne', 'Neuchâtel',
+                'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn',
+                'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud', 'Zug',
+                'Zurich']
+  country_list = cantons_en + ['Switzerland']
+
   years_ots = create_years_list(1990, 2023, 1)
 
-  DM = run(years_ots)
+  DM = run(country_list, years_ots)
