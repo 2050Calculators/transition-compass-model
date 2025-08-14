@@ -6,6 +6,7 @@ def impose_transport_demand(ampl, endyr, share_pop, DM_tra, cntr):
   # Set public transport pkm share
   DM_tra['passenger'].change_unit('tra_passenger_transport-demand',
                                   old_unit='pkm', new_unit='Mpkm', factor=1e-6)
+  DM_tra['passenger'].filter({'Categories2': ['BEV', 'CEV',  'mt']}, inplace=True) # 'PHEV-diesel', 'PHEV-gasoline',
   dm_pass_demand = DM_tra['passenger'].filter(
     {'Years': [endyr], 'Variables': ['tra_passenger_transport-demand']})
   dm_pub_pri = dm_pass_demand.group_all('Categories2', inplace=False)
@@ -19,14 +20,15 @@ def impose_transport_demand(ampl, endyr, share_pop, DM_tra, cntr):
     [dm_pub_pri[cntr, 0, 0, 'public'] + eps])
 
   # Set rail transport in freight share
+  DM_tra['freight'].filter({'Categories2': ['BEV', 'CEV']}, inplace=True) # 'PHEV-diesel', 'PHEV-gasoline'
   dm_freight_demand = DM_tra['freight'].filter(
     {'Years': [endyr], 'Variables': ['tra_freight_transport-demand-tkm']})
   dm_rail_freight = dm_freight_demand.group_all('Categories2', inplace=False)
   dm_rail_freight.normalise('Categories1', inplace=True)
   ampl.getParameter("share_freight_train_min").setValues(
-    [dm_rail_freight[cntr, 0, 0, 'rail'] - eps])
+    [0.99- eps])
   ampl.getParameter("share_freight_train_max").setValues(
-    [dm_rail_freight[cntr, 0, 0, 'rail'] + eps])
+    [1])
 
   # Set total Passenger mobility in pkm
   tot_Mpkm = np.nansum(
@@ -48,62 +50,53 @@ def impose_transport_demand(ampl, endyr, share_pop, DM_tra, cntr):
   # It should be both 2W and LDV according to the Calculator, but energyscope only has LDV
   dm_private = DM_tra['passenger'].filter({'Categories1': ['LDV']})
   dm_private.normalise(dim='Categories2', inplace=True, keep_original=True)
-  dm_private.groupby({'CAR_BEV': ['BEV'], 'CAR_FUEL_CELL': ['FCEV'],
-                      'CAR_DIESEL': ['ICE-diesel'], 'CAR_NG': ['ICE-gas'],
-                      'CAR_GASOLINE': ['ICE-gasoline'],
-                      'CAR_PHEV': ['PHEV-diesel', 'PHEV-gasoline']},
+  dm_private.groupby({'CAR_BEV': ['BEV']},
                      dim='Categories2', inplace=True)
   dm_private.filter_w_regex({'Categories2': 'CAR.*'}, inplace=True)
   dm_private = dm_private.flatten()
   dm_private.rename_col_regex('LDV_', '', dim='Categories1')
-  for cat in dm_private.col_labels['Categories1']:
-    val_perc = dm_private[0, endyr, 'tra_passenger_transport-demand_share', cat]
-    val_abs = dm_private[
-                0, endyr, 'tra_passenger_transport-demand', cat] / share_pop
+  private_mob_tech = list(ampl.get_set("TECHNOLOGIES_OF_END_USES_TYPE").get("MOB_PRIVATE"))
+  for cat in private_mob_tech:
+    if cat in dm_private.col_labels['Categories1']:
+      val_perc = dm_private[0, endyr, 'tra_passenger_transport-demand_share', cat]
+      val_abs = dm_private[
+                  0, endyr, 'tra_passenger_transport-demand', cat] / share_pop
+    else:  # If it is not electricity technology, set shares to 0
+      val_perc = 0
+      val_abs = 0
     ampl.getParameter("fmin_perc").setValues(
-      {cat: max(val_perc * (1 - eps), 0)})
-    ampl.getParameter("fmax_perc").setValues({cat: val_perc * (1 + eps)})
+        {cat: max(val_perc * (1 - eps), 0)})
+    ampl.getParameter("fmax_perc").setValues({cat: min(val_perc * (1 + eps), 1)})
     ampl.getParameter("f_min").setValues({cat: 0})
     ampl.getParameter("f_max").setValues({cat: val_abs * (1 + eps)})
-
-  # ampl.getParameter('fmin_perc').get('CAR_FUEL_CELL')
-  ampl.getParameter("fmin_perc").setValues({'CAR_HEV': 0})
-  ampl.getParameter("fmax_perc").setValues({'CAR_HEV': 1})
-  ampl.getParameter("f_min").setValues({'CAR_HEV': 0})
-  ampl.getParameter("f_max").setValues({'CAR_HEV': tot_Mpkm / share_pop})
 
   # Passenger public technology share
   dm_public = DM_tra['passenger'].filter(
     {'Categories1': ['metrotram', 'bus', 'rail']})
   dm_public = dm_public.flatten()
   dm_public.groupby(
-    {'BUS_COACH_DIESEL': ['bus_ICE-diesel'], 'TRAIN_PUB': ['rail_CEV'],
+    {'TRAIN_PUB': ['rail_CEV'],
      'TRAMWAY_TROLLEY': ['metrotram_mt', 'bus_CEV']}, dim='Categories1',
     inplace=True)
   dm_public.normalise('Categories1', inplace=True, keep_original=True)
-  for cat in ['BUS_COACH_DIESEL', 'TRAIN_PUB', 'TRAMWAY_TROLLEY']:
-    val_perc = dm_public[0, endyr, 'tra_passenger_transport-demand_share', cat]
-    val_abs = dm_public[
-                0, endyr, 'tra_passenger_transport-demand', cat] / share_pop
-    ampl.getParameter("fmin_perc").setValues(
-      {cat: max(val_perc * (1 - eps), 0)})
-    ampl.getParameter("fmax_perc").setValues({cat: val_perc * (1 + eps)})
+  public_mob_tech = list(ampl.get_set("TECHNOLOGIES_OF_END_USES_TYPE").get("MOB_PUBLIC"))
+  for cat in public_mob_tech:
+    if cat in ['TRAIN_PUB', 'TRAMWAY_TROLLEY']:
+      val_perc = dm_public[0, endyr, 'tra_passenger_transport-demand_share', cat]
+      val_abs = dm_public[
+                  0, endyr, 'tra_passenger_transport-demand', cat] / share_pop
+    else:
+      val_perc = 0
+      val_abs = 0
+    ampl.getParameter("fmin_perc").setValues({cat: max(val_perc * (1 - eps), 0)})
+    ampl.getParameter("fmax_perc").setValues({cat: min(val_perc * (1 + eps), 1)})
     ampl.getParameter("f_min").setValues({cat: 0})
     ampl.getParameter("f_max").setValues({cat: val_abs * (1 + eps)})
 
-  ampl.getParameter("f_max").setValues(
-    {'BUS_COACH_CNG_STOICH': tot_Mpkm / share_pop})
-  ampl.getParameter("f_max").setValues(
-    {'BUS_COACH_HYDIESEL': tot_Mpkm / share_pop})
-  ampl.getParameter("f_max").setValues(
-    {'BUS_COACH_FC_HYBRIDH2': tot_Mpkm / share_pop})
-
   # Efficiency - Passenger
-  mapping = {'TRAMWAY_TROLLEY': 'ELECTRICITY', 'BUS_COACH_DIESEL': 'DIESEL',
+  mapping = {'TRAMWAY_TROLLEY': 'ELECTRICITY',
              'TRAIN_PUB': 'ELECTRICITY',
-             'CAR_GASOLINE': 'GASOLINE', 'CAR_DIESEL': 'DIESEL', 'CAR_NG': 'NG',
-             'CAR_BEV': 'ELECTRICITY',
-             'CAR_FUEL_CELL': 'H2'}
+             'CAR_BEV': 'ELECTRICITY'}
   dm_eff = dm_private.copy()
   dm_eff.append(dm_public, dim='Categories1')
   for veh, fuel in mapping.items():
@@ -111,14 +104,14 @@ def impose_transport_demand(ampl, endyr, share_pop, DM_tra, cntr):
     ampl.getParameter("layers_in_out").setValues({(veh, fuel): -val})
 
   # Efficiency - Freight
-  mapping = {'TRAIN_FREIGHT': 'ELECTRICITY', 'TRUCK': 'DIESEL'}
+  mapping = {'TRAIN_FREIGHT': 'ELECTRICITY'}
   DM_tra['freight'].operation('tra_freight_transport-demand-tkm', '*',
                               'tra_freight_energy-intensity',
                               out_col='tra_freight_energy-demand', unit='GWh')
   dm_eff_freight = DM_tra['freight']
   dm_eff_freight.drop(col_label='tra_freight_energy-intensity', dim='Variables')
   dm_eff_freight.groupby(
-    {'TRUCK': ['HDVH', 'HDVL', 'HDVM'], 'TRAIN_FREIGHT': ['rail']},
+    {'TRAIN_FREIGHT': ['rail']},
     dim='Categories1', inplace=True)
   dm_eff_freight.group_all('Categories2')
   dm_eff_freight.operation('tra_freight_energy-demand', '/',
@@ -136,17 +129,14 @@ def impose_transport_demand(ampl, endyr, share_pop, DM_tra, cntr):
 def impose_buildings_demand(ampl, endyr, share_of_pop, DM_bld, cntr):
   eps = 1e-5
   # Set district-heating share
-  DM_bld[:, :, 'bld_heating', ...] = DM_bld[:, :, 'bld_heating', ...]
-  DM_bld[:, :, 'bld_energy-demand_heating', ...] = DM_bld[:, :,
-                                                   'bld_energy-demand_heating',
-                                                   ...]
-  DM_bld.filter({'Categories1': ['electricity', 'gas', 'heat-pump',
-                                 'heating-oil', 'wood', 'district-heating']},
-                inplace=True)
+  #DM_bld[:, :, 'bld_heating', ...] = DM_bld[:, :, 'bld_heating', ...]
+  #DM_bld[:, :, 'bld_energy-demand_heating', ...] = DM_bld[:, :,'bld_energy-demand_heating',...]
+
+  DM_bld.filter({'Categories1': ['electricity', 'heat-pump', 'district-heating']}, inplace=True)
   DM_bld.change_unit('bld_heating', old_unit='TWh', new_unit='GWh', factor=1000)
   DM_bld.change_unit('bld_energy-demand_heating', old_unit='TWh',
                      new_unit='GWh', factor=1000)
-
+  # Useful energy demand
   dm_heating = DM_bld.filter({'Variables': ['bld_heating'], 'Years': [endyr]})
   dm_heating.normalise(dim='Categories1', inplace=True, keep_original=True)
   val = dm_heating[cntr, endyr, 'bld_heating_share', 'district-heating']
@@ -154,6 +144,7 @@ def impose_buildings_demand(ampl, endyr, share_of_pop, DM_bld, cntr):
   ampl.getParameter("share_heat_dhn_max").setValues([val])
 
   # Set heating demand in GWh
+  # !FIXME Change here the services heat demand
   dm_tot = dm_heating.group_all('Categories1', inplace=False)
   tot_heat = dm_tot[:, :, 'bld_heating'] / share_of_pop
   ampl.getParameter("end_uses_demand_year").setValues(
@@ -175,36 +166,25 @@ def impose_buildings_demand(ampl, endyr, share_of_pop, DM_bld, cntr):
   dm_heating.drop(dim='Categories1', col_label='district-heating')
   dm_heating.normalise(dim='Categories1', inplace=True, keep_original=True)
   dm_heating.rename_col(
-    ['heat-pump', 'gas', 'wood', 'heating-oil', 'electricity'],
-    ['DEC_HP_ELEC', 'DEC_BOILER_GAS', 'DEC_BOILER_WOOD', 'DEC_BOILER_OIL',
-     'DEC_DIRECT_ELEC'],
+    ['heat-pump', 'electricity'],
+    ['DEC_HP_ELEC', 'DEC_DIRECT_ELEC'],
     dim='Categories1')
-  for cat in dm_heating.col_labels['Categories1']:
-    val_perc = dm_heating[cntr, endyr, 'bld_heating_share', cat]
-    val_abs = dm_heating[cntr, endyr, 'bld_heating', cat] / share_of_pop
-    ampl.getParameter("fmin_perc").setValues(
-      {cat: max(val_perc * (1 - eps), 0)})
-    ampl.getParameter("fmax_perc").setValues({cat: val_perc * (1 + eps)})
+  decen_heat = list(ampl.get_set("TECHNOLOGIES_OF_END_USES_TYPE").get("HEAT_LOW_T_DECEN"))
+  for cat in decen_heat:
+    if cat in dm_heating.col_labels['Categories1']:
+      val_perc = dm_heating[cntr, endyr, 'bld_heating_share', cat]
+      val_abs = dm_heating[cntr, endyr, 'bld_heating', cat] / share_of_pop
+    else:
+      val_perc = 0
+      val_abs = 0
+    ampl.getParameter("fmin_perc").setValues({cat: max(val_perc * (1 - eps), 0)})
+    ampl.getParameter("fmax_perc").setValues({cat: min(val_perc * (1 + eps), 1)})
     ampl.getParameter("f_min").setValues({cat: val_abs * (1 - eps)})
     ampl.getParameter("f_max").setValues({cat: val_abs * (1 + eps)})
 
-  all_cat = ['DEC_HP_ELEC', 'DEC_THHP_GAS', 'DEC_COGEN_GAS', 'DEC_COGEN_OIL',
-             'DEC_ADVCOGEN_GAS', 'DEC_ADVCOGEN_H2', 'DEC_BOILER_GAS',
-             'DEC_BOILER_WOOD', 'DEC_BOILER_OIL', 'DEC_SOLAR',
-             'DEC_DIRECT_ELEC']
-  missing_cat = set(all_cat) - set(dm_heating.col_labels['Categories1'])
-  for cat in list(missing_cat):
-    val_perc = 0
-    val_abs = 0
-    ampl.getParameter("fmin_perc").setValues(
-      {cat: max(val_perc * (1 - eps), 0)})
-    ampl.getParameter("fmax_perc").setValues({cat: val_perc * (1 + eps)})
-    ampl.getParameter("f_min").setValues({cat: val_abs * (1 - eps)})
-    ampl.getParameter("f_max").setValues({cat: val_abs * (1 + eps)})
 
   # Set efficiencies
-  mapping = {'DEC_HP_ELEC': 'ELECTRICITY', 'DEC_BOILER_GAS': 'NG',
-             'DEC_BOILER_WOOD': 'WOOD', 'DEC_BOILER_OIL': 'LFO',
+  mapping = {'DEC_HP_ELEC': 'ELECTRICITY',
              'DEC_DIRECT_ELEC': 'ELECTRICITY'}
   # mapping = {'DEC_HP_ELEC': 'ELECTRICITY', 'DEC_BOILER_GAS': 'NG', 'DEC_BOILER_OIL': 'LFO',
   #           'DEC_DIRECT_ELEC': 'ELECTRICITY'}
