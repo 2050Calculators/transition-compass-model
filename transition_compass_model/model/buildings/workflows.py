@@ -499,7 +499,7 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
                              {'Variables': ['bld_energy-demand_cooling'],
                               'Categories1': ['heat-pump']}),
                            'emissions': dm_emissions},
-                   'power': dm_power,
+                   'power': dm_fuel.copy(),
                    'district-heating': dm_district_heating,
                    'agriculture': dm_fuel.filter(
                      {'Variables': ['bld_energy-demand_heating'],
