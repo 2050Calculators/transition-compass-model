@@ -3675,8 +3675,7 @@ def lifestyle_calibration(list_countries):
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
-                  '2002',
-                  '2003', '2004', '2005', '2006', '2007', '2008', '2009']
+                  '2002','2003', '2004', '2005', '2006', '2007', '2008', '2009']
     my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
     my_pars = {
@@ -5302,8 +5301,8 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
             DM_agriculture_old['fxa'][key].filter({'Years': years_ots})
         else:
             dm = DM_agriculture_old['fxa'][key].copy()
-            DM_agriculture_old['fxa'][key] = linear_fitting(dm, years_ots)
-            DM_agriculture_old['fxa'][key].filter({'Years': years_ots + years_fts})
+            DM_agriculture_old['fxa'][key] = linear_fitting(dm, years_all)
+            DM_agriculture_old['fxa'][key].filter({'Years': years_ots + years_all})
 
     dm = DM_agriculture_old['fxa']['lus_land_total-area']
     if 'lus_land_total-area' in dm.col_labels['Variables']:
@@ -5345,11 +5344,11 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     DM_agriculture_old['fxa']['ef_liv_CH4-emission_treated']['Switzerland', :, 'fxa_ef_liv_CH4-emission_treated', :] = dm['Switzerland', :, 'fxa_ef_liv_CH4-emission_treated', :]
 
     # Feed
-    lever = 'diet'
-    df_ots, df_fts = database_to_df(df_feed_lsu_pathwaycalc, lever, level='all')
-    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
-    dm = DataMatrix.create_from_df(df_ots, num_cat=2)
-    DM_agriculture_old['fxa']['feed'] = dm
+    #lever = 'diet'
+    #df_ots, df_fts = database_to_df(df_feed_lsu_pathwaycalc, lever, level='all')
+    #df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    #dm = DataMatrix.create_from_df(df_ots, num_cat=2)
+    #DM_agriculture_old['fxa']['feed'] = dm
 
     # LeversToDatamatrix FTS based on EuCalc fts
     dm_fts = DM_agriculture_old['fts'].copy()
@@ -6035,6 +6034,32 @@ filter_DM(DM_agriculture, {'Country': ['Switzerland', 'Vaud', 'EU27']})
 filter_DM(DM_lifestyles, {'Country': ['Switzerland', 'Vaud', 'EU27']})
 
 # ADDING CONSTANTS ----------------------------------------------------------------------------------------
+# KCAL TO T ----------------------------------------------------------------------------------------
+
+# Read excel
+df_kcal_t = pd.read_excel('dictionaries/kcal_to_t.xlsx',
+                                   sheet_name='cp_kcal_t')
+
+# Filter columns
+df_kcal_t = df_kcal_t[['variables', 'kcal per t']].copy()
+
+# Turn the df in a dict
+dict_kcal_t = dict(zip(df_kcal_t['variables'], df_kcal_t['kcal per t']))
+categories1 = df_kcal_t['variables'].tolist()
+
+# Format as a cdm
+cdm_kcal = ConstantDataMatrix(col_labels={'Variables': ['cp_kcal-per-t'],
+                                        'Categories1': categories1})
+arr = np.zeros((len(cdm_kcal.col_labels['Variables']), len(cdm_kcal.col_labels['Categories1'])))
+cdm_kcal.array = arr
+idx = cdm_kcal.idx
+for cat, val in dict_kcal_t.items():
+    cdm_kcal.array[idx['cp_kcal-per-t'], idx[cat]] = val
+cdm_kcal.units["cp_kcal-per-t"] = "kcal/t"
+
+# Append to DM_agriculture['constant']
+DM_agriculture['constant']['cdm_kcal-per-t'] = cdm_kcal
+
 # CP EF FUEL ----------------------------------------------------------------------------------------
 
 # convert from [TJ] to [ktoe]
