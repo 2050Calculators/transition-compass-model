@@ -7,8 +7,10 @@ import zipfile
 import io
 from model.common.io_database import database_to_dm
 from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import create_years_list
+from model.common.auxiliary_functions import create_years_list, my_pickle_dump
 import numpy as np
+from openpyxl import load_workbook
+from openpyxl.cell.cell import MergedCell
 
 # Initialize the Deepl Translator
 deepl_api_key = '9ecffb3f-5386-4254-a099-8bfc47167661:fx'
@@ -221,6 +223,44 @@ def extract_nexuse_capacity_data(file):
     return dm, df_eff_CO2
 
 
+def extract_renewable_capacity_data(file_url, local_filename):
+
+    if not os.path.exists(local_filename):
+        response = requests.get(file_url, stream=True)
+        # Check if the request was successful
+        if response.status_code == 200:
+            with open(local_filename, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            print(f"File downloaded successfully as {local_filename}")
+        else:
+            print(f"Error: {response.status_code}, {response.text}")
+    else:
+        print(f'File {local_filename} already exists. If you want to download again delete the file')
+
+    df = pd.read_excel(local_filename, sheet_name="Anhang B")
+    # Set the new header
+    df.columns = df.iloc[1]
+    df = df.loc[[48, 231]].copy()
+    df['Technologie'] = df['Technologie'].replace({'Photovoltaikanl. (Netz+Insel)': 'pow_capacity-Pmax_PV-roof[MW]',
+                                                   'Windenergieanlagen': 'pow_capacity-Pmax_WindOn[MW]'})
+    # Keep "Technologie" column and Years columns
+    cols_to_keep = []
+    for col in df.columns:
+        if isinstance(col, int) or col == 'Technologie':
+            cols_to_keep.append(col)
+    df = df[cols_to_keep]
+
+    df_melted = df.melt(id_vars=["Technologie"], var_name="Years", value_name="Value")
+    df_pivoted = df_melted.pivot(index="Years", columns="Technologie", values="Value").reset_index()
+    df_pivoted['Country'] = 'Switzerland'
+
+    dm = DataMatrix.create_from_df(df_pivoted, num_cat=1)
+
+    return dm
+
+
 def extract_production_data(file_url, local_filename):
     if not os.path.exists(local_filename):
         response = requests.get(file_url, stream=True)
@@ -273,13 +313,101 @@ def extract_production_data(file_url, local_filename):
             'dont renouvelable 2']
 
     dm_out = dm.groupby({'pow_production_RoR': ".*au fil de l'eau.*", 'pow_production_Nuclear': '.*nucléaire.*',
-                         'pow_production_Oil-Gas': '.*class.*|.*biogaz.*', 'pow_production_Dam': '.*accumulation.*',
+                         'pow_production_Oil-Gas-Waste': '.*class.*|.*biogaz.*', 'pow_production_Dam': '.*accumulation.*',
                          'pow_production_WindOn': '.*Eoliennes.*',
-                         'pow_production_PV-roof': '.*photo.*', 'pow_production_Pump-Open': '.*Pompage.*'},
+                         'pow_production_PV-roof': '.*photo.*', 'pow_production_Pump-Open': '.*Pompage.*',
+                         'pow_production_Waste': '.*dont renouvelable.*'},
                         regex=True, dim='Variables', inplace=False)
     dm_out.deepen()
+    dm_out.operation('Oil-Gas-Waste', '-', 'Waste', out_col='Oil-Gas', dim='Categories1')
+    dm_out.drop(dim='Categories1', col_label='Oil-Gas-Waste')
     dm_out.filter({'Years': years_ots}, inplace=True)
     dm_out.change_unit('pow_production', 1000, 'GWh', 'MWh')
+    return dm_out
+
+
+
+def read_excel_with_merged_cells(filepath, sheet_name=0):
+    # Load workbook and worksheet
+    wb = load_workbook(filename=filepath, data_only=True)
+    ws = wb[sheet_name] if isinstance(sheet_name, str) else wb.worksheets[sheet_name]
+
+    # Build a matrix with the values
+    max_row = ws.max_row
+    max_col = ws.max_column
+    data = [[None for _ in range(max_col)] for _ in range(max_row)]
+
+    # Fill values from merged cells
+    for merged_range in ws.merged_cells.ranges:
+        min_row, max_row_range = merged_range.min_row, merged_range.max_row
+        min_col, max_col_range = merged_range.min_col, merged_range.max_col
+        top_left_value = ws.cell(row=min_row, column=min_col).value
+        for row in range(min_row, max_row_range + 1):
+            for col in range(min_col, max_col_range + 1):
+                data[row - 1][col - 1] = top_left_value
+
+    # Fill in remaining cells (non-merged or not already filled)
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+        for cell in row:
+            if data[cell.row - 1][cell.column - 1] is None:
+                data[cell.row - 1][cell.column - 1] = cell.value
+
+    # Convert to DataFrame
+    df = pd.DataFrame(data)
+    return df
+
+
+def extract_importexport_data(file_url, local_filename, sheet_name, var_name, mapping):
+    if not os.path.exists(local_filename):
+        response = requests.get(file_url, stream=True)
+        # Check if the request was successful
+        if response.status_code == 200:
+            with open(local_filename, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            print(f"File downloaded successfully as {local_filename}")
+        else:
+            print(f"Error: {response.status_code}, {response.text}")
+    else:
+        print(f'File {local_filename} already exists. If you want to download again delete the file')
+
+   # df = pd.read_excel(local_filename, sheet_name="T06")
+
+    df = read_excel_with_merged_cells(local_filename, sheet_name)
+    combined_headers = []
+    for col1, col2 in zip(df.iloc[4], df.iloc[5]):
+        combined_headers.append(str(col1) + '[' + str(col2) + ']')
+    # Set the new header
+    df.columns = combined_headers
+    df = df[6:].copy()
+
+    def is_valid_number(val):
+        return isinstance(val, (int, float)) and not pd.isna(val)
+
+    # Apply the function to filter out rows with no valid numeric values
+    df = df[df.apply(lambda row: row.map(is_valid_number).any(), axis=1)]
+    # Apply similarly for columns if needed
+    df = df.loc[:, df.apply(lambda col: col.map(is_valid_number).any())]
+
+    df.rename({'Année[Année]': 'Years'}, axis=1, inplace=True)
+    df['Country'] = 'Switzerland'
+    df.set_index(['Country', 'Years'], inplace=True)
+    # df.columns = ['pow_production_'+col for col in df.columns]
+    df.replace('-', 0, inplace=True)
+    df.replace('None', 0, inplace=True)
+    df.reset_index(inplace=True)
+    df = df.drop('Total[TJ]', axis=1)
+    col_to_keep = df.columns[df.columns.str.contains("TJ", case=False)].tolist()
+    filtered_df = df[['Country', 'Years']+col_to_keep].copy()
+    dm = DataMatrix.create_from_df(filtered_df, num_cat=0)
+    for key in list(mapping.keys()):
+        mapping[var_name + '_' + key] = mapping.pop(key)
+    dm_out = dm.groupby(mapping, regex=True, dim='Variables', inplace=False)
+    dm_out.deepen()
+    dm_out.filter({'Years': years_ots}, inplace=True)
+    dm_out.change_unit(var_name, 277.8, 'TJ', 'MWh')
+
     return dm_out
 
 
@@ -291,16 +419,14 @@ def compute_capacity_factor(dm_capacity, dm_production):
     dm_production.add(0, dummy=True, dim='Categories1', col_label=missing_cat)
     dm_production.append(dm_capacity_ots, dim='Variables')
 
-    idx = dm_production.idx
-    # arr = dm_production.array[:, :, idx['pow_capacity-Emax'], :]
-    # arr[arr == 0] = np.nan
-    # dm_production.array[:, :, idx['pow_capacity-Emax'], :] = arr
-    # arr_tmp = np.fmin(dm_production.array[:, :, idx['pow_capacity-Pmax'], :]*24*365,
-    #                  dm_production.array[:, :, idx['pow_capacity-Emax'], :])
-    arr_tmp = dm_production.array[:, :, idx['pow_capacity-Pmax'], :] * 24 * 365
+    # Determine the capacity factor
+    # capacity-factor = Production / ( Capacity * 24 * 365)
+    # Production comes from Statistical Office and Capacity from Nexus-E
+    arr_tmp = dm_production[:, :, 'pow_capacity-Pmax', :] * 24 * 365
     dm_production.add(arr_tmp, dim='Variables', col_label='pow_capacity-E', unit='MWh')
     dm_production.operation('pow_production', '/', 'pow_capacity-E', out_col='pow_capacity-factor', unit='%')
 
+    # Handle
     dm_cap_factor = dm_production.filter({'Variables': ['pow_capacity-factor']})
     arr = dm_cap_factor.array
     arr[np.isinf(arr)] = np.nan
@@ -441,15 +567,22 @@ def fill_missing_years_capacity_hydro(dm_capacity_hydro_ots, years_map, years_ot
 def adjust_based_on_nexuse(dm, dm_nexuse):
     dm.sort('Categories1')
     dm_nexuse.sort('Categories1')
+    # Filter from Nexus-e the technologies in dm
     dm_filter = dm_nexuse.filter({'Country': ['Switzerland'], 'Years': years_ots, 'Variables': ['pow_capacity-Pmax'],
                                              'Categories1': dm.col_labels['Categories1']})
+
+    # Join Nexus-e and dm (for Switzerland)
     dm.rename_col('pow_capacity-Pmax', 'pow_capacity-Pmax-old', dim='Variables')
     dm_tmp = dm.filter({'Country': ['Switzerland']})
     dm_filter.append(dm_tmp, dim='Variables')
+
+    # Determine the ratio between Nexus-e data (Pmax) and our extracted data (Pmax-old)
     dm_filter.operation('pow_capacity-Pmax', '/', 'pow_capacity-Pmax-old', out_col='factor', unit='%')
     dm_filter.array[dm_filter.array == 0] = np.nan
     idx = dm_filter.idx
+    # Compute the average adjustment throughout the years
     avg_factor = np.nanmean(dm_filter.array[:, :, idx['factor'], :], axis=1, keepdims=True)
+    # Multiply Pmax (old) by the avg adjustment to match Nexus-e
     idx = dm.idx
     dm.array[:, :, idx['pow_capacity-Pmax-old'], :] = dm.array[:, :, idx['pow_capacity-Pmax-old'], :] * avg_factor
     dm.rename_col('pow_capacity-Pmax-old', 'pow_capacity-Pmax', dim='Variables')
@@ -512,8 +645,121 @@ def extract_oil_gas_capacity_data(local_filename):
                 cat = df.iloc[row]['Type']
                 dm.array[idx[cntr], idx[yr], idx['pow_capacity-Pmax'], idx[cat]] += df.iloc[row]['Pmax']
     dm_CH = dm.groupby({'Switzerland': '.*'}, dim='Country', regex=True, inplace=False)
-    dm.append(dm_CH,dim='Country')
+    dm.append(dm_CH, dim='Country')
     return dm
+
+
+def extract_energy_statistics_data(file_url, local_filename, sheet_name, parameters):
+
+    mapping = parameters['mapping']   # dictionary,  to rename column headers
+    var_name = parameters['var name']  # string, dm variable name
+    headers_idx = parameters['headers indexes']  # tuple with index of rows to keep for header
+    first_row = parameters['first row']  # integer with the first row to keep # regex expression with cols to drop
+    unit = parameters['unit']   # Put None if unit is in table, else str
+    col_to_drop = parameters['cols to drop']   # None if no need to drop, else string (for dm.drop)
+
+    if not os.path.exists(local_filename):
+        response = requests.get(file_url, stream=True)
+        # Check if the request was successful
+        if response.status_code == 200:
+            with open(local_filename, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            print(f"File downloaded successfully as {local_filename}")
+        else:
+            print(f"Error: {response.status_code}, {response.text}")
+    else:
+        print(f'File {local_filename} already exists. If you want to download again delete the file')
+
+    df = read_excel_with_merged_cells(local_filename, sheet_name)
+    combined_headers = []
+    if unit is None:
+        for col1, col2, col3 in zip(df.iloc[headers_idx[0]], df.iloc[headers_idx[1]], df.iloc[headers_idx[2]]):
+            combined_headers.append(str(col1) + '-' + str(col2) + '[' + str(col3) + ']')
+    else:
+        for col1, col2 in zip(df.iloc[headers_idx[0]], df.iloc[headers_idx[1]]):
+            combined_headers.append(str(col1) + '-' + str(col2) + '[' + unit + ']')
+    # Set the new header
+    df.columns = combined_headers
+    df = df[first_row:].copy()
+
+    def is_valid_number(val):
+        return isinstance(val, (int, float)) and not pd.isna(val)
+
+    # Apply the function to filter out rows with no valid numeric values
+    df = df[df.apply(lambda row: row.map(is_valid_number).any(), axis=1)]
+    # Apply similarly for columns if needed
+    df = df.loc[:, df.apply(lambda col: col.map(is_valid_number).any())]
+
+    df.rename({df.columns[0]: 'Years'}, axis=1, inplace=True)
+    df['Country'] = 'Switzerland'
+    df.replace('-', 0, inplace=True)
+    dm = DataMatrix.create_from_df(df, num_cat=0)
+    if col_to_drop is not None:
+        dm.drop(dim='Variables', col_label=col_to_drop)
+
+    for key in list(mapping.keys()):
+        mapping[var_name + '_' + key] = mapping.pop(key)
+
+    dm_out = dm.groupby(mapping, regex=True, dim='Variables', inplace=False)
+    dm_out.deepen()
+    dm_out.filter({'Years': years_ots}, inplace=True)
+    #dm_out.change_unit(var_name, 277.8, 'TJ', 'MWh')
+
+    return dm_out
+
+
+def extract_districtheating_demand(file_url, local_filename, sheet_name, mapping, var_name):
+
+    if not os.path.exists(local_filename):
+        response = requests.get(file_url, stream=True)
+        # Check if the request was successful
+        if response.status_code == 200:
+            with open(local_filename, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            print(f"File downloaded successfully as {local_filename}")
+        else:
+            print(f"Error: {response.status_code}, {response.text}")
+    else:
+        print(f'File {local_filename} already exists. If you want to download again delete the file')
+
+    df = read_excel_with_merged_cells(local_filename, sheet_name)
+    combined_headers = []
+    for col1, col2 in zip(df.iloc[5], df.iloc[6]):
+        combined_headers.append(str(col1) + '_' + str(col2) + '[TJ]')
+
+    # Set the new header
+    df.columns = combined_headers
+    df = df[19:].copy()
+
+    def is_valid_number(val):
+        return isinstance(val, (int, float)) and not pd.isna(val)
+
+    # Apply the function to filter out rows with no valid numeric values
+    df = df[df.apply(lambda row: row.map(is_valid_number).any(), axis=1)]
+    # Apply similarly for columns if needed
+    df = df.loc[:, df.apply(lambda col: col.map(is_valid_number).any())]
+
+    df.rename({'Année_Année[TJ]': 'Years'}, axis=1, inplace=True)
+    df['Country'] = 'Switzerland'
+    df.replace('-', 0, inplace=True)
+    dm = DataMatrix.create_from_df(df, num_cat=0)
+    dm.filter_w_regex({'Variables': 'Energie utilisé.*'}, inplace=True)
+    dm.rename_col_regex('Energie utilisé_', '', dim='Variables')
+
+    for key in list(mapping.keys()):
+        mapping[var_name + '_' + key] = mapping.pop(key)
+
+    dm_out = dm.groupby(mapping, regex=True, dim='Variables', inplace=False)
+    dm_out.deepen()
+    dm_out.filter({'Years': years_ots}, inplace=True)
+    #dm_out.change_unit(var_name, 277.8, 'TJ', 'MWh')
+
+    return dm_out
+
 
 #years_setting = [1990, 2022, 2050, 5]  # Set the timestep for historical years & scenarios
 years_ots = create_years_list(1990, 2023, 1)
@@ -594,7 +840,7 @@ reactor_list = {'Muhleberg': {'Canton': 'BE', 'Pmax': 373, 'StartYr': 1971, 'End
 
 dm_capacity_nuclear = extract_nuclear_capacity_data(reactor_list, dm_capacity)
 
-# SECTION - Waste capacity ots (power + heat)
+# SECTION - Waste Capacity ots (power + heat)
 # https://de.wikipedia.org/wiki/Liste_von_Kehrichtverbrennungsanlagen_in_der_Schweiz
 local_filename = 'data/waste_power.xlsx'
 # This has both the capacity in MW and the tonnes of waste incinerated every day (capacity)
@@ -602,33 +848,251 @@ dm_capacity_waste_ots = extract_waste_capacity_ots(local_filename, years_ots)
 
 dm_capacity_waste_ots = adjust_based_on_nexuse(dm=dm_capacity_waste_ots, dm_nexuse=dm_capacity)
 
-# SECTION - Oil & Gas capacity ots (power)
+# SECTION - Oil & Gas Capacity ots (power)
 local_filename = 'data/oil_gas_power_plants.xlsx'
 dm_capacity_oilgas_ots = extract_oil_gas_capacity_data(local_filename)
 
+# SECTION - Wind and Solar Capacity ots
+# https://www.bfe.admin.ch/bfe/en/home/supply/statistics-and-geodata/energy-statistics/sector-statistics.html
+# Excel file under Renewable Energy titled "Swiss Statistics of the Renewable energies" or
+# "Schweizerische Statistik der erneuerbaren Energien 2023 - Datentabellen"
+file_url = 'https://www.bfe.admin.ch/bfe/en/home/versorgung/statistik-und-geodaten/energiestatistiken/teilstatistiken.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvODc4Nw==.html'
+local_filename = 'data/swiss_statistics_of_the_renewable_energies.xlsx'
+dm_capacity_PV_wind_ots = extract_renewable_capacity_data(file_url, local_filename)
 
-# SECTION - Electricity production ots
+# SECTION - Electricity Production
 file_url = 'https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/gesamtenergiestatistik.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZnIvcHVibGljYX/Rpb24vZG93bmxvYWQvNzUxOQ==.html'
 local_filename = 'data/statistique_globale_suisse_energie.xlsx'
 
 dm_production = extract_production_data(file_url, local_filename)
+dm_production.change_unit('pow_production', old_unit='MWh', new_unit='TWh', factor=1e-6)
 
-dm_cap_factor, dm_production = compute_capacity_factor(dm_capacity, dm_production)
+# SECTION - Energy trade (incl.electricity)
+# Extract import
+mapping = {'wood': ".*Bois.*", 'biofuels': '.*biogènes.*', 'coal': '.*Charbon.*',
+           'electricity': '.*Electricité.*', 'waste': '.*Ordures.*', 'gas': '.*Gaz.*', 'oil': '.*Pétrole.*'}
+dm_import = extract_importexport_data(file_url, local_filename, sheet_name='T06', var_name='pow_import', mapping=mapping)
+dm_import.change_unit('pow_import', old_unit='MWh', new_unit='TWh', factor=1e-6)
+# Extract Export
+mapping = {'wood': ".*Bois.*",  'coal': '.*Charbon.*',
+           'electricity': '.*Electricité.*', 'oil': '.*pétroliers.*'}
+dm_export = extract_importexport_data(file_url, local_filename, sheet_name='T07', var_name='pow_export', mapping=mapping)
+dm_export.change_unit('pow_export', old_unit='MWh', new_unit='TWh', factor=1e-6)
+# Compute Net Import
+cat_missing = list(set(dm_import.col_labels['Categories1']) - set(dm_export.col_labels['Categories1']))
+dm_export.add(0, col_label=cat_missing, dim='Categories1', dummy=True)
+dm_import.append(dm_export, dim='Variables')
+dm_import.operation('pow_import', '-', 'pow_export', out_col='pow_net-import', unit='TWh')
 
-dm = dm_production.copy()
-dm.append(dm_cap_factor, dim='Variables')
-dm.drop(dim='Categories1', col_label='Oil-Gas')
-dm.operation('pow_production', '/', 'pow_capacity-factor', out_col='pow_capacity-Pmax-est', unit='MW')
-# Divide by h to actually have Pmax
-idx = dm.idx
-dm.array[:, :, idx['pow_capacity-Pmax-est'], :] = dm.array[:, :, idx['pow_capacity-Pmax-est'], :] / (365*24)
-dm_capacity_filter = dm_capacity.filter({'Country': ['Switzerland'], 'Years': years_ots, 'Variables': ['pow_capacity-Pmax'],
-                                         'Categories1': dm.col_labels['Categories1']})
-dm.append(dm_capacity_filter, dim='Variables')
+# Add net-import of electricity as electricity production import
+dm_elec_import = dm_import.filter({'Variables': ['pow_net-import'], 'Categories1': ['electricity']})
+dm_elec_import.rename_col('pow_net-import', 'pow_production', dim='Variables')
+dm_elec_import.rename_col('electricity', 'Net-import', dim='Categories1')
+dm_production.append(dm_elec_import, dim='Categories1')
 
+# SECTION - Group Capacities
 dm_CH = dm_capacity_oilgas_ots.filter({'Country': ['Switzerland']})
 dm_CH.append(dm_capacity_waste_ots.filter({'Country': ['Switzerland'], 'Variables': ['pow_capacity-Pmax']}), dim='Categories1')
 dm_CH.append(dm_capacity_nuclear.filter({'Country': ['Switzerland'], 'Years': years_ots}), dim='Categories1')
 dm_CH.append(dm_capacity_hydro_ots.filter({'Country': ['Switzerland'], 'Years': years_ots}), dim='Categories1')
+dm_CH.append(dm_capacity_PV_wind_ots.filter({'Country': ['Switzerland'], 'Years': years_ots}), dim='Categories1')
+
+
+# SECTION - Split Gas into Gas-CC and Gas-GS based on Nexus-e
+# Gas is originally Symple Cycle
+dm_CH.rename_col('Gas', 'GasSC', dim='Categories1')
+# But in recent years it becomes combined Cycle
+for yr in dm_CH.col_labels['Years']:
+    dm_CH['Switzerland', yr, 'pow_capacity-Pmax', 'GasSC'] = dm_CH['Switzerland', yr, 'pow_capacity-Pmax', 'GasSC'] \
+                                                             - dm_capacity['Switzerland', yr, 'pow_capacity-Pmax', 'GasCC']
+dm_tmp = dm_capacity.filter({'Country': ['Switzerland'], 'Years': years_ots, 'Variables': ['pow_capacity-Pmax'],
+                             'Categories1': ['GasCC']})
+dm_CH.append(dm_tmp, dim='Categories1')
+
+
+
+# SECTION - Merge OTS capacity and FTS capacity in CH
+missing_ots_cat = list(set(dm_capacity.col_labels['Categories1']) - set(dm_CH.col_labels['Categories1']))
+
+dm_CH.add(0, dummy=True, dim='Categories1', col_label=missing_ots_cat)
+dm_CH.sort('Categories1')
+dm_capacity.sort('Categories1')
+for yr in dm_CH.col_labels['Years']:
+    dm_capacity['Switzerland', yr, 'pow_capacity-Pmax', :] = dm_CH['Switzerland', yr, 'pow_capacity-Pmax', :]
+# Avoid 2025 discontinuity (especially in PV)
+dm_capacity['Switzerland', 2025, 'pow_capacity-Pmax', :] = np.nan
+dm_capacity.fill_nans('Years')
+
+# SECTION - Add installed capacity to pickle
+dm_capacity.add(np.nan, dim='Variables', col_label='pow_existing-capacity', dummy=True, unit='MW')
+for yr in years_ots:
+    dm_capacity['Switzerland', yr, 'pow_existing-capacity', :] = dm_capacity['Switzerland', yr, 'pow_capacity-Pmax', :]
+dm_capacity.fill_nans('Years')
+for yr in years_fts:
+    dm_capacity['Switzerland', yr, 'pow_existing-capacity', :] = np.minimum(dm_capacity['Switzerland', yr, 'pow_existing-capacity', :],
+                                                                            dm_capacity['Switzerland', yr, 'pow_capacity-Pmax', :])
+
+
+# SECTION - Determine split Oil-Gas into GasCC, GasSC, Oil and Cogen using capacity factors
+dm_prod_oilgas = dm_production.filter({'Country': ['Switzerland'], 'Categories1': ['Oil-Gas'],
+                                       'Variables': ['pow_production']})
+dm_cap_oilgas = dm_capacity.filter_w_regex({'Variables': 'pow_existing-capacity', 'Categories1': ".*Gas.*|Oil",
+                                            'Country': 'Switzerland'})
+dm_cap_oilgas.filter({'Years': years_ots}, inplace=True)
+dm_cap_oilgas.normalise('Categories1', inplace=True, keep_original=False)
+arr_prod_split = dm_cap_oilgas.array * dm_prod_oilgas.array
+dm_production.add(arr_prod_split, dim='Categories1', col_label=dm_cap_oilgas.col_labels['Categories1'])
+dm_production.drop('Categories1', 'Oil-Gas')
+cat_matching = list(set(dm_capacity.col_labels['Categories1']).intersection(set(dm_production.col_labels['Categories1'])))
+dm_cap_match = dm_capacity.filter({'Categories1': cat_matching, 'Country': ['Switzerland'],
+                                   'Variables': ['pow_existing-capacity'], 'Years': years_ots})
+dm_prod_match = dm_production.filter({'Categories1': cat_matching})
+dm_cap_match.append(dm_prod_match, dim='Variables')
+dm_cap_match.change_unit('pow_existing-capacity', old_unit='MW', new_unit='GW', factor=1e-3)
+dm_cap_match.operation('pow_production', '/', 'pow_existing-capacity', out_col='pow_cap-fact', unit='TWh/GW')
+dm_cap_match.change_unit('pow_cap-fact', old_unit='TWh/GW', new_unit='%', factor=8.760, operator='/')
+
+
+mask = dm_cap_match[:, :, 'pow_cap-fact', :] > 1
+dm_cap_match[:, :, 'pow_cap-fact', :][mask] = np.nan
+dm_cap_match.fill_nans('Years')
+
+dm_cap_match.change_unit('pow_cap-fact', old_unit='%', new_unit='TWh/GW', factor=8.760, operator='*')
+dm_cap_match.operation('pow_production', '/', 'pow_cap-fact', out_col='pow_capacity', unit='GW')
+dm_cap_match.change_unit('pow_capacity', old_unit='GW', new_unit='MW', factor=1000)
+
+dm_cap_match.filter({'Variables': ['pow_capacity']}, inplace=True)
+
+dm_cap_ots = dm_capacity.filter({'Years': years_ots})
+dm_capacity.drop(dim='Years', col_label=years_ots)
+for cat in dm_cap_match.col_labels['Categories1']:
+    dm_cap_ots['Switzerland', :, 'pow_existing-capacity', cat] = dm_cap_match['Switzerland', :, 'pow_capacity', cat]
+dm_capacity.append(dm_cap_ots, dim='Years')
+dm_capacity.sort('Years')
+
+# !FIXME: The ots capacity data for example for oil and gas are available by canton,
+# There is maybe a problem with the Nexus-e capacities
+# SECTION - Redistribute Swiss capacity-Pmax and existing-capacity by Canton
+dm_capacity.drop(dim='Variables', col_label=['pow_capacity-Emax', 'pow_capacity-Pmin'])
+dm_capacity_CH = dm_capacity.filter({'Country': ['Switzerland']})
+dm_capacity.drop(dim='Country', col_label='Switzerland')
+dm_capacity[:, :, 'pow_existing-capacity', :] = dm_capacity[:, :, 'pow_capacity-Pmax', :]
+dm_capacity.fill_nans('Years')
+dm_capacity.normalise(inplace=True, dim='Country')
+dm_capacity.array = dm_capacity[:, :, :, :]*dm_capacity_CH['Switzerland', np.newaxis, :, :, :]
+for var in dm_capacity.col_labels['Variables']:
+    dm_capacity.units[var] = dm_capacity_CH.units[var]
+
+mask = np.isnan(dm_capacity[:, :, :, :])
+dm_capacity[:, :, :, :][mask] = 0
+
+dm_capacity.append(dm_capacity_CH, dim='Country')
+
+
+######################################################################
+##  Extract historical demand of fuels other than electricity prod  ##
+######################################################################
+
+# Statistique Global Suisse de l'Energie
+file_url = 'https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/gesamtenergiestatistik.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZnIvcHVibGljYX/Rpb24vZG93bmxvYWQvNzUxOQ==.html'
+local_filename = 'data/statistique_globale_suisse_energie.xlsx'
+# Bois et charbon de bois1
+# Force hydraulique
+# Ordures ménagères et déchets industriels2
+# Charbon
+# Pétrole brut et produits pétroliers
+# dont pétrole brut
+# dont produits pétroliers
+# Gaz
+# Combustibles nucléaires
+# Autres énergies renouvelables3
+# Utilisation totale d'agents énergé-tiques
+# Elektricité Solde de Import/Export
+# Consommation brute d'énergie dans le pays (100%)
+parameters = dict()
+mapping = {'heating-oil': '.*Combustibles.*',  'transport-oil': '.*Carburants.*',  'gas': '.*Gaz.*',
+           'coal': '.*Charbon.*', 'wood': '.*bois.*', 'district-heating': '.*distance.*', 'waste': '.*industriel.*',
+           'biofuels': '.*biogènes.*', 'biogas': '.*Biogaz.*'}
+parameters['mapping'] = mapping  # dictionary,  to rename column headers
+parameters['var name'] = 'pow_fuel-demand'  # string, dm variable name
+parameters['headers indexes'] = (5, 6)  # tuple with index of rows to keep for header
+parameters['first row'] = 87  # integer with the first row to keep
+parameters['unit'] = 'TJ'
+parameters['cols to drop'] = None
+
+dm_fuels_demand = extract_energy_statistics_data(file_url, local_filename, sheet_name='T14', parameters=parameters)
+
+
+##### Supply
+parameters = dict()
+mapping = {'hydro-power': '.*hydraulique.*', 'wood': '.*bois.*', 'waste': '.*déchets.*', 'coal': '.*charbon.*',
+           'oil': '.*Pétrole brut et produits pétroliers.*', 'gas': '.*Gaz.*', 'nuclear': '.*nucléaires.*',
+           'renewables': '.*renouvelables.*'}
+parameters['mapping'] = mapping  # dictionary,  to rename column headers
+parameters['var name'] = 'pow_fuel-supply'  # string, dm variable name
+parameters['headers indexes'] = (4, 5, 5)  # tuple with index of rows to keep for header
+parameters['first row'] = 86  # integer with the first row to keep
+parameters['cols to drop'] = '.*%.*'
+parameters['unit'] = None
+
+dm_fuels_supply = extract_energy_statistics_data(file_url, local_filename, sheet_name='T10', parameters=parameters)
+
+
+#######################################
+###      Oil Supply by type     #######
+#######################################
+mapping = {'heating-oil': '.*Huile.*', 'kerosene': '.*aviation.*', 'diesel': '.*diesel.*', 'gasoline': '.*Essence2-Total.*',
+           'other': '.*Coke.*|.*Autres.*'}
+parameters['mapping'] = mapping  # dictionary,  to rename column headers
+parameters['var name'] = 'pow_fuel-supply'  # string, dm variable name
+parameters['headers indexes'] = (5, 6)  # tuple with index of rows to keep for header
+parameters['first row'] = 23  # integer with the first row to keep
+parameters['cols to drop'] = None
+parameters['unit'] = '1000t'
+dm_oil_split = extract_energy_statistics_data(file_url, local_filename, sheet_name='T20', parameters=parameters)
+# Conversion factor based on Lower Heating Value
+# Reference https://world-nuclear.org/information-library/facts-and-figures/heat-values-of-various-fuels
+# Reference heating-oil https://www.forestresearch.gov.uk/tools-and-resources/fthr/biomass-energy-resources/reference-biomass/facts-figures/typical-calorific-values-of-fuels/
+# Reference kerosene Linstrom, Peter (2021). NIST Chemistry WebBook. NIST Standard Reference Database Number 69. NIST Office of Data and Informatics. doi:10.18434/T4D303.
+# (value reported by wikipedia https://en.wikipedia.org/wiki/Heat_of_combustion#cite_note-NIST-11)
+# For other I'm using 42.
+LHV_MJ_kg = {'heating-oil': 42.5, 'diesel': 44, 'gasoline': 45, 'kerosene': 44.1, 'other':  42}
+# MJ/kg = TJ/1000tonnes
+for var, conv_fact in LHV_MJ_kg.items():
+    dm_oil_split[:, :, :, var] = conv_fact * dm_oil_split[:, :, :, var]
+dm_oil_split.change_unit('pow_fuel-supply', factor=1, old_unit='1000t', new_unit='TJ')
+
+
+# Map oil supply using dm_oil_split
+dm_fuels_supply.append(dm_oil_split, dim='Categories1')
+dm_fuels_supply.drop(dim='Categories1', col_label=['oil'])
+keep_fuel_cat = ['gasoline', 'gas', 'waste', 'heating-oil', 'wood', 'diesel', 'kerosene']
+dm_fuels_supply.filter({'Categories1': keep_fuel_cat}, inplace=True)
+dm_fuels_supply.change_unit('pow_fuel-supply', 277.8*1e-6, 'TJ', 'TWh')
+
+# District-heating
+#mapping = {'wood': 'Bois', 'coal': 'Charbon', 'nuclear': 'Combustibles nucléaires3', 'other': 'Divers4',
+#           'electricity': 'Electricité', 'gas': 'Gaz1', 'heating-oil': 'Huile extra-légère|Huile moyenne et lourde',
+#           'waste': 'Ordures2'}
+#dm_distrheat = extract_districtheating_demand(file_url, local_filename, sheet_name='T26', mapping=mapping,
+#                                              var_name='pow_district-heating')
+
+
+#  but they are not appearing correctly in the final dm_capacity
+# Correct this. Then I think the rest is good.
+
+file = '../../../data/datamatrix/energy.pickle'
+with open(file, 'rb') as handle:
+    DM_energy = pickle.load(handle)
+
+dm_capacity.rename_col('VD', 'Vaud', dim='Country')
+DM_energy['capacity'] = dm_capacity.filter({'Country': ['Switzerland', 'Vaud']})
+DM_energy['production'] = dm_production.filter({'Country': ['Switzerland']})
+DM_energy['fuels'] = dm_fuels_supply
+
+file = '../../../data/datamatrix/energy.pickle'
+#with open(file, 'wb') as handle:
+#    pickle.dump(DM_energy, handle, protocol=pickle.HIGHEST_PROTOCOL)
+my_pickle_dump(DM_energy, file)
 
 print('Hello')
