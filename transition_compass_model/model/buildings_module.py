@@ -117,7 +117,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     # 'District-heating' module interface
     interface.add_link(from_sector='buildings', to_sector='district-heating', dm=DM_energy_out['district-heating'])
 
-    interface.add_link(from_sector='buildings', to_sector='power', dm=DM_energy_out['power'])
+    interface.add_link(from_sector='buildings', to_sector='energy', dm=DM_energy_out['power'])
 
     interface.add_link(from_sector='buildings', to_sector='emissions', dm=DM_energy_out['TPE']['emissions'])
 

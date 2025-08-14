@@ -456,12 +456,12 @@ def energyscope(data_path, DM_tra, DM_bld, years_ots, years_fts, country_list):
     ampl.solve()
     print(f"After solve")
 
-    DM_2050 = extract_2050_output(ampl, country_prod, endyr, years_fts, DM_energy)
+ #   DM_2050 = extract_2050_output(ampl, country_prod, endyr, years_fts, DM_energy)
 
-    dm_prod_cap_cntr = create_future_country_trend(DM_2050, DM_input, years_ots, years_fts)
+#    dm_prod_cap_cntr = create_future_country_trend(DM_2050, DM_input, years_ots, years_fts)
 
     # Downscale from Country_prod to Country_dem
-    dm_prod_cap_canton = downscale_country_to_canton(dm_prod_cap_cntr, DM_input['cal-capacity'], country_dem, share_of_pop)
+#    dm_prod_cap_canton = downscale_country_to_canton(dm_prod_cap_cntr, DM_input['cal-capacity'], country_dem, share_of_pop)
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     file = os.path.join(current_file_directory, 'energy/energyscope-MILP/ses_eval.mod')
