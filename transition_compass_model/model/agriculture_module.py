@@ -100,7 +100,7 @@ def read_data(DM_agriculture, lever_setting):
                                                                             'Variables': 'agr_food-net-import'})  # filtered here on purpose and not in the pickle (other parts of the datamatrix are used)
     dm_food_net_import_crop.rename_col_regex(str1="crop-", str2="", dim="Categories1")
     dm_crop = DM_ots_fts['climate-smart-crop']['climate-smart-crop_losses']
-    dm_food_net_import_crop.drop(dim='Categories1', col_label=['stm'])
+    #dm_food_net_import_crop.drop(dim='Categories1', col_label=['stm'])
     dm_crop.append(dm_food_net_import_crop, dim='Variables')
     dm_residues_yield = DM_agriculture['fxa']['residues_yield']
     dm_hierarchy_residues_cereals = DM_ots_fts['biomass-hierarchy']['biomass-hierarchy_crop_cereal']

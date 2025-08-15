@@ -186,6 +186,65 @@ with open('../../data/datamatrix/agriculture.pickle', 'rb') as handle:
 with open('../../data/datamatrix/lifestyles.pickle', 'rb') as handle:
     DM_lifestyles = pickle.load(handle)
 
+    DM_agriculture_old = DM_agriculture.copy()
+
+    # Initialise everything to absolute linear fitting
+    levers_list = DM_agriculture_old['ots'].keys()
+    dict_extrap_type = dict()
+    for lev in levers_list:
+      dict_extrap_type[lev] = "abs_linear_fit"
+
+    # Put some levers to per-capita extrapolation
+    dict_extrap_type['some-lever-name'] = "cap_linear_fit"
+
+    # Put some levers to normalised
+    dict_extrap_type['some-other-name'] = "norm_linear_fit_cat1"
+
+    DM_ots = DM_agriculture_old['ots'].copy()
+    DM_fts = DM_agriculture_old['fts'].copy()
+
+    for key in DM_ots.keys():
+      if isinstance(DM_ots[key], dict):
+        for subkey in DM_ots[key].keys():
+          dm = DM_ots[key][subkey].copy()
+          for lev in range(4):
+            lev = lev + 1
+            linear_fitting(dm, years_fts)
+            DM_fts[key][subkey][lev] = dm.filter({'Years': years_fts}, inplace=False)
+      else:
+        dm = DM_ots[key].copy()
+        linear_fitting(dm, years_fts)
+        for lev in range(4):
+          lev = lev + 1
+          DM_fts[key][lev] = dm.filter({'Years': years_fts}, inplace=False)
+
+
+
+    DM_agriculture_old = DM_agriculture.copy()
+
+    dm_ots = DM_agriculture_old['ots'].copy()
+    dm_fts = DM_agriculture_old['fts'].copy()
+
+    for key in dm_ots.keys():
+      dm = dm_ots[key].copy()
+      for lev in range(4):
+        lev = lev + 1
+        linear_fitting(dm, years_fts)
+        dm_fts[key][lev] = dm.filter({'Years': years_fts}, inplace=False)
+
+
+
+    for key in dm_ots.keys():
+      if isinstance(dm_ots[key],dict):
+        for subkey in dm_ots[key].keys():
+          dm = dm_ots[key][subkey].copy()
+          for lev in range(4):
+            lev = lev + 1
+            dm_temp = linear_fitting(dm, years_fts)
+            dm_fts[key][subkey][lev] = dm_temp.filter({'Years': years_fts},inplace=False)
+
+
+
 
 
 # ADDING CONSTANTS ----------------------------------------------------------------------------------------
