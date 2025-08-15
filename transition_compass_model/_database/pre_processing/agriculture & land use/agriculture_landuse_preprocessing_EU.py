@@ -6163,7 +6163,7 @@ DM_agriculture['fxa']['cal_agr_domestic-production-liv'][:, :,'cal_agr_domestic-
 DM_agriculture['fxa']['cal_agr_domestic-production_food'][:, :,'cal_agr_domestic-production_food',:] \
     = dm_dom_prod_crop[:, :,'cal_agr_domestic-production_food',:]
 
-# YIELD USING CALIBRATION DOMESTIC PROD WITH LOSSES ----------------------------------------------------------------------------------------
+# LIVESTOCK YIELD USING CALIBRATION DOMESTIC PROD WITH LOSSES ----------------------------------------------------------------------------------------
 
 # Load data
 dm_dom_prod_liv = DM_agriculture['fxa']['cal_agr_domestic-production-liv'].copy()
