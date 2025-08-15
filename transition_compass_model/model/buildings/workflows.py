@@ -298,6 +298,10 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots,
   dm_stock = dm_bld_tot.filter({'Variables': ['bld_floor-area_stock']})
   dm_stock.array = np.maximum(dm_stock.array, 0)
 
+  dm_stock = dm_bld_tot.filter({'Variables': ['bld_floor-area_stock']})
+  dm_stock.change_unit('bld_floor-area_stock', old_unit='m2', new_unit='Mm2',
+                       factor=1e-6)
+
   DM_floor_out = \
     {'TPE': {'floor-area-cumulated': dm_cumulated,
              'floor-area-cat': dm_stock.group_all('Categories1', inplace=False),
