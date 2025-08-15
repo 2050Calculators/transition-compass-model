@@ -1555,6 +1555,11 @@ def land_workflow(DM_land, DM_crop, DM_livestock, dm_crop_other, DM_ind, years_s
                                 'fxa_domestic-self-sufficiency_fibres-plant-eq',
                                 out_col='agr_domestic-production_fibres-plant-eq', unit='t')
 
+    # Fill Yield with 0 if nan (allow to run for fiber)
+    array_temp = DM_land['yield'].array[:, :, :, :]
+    array_temp = np.nan_to_num(array_temp, nan=0)
+    DM_land['yield'].array[:, :, :, :] = array_temp
+
     # Fiber cropland demand [ha] = Domestic production fiber crop [t] / Fiber yield [t/ha]
     dm_fiber_yield = DM_land['yield'].filter({'Categories1': ['fibres-plant-eq']})
     dm_fiber_yield = dm_fiber_yield.flatten()
@@ -2124,6 +2129,7 @@ def agriculture_TPE_interface(CDM_const, DM_livestock, DM_crop, dm_crop_other, D
     dm_supply = dm_lfs.filter({'Variables': ['agr_demand']})
     cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
     cdm_kcal.drop(dim='Categories1', col_label='crop-sugarcrop')
+    cdm_kcal.drop(dim='Categories1', col_label='stm')
 
     # Convert from [kcal] to [t]
     idx_supply = dm_supply.idx
@@ -2143,6 +2149,7 @@ def agriculture_TPE_interface(CDM_const, DM_livestock, DM_crop, dm_crop_other, D
     dm_foodwaste = dm_lfs.filter({'Variables': ['lfs_food-wastes']})
     cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
     cdm_kcal.drop(dim='Categories1', col_label='crop-sugarcrop')
+    cdm_kcal.drop(dim='Categories1', col_label='stm')
 
     # Convert from [kcal] to [t]
     idx_supply = dm_foodwaste.idx
