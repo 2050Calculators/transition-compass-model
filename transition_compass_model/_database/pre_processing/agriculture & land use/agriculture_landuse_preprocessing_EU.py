@@ -61,7 +61,7 @@ def diet_processing(list_countries, file):
 
         list_items = ['Cereals - Excluding Beer + (Total)', 'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
                       'Pulses + (Total)', 'Rice (Milled Equivalent)',
-                      'Starchy Roots + (Total)', 'Stimulants + (Total)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
+                      'Starchy Roots + (Total)', 'Stimulants > (List)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
                       'Demersal Fish', 'Freshwater Fish',
                       'Aquatic Animals, Others', 'Pelagic Fish', 'Beer', 'Beverages, Alcoholic', 'Beverages, Fermented',
                       'Wine', 'Sugar (Raw Equivalent)', 'Sweeteners, Other', 'Vegetable Oils + (Total)',
@@ -93,7 +93,7 @@ def diet_processing(list_countries, file):
         # 2010-2022
         list_items = ['Cereals - Excluding Beer + (Total)', 'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
                       'Pulses + (Total)', 'Rice and products',
-                      'Starchy Roots + (Total)', 'Stimulants + (Total)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
+                      'Starchy Roots + (Total)', 'Stimulants > (List)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
                       'Demersal Fish', 'Freshwater Fish',
                       'Aquatic Animals, Others', 'Pelagic Fish', 'Beer', 'Beverages, Alcoholic', 'Beverages, Fermented',
                       'Wine', 'Sugar (Raw Equivalent)', 'Sweeteners, Other', 'Vegetable Oils + (Total)',
@@ -141,11 +141,11 @@ def diet_processing(list_countries, file):
     pattern_consumers_diet = '|'.join(re.escape(item) for item in list_consumers_diet)
     list_share = ['Cereals - Excluding Beer', 'Oilcrops',
                   'Pulses', 'Rice and products',
-                  'Starchy Roots', 'Stimulants',
+                  'Starchy Roots',
                   'Beer', 'Beverages, Alcoholic', 'Beverages, Fermented',
                   'Wine', 'Vegetable Oils',
                   'Milk - Excluding Butter', 'Eggs',
-                  'Animal fats', 'Offals', 'Coffee and products', 'Grand Total']
+                  'Animal fats', 'Offals', 'Coffee and products', 'Cocoa Beans and products', 'Tea (including mate)', 'Grand Total']
     pattern_share = '|'.join(re.escape(item) for item in list_share)
     df_consumers_diet = df_diet[df_diet['Item'].str.contains(pattern_consumers_diet, case=False)]
     df_share = df_diet[df_diet['Item'].str.contains(pattern_share, case=False)]
@@ -395,7 +395,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
 
         list_items = ['Cereals - Excluding Beer + (Total)', 'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
                       'Pulses + (Total)', 'Rice (Milled Equivalent)',
-                      'Starchy Roots + (Total)', 'Stimulants + (Total)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
+                      'Starchy Roots + (Total)', 'Stimulants > (List)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
                       'Demersal Fish', 'Freshwater Fish',
                       'Aquatic Animals, Others', 'Pelagic Fish', 'Beer', 'Beverages, Alcoholic', 'Beverages, Fermented',
                       'Wine', 'Sugar (Raw Equivalent)', 'Sweeteners, Other', 'Vegetable Oils + (Total)',
@@ -435,7 +435,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
         # Different list becuse different in item nomination such as rice
         list_items = ['Cereals - Excluding Beer + (Total)', 'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
                       'Pulses + (Total)', 'Rice and products',
-                      'Starchy Roots + (Total)', 'Stimulants + (Total)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
+                      'Starchy Roots + (Total)', 'Stimulants > (List)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
                       'Demersal Fish', 'Freshwater Fish',
                       'Aquatic Animals, Others', 'Pelagic Fish', 'Beer', 'Beverages, Alcoholic', 'Beverages, Fermented',
                       'Wine', 'Sugar (Raw Equivalent)', 'Sweeteners, Other', 'Vegetable Oils + (Total)',
@@ -3659,7 +3659,7 @@ def lifestyle_calibration(list_countries):
     list_elements = ['Food supply (kcal/capita/day)']
     list_items = ['Cereals - Excluding Beer + (Total)', 'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
                   'Pulses + (Total)', 'Rice (Milled Equivalent)',
-                  'Starchy Roots + (Total)', 'Stimulants + (Total)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
+                  'Starchy Roots + (Total)', 'Stimulants > (List)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
                   'Demersal Fish', 'Freshwater Fish',
                   'Aquatic Animals, Others', 'Pelagic Fish', 'Beer', 'Beverages, Alcoholic', 'Beverages, Fermented',
                   'Wine', 'Sugar (Raw Equivalent)', 'Sweeteners, Other', 'Vegetable Oils + (Total)',
@@ -3713,7 +3713,7 @@ def lifestyle_calibration(list_countries):
     #list_elements = ['Food supply (kcal)']
     list_items = ['Cereals - Excluding Beer + (Total)', 'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
                   'Pulses + (Total)', 'Rice and products',
-                  'Starchy Roots + (Total)', 'Stimulants + (Total)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
+                  'Starchy Roots + (Total)', 'Stimulants > (List)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
                   'Demersal Fish', 'Freshwater Fish',
                   'Aquatic Animals, Others', 'Pelagic Fish', 'Beer', 'Beverages, Alcoholic', 'Beverages, Fermented',
                   'Wine', 'Sugar (Raw Equivalent)', 'Sweeteners, Other', 'Vegetable Oils + (Total)',
@@ -5283,7 +5283,7 @@ def fxa_preprocessing():
 # CalculationLeaf Pickle creation
 #  FIXME only Switzerland for now
 
-def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration, df_feed_lsu_pathwaycalc):
+def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration, df_feed_lsu_pathwaycalc, df_diet_pathwaycalc):
     #############################################
     ##### database_from_csv_to_datamatrix() #####
     #############################################
@@ -5350,6 +5350,38 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     #dm = DataMatrix.create_from_df(df_ots, num_cat=2)
     #DM_agriculture_old['fxa']['feed'] = dm
 
+    # LeversToDatamatrix FTS linear fitting of ots
+
+    # Initialise everything to absolute linear fitting
+    levers_list = DM_agriculture_old['ots'].keys()
+    dict_extrap_type = dict()
+    for lev in levers_list:
+      dict_extrap_type[lev] = "abs_linear_fit"
+
+    # Put some levers to per-capita extrapolation
+    dict_extrap_type['some-lever-name'] = "cap_linear_fit"
+
+    # Put some levers to normalised
+    dict_extrap_type['some-other-name'] = "norm_linear_fit_cat1"
+
+    DM_ots = DM_agriculture_old['ots'].copy()
+    DM_fts = DM_agriculture_old['fts'].copy()
+
+    for key in DM_ots.keys():
+      if isinstance(DM_ots[key], dict):
+        for subkey in DM_ots[key].keys():
+          dm = DM_ots[key][subkey].copy()
+          for lev in range(4):
+            lev = lev + 1
+            linear_fitting(dm, years_fts)
+            DM_fts[key][subkey][lev] = dm.filter({'Years': years_fts}, inplace=False)
+      else:
+        dm = DM_ots[key].copy()
+        linear_fitting(dm, years_fts)
+        for lev in range(4):
+          lev = lev + 1
+          DM_fts[key][lev] = dm.filter({'Years': years_fts}, inplace=False)
+
     # LeversToDatamatrix FTS based on EuCalc fts
     dm_fts = DM_agriculture_old['fts'].copy()
 
@@ -5367,23 +5399,23 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
         #                                                                              dim='Categories1', unit='%')
 
     # for dm_kcal_req use linear-fitting to determine fts
-    linear_fitting(dm_kcal_req_pathwaycalc, years_fts)
-    dm_kcal_req_fts = dm_kcal_req_pathwaycalc.filter({'Years': years_fts}, inplace=False)
-    dm_kcal_req_pathwaycalc.filter({'Years': years_ots}, inplace=True)
+    #linear_fitting(dm_kcal_req_pathwaycalc, years_fts)
+    #dm_kcal_req_fts = dm_kcal_req_pathwaycalc.filter({'Years': years_fts}, inplace=False)
+    #dm_kcal_req_pathwaycalc.filter({'Years': years_ots}, inplace=True)
 
-    for lev in range(4):
-        lev = lev+1
-        dm_fts['kcal-req'][lev] = dm_kcal_req_fts
+    #for lev in range(4):
+     #   lev = lev+1
+     #   dm_fts['kcal-req'][lev] = dm_kcal_req_fts
 
     # To remove '_' at the ending of some keys as the ones for diet
-    for key in dm_fts.keys():
-        if isinstance(dm_fts[key], dict):  # Check if the value is a dictionary
-            new_dict = {}
-            for sub_key, value in dm_fts[key].items():
+    #for key in dm_fts.keys():
+    #    if isinstance(dm_fts[key], dict):  # Check if the value is a dictionary
+     #       new_dict = {}
+     #       for sub_key, value in dm_fts[key].items():
                 # Ensure the key is a string before modifying it
-                new_key = sub_key.rstrip('_') if isinstance(sub_key, str) else sub_key
-                new_dict[new_key] = value  # Assign value to the new key
-            dm_fts[key] = new_dict  # Replace the original dictionary
+    #            new_key = sub_key.rstrip('_') if isinstance(sub_key, str) else sub_key
+    #            new_dict[new_key] = value  # Assign value to the new key
+    #        dm_fts[key] = new_dict  # Replace the original dictionary
 
 
     #file = 'agriculture_fixed-assumptions_pathwaycalc'
@@ -5919,7 +5951,7 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     DM_agriculture = {
         'fxa': DM_agriculture_old['fxa'],
         'constant': dict_const,
-        'fts': dm_fts,
+        'fts': DM_fts,
         'ots': dict_ots
     }
 
@@ -6010,7 +6042,7 @@ df_manure_fxa = manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa, df
 # CalculationTree RUNNING FXA PRE-PROCESSING ---------------------------------------------------------------------------
 #fxa_preprocessing()
 # CalculationTree RUNNING PICKLE CREATION
-database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration, df_feed_lsu_pathwaycalc) #Fixme duplicates in constants
+database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration, df_feed_lsu_pathwaycalc, df_diet_pathwaycalc) #Fixme duplicates in constants
 
 # CalculationTree NEW ENERGY REQUIREMENTS ------------------------------------------------------------------------------
 # The idea was to have energy requirements per demography (agr_kcal-req) based on the current consumption and not the
