@@ -4,6 +4,8 @@ import numpy as np
 def impose_transport_demand(ampl, endyr, share_pop, DM_tra, cntr):
   eps = 1e-5
   # Set public transport pkm share
+  # !FIXME add aviation to EnergyScope
+  DM_tra['passenger'].drop('Categories1', 'aviation')
   DM_tra['passenger'].change_unit('tra_passenger_transport-demand',
                                   old_unit='pkm', new_unit='Mpkm', factor=1e-6)
   DM_tra['passenger'].filter({'Categories2': ['BEV', 'CEV',  'mt']}, inplace=True) # 'PHEV-diesel', 'PHEV-gasoline',
@@ -126,54 +128,31 @@ def impose_transport_demand(ampl, endyr, share_pop, DM_tra, cntr):
   return
 
 
-def impose_buildings_demand(ampl, endyr, share_of_pop, DM_bld, cntr):
-  eps = 1e-5
-  # Set district-heating share
-  #DM_bld[:, :, 'bld_heating', ...] = DM_bld[:, :, 'bld_heating', ...]
-  #DM_bld[:, :, 'bld_energy-demand_heating', ...] = DM_bld[:, :,'bld_energy-demand_heating',...]
+def impose_space_heating(ampl, endyr, share_of_pop, DM_bld, cntr, eps):
 
-  DM_bld.filter({'Categories1': ['electricity', 'heat-pump', 'district-heating']}, inplace=True)
-  DM_bld.change_unit('bld_heating', old_unit='TWh', new_unit='GWh', factor=1000)
-  DM_bld.change_unit('bld_energy-demand_heating', old_unit='TWh',
-                     new_unit='GWh', factor=1000)
+
   # Useful energy demand
-  dm_heating = DM_bld.filter({'Variables': ['bld_heating'], 'Years': [endyr]})
+  dm_heating = DM_bld.filter({'Variables': ['bld_heating_useful-energy'], 'Years': [endyr]})
   dm_heating.normalise(dim='Categories1', inplace=True, keep_original=True)
-  val = dm_heating[cntr, endyr, 'bld_heating_share', 'district-heating']
+  val = dm_heating[cntr, endyr, 'bld_heating_useful-energy_share', 'district-heating']
   ampl.getParameter("share_heat_dhn_min").setValues([val])
   ampl.getParameter("share_heat_dhn_max").setValues([val])
-
-  # Set heating demand in GWh
-  # !FIXME Change here the services heat demand
-  dm_tot = dm_heating.group_all('Categories1', inplace=False)
-  tot_heat = dm_tot[:, :, 'bld_heating'] / share_of_pop
-  ampl.getParameter("end_uses_demand_year").setValues(
-    {('HEAT_LOW_T_SH', "HOUSEHOLDS"): tot_heat})
-  ampl.getParameter("end_uses_demand_year").setValues(
-    {('HEAT_LOW_T_SH', "SERVICES"): 0})
-  # ampl.getParameter("end_uses_demand_year").setValues({('HEAT_LOW_T_SH', "INDUSTRY"): 0})
-  ampl.getParameter("end_uses_demand_year").setValues(
-    {('HEAT_LOW_T_HW', 'HOUSEHOLDS'): 0})
-  ampl.getParameter("end_uses_demand_year").setValues(
-    {('HEAT_LOW_T_HW', 'SERVICES'): 0})
-  # ampl.getParameter("end_uses_demand_year").setValues({('HEAT_LOW_T_HW', 'INDUSTRY'): 0})
 
   # Set decentralised heating shares by technology (- district heating)
   # DEC_HP_ELEC	DEC_THHP_GAS	DEC_COGEN_GAS	DEC_COGEN_OIL	DEC_ADVCOGEN_GAS
   # DEC_ADVCOGEN_H2	DEC_BOILER_GAS	DEC_BOILER_WOOD	DEC_BOILER_OIL	DEC_SOLAR	DEC_DIRECT_ELEC
-  dm_heating = DM_bld.filter(
-    {'Variables': ['bld_heating', 'bld_energy-demand_heating']})
+  dm_heating = DM_bld.filter({'Variables': ['bld_heating_useful-energy', 'bld_heating_energy-consumption']})
   dm_heating.drop(dim='Categories1', col_label='district-heating')
   dm_heating.normalise(dim='Categories1', inplace=True, keep_original=True)
   dm_heating.rename_col(
     ['heat-pump', 'electricity'],
-    ['DEC_HP_ELEC', 'DEC_DIRECT_ELEC'],
+    ['DEC_HP_ELEC', 'DEC_DIRECT_ELEC'], # IND_DIRECT_ELEC
     dim='Categories1')
   decen_heat = list(ampl.get_set("TECHNOLOGIES_OF_END_USES_TYPE").get("HEAT_LOW_T_DECEN"))
   for cat in decen_heat:
     if cat in dm_heating.col_labels['Categories1']:
-      val_perc = dm_heating[cntr, endyr, 'bld_heating_share', cat]
-      val_abs = dm_heating[cntr, endyr, 'bld_heating', cat] / share_of_pop
+      val_perc = dm_heating[cntr, endyr, 'bld_heating_useful-energy_share', cat]
+      val_abs = dm_heating[cntr, endyr, 'bld_heating_useful-energy', cat] / share_of_pop
     else:
       val_perc = 0
       val_abs = 0
@@ -184,18 +163,126 @@ def impose_buildings_demand(ampl, endyr, share_of_pop, DM_bld, cntr):
 
 
   # Set efficiencies
-  mapping = {'DEC_HP_ELEC': 'ELECTRICITY',
-             'DEC_DIRECT_ELEC': 'ELECTRICITY'}
+ # mapping = {'DEC_HP_ELEC': 'ELECTRICITY',
+ #            'DEC_DIRECT_ELEC': 'ELECTRICITY'}
+  mapping = {'DEC_HP_ELEC': 'ELECTRICITY'}
   # mapping = {'DEC_HP_ELEC': 'ELECTRICITY', 'DEC_BOILER_GAS': 'NG', 'DEC_BOILER_OIL': 'LFO',
   #           'DEC_DIRECT_ELEC': 'ELECTRICITY'}
   # !FIXME : there is a problem here when bld_heating is 0!
-  dm_heating.operation('bld_energy-demand_heating', '/', 'bld_heating',
+  dm_heating.operation('bld_heating_energy-consumption', '/', 'bld_heating_useful-energy',
                        out_col='bld_rev_eff', unit='%')
   dm_heating.fill_nans('Years')
   # dm_heating[cntr, endyr, 'bld_rev_eff', 'DEC_BOILER_WOOD'] = dm_heating[cntr, endyr, 'bld_rev_eff', 'DEC_BOILER_OIL']
   for veh, fuel in mapping.items():
     val = dm_heating[cntr, endyr, 'bld_rev_eff', veh]
     ampl.getParameter("layers_in_out").setValues({(veh, fuel): -val})
+
+  return
+
+
+def reorganise_space_heat_hot_water(DM_bld, DM_ind):
+  # Extract household hot-water heating
+  dm_house_hotwater = DM_bld['households_hot-water'].filter({'Variables': ['bld_hw_useful-energy', 'bld_hot-water_energy-demand'],
+                                                             'Categories1': ['district-heating', 'electricity', 'heat-pump']})
+  dm_house_hotwater.rename_col(['bld_hw_useful-energy', 'bld_hot-water_energy-demand'],
+                               ['bld_useful-energy_hot-water_households', 'bld_energy-consumption_hot-water_households'], 'Variables')
+  dm_house_hotwater.deepen(based_on='Variables')
+  dm_house_hotwater.deepen(based_on='Variables')
+
+  # Extract household space-heating
+  dm_house_heat = DM_bld['households_heating'].filter({'Variables': ['bld_heating', 'bld_energy-demand_heating'],
+                                                       'Categories1': ['district-heating', 'electricity', 'heat-pump']})
+  dm_house_heat.rename_col('bld_heating', 'bld_useful-energy_space-heating_households', 'Variables')
+  dm_house_heat.rename_col('bld_energy-demand_heating', 'bld_energy-consumption_space-heating_households', 'Variables')
+  dm_house_heat.deepen(based_on='Variables')
+  dm_house_heat.deepen(based_on='Variables')
+
+  dm_house_heat.append(dm_house_hotwater, dim='Categories3')
+  dm_house_heat.switch_categories_order('Categories3', 'Categories2')
+  dm_house_heat.switch_categories_order('Categories3', 'Categories1')
+
+  # Extract service space-heating & hot-water
+  dm_service_heat = DM_bld['services_all'].filter({'Variables': ['bld_services_useful-energy', 'bld_services_energy-consumption'],
+                                                   'Categories1': ['space-heating', 'hot-water'],
+                                                   'Categories2': ['district-heating', 'electricity', 'heat-pump']})
+  dm_service_heat.rename_col('bld_services_useful-energy', 'bld_useful-energy_services', 'Variables')
+  dm_service_heat.rename_col('bld_services_energy-consumption', 'bld_energy-consumption_services', 'Variables')
+  dm_service_heat.deepen(based_on='Variables')
+  dm_service_heat.switch_categories_order('Categories3', 'Categories1')
+  dm_service_heat.switch_categories_order('Categories3', 'Categories2')
+
+  # Extract service hot-water heating
+  dm_heat = dm_house_heat.copy()
+  dm_heat.append(dm_service_heat, dim='Categories1')
+
+  # Extract industry space-heat
+  dm_ind_heat = DM_ind['ind-energy-demand'].filter({'Variables': ['ind_energy-end-use'],
+                                               'Categories1': ['space-heating', 'hot-water'],
+                                               'Categories2': ['district-heating', 'electricity', 'heat-pump']})
+  dm_ind_heat.rename_col('ind_energy-end-use', 'ind_heat_energy-consumption', 'Variables')
+
+  return dm_heat, dm_ind_heat
+
+
+def impose_buildings_demand(ampl, endyr, share_of_pop, DM_bld, DM_ind, cntr):
+  eps = 1e-5
+  # SPACE HEATING AND HOT WATER (LOW TEMPERATURE HEAT)
+  dm_heat, dm_ind_heat = reorganise_space_heat_hot_water(DM_bld, DM_ind)
+
+  dm_heat.change_unit('bld_useful-energy', old_unit='TWh', new_unit='GWh', factor=1000)
+  dm_heat.change_unit('bld_energy-consumption', old_unit='TWh', new_unit='GWh', factor=1000)
+  dm_ind_heat.change_unit('ind_heat_energy-consumption', old_unit='TWh', new_unit='GWh', factor=1000)
+
+  dm_house_tot = dm_heat.group_all('Categories3', inplace=False).filter({'Categories1': ['households'], 'Categories2': ['space-heating']})
+  tot_house_heat = dm_house_tot[0, endyr, 'bld_useful-energy', 'households', 'space-heating'] / share_of_pop
+  ampl.getParameter("end_uses_demand_year").setValues({('HEAT_LOW_T_SH', "HOUSEHOLDS"): tot_house_heat})
+
+  dm_house_hw_tot = dm_heat.group_all('Categories3', inplace=False).filter({'Categories1': ['households'], 'Categories2': ['hot-water']})
+  tot_house_hw = dm_house_hw_tot[0, endyr, 'bld_useful-energy', 'households', 'hot-water'] / share_of_pop
+  ampl.getParameter("end_uses_demand_year").setValues({('HEAT_LOW_T_HW', 'HOUSEHOLDS'): tot_house_hw})
+
+  dm_service_tot = dm_heat.group_all('Categories3', inplace=False).filter({'Categories1': ['services'], 'Categories2': ['space-heating']})
+  tot_service_heat = dm_service_tot[0, endyr, 'bld_useful-energy', 'services', 'space-heating'] / share_of_pop
+  ampl.getParameter("end_uses_demand_year").setValues({('HEAT_LOW_T_SH', "SERVICES"): tot_service_heat})
+
+  dm_service_hw_tot = dm_heat.group_all('Categories3', inplace=False).filter({'Categories1': ['services'], 'Categories2': ['hot-water']})
+  tot_service_hw = dm_service_hw_tot[0, endyr, 'bld_useful-energy', 'services', 'hot-water'] / share_of_pop
+  ampl.getParameter("end_uses_demand_year").setValues({('HEAT_LOW_T_HW', 'SERVICES'): tot_service_hw})
+
+  dm_ind_space_tot = dm_ind_heat.group_all('Categories2', inplace=False).filter({'Categories1': ['space-heating']})
+  tot_ind_heat = dm_ind_space_tot[0, endyr, 'ind_heat_energy-consumption', 'space-heating'] / share_of_pop
+  ampl.getParameter("end_uses_demand_year").setValues({('HEAT_LOW_T_SH', 'INDUSTRY'): tot_ind_heat})
+
+  dm_ind_hw_tot = dm_ind_heat.group_all('Categories2', inplace=False).filter({'Categories1': ['hot-water']})
+  tot_ind_hw = dm_ind_hw_tot[0, endyr, 'ind_heat_energy-consumption', 'hot-water'] / share_of_pop
+  ampl.getParameter("end_uses_demand_year").setValues({('HEAT_LOW_T_HW', 'INDUSTRY'): tot_ind_hw})
+
+  dm_heat.group_all('Categories2')
+  dm_heat.group_all('Categories1')
+  dm_heat.rename_col(['bld_energy-consumption', 'bld_useful-energy'],
+                     ['bld_heating_energy-consumption', 'bld_heating_useful-energy'], 'Variables')
+
+  impose_space_heating(ampl, endyr, share_of_pop, dm_heat, cntr, eps)
+
+  # ELECTRICITY
+  dm_house_elec_tot = DM_bld['households_electricity']
+  tot_house_elec = dm_house_elec_tot[0, endyr, 'bld_appliances_tot-elec-demand'] / share_of_pop*1000
+  ampl.getParameter("end_uses_demand_year").setValues({('ELECTRICITY', 'HOUSEHOLDS'): tot_house_elec})
+
+  dm_service_elec_tot = DM_bld['services_all'].filter({'Variables': ['bld_services_energy-consumption'],
+                                                       'Categories1': ['elec'], 'Categories2': ['electricity']})
+  tot_service_elec = dm_service_elec_tot[0, endyr, 'bld_services_energy-consumption', 'elec', 'electricity'] / share_of_pop*1000
+  ampl.getParameter("end_uses_demand_year").setValues({('ELECTRICITY', 'SERVICES'): tot_service_elec})
+
+  # LIGHTING
+  dm_house_light_tot = DM_bld['households_lighting']
+  tot_house_light = dm_house_light_tot[0, endyr, 'bld_residential-lighting'] / share_of_pop*1000
+  ampl.getParameter("end_uses_demand_year").setValues({('LIGHTING', 'HOUSEHOLDS'): tot_house_light})
+
+  dm_service_light_tot = DM_bld['services_all'].filter({'Variables': ['bld_services_energy-consumption'],
+                                                       'Categories1': ['lighting'], 'Categories2': ['electricity']})
+  tot_service_light = dm_service_light_tot[0, endyr, 'bld_services_energy-consumption', 'lighting', 'electricity'] / share_of_pop*1000
+  ampl.getParameter("end_uses_demand_year").setValues({('LIGHTING', 'SERVICES'): tot_service_light})
 
   return
 
@@ -244,5 +331,48 @@ def impose_capacity_constraints(ampl, endyr, dm_capacity, country):
     max_cap = dm_CH[0, endyr, 'pow_capacity-Pmax', non_ren] / ref_size
     ampl.getParameter('f_min').setValues({non_ren: existing_cap})
     ampl.getParameter('f_max').setValues({non_ren: max_cap})
+
+  return
+
+
+def impose_industry_demand(ampl, endyr, share_of_pop, DM_ind, cntr):
+  eps = 1e-5
+  # ELECTRICITY
+  dm_ind_elec_tot = DM_ind['ind-energy-demand'].filter({'Categories1': ['elec'], 'Categories2': ['electricity']})
+  tot_ind_elec = dm_ind_elec_tot[cntr, endyr, 'ind_energy-end-use', 'elec', 'electricity'] / share_of_pop*1000
+  ampl.getParameter("end_uses_demand_year").setValues({('ELECTRICITY', 'INDUSTRY'): tot_ind_elec})
+
+  # LIGHTING
+  dm_ind_light_tot = DM_ind['ind-energy-demand'].filter({'Categories1': ['lighting'], 'Categories2': ['electricity']})
+  tot_ind_light = dm_ind_light_tot[cntr, endyr, 'ind_energy-end-use', 'lighting', 'electricity'] / share_of_pop*1000
+  ampl.getParameter("end_uses_demand_year").setValues({('LIGHTING', 'INDUSTRY'): tot_ind_light})
+
+  ampl.getParameter("end_uses_demand_year").setValues(
+    {('ELECTRICITY', "INDUSTRY"): tot_ind_elec})
+  ampl.getParameter("end_uses_demand_year").setValues(
+    {('LIGHTING', "INDUSTRY"): tot_ind_light})
+
+  # HIGH TEMPERATURE HEAT
+  dm_high_heat = DM_ind['ind-energy-demand'].filter({'Categories1': ['process-heat'],
+                                                     'Categories2': ['electricity']})
+  tot_high_heat = dm_high_heat[cntr, endyr, 'ind_energy-end-use', 'process-heat', 'electricity']/share_of_pop*1000
+  ampl.getParameter("end_uses_demand_year").setValues(
+    {('HEAT_HIGH_T', "INDUSTRY"): tot_high_heat})
+
+  dm_high_heat.group_all('Categories1', inplace=True)
+  dm_high_heat.normalise(dim='Categories1', inplace=True, keep_original=True)
+  dm_high_heat.rename_col(['electricity'], ['IND_DIRECT_ELEC'], dim='Categories1')
+  decen_heat = list(ampl.get_set("TECHNOLOGIES_OF_END_USES_TYPE").get("HEAT_HIGH_T"))
+  for cat in decen_heat:
+    if cat in dm_high_heat.col_labels['Categories1']:
+      val_perc = dm_high_heat[cntr, endyr, 'ind_energy-end-use_share', cat]
+      val_abs = dm_high_heat[cntr, endyr, 'ind_energy-end-use', cat] / share_of_pop
+    else:
+      val_perc = 0
+      val_abs = 0
+    ampl.getParameter("fmin_perc").setValues({cat: max(val_perc * (1 - eps), 0)})
+    ampl.getParameter("fmax_perc").setValues({cat: min(val_perc * (1 + eps), 1)})
+    ampl.getParameter("f_min").setValues({cat: val_abs * (1 - eps)})
+    ampl.getParameter("f_max").setValues({cat: val_abs * (1 + eps)})
 
   return

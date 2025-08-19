@@ -390,7 +390,7 @@ def downscale_country_to_canton(dm_prod_cap_cntr, dm_cal_capacity, country_dem, 
     return dm_prod_cap_cntr
 
 
-def energyscope(data_path, DM_tra, DM_bld, years_ots, years_fts, country_list):
+def energyscope(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, country_list):
     endyr = years_fts[-1]
 
     add_to_path(r'/Applications/AMPL')
@@ -417,7 +417,7 @@ def energyscope(data_path, DM_tra, DM_bld, years_ots, years_fts, country_list):
     DM_input = {'cal-capacity': dm_capacity,
                 'cal-production': dm_production,
                 'hist-fuels-supply': dm_fuels_supply,
-                'demand-bld': DM_bld.filter({'Variables': ['bld_energy-demand_heating', 'bld_energy-demand_cooling']}),
+                'demand-bld': DM_bld,
                 'demand-tra': DM_tra}
 
     if ['EU27'] == country_list:  # If you are running for EU27
@@ -441,7 +441,8 @@ def energyscope(data_path, DM_tra, DM_bld, years_ots, years_fts, country_list):
             share_of_pop = 0.095
 
     inter.impose_transport_demand(ampl, endyr, share_of_pop, DM_tra, country_dem)
-    inter.impose_buildings_demand(ampl, endyr, share_of_pop, DM_bld, country_dem)
+    inter.impose_buildings_demand(ampl, endyr, share_of_pop, DM_bld, DM_ind, country_dem)
+    inter.impose_industry_demand(ampl, endyr, share_of_pop, DM_ind, country_dem)
     # No nuclear
     ampl.getParameter('avail').setValues({'URANIUM': 0})
     #ampl.getParameter('avail').setValues({'WOOD': 1.5*12279})
@@ -502,18 +503,28 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
                              "pick only one canton and eventually Switzerland (see geoscale variable)")
 
   if interface.has_link(from_sector='buildings', to_sector='energy'):
-      DM_buildings = interface.get_link(from_sector='buildings', to_sector='energy')
+    DM_buildings = interface.get_link(from_sector='buildings', to_sector='energy')
   else:
-      if len(interface.list_link()) != 0:
-          print("You are missing " + 'buildings' + " to " + 'energy' + " interface")
-      bld_file = os.path.join(current_file_directory, '../_database/data/interface/buildings_to_energy.pickle')
-      with open(bld_file, 'rb') as handle:
-          DM_buildings = pickle.load(handle)
-      DM_buildings.filter({'Country': country_list}, inplace=True)
+    if len(interface.list_link()) != 0:
+        print("You are missing " + 'buildings' + " to " + 'energy' + " interface")
+    bld_file = os.path.join(current_file_directory, '../_database/data/interface/buildings_to_energy.pickle')
+    with open(bld_file, 'rb') as handle:
+        DM_buildings = pickle.load(handle)
+    filter_DM(DM_buildings, {'Country': country_list})
+
+  if interface.has_link(from_sector='industry', to_sector='energy'):
+    DM_industry = interface.get_link(from_sector='industry', to_sector='energy')
+  else:
+    if len(interface.list_link()) != 0:
+        print("You are missing " + 'industry' + " to " + 'energy' + " interface")
+    bld_file = os.path.join(current_file_directory, '../_database/data/interface/industry_to_energy.pickle')
+    with open(bld_file, 'rb') as handle:
+        DM_industry = pickle.load(handle)
+    filter_DM(DM_industry, {'Country': country_list})
 
   current_file_directory = os.path.dirname(os.path.abspath(__file__))
   data_filepath = os.path.join(current_file_directory, '../_database/data/datamatrix/energy.pickle')
-  energyscope(data_filepath, DM_transport, DM_buildings, years_ots, years_fts, country_list)
+  energyscope(data_filepath, DM_transport, DM_buildings, DM_industry, years_ots, years_fts, country_list)
 
   return
 
