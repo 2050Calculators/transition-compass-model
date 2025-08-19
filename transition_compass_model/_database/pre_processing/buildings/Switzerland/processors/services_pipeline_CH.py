@@ -69,6 +69,7 @@ def map_national_energy_demand_by_sector_to_cantons(dm_energy, dm_employees, map
 
   dm_employees_mapped = dm_employees.groupby(mapping_dict, dim='Categories1', inplace=False)
   dm_employees_mapped.drop('Country', 'Suisse')
+  dm_employees_mapped.filter({'Categories1': mapping_sectors['services']}, inplace=True)
   dm_employees_mapped.sort('Categories1')
 
   dm_energy_mapped = dm_energy.filter({'Categories1': dm_employees_mapped.col_labels['Categories1']}, inplace=False)
@@ -80,8 +81,8 @@ def map_national_energy_demand_by_sector_to_cantons(dm_energy, dm_employees, map
   new_arr = dm_employees_mapped.array[:, :, :, :, np.newaxis] * dm_energy_mapped.array[:, :, :, :, :]
   dm_energy_mapped.add(new_arr, dim='Country', col_label=dm_employees_mapped.col_labels['Country'])
 
-  dm_energy_mapped.groupby(mapping_sectors, dim='Categories1', inplace=True)
-  dm_employees_mapped.groupby(mapping_sectors, dim='Categories1', inplace=True)
+  dm_energy_mapped.groupby({'services': mapping_sectors['services']}, dim='Categories1', inplace=True)
+  dm_employees_mapped.groupby({'services': mapping_sectors['services']}, dim='Categories1', inplace=True)
   dm_employees_mapped.add(np.nan, dummy=True, dim='Years',
                           col_label=list(set(years_ots) - set(dm_employees_mapped.col_labels['Years'])))
   dm_employees_mapped.sort('Years')
@@ -252,7 +253,7 @@ def run(country_list, years_ots):
   cat_list_match = dm_employees.col_labels['Categories1']
   mapping_dict, mapping_sectors = determine_mapping_dict(cat_list_ref, cat_list_match)
   dm_energy.filter({'Categories1': list(mapping_dict.keys())}, inplace=True)
-
+  dm_energy_services = dm_energy.filter({'Categories1': mapping_sectors['services']}, inplace=False)
   # Adjust energy carriers categories to heating technologies
   # In particular renewables = ambient heat + geothermal + solar (energy consumption)
   # I want to split it, using water energy consumption split
@@ -262,13 +263,13 @@ def run(country_list, years_ots):
   dm_water_CH = dm_water.filter({'Country': ['Switzerland']})
   dm_space_heat_CH = dm_space_heat.filter({'Country': ['Switzerland']})
 
-  dm_energy = energy_split_from_fuel_to_tech(dm_energy, dm_water_CH, dm_space_heat_CH, dm_efficiency, dm_services_eud)
+  dm_energy_services = energy_split_from_fuel_to_tech(dm_energy_services, dm_water_CH, dm_space_heat_CH, dm_efficiency, dm_services_eud)
 
   # Actually my energy consumption of heat-pump is already the electrical share of the energy consumption.
   # energy consumption (heat-pump) = COP * useful energy
 
   # Group employees by sector and canton (dm_employees_mapped)
-  dm_fuels_cantons, dm_employees_mapped = map_national_energy_demand_by_sector_to_cantons(dm_energy, dm_employees, mapping_dict, mapping_sectors, years_ots)
+  dm_fuels_cantons, dm_employees_mapped = map_national_energy_demand_by_sector_to_cantons(dm_energy_services, dm_employees, mapping_dict, mapping_sectors, years_ots)
   rename_cantons(dm_fuels_cantons)
 
   # Agiculture demand is << than services, I will not split it here. I do have agriculture data by fuel
