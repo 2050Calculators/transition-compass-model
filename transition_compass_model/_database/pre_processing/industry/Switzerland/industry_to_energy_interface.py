@@ -294,7 +294,7 @@ def extract_EP2050_industry_data(file_url, zip_name, keep_years):
 
         # Extract the file
         os.makedirs(extract_dir, exist_ok=True)
-        with zipfile.ZipFile(local_filename, 'r') as zip_ref:
+        with zipfile.ZipFile(zip_name, 'r') as zip_ref:
             zip_ref.extractall(extract_dir)
 
     file_industry = extract_dir + '/EP2050+_Szenarienergebnisse_Details_Nachfragesektoren/EP2050+_Detailergebnisse 2020-2060_Industriessektor_alle Szenarien_2022-04-12.xlsx'
@@ -709,13 +709,16 @@ dm_water.fill_nans('Years')
 # Add efficiencies
 data_file = "../../../data/interface/buildings_to_energy.pickle"
 with open(data_file, 'rb') as handle:
-    dm_eff = pickle.load(handle)
+    DM_bld_energy = pickle.load(handle)
+dm_eff = DM_bld_energy['households_heating'].copy()
 dm_eff.filter({'Country': ['Switzerland']}, inplace=True)
 dm_eff.operation('bld_heating', '/', 'bld_energy-demand_heating', out_col='bld_efficiency', unit='%')
 dm_eff.filter({'Variables': ['bld_efficiency']}, inplace=True)
 dm_eff.fill_nans('Years')
 dm_eff[:, :, 'bld_efficiency', 'electricity'] = 1.0
+dm_eff.add(0.8, dim='Categories1', col_label='other', dummy=True)
 
+dm_eff.filter({'Categories1': dm_space_heat.col_labels['Categories1']}, inplace=True)
 # It helps going from number of buildings to an estimate of the demand by fuel
 dm_space_heat = adjust_based_on_efficiency(dm_space_heat, dm_eff, years_ots)
 dm_water = adjust_based_on_efficiency(dm_water, dm_eff, years_ots)
@@ -806,29 +809,48 @@ cantons_fr = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Base
 dm_fuels_eud_cantons.rename_col(cantons_fr, cantons_en, dim='Country')
 dm_fuels_eud_cantons.add(np.nan, dummy=True, dim='Years', col_label=years_fts)
 
-dm_pop = dm_lfs['ots']['pop']['lfs_population_']
-dm_pop.append(dm_lfs['fts']['pop']['lfs_population_'][1], dim='Years')
-dm_pop.filter({'Country': dm_fuels_eud_cantons.col_labels['Country']}, inplace=True)
-# Forecast based on linear extrapolation of TWh/cap x population
-arr = dm_fuels_eud_cantons[:, :, :, :, :] / dm_pop[:, :, 0, np.newaxis, np.newaxis, np.newaxis]
-dm_tmp = DataMatrix.based_on(arr, format=dm_fuels_eud_cantons, change= {'Variables': ['ind_cap', 'srv_cap']},
-                             units={'ind_cap': 'TWh/cap', 'srv_cap': 'TWh/cap'})
-#dm_tmp.fill_nans('Years')
-linear_fitting(dm_tmp, years_fts, based_on=create_years_list(2010, 2023, 1))
-dm_tmp.array = np.maximum(0, dm_tmp.array)
+dm_fuels_eud_cantons.filter({'Variables': ['ind_energy-end-use']}, inplace=True)
 
-dm_fuels_eud_cantons[...] = dm_tmp[...] * dm_pop[:, :, 0, np.newaxis, np.newaxis, np.newaxis]
+#dm_pop = dm_lfs['ots']['pop']['lfs_population_']
+#dm_pop.append(dm_lfs['fts']['pop']['lfs_population_'][1], dim='Years')
+#dm_pop.filter({'Country': dm_fuels_eud_cantons.col_labels['Country']}, inplace=True)
+# Forecast based on linear extrapolation of TWh/cap x population
+#arr = dm_fuels_eud_cantons[:, :, :, :, :] / dm_pop[:, :, 0, np.newaxis, np.newaxis, np.newaxis]
+#dm_tmp = DataMatrix.based_on(arr, format=dm_fuels_eud_cantons, change= {'Variables': ['ind_cap', 'srv_cap']},
+#                             units={'ind_cap': 'TWh/cap', 'srv_cap': 'TWh/cap'})
+#dm_tmp.fill_nans('Years')
+
+# I should extrapolate the demand and the tech-mix separately
+dm_cantons_eud = dm_fuels_eud_cantons.group_all('Categories2', inplace=False)
+# FTS to nan
+idx = dm_cantons_eud.idx
+dm_cantons_eud[:, idx[years_fts[0]]:, ...] = np.nan
+linear_fitting(dm_cantons_eud, years_fts, based_on=create_years_list(2000, 2023, 1))
+# Make sure CH is the sum of all cantons
+dm_cantons_eud.drop('Country', 'Switzerland')
+dm_CH = dm_cantons_eud.groupby({'Switzerland': '.*'}, dim='Country', regex=True, inplace=False)
+dm_cantons_eud.append(dm_CH, dim='Country')
+dm_cantons_eud.sort('Country')
+
+energy_unit = dm_fuels_eud_cantons.units['ind_energy-end-use']
+dm_fuels_eud_cantons.normalise('Categories2', inplace=True)
+linear_fitting(dm_fuels_eud_cantons, years_fts, based_on=create_years_list(2010, 2023, 1))
+dm_fuels_eud_cantons.array = np.maximum(0, dm_fuels_eud_cantons.array)
+dm_fuels_eud_cantons.normalise('Categories2', inplace=True)
+
+dm_fuels_eud_cantons.sort('Country')
+assert dm_fuels_eud_cantons.col_labels['Country'] == dm_cantons_eud.col_labels['Country']
+dm_fuels_eud_cantons[...] = dm_fuels_eud_cantons[...] * dm_cantons_eud[..., np.newaxis]
+dm_fuels_eud_cantons.change_unit('ind_energy-end-use', old_unit='%', new_unit=energy_unit, factor=1)
 
 #dm_fuels_eud_cantons.flattest().datamatrix_plot({'Country': ['Switzerland']})
-DM = {'ind-serv-energy-demand': dm_fuels_eud_cantons}
+DM = {'ind-energy-demand': dm_fuels_eud_cantons}
 
 file_industry = '../../../data/interface/industry_to_energy.pickle'
-with open(file_industry, 'wb') as handle:
-    pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
+#with open(file_industry, 'wb') as handle:
+#    pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-#my_pickle_dump(dm_fuels_eud_cantons, file_industry)
+my_pickle_dump(DM, file_industry)
 sort_pickle(file_industry)
-
-
 
 print('Hello')
