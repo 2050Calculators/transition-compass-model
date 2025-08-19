@@ -50,6 +50,17 @@ set BOILERS	:=	IND_BOILER_GAS	IND_BOILER_WOOD	IND_BOILER_OIL	IND_BOILER_COAL	IND
 param i_rate := 0.03215
 ;
 
+# end_Uses_year [A.1]
+param end_uses_demand_year: HOUSEHOLDS	SERVICES	INDUSTRY	TRANSPORTATION	:=
+ELECTRICITY	10848.1	15026.5	10443.5	0.0
+LIGHTING	425.1	3805.2	1263.8	0.0
+HEAT_HIGH_T	0.0	0.0	19021.5	0.0
+HEAT_LOW_T_SH	29489.2	14524.8	4947.5	0.0
+HEAT_LOW_T_HW	7537.8	3256.0	1281.8	0.0
+MOBILITY_PASSENGER	0.0	0.0	0.0	146049.3
+MOBILITY_FREIGHT	0.0	0.0	0.0	39966.7
+;
+
 param share_mobility_public_min := 0.3;
 param share_mobility_public_max := 0.5;
 
@@ -328,5 +339,5 @@ ELECTRICITY	0.07
 HEAT_LOW_T_DHN	0.05
 ;
 
-param peak_dhn_factor:=	2
+param peak_dhn_factor	:=	2
 ;
