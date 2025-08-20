@@ -3,6 +3,25 @@ import numpy as np
 
 def impose_transport_demand(ampl, endyr, share_pop, DM_tra, cntr):
   eps = 1e-5
+
+  dm_demand_trend = DM_tra['freight'].filter({'Categories2': ['BEV', 'CEV']})
+  dm_demand_trend.operation('tra_freight_transport-demand-tkm', '*', 'tra_freight_energy-intensity', out_col='freight_energy-consumption', unit='kWh')
+  dm_demand_trend.group_all('Categories1')
+  dm_demand_trend.filter({'Variables': ['freight_energy-consumption']}, inplace=True)
+  dm_demand_trend.change_unit('freight_energy-consumption', old_unit='kWh', new_unit='TWh', factor=1e-9)
+  dm_demand_trend.groupby({'electricity': '.*'}, regex=True, inplace=True, dim='Categories1')
+
+
+  dm_tmp = DM_tra['passenger'].filter({'Categories2': ['BEV', 'CEV', 'mt']})
+  dm_tmp.operation('tra_passenger_transport-demand', '*', 'tra_passenger_energy-intensity', out_col='pass_energy-consumption', unit='kWh')
+  dm_tmp.change_unit('pass_energy-consumption', old_unit='kWh', new_unit='TWh', factor=1e-9)
+  dm_tmp.group_all('Categories1')
+  dm_tmp.filter({'Variables': ['pass_energy-consumption']}, inplace=True)
+  dm_tmp.groupby({'electricity': '.*'}, regex=True, inplace=True, dim='Categories1')
+
+  dm_demand_trend.append(dm_tmp, dim='Variables')
+  dm_demand_trend.groupby({'tra_energy-consumption': '.*'}, regex=True, inplace=True, dim='Variables')
+
   # Set public transport pkm share
   # !FIXME add aviation to EnergyScope
   DM_tra['passenger'].drop('Categories1', 'aviation')
@@ -125,7 +144,7 @@ def impose_transport_demand(ampl, endyr, share_pop, DM_tra, cntr):
     val = dm_eff_freight[0, endyr, 'tra_freight_energy-intensity', veh]
     ampl.getParameter("layers_in_out").setValues({(veh, fuel): -val})
 
-  return
+  return dm_demand_trend
 
 
 def impose_space_heating(ampl, endyr, share_of_pop, DM_bld, cntr, eps):
@@ -226,8 +245,20 @@ def reorganise_space_heat_hot_water(DM_bld, DM_ind):
 
 def impose_buildings_demand(ampl, endyr, share_of_pop, DM_bld, DM_ind, cntr):
   eps = 1e-5
+
   # SPACE HEATING AND HOT WATER (LOW TEMPERATURE HEAT)
   dm_heat, dm_ind_heat = reorganise_space_heat_hot_water(DM_bld, DM_ind)
+
+  # !FIXME: temporary put district heating to 0
+  dm_heat[..., 'district-heating'] = 0
+  dm_ind_heat[..., 'district-heating'] = 0
+
+  # Group energy demand for output
+  dm_demand_trend = dm_heat.group_all('Categories2', inplace=False)
+  dm_demand_trend.group_all('Categories1', inplace=True)
+  dm_tmp = dm_ind_heat.group_all('Categories1', inplace=False)
+  dm_demand_trend.append(dm_tmp, dim='Variables')
+  dm_demand_trend.groupby({'bld_energy-consumption': '.*'}, regex=True, inplace=True, dim='Variables')
 
   dm_heat.change_unit('bld_useful-energy', old_unit='TWh', new_unit='GWh', factor=1000)
   dm_heat.change_unit('bld_energy-consumption', old_unit='TWh', new_unit='GWh', factor=1000)
@@ -284,7 +315,7 @@ def impose_buildings_demand(ampl, endyr, share_of_pop, DM_bld, DM_ind, cntr):
   tot_service_light = dm_service_light_tot[0, endyr, 'bld_services_energy-consumption', 'lighting', 'electricity'] / share_of_pop*1000
   ampl.getParameter("end_uses_demand_year").setValues({('LIGHTING', 'SERVICES'): tot_service_light})
 
-  return
+  return dm_demand_trend
 
 
 def impose_capacity_constraints(ampl, endyr, dm_capacity, country):
@@ -337,6 +368,13 @@ def impose_capacity_constraints(ampl, endyr, dm_capacity, country):
 
 def impose_industry_demand(ampl, endyr, share_of_pop, DM_ind, cntr):
   eps = 1e-5
+
+  # Prepare demand trend for post-processing energy-scope result
+  dm_demand_trend = DM_ind['ind-energy-demand'].filter({'Categories1': ['elec', 'lighting', 'process-heat'], 'Categories2': ['electricity']})
+  dm_demand_trend.group_all('Categories1', inplace=True)
+  dm_demand_trend.add(0, dim='Categories1', col_label=['heat-pump', 'district-heating'], dummy=True)
+
+
   # ELECTRICITY
   dm_ind_elec_tot = DM_ind['ind-energy-demand'].filter({'Categories1': ['elec'], 'Categories2': ['electricity']})
   tot_ind_elec = dm_ind_elec_tot[cntr, endyr, 'ind_energy-end-use', 'elec', 'electricity'] / share_of_pop*1000
@@ -375,4 +413,14 @@ def impose_industry_demand(ampl, endyr, share_of_pop, DM_ind, cntr):
     ampl.getParameter("f_min").setValues({cat: val_abs * (1 - eps)})
     ampl.getParameter("f_max").setValues({cat: val_abs * (1 + eps)})
 
-  return
+  return dm_demand_trend
+
+
+def prepare_TPE_output(dm_prod_cap_cntr):
+
+  dm_out = dm_prod_cap_cntr.filter({'Variables': ['pow_production', 'pow_capacity']})
+  dm_out.groupby({'Gas': ['GasCC', 'GasCC-Syn', 'GasSC']}, dim='Categories1')
+
+  dm_out = dm_out.flattest()
+
+  return dm_out

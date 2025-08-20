@@ -3,7 +3,9 @@ from typing import List, Dict
 from model.common.interface_class import Interface
 from model.common.data_matrix_class import DataMatrix
 import os
-from model.common.auxiliary_functions import filter_DM, create_years_list, filter_geoscale, filter_country_and_load_data_from_pickles
+from model.common.auxiliary_functions import filter_DM, create_years_list, \
+  filter_geoscale, filter_country_and_load_data_from_pickles, \
+  dm_add_missing_variables
 import pickle
 import json
 import numpy as np
@@ -141,81 +143,103 @@ def read_2050_data(ampl, DM, country, endyr):
 
 
 def extract_sankey_energy_flow(DM):
+  # Sankey structure
+    # 	printf "%s,%s,%.2f,%s,%s,%s\n", "NG" , "Mob priv", sum{t in PERIODS}(-layers_in_out["CAR_NG","NG"] * F_Mult_t ["CAR_NG", t] * t_op [t]) / 1000 , "NG", "#FFD700", "TWh" >> "energyscope-MILP/output/sankey/input2sankey.csv";
+  dm_eff = DM['efficiency']
+  dm_hours = DM['hours_month']
+  dm_operation = DM['monthly_operation_GW']
+  dm_operation.sort('Categories1')
+  dm_eff.sort('Categories1')
+  common_cat = set(dm_operation.col_labels['Categories1']).intersection(dm_eff.col_labels['Categories1'])
+  dm_operation.filter({'Categories1': common_cat}, inplace=True)
+  dm_eff.filter({'Categories1': common_cat}, inplace=True)
 
-        # Sankey structure
-          # 	printf "%s,%s,%.2f,%s,%s,%s\n", "NG" , "Mob priv", sum{t in PERIODS}(-layers_in_out["CAR_NG","NG"] * F_Mult_t ["CAR_NG", t] * t_op [t]) / 1000 , "NG", "#FFD700", "TWh" >> "energyscope-MILP/output/sankey/input2sankey.csv";
-        dm_eff = DM['efficiency']
-        dm_hours = DM['hours_month']
-        dm_operation = DM['monthly_operation_GW']
-        dm_operation.sort('Categories1')
-        dm_eff.sort('Categories1')
-        common_cat = set(dm_operation.col_labels['Categories1']).intersection(dm_eff.col_labels['Categories1'])
-        dm_operation.filter({'Categories1': common_cat}, inplace=True)
-        dm_eff.filter({'Categories1': common_cat}, inplace=True)
+  # Production capacity = Sum monthly operation capacity in GW x hours in a month h
+  arr_prod_cap_yr = np.nansum(dm_operation.array * dm_hours.array[:, :, :, np.newaxis, :], axis=-1, keepdims=True)
+  # Energy = yearly operation by effieciency
+  arr_energy = dm_eff.array * arr_prod_cap_yr/1000
+  dm_eff.add(arr_energy, dim='Variables', col_label='pow_production', unit='TWh')
+  dm_energy_full = DataMatrix.based_on(arr_energy, dm_eff, change={'Variables': ['pow_production']},
+                                  units={'pow_production': 'TWh'})
+  # Energy production
+  # Use the fact that the values are positive or negative to split
+  cat1, cat2 = np.where(dm_energy_full.array[0, 0, 0, :, :]>0)
+  new_arr = np.zeros((1, 1, 1, len(cat1)))
+  new_arr[0, 0, 0, :] = dm_energy_full.array[0, 0, 0, cat1, cat2]
+  new_categories = [dm_energy_full.col_labels['Categories1'][c1] + '-' +
+                    dm_energy_full.col_labels['Categories2'][c2] for c1, c2 in zip(cat1, cat2)]
+  dm_energy_prod = DataMatrix(col_labels={'Country': dm_eff.col_labels['Country'], 'Years': dm_eff.col_labels['Years'],
+                                     'Variables': ['pow_production'], 'Categories1': new_categories},
+                         units={'pow_production': 'TWh'})
+  dm_energy_prod.array = new_arr
 
-        # Production capacity = Sum monthly operation capacity in GW x hours in a month h
-        arr_prod_cap_yr = np.nansum(dm_operation.array * dm_hours.array[:, :, :, np.newaxis, :], axis=-1, keepdims=True)
-        # Energy = yearly operation by effieciency
-        arr_energy = dm_eff.array * arr_prod_cap_yr/1000
-        dm_eff.add(arr_energy, dim='Variables', col_label='pow_production', unit='TWh')
-        dm_energy_full = DataMatrix.based_on(arr_energy, dm_eff, change={'Variables': ['pow_production']},
-                                        units={'pow_production': 'TWh'})
-        # Energy production
-        # Use the fact that the values are positive or negative to split
-        cat1, cat2 = np.where(dm_energy_full.array[0, 0, 0, :, :]>0)
-        new_arr = np.zeros((1, 1, 1, len(cat1)))
-        new_arr[0, 0, 0, :] = dm_energy_full.array[0, 0, 0, cat1, cat2]
-        new_categories = [dm_energy_full.col_labels['Categories1'][c1] + '-' +
-                          dm_energy_full.col_labels['Categories2'][c2] for c1, c2 in zip(cat1, cat2)]
-        dm_energy_prod = DataMatrix(col_labels={'Country': dm_eff.col_labels['Country'], 'Years': dm_eff.col_labels['Years'],
-                                           'Variables': ['pow_production'], 'Categories1': new_categories},
-                               units={'pow_production': 'TWh'})
-        dm_energy_prod.array = new_arr
+  # Power production
+  #! FIXME: check this natural gas situation
+  dm_power_prod = dm_energy_prod.filter_w_regex({'Categories1': '.*ELECTRICITYv2'})
+  if 'NG_CCS-NG_CCSv2' in dm_energy_prod.col_labels['Categories1']:
+    dm_natural_gas_elec = dm_energy_prod.filter({'Categories1': ['NG_CCS-NG_CCSv2']})
+    dm_power_prod.append(dm_natural_gas_elec, dim='Categories1')
+  if 'CCGT_CCS-ELECTRICITYv2' in dm_power_prod.col_labels['Categories1']:
+    dm_power_prod.drop('Categories1', 'CCGT_CCS-ELECTRICITYv2')
 
-        # Power production
-        dm_power_prod = dm_energy_prod.filter_w_regex({'Categories1': '.*ELECTRICITYv2'})
-        cat_elec = dm_power_prod.col_labels['Categories1']
-        dm_power_prod.deepen(sep='-')
-        dm_power_prod.group_all('Categories2')
+  cat_elec = dm_power_prod.col_labels['Categories1']
+  dm_power_prod.deepen(sep='-')
+  dm_power_prod.group_all('Categories2')
 
-        # Energy production other than electricity
-        dm_energy_prod.drop(col_label=cat_elec, dim='Categories1')
-        dm_energy_prod.groupby({'oil-oiltmp': '.*OIL.*'}, inplace=True, regex=True, dim='Categories1')
-        col_to_drop = [col for col in dm_energy_prod.col_labels['Categories1'] if 'MOB_' in col or 'HEAT_' in col]
-        dm_energy_prod.drop('Categories1', col_to_drop)
-        dm_energy_prod.deepen(sep='-')
-        dm_energy_prod.group_all(dim='Categories2', inplace=True)
+  # Energy production other than electricity
+ # dm_energy_prod.drop(col_label=cat_elec, dim='Categories1')
+ # dm_energy_prod.groupby({'oil-oiltmp': '.*OIL.*'}, inplace=True, regex=True, dim='Categories1')
+ # col_to_drop = [col for col in dm_energy_prod.col_labels['Categories1'] if 'MOB_' in col or 'HEAT_' in col]
+ # dm_energy_prod.drop('Categories1', col_to_drop)
+ # dm_energy_prod.deepen(sep='-')
+ # dm_energy_prod.group_all(dim='Categories2', inplace=True)
 
-        # Energy consumption
-        cat1, cat2 = np.where(dm_energy_full.array[0, 0, 0, :, :] < 0)
-        new_arr = np.zeros((1, 1, 1, len(cat1)))
-        new_arr[0, 0, 0, :] = - dm_energy_full.array[0, 0, 0, cat1, cat2]
-        new_categories = [dm_energy_full.col_labels['Categories1'][c1] + '-' +
-                          dm_energy_full.col_labels['Categories2'][c2] for c1, c2 in zip(cat1, cat2)]
-        dm_energy_use = DataMatrix(col_labels={'Country': dm_eff.col_labels['Country'], 'Years': dm_eff.col_labels['Years'],
-                                           'Variables': ['pow_production'], 'Categories1': new_categories},
-                               units={'pow_production': 'TWh'})
-        dm_energy_use.array = new_arr
-        col_to_drop = [col for col in new_categories if 'MOB_' in col or 'HEAT_' in col]
-        dm_energy_use.drop('Categories1', col_to_drop)
-        dm_energy_use.rename_col_regex('v2', '', dim='Categories1')
+  # Energy consumption
+  cat1, cat2 = np.where(dm_energy_full.array[0, 0, 0, :, :] < 0)
+  new_arr = np.zeros((1, 1, 1, len(cat1)))
+  new_arr[0, 0, 0, :] = - dm_energy_full.array[0, 0, 0, cat1, cat2]
+  new_categories = [dm_energy_full.col_labels['Categories1'][c1] + '-' +
+                    dm_energy_full.col_labels['Categories2'][c2] for c1, c2 in zip(cat1, cat2)]
+  dm_energy_use = DataMatrix(col_labels={'Country': dm_eff.col_labels['Country'], 'Years': dm_eff.col_labels['Years'],
+                                     'Variables': ['pow_production'], 'Categories1': new_categories},
+                         units={'pow_production': 'TWh'})
+  dm_energy_use.drop('Categories1', 'DIESEL-DIESELv2')
+  dm_energy_use.array = new_arr
+  col_to_drop = [col for col in new_categories if 'MOB_' in col or 'HEAT_' in col]
+  dm_energy_use.drop('Categories1', col_to_drop)
+  dm_energy_use.rename_col_regex('v2', '', dim='Categories1')
 
-        dm_energy_use.deepen(sep='-')
-        dm_energy_use.groupby({'passenger_LDV': 'CAR.*', 'passenger_bus': 'BUS.*', 'passenger_metrotram': 'TRAMWAY.*',
-                               'passenger_rail': 'TRAIN_PUB.*', 'freight_rail': 'TRAIN_FREIGHT.*',
-                               'freight_HDV': 'TRUCK.*', 'decentralised-heating': 'DEC_.*', 'district-heating': 'DHN_.*',
-                               'industrial-heat': 'IND_.*'}, dim='Categories1', regex=True, inplace=True)
-        dm_energy_use.drop(col_label=['H2_ELECTROLYSIS', 'H2_NG'], dim='Categories1')
+  dm_energy_use.deepen(sep='-')
+  group_dict = {'passenger_LDV': 'CAR.*', 'passenger_bus': 'BUS.*', 'passenger_metrotram': 'TRAMWAY.*',
+                'passenger_rail': 'TRAIN_PUB.*', 'freight_rail': 'TRAIN_FREIGHT.*',
+                'freight_HDV': 'TRUCK.*', 'decentralised-heating': 'DEC_.*', 'district-heating': 'DHN_.*',
+                'industrial-heat': 'IND_.*'}
+  # Remove groups that are not in output
+  to_remove = []
+  for group, expr in group_dict.items():
+    pattern = re.compile(expr)
+    keep = [col for col in dm_energy_use.col_labels['Categories1'] if re.match(pattern, str(col))]
+    if not keep:
+      to_remove.append(group)
 
-        rename_dict = {'DIESEL': 'diesel', 'GASOLINE': 'gasoline', 'H2_ELECTROLYSIS': 'green-hydrogen',
-                       'H2_NG': 'grey-hydrogen', 'LFO': 'heating-oil', 'NG': 'gas'}
-        #dm_energy_use.rename_col([])
+  for group in to_remove:
+    group_dict.pop(group)
 
-        DM['power-production'] = dm_power_prod
-        DM['energy-demand-final-use'] = dm_energy_use
-        DM['oil-gas-supply'] = dm_energy_prod
+  dm_energy_use.groupby(group_dict, dim='Categories1', regex=True, inplace=True)
 
-        return DM
+  for col in ['H2_ELECTROLYSIS', 'H2_NG']:
+    if col in dm_energy_use.col_labels['Categories1']:
+      dm_energy_use.drop('Categories1', col)
+
+  rename_dict = {'DIESEL': 'diesel', 'GASOLINE': 'gasoline', 'H2_ELECTROLYSIS': 'green-hydrogen',
+                 'H2_NG': 'grey-hydrogen', 'LFO': 'heating-oil', 'NG': 'gas'}
+  #dm_energy_use.rename_col([])
+
+  DM['power-production'] = dm_power_prod
+  DM['energy-demand-final-use'] = dm_energy_use
+  #DM['oil-gas-supply'] = dm_energy_prod
+
+  return DM
 
 
 def extract_2050_output(ampl, country_prod, endyr, years_fts, DM_energy):
@@ -241,11 +265,11 @@ def extract_2050_output(ampl, country_prod, endyr, years_fts, DM_energy):
 
     # If I'm using natural gas, then it's GasCC, else if I'm using NG_CCS it's GasCC-CCS
     #if 'NG' in DM['energy-demand-final-use'].col_labels['Categories2']:
-    DM['power-production'].groupby({'CHP': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
+    #DM['power-production'].groupby({'CHP': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
     #elif 'NG_CCS' in DM['energy-demand-final-use'].col_labels['Categories2']:
     #    DM['power-production'].groupby({'CHP-CCS': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
     map_prod = {'Net-import': ['ELECTRICITY'], 'PV-roof': ['PV'], 'WindOn': ['WIND'], 'Dam': ['HYDRO_DAM'],
-                'RoR': ['HYDRO_RIVER'], 'GasCC-CCS': ['CCGT_CCS'], 'GasCC': ['CCGT']}
+                'RoR': ['HYDRO_RIVER'], 'GasCC-CCS': ['NG_CCS'], 'GasCC': ['CCGT']}
     for key, value in list(map_prod.items()):
         if value[0] not in DM['power-production'].col_labels['Categories1']:
             map_prod.pop(key)
@@ -272,9 +296,9 @@ def extract_2050_output(ampl, country_prod, endyr, years_fts, DM_energy):
     DM['installed_N'] = DM['installed_N'].groupby(reversed_mapping, dim='Categories1', inplace=False)
 
     # Rename fuel-supply
-    mapping = {'diesel': ['DIESEL'], 'H2': ['H2_NG', 'H2_ELECTROLYSIS'], 'gasoline': ['GASOLINE'],
-               'gas': ['NG', 'NG_CCS'], 'heating-oil': ['LFO', 'oil'], 'waste': ['WASTE'], 'wood': ['WOOD']}
-    DM['oil-gas-supply'].groupby(mapping, inplace=True, dim='Categories1')
+    #mapping = {'diesel': ['DIESEL'], 'H2': ['H2_NG', 'H2_ELECTROLYSIS'], 'gasoline': ['GASOLINE'],
+    #           'gas': ['NG', 'NG_CCS'], 'heating-oil': ['LFO', 'oil'], 'waste': ['WASTE'], 'wood': ['WOOD']}
+    #DM['oil-gas-supply'].groupby(mapping, inplace=True, dim='Categories1')
 
     return DM
 
@@ -350,17 +374,17 @@ def create_future_country_trend(DM_2050, DM_input, years_ots, years_fts):
 
     # Fossil-fuels
     # !FIXME: you are dropping Kerosene - get kerosene demand from transport, or add aviation to the model
-    dm_fuel = DM_input['hist-fuels-supply']
-    dm_2050_fuel = DM_2050['oil-gas-supply'].copy()
-    dm_2050_fuel.rename_col('pow_production', 'pow_fuel-supply', dim='Variables')
-    dm_fuel.add(0, dim='Categories1', col_label='H2', dummy=True)
-    dm_fuel.drop(dim='Categories1', col_label='kerosene')
-    dm_fuel.append(dm_2050_fuel, dim='Years')
-    missing_years = list(set(years_fts) - set(dm_fuel.col_labels['Years']))
+   # dm_fuel = DM_input['hist-fuels-supply']
+   # dm_2050_fuel = DM_2050['oil-gas-supply'].copy()
+   # dm_2050_fuel.rename_col('pow_production', 'pow_fuel-supply', dim='Variables')
+   # dm_fuel.add(0, dim='Categories1', col_label='H2', dummy=True)
+   # dm_fuel.drop(dim='Categories1', col_label='kerosene')
+   # dm_fuel.append(dm_2050_fuel, dim='Years')
+   # missing_years = list(set(years_fts) - set(dm_fuel.col_labels['Years']))
 
     # !FIXME: big discontinuity between historical and future values on heating oil and gas. Check historical building.
     #  Calibration missing? Check Swiss data, what did you calibrate against? Consumption or supply ?
-    dm_fuel.add(np.nan, dim='Years', col_label=missing_years, dummy=True)
+ #   dm_fuel.add(np.nan, dim='Years', col_label=missing_years, dummy=True)
 
     return dm_prod_hist
 
@@ -390,6 +414,21 @@ def downscale_country_to_canton(dm_prod_cap_cntr, dm_cal_capacity, country_dem, 
     return dm_prod_cap_cntr
 
 
+def balance_demand_prod_with_net_import(dm_prod_cap_cntr, dm_demand_trend, share_of_pop):
+
+  dm_prod = dm_prod_cap_cntr.filter({'Variables': ['pow_production']})
+  dm_prod.drop('Categories1', ['Net-import', 'Waste'])
+  dm_prod.group_all('Categories1', inplace=True)
+  dm_demand_trend.drop('Categories1', 'district-heating')
+  dm_demand_trend.group_all('Categories1', inplace=True)
+  dm_demand_trend.array = dm_demand_trend.array / share_of_pop
+  arr_net_import = dm_demand_trend.array - dm_prod.array
+
+  idx = dm_prod_cap_cntr.idx
+  dm_prod_cap_cntr[:, :, 'pow_production', 'Net-import'] = arr_net_import[:, :, 0]
+
+  return dm_prod_cap_cntr
+
 def energyscope(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, country_list):
     endyr = years_fts[-1]
 
@@ -401,6 +440,7 @@ def energyscope(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, country
     #DM_energy['index3'][:, :, 'c_inv', 'PV'] = 400
     # Create an AMPL object
     ampl = AMPL()
+    ampl.eval('reset;')
 
     # Use glpk solver
     ampl.option["solver"] = 'highs'
@@ -418,7 +458,8 @@ def energyscope(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, country
                 'cal-production': dm_production,
                 'hist-fuels-supply': dm_fuels_supply,
                 'demand-bld': DM_bld,
-                'demand-tra': DM_tra}
+                'demand-tra': DM_tra,
+                'demand-ind': DM_ind}
 
     if ['EU27'] == country_list:  # If you are running for EU27
         country_prod = 'EU27'
@@ -440,9 +481,18 @@ def energyscope(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, country
             # is not in the mix
             share_of_pop = 0.095
 
-    inter.impose_transport_demand(ampl, endyr, share_of_pop, DM_tra, country_dem)
-    inter.impose_buildings_demand(ampl, endyr, share_of_pop, DM_bld, DM_ind, country_dem)
-    inter.impose_industry_demand(ampl, endyr, share_of_pop, DM_ind, country_dem)
+    # Impose the 2050 demand and return the full fts demand for electricity
+    dm_tra_demand_trend = inter.impose_transport_demand(ampl, endyr, share_of_pop, DM_tra, country_dem)
+    dm_bld_demand_trend = inter.impose_buildings_demand(ampl, endyr, share_of_pop, DM_bld, DM_ind, country_dem)
+    dm_ind_demand_trend = inter.impose_industry_demand(ampl, endyr, share_of_pop, DM_ind, country_dem)
+
+    # Group all the demand fts trends
+    dm_demand_trend = dm_bld_demand_trend
+    dm_demand_trend.append(dm_ind_demand_trend, dim='Variables')
+    dm_add_missing_variables(dm_tra_demand_trend, {'Categories1': dm_demand_trend.col_labels['Categories1']}, fill_nans=False)
+    dm_demand_trend.append(dm_tra_demand_trend, dim='Variables')
+    dm_demand_trend.groupby({'total-energy-consumption': '.*'}, dim='Variables', regex=True, inplace=True)
+
     # No nuclear
     ampl.getParameter('avail').setValues({'URANIUM': 0})
     #ampl.getParameter('avail').setValues({'WOOD': 1.5*12279})
@@ -457,21 +507,26 @@ def energyscope(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, country
     ampl.solve()
     print(f"After solve")
 
- #   DM_2050 = extract_2050_output(ampl, country_prod, endyr, years_fts, DM_energy)
+    DM_2050 = extract_2050_output(ampl, country_prod, endyr, years_fts, DM_energy)
 
-#    dm_prod_cap_cntr = create_future_country_trend(DM_2050, DM_input, years_ots, years_fts)
+    dm_prod_cap_cntr = create_future_country_trend(DM_2050, DM_input, years_ots, years_fts)
+
+    # Add demand - production balancing through net import
+    dm_prod_cap_cntr = balance_demand_prod_with_net_import(dm_prod_cap_cntr, dm_demand_trend, share_of_pop)
+
+    results_run = inter.prepare_TPE_output(dm_prod_cap_cntr)
 
     # Downscale from Country_prod to Country_dem
-#    dm_prod_cap_canton = downscale_country_to_canton(dm_prod_cap_cntr, DM_input['cal-capacity'], country_dem, share_of_pop)
+    #dm_prod_cap_canton = downscale_country_to_canton(dm_prod_cap_cntr, DM_input['cal-capacity'], country_dem, share_of_pop)
 
-    current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    file = os.path.join(current_file_directory, 'energy/energyscope-MILP/ses_eval.mod')
+   # current_file_directory = os.path.dirname(os.path.abspath(__file__))
+   # file = os.path.join(current_file_directory, 'energy/energyscope-MILP/ses_eval.mod')
     # Print output
-    ampl.read(file)
+    #ampl.read(file)
 
     # Close AMPL
-    ampl.close()
-    return
+   # ampl.close()
+    return results_run
 
 
 def energy(lever_setting, years_setting, country_list, interface=Interface()):
@@ -524,9 +579,9 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
 
   current_file_directory = os.path.dirname(os.path.abspath(__file__))
   data_filepath = os.path.join(current_file_directory, '../_database/data/datamatrix/energy.pickle')
-  energyscope(data_filepath, DM_transport, DM_buildings, DM_industry, years_ots, years_fts, country_list)
+  results_run = energyscope(data_filepath, DM_transport, DM_buildings, DM_industry, years_ots, years_fts, country_list)
 
-  return
+  return results_run
 
 
 def local_energy_run():
@@ -538,7 +593,7 @@ def local_energy_run():
     # Function to run only transport module without converter and tpe
 
     # get geoscale
-    country_list = ['Switzerland']
+    country_list = ['Vaud']
 
     results_run = energy(lever_setting, years_setting, country_list)
 

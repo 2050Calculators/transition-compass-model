@@ -3,7 +3,7 @@ from model.common.data_matrix_class import DataMatrix
 from model.common.interface_class import Interface
 
 from model.common.auxiliary_functions import read_level_data, \
-  filter_country_and_load_data_from_pickles, create_years_list
+  filter_country_and_load_data_from_pickles, create_years_list, my_pickle_dump
 import pickle
 import json
 import os
@@ -125,8 +125,9 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     interface.add_link(from_sector='buildings', to_sector='energy', dm=DM_inter_energy)
     this_dir = os.path.dirname(os.path.abspath(__file__))
     file = os.path.join(this_dir, '../_database/data/interface/buildings_to_energy.pickle')
-    with open(file, "wb") as handle:
-      pickle.dump(DM_inter_energy, handle, protocol=pickle.HIGHEST_PROTOCOL )
+    my_pickle_dump(DM_inter_energy, file)
+    #with open(file, "wb") as handle:
+    #  pickle.dump(DM_inter_energy, handle, protocol=pickle.HIGHEST_PROTOCOL )
 
     interface.add_link(from_sector='buildings', to_sector='emissions', dm=DM_energy_out['TPE']['emissions'])
 
