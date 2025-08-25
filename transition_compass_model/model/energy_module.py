@@ -441,6 +441,8 @@ def energyscope(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, country
     # Create an AMPL object
     ampl = AMPL()
     ampl.eval('reset;')
+    ampl.setOption("presolve_eps", 1e-12)
+
 
     # Use glpk solver
     ampl.option["solver"] = 'highs'
