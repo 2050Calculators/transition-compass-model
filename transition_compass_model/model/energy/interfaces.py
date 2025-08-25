@@ -149,7 +149,6 @@ def impose_transport_demand(ampl, endyr, share_pop, DM_tra, cntr):
 
 def impose_space_heating(ampl, endyr, share_of_pop, DM_bld, cntr, eps):
 
-
   # Useful energy demand
   dm_heating = DM_bld.filter({'Variables': ['bld_heating_useful-energy'], 'Years': [endyr]})
   dm_heating.normalise(dim='Categories1', inplace=True, keep_original=True)
@@ -420,7 +419,7 @@ def prepare_TPE_output(dm_prod_cap_cntr):
 
   dm_out = dm_prod_cap_cntr.filter({'Variables': ['pow_production', 'pow_capacity']})
   dm_out.groupby({'Gas': ['GasCC', 'GasCC-Syn', 'GasSC']}, dim='Categories1')
-
+  dm_out.rename_col('Switzerland', 'Vaud', dim='Country')
   dm_out = dm_out.flattest()
 
   return dm_out
