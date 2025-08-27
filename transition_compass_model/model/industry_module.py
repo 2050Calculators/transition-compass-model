@@ -50,7 +50,8 @@ def get_interface(current_file_directory, interface, from_sector, to_sector, cou
             DM.filter({'Country': country_list}, inplace=True)
     return DM
 
-def product_production(dm_demand_bld_floor, dm_demand_tra_infra, dm_demand_tra_veh, 
+def product_production(dm_demand_bld_floor, dm_demand_bld_domapp, dm_demand_bld_elec, 
+                       dm_demand_tra_infra, dm_demand_tra_veh, 
                        dm_pop, dm_demand_packaging_percapita, 
                        dm_import):
     
@@ -64,6 +65,22 @@ def product_production(dm_demand_bld_floor, dm_demand_tra_infra, dm_demand_tra_v
     dm_prod_bld_floor = dm_demand_bld_floor.copy()
     dm_prod_bld_floor.array = dm_demand_bld_floor.array - dm_netimport_bld_floor.array
     dm_prod_bld_floor.rename_col("bld_floor-area_new","product-production","Variables")
+    
+    # domapp
+    dm_netimport_bld_domapp = dm_import.filter({"Categories1": ['dishwasher', 'dryer', 'freezer', 'fridge', 'wmachine']})
+    dm_netimport_bld_domapp.array = dm_netimport_bld_domapp.array * dm_demand_bld_domapp.array
+    dm_netimport_bld_domapp.units["product-net-import"] = dm_demand_bld_domapp.units["bld_domapp_new"]
+    dm_prod_bld_domapp = dm_demand_bld_domapp.copy()
+    dm_prod_bld_domapp.array = dm_demand_bld_domapp.array - dm_netimport_bld_domapp.array
+    dm_prod_bld_domapp.rename_col("bld_domapp_new","product-production","Variables")
+    
+    # electronics
+    dm_netimport_bld_elec = dm_import.filter({"Categories1": ['computer','phone','tv']})
+    dm_netimport_bld_elec.array = dm_netimport_bld_elec.array * dm_demand_bld_elec.array
+    dm_netimport_bld_elec.units["product-net-import"] = dm_demand_bld_elec.units["bld_electronics_new"]
+    dm_prod_bld_elec = dm_demand_bld_elec.copy()
+    dm_prod_bld_elec.array = dm_demand_bld_elec.array - dm_netimport_bld_elec.array
+    dm_prod_bld_elec.rename_col("bld_electronics_new","product-production","Variables")
     
     # transport infra
     dm_netimport_tra_infra = dm_import.filter({"Categories1": ['rail', 'road', 'trolley-cables']})
@@ -100,10 +117,14 @@ def product_production(dm_demand_bld_floor, dm_demand_tra_infra, dm_demand_tra_v
     ########################
 
     DM_production = {"bld-floor": dm_prod_bld_floor,
+                     "bld-domapp": dm_prod_bld_domapp,
+                     "bld-electronics": dm_prod_bld_elec,
                      "tra-infra": dm_prod_tra_infra,
                      "tra-veh": dm_prod_tra_veh,
                      "pack": dm_prod_pack,
                      "bld-floor-net-import" : dm_netimport_bld_floor,
+                     "bld-domapp-net-import" : dm_netimport_bld_domapp,
+                     "bld-electronics-net-import" : dm_netimport_bld_elec,
                      "tra-infra-net-import" : dm_netimport_tra_infra,
                      "tra-veh-net-import" : dm_netimport_tra_veh,
                      "pack-net-import" : dm_netimport_pack}
@@ -111,9 +132,9 @@ def product_production(dm_demand_bld_floor, dm_demand_tra_infra, dm_demand_tra_v
     # return
     return DM_production
 
-def apply_material_decomposition(dm_production_bld_floor,
+def apply_material_decomposition(dm_production_bld_floor, dm_production_bld_domapp, dm_production_bld_elec,
                                  dm_production_tra_infra, dm_production_tra_veh, dm_production_pack,
-                                 cdm_matdec_floor,
+                                 cdm_matdec_floor, cdm_matdec_domapp, cdm_matdec_elec,
                                  cdm_matdec_tra_infra, cdm_matdec_tra_veh, cdm_matdec_pack, cdm_matdec_tra_bat):
     
     countries = dm_production_bld_floor.col_labels["Country"]
@@ -121,18 +142,20 @@ def apply_material_decomposition(dm_production_bld_floor,
     
     # material demand [t] = product production [unit] * material decomposition coefficient [t/unit]
 
-    #####################
-    ##### BUILDINGS #####
-    #####################
-
     # floor
     dm_bld_floor_matdec = cdm_to_dm(cdm_matdec_floor, countries, years)
     dm_bld_floor_matdec.array = dm_production_bld_floor.array[...,np.newaxis] * dm_bld_floor_matdec.array
     dm_bld_floor_matdec.units['material-decomp'] = "t"
     
-    #####################
-    ##### TRANSPORT #####
-    #####################
+    # domapp
+    dm_bld_domapp_matdec = cdm_to_dm(cdm_matdec_domapp, countries, years)
+    dm_bld_domapp_matdec.array = dm_production_bld_domapp.array[...,np.newaxis] * dm_bld_domapp_matdec.array
+    dm_bld_domapp_matdec.units['material-decomp'] = "t"
+    
+    # electronics
+    dm_bld_elec_matdec = cdm_to_dm(cdm_matdec_elec, countries, years)
+    dm_bld_elec_matdec.array = dm_production_bld_elec.array[...,np.newaxis] * dm_bld_elec_matdec.array
+    dm_bld_elec_matdec.units['material-decomp'] = "t"
 
     # infra
     dm_tra_infra_matdec = cdm_to_dm(cdm_matdec_tra_infra, countries, years)
@@ -153,25 +176,21 @@ def apply_material_decomposition(dm_production_bld_floor,
     dm_tra_veh_matdec.array = dm_production_tra_veh.array[...,np.newaxis] * dm_tra_veh_matdec.array
     dm_tra_veh_matdec.units['material-decomp'] = "t"
 
-    #####################
-    ##### PACKAGING #####
-    #####################
-
     # packaging
     dm_pack_matdec = cdm_to_dm(cdm_matdec_pack, countries, years)
     dm_pack_matdec.array = dm_production_pack.array[...,np.newaxis] * dm_pack_matdec.array
     dm_pack_matdec.units['material-decomp'] = "t"
 
-    ########################
-    ##### PUT TOGETHER #####
-    ########################
-
+    # put together
     dm_matdec = dm_bld_floor_matdec.copy()
     dm_matdec.append(dm_tra_infra_matdec, dim="Categories1")
+    dm_matdec.append(dm_bld_domapp_matdec, dim="Categories1")
+    dm_matdec.append(dm_bld_elec_matdec, dim="Categories1")
     dm_temp = dm_tra_veh_matdec.flatten().flatten()
     dm_temp.deepen(based_on="Categories1")
     dm_matdec.append(dm_temp, dim="Categories1")
     dm_matdec.append(dm_pack_matdec, dim="Categories1")
+    dm_matdec.sort("Categories1")
 
     # note: we are calling this material demand as this is the demand of materials 
     # that comes from the production sector (e.g. how much material is needed to
@@ -646,6 +665,12 @@ def end_of_life(dm_tra_waste, dm_tra_infra_waste, dm_bld_waste, dm_pack_waste, d
     dm_rec_agg = dm_rec.group_all("Categories1",inplace=False)
     dm_rec_agg.change_unit("material-recovered", factor=1e-3, old_unit='t', new_unit='kt')
     
+    # # TODO: tbc but Switzerland in theroy does not have facilities to recycle non-ferrous metals like
+    # # aluminium and copper, so those should be set to zero
+    # if "Switzerland" in dm_rec_agg.col_labels["Country"]:
+    #     dm_rec_agg["Switzerland",:,:,"aluminium"] = 0
+    #     dm_rec_agg["Switzerland",:,:,"copper"] = 0
+    
     # if material recovered is larger than material produced, impose material recovered to be equal to material produced
     dm_temp = dm_rec_agg.copy()
     dm_temp1 = dm_material_production_bymat.filter({"Categories1" : materials})
@@ -791,7 +816,7 @@ def energy_demand(dm_material_production_bytech, CDM_const):
     dm_energy_demand_temp = DM_energy_demand["excl-feedstock"].copy()
     dm_energy_demand_temp.append(DM_energy_demand["feedstock"], dim = "Variables")
     dm_energy_demand_bytechcarr = DM_energy_demand["excl-feedstock"].copy()
-    dm_energy_demand_bytechcarr.array = np.nansum(dm_energy_demand_temp.array, axis = -3, keepdims= True)
+    dm_energy_demand_bytechcarr.array = np.nansum(dm_energy_demand_temp.array, axis = -3, keepdims= True) # here we are summing feedstock and excluding feedstock together
     dm_energy_demand_bytechcarr.rename_col(col_in = 'energy-demand-excl-feedstock', col_out = "energy-demand", dim = "Variables")
     dm_energy_demand_feedstock_bytechcarr = DM_energy_demand["feedstock"]
 
@@ -1232,6 +1257,7 @@ def variables_for_tpe(dm_cost_material_production_capex, dm_cost_CO2_capt_w_cc_c
     
 
     # dm_tpe
+    # TODO: check if you need to pass emissions in MtCO2eq (rather than in Mt, so if CH4 and N2O should be weighted up)
     dm_tpe = dm_emissions_bygas.copy()
     dm_tpe.append(dm_energy_by_mat.flatten(), "Variables")
     dm_tpe.append(dm_energy_by_carrier.flatten().flatten(), "Variables")
@@ -1322,6 +1348,10 @@ def industry_landuse_interface(DM_material_production, DM_energy_demand, write_p
     return DM_lus
 
 def industry_energy_interface(dm_energy_demand_by_carr, cdm_split, cdm_eneff, write_pickle = False):
+    
+    # TODO: here give to energy only electricity (so total is same of excluding feedstock, as there
+    # is no feedstock for electricity). For the other energy carriers, fossil fuels should be
+    # given to refinery, wood to forestry, and bio to agriculture possibly
     
     # split between electricity and lighting
     dm_temp = dm_energy_demand_by_carr.filter({"Categories1" : ["electricity"]})
@@ -1427,7 +1457,7 @@ def industry_refinery_interface(DM_energy_demand, write_pickle = False):
 
 def industry_district_heating_interface(DM_energy_demand, write_pickle = False):
     
-    # FIXME!: fix dummy values for dh with real values
+    # FIXME: fix dummy values for dh with real values
     dm_dh = DM_energy_demand["bycarr"].filter({"Categories1" : ["electricity"]})
     dm_dh = dm_dh.flatten()
     dm_dh.add(0, dim = "Variables", col_label = "dhg_energy-demand_contribution_heat-waste", unit = "TWh/year", dummy = True)
@@ -1718,7 +1748,7 @@ def industry_forestry_interface(dm_material_demand, dm_fxa_demand_wwp):
     return dm_temp
     
 
-def industry(lever_setting, years_setting, DM_input, interface = Interface(), calibration = False):
+def industry(lever_setting, years_setting, DM_input, interface = Interface(), calibration = True):
 
     # industry data file
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
@@ -1735,6 +1765,8 @@ def industry(lever_setting, years_setting, DM_input, interface = Interface(), ca
     
     # get product production
     DM_production = product_production(DM_buildings["floor-area"].filter({"Variables" : ['bld_floor-area_new']}), 
+                                       DM_buildings["domapp"].filter({"Variables" : ['bld_domapp_new']}),
+                                       DM_buildings["electronics"].filter({"Variables" : ['bld_electronics_new']}),
                                        DM_transport["tra-infra"].filter({"Variables" : ["tra_product-demand"]}), 
                                        DM_transport["tra-veh"], 
                                        DM_lfs["pop"], 
@@ -1743,10 +1775,14 @@ def industry(lever_setting, years_setting, DM_input, interface = Interface(), ca
     
     # get material demand
     DM_material_demand = apply_material_decomposition(DM_production["bld-floor"],
+                                                      DM_production["bld-domapp"],
+                                                      DM_production["bld-electronics"],
                                                       DM_production["tra-infra"], 
                                                       DM_production["tra-veh"], 
                                                       DM_production["pack"].copy(),
                                                       CDM_const["material-decomposition_floor"],
+                                                      CDM_const["material-decomposition_domapp"],
+                                                      CDM_const["material-decomposition_electronics"],
                                                       CDM_const["material-decomposition_infra"], 
                                                       CDM_const["material-decomposition_veh"], 
                                                       CDM_const["material-decomposition_pack"],
