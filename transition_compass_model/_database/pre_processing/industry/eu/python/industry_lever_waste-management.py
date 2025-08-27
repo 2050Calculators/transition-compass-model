@@ -1798,7 +1798,7 @@ df_temp_mun = df_temp_mun.loc[:,['freq', 'wst_oper', 'unit', 'geoscale',"2018"]]
 
 # so, formulas:
 # littered: 0
-# TODO: consdier what to do for littering, as we did for cars
+# TODO: consdier what to do for littering, as we did for cars (note that for the moment littered should be inside uncollected)
 # exported: RCY_EU_FOR + RCY_NEU (only RCY_NEU for EU27)
 # collected: recycling + energy recovery + reuse + landfill + incineration
 # uncollected: GEN - collected
@@ -2110,6 +2110,9 @@ for v in variables:
     dm_temp.rename_col("paper-pack",v,"Variables")
     dm_pack.append(dm_temp,"Variables")
 dm_pack.sort("Variables")
+# note: toilet paper going into wastewater is collected by wastewater system, so it's OK to say that's collected
+# for the moment we assign recycling of sanitary paper to zero, and split the rest among incineration, energy recovery and landfill
+
 
 ################################
 ##### MAKE FINAL VARIABLES #####
@@ -2154,18 +2157,33 @@ for v in dm_pack_col.col_labels["Variables"]:
 # the nan in ots are because of division by 0, for the moment I keep them as nan (as we'll use only EU27)
 # when other countries are implemented, we should re-consider.
 
+# fix sanitary paper (with quick numbers from https://www.phosphorusplatform.eu/scope-in-print/news/2488-eu-support-study-for-sewage-sludge-directive-published?utm_source=chatgpt.com)
+dm_pack_col[:,:,"paper-san","recycling"] = 0
+dm_pack_col[:,:,"paper-san","incineration"] = 0.76
+dm_pack_col[:,:,"paper-san","landfill"] = 0.24
+dm_pack_col[:,:,"paper-san","reuse"] = 0
+dm_pack_col[:,:,"paper-san","energy-recovery"] = 0
+
 # make dm for total waste
 dm_pack_tot.append(dm_pack.filter({"Categories1" : ["export"]}), "Categories1")
 dm_pack_tot.rename_col("collected","waste-collected","Categories1")
-dm_pack_tot.add(0, col_label="waste-uncollected", dummy=True, dim='Categories1', unit="t")
+# from eurostat municipal waste: https://ec.europa.eu/eurostat/databrowser/view/env_wasmun__custom_17781935/default/table
+waste_generated_2023 = 229129000
+waste_treated_2023 = 220517000
+perc_uncollected = (waste_generated_2023-waste_treated_2023)/waste_generated_2023
+arr_temp = dm_pack_tot[...,"waste-collected"] * perc_uncollected # this should also include littered in the case of packaging
+dm_pack_tot.add(arr_temp, col_label="waste-uncollected", dim='Categories1', unit="t")
 dm_pack_tot.add(0, col_label="littered", dummy=True, dim='Categories1', unit="t")
-# TODO: for the moment I put waste-uncollected to 0, TBD with constants from the literature
+# TODO: for the moment I put littered to 0 (as it should be in uncollected), TBD with constants from the literature
 idx = dm_pack_tot.idx
 countries = dm_pack_tot.col_labels["Country"]
 countries = list(np.array(countries)[[i != "EU27" for i in countries]])
 for c in countries:
     for y in years_fts:
             dm_pack_tot.array[idx[c],idx[y],:,idx["littered"]] = np.nan
+
+# fix paper san
+dm_pack_tot[:,:,"paper-san","export"] = 0
 
 # dm_pack_tot.filter({"Country" : ["EU27"]}).datamatrix_plot()
 
@@ -2185,7 +2203,7 @@ for c in dm_pack_tot.col_labels["Country"]:
 for v in dm_pack_tot.col_labels["Variables"]: 
     dm_pack_tot.units[v] = "%"
 
-# df_temp = dm_pack_tot.write_df()
+# df_temp = dm_pack_tot.filter({"Country" : ["EU27"],"Variables":["paper-san"]}).write_df()
 # dm_pack_tot.filter({"Country" : ["EU27"]}).datamatrix_plot()
 # note: export goes to 0 because of the rounding and adjust_shares
 
@@ -2396,7 +2414,7 @@ with open(f, 'wb') as handle:
 # years_fts = list(range(2025,2055,5))
 # dm_ots = dm.filter({"Years" : years_ots})
 # dm_fts = dm.filter({"Years" : years_fts})
-# DM_fts = {1: dm_fts, 2: dm_fts, 3: dm_fts, 4: dm_fts} # for now we set all levels to be the same
+# DM_fts = {1: dm_fts.copy(), 2: dm_fts.copy(), 3: dm_fts.copy(), 4: dm_fts.copy()} # for now we set all levels to be the same
 # DM = {"ots" : dm_ots,
 #       "fts" : DM_fts}
 # f = os.path.join(current_file_directory, '../data/datamatrix/lever_waste-management_layer1.pickle')
@@ -2410,7 +2428,7 @@ with open(f, 'wb') as handle:
 #     dm.append(DM_wst_mgt[key], dim="Variables")
 # dm_ots = dm.filter({"Years" : years_ots})
 # dm_fts = dm.filter({"Years" : years_fts})
-# DM_fts = {1: dm_fts, 2: dm_fts, 3: dm_fts, 4: dm_fts} # for now we set all levels to be the same
+# DM_fts = {1: dm_fts.copy(), 2: dm_fts.copy(), 3: dm_fts.copy(), 4: dm_fts.copy()} # for now we set all levels to be the same
 # DM = {"ots" : dm_ots,
 #       "fts" : DM_fts}
 # f = os.path.join(current_file_directory, '../data/datamatrix/lever_waste-management_layer2.pickle')
