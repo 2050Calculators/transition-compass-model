@@ -831,7 +831,7 @@ years_ots = list(range(1990,2023+1))
 years_fts = list(range(2025,2055,5))
 dm_ots = dm_pack.filter({"Years" : years_ots})
 dm_fts = dm_pack.filter({"Years" : years_fts})
-DM_fts = {1: dm_fts, 2: dm_fts, 3: dm_fts, 4: dm_fts} # for now we set all levels to be the same
+DM_fts = {1: dm_fts.copy(), 2: dm_fts.copy(), 3: dm_fts.copy(), 4: dm_fts.copy()} # for now we set all levels to be the same
 DM = {"ots" : dm_ots,
       "fts" : DM_fts}
 f = os.path.join(current_file_directory, '../data/datamatrix/lever_paperpack.pickle')
