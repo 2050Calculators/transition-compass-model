@@ -19,10 +19,10 @@ def get_pop_eurostat(code_pop, EU27_cntr_list, dict_iso2, years_ots):
     ################################
     ### Extract total population ###
     ################################
-    filter = {'geo\TIME_PERIOD': list(dict_iso2.keys()),
+    filter = {'geo\\TIME_PERIOD': list(dict_iso2.keys()),
               'age': 'TOTAL',
               'sex': 'T'}
-    mapping_dim = {'Country': 'geo\TIME_PERIOD',
+    mapping_dim = {'Country': 'geo\\TIME_PERIOD',
                    'Variables': 'age'}
     dm_pop_tot = get_data_api_eurostat(code_pop, filter, mapping_dim, 'inhabitants')
 
@@ -44,9 +44,9 @@ def get_pop_eurostat(code_pop, EU27_cntr_list, dict_iso2, years_ots):
     #######################################
     ### Extract population by age group ###
     #######################################
-    filter = {'geo\TIME_PERIOD': list(dict_iso2.keys()),
+    filter = {'geo\\TIME_PERIOD': list(dict_iso2.keys()),
               'sex': ['F', 'M']}
-    mapping_dim = {'Country': 'geo\TIME_PERIOD',
+    mapping_dim = {'Country': 'geo\\TIME_PERIOD',
                    'Variables': 'freq',
                    'Categories1': 'sex',
                    'Categories2': 'age'}
@@ -120,11 +120,11 @@ def get_pop_eurostat_fts(code_pop_fts, EU27_cntr_list, years_fts, dict_iso2):
     level_dict = {1: 'BSL', 2: 'LMRT', 3: 'LMIGR', 4: 'LFRT'}
 
     ##### Extract total pop forecasting
-    filter = {'geo\TIME_PERIOD': list(dict_iso2.keys()),
+    filter = {'geo\\TIME_PERIOD': list(dict_iso2.keys()),
               'age': 'TOTAL',
               'sex': 'T',
               'projection': list(level_dict.values())}
-    mapping_dim = {'Country': 'geo\TIME_PERIOD',
+    mapping_dim = {'Country': 'geo\\TIME_PERIOD',
                    'Variables': 'projection'}
     dm_pop_tot = get_data_api_eurostat(code_pop_fts, filter, mapping_dim, 'inhabitants')
 
@@ -132,10 +132,10 @@ def get_pop_eurostat_fts(code_pop_fts, EU27_cntr_list, years_fts, dict_iso2):
     dm_pop_tot.filter({'Years': years_fts}, inplace=True)
 
     ##### Extract total pop by age forecasting
-    filter = {'geo\TIME_PERIOD': list(dict_iso2.keys()),
+    filter = {'geo\\TIME_PERIOD': list(dict_iso2.keys()),
               'sex': ['F', 'M'],
               'projection': list(level_dict.values())}
-    mapping_dim = {'Country': 'geo\TIME_PERIOD',
+    mapping_dim = {'Country': 'geo\\TIME_PERIOD',
                    'Variables': 'projection',
                    'Categories1': 'sex',
                    'Categories2': 'age'}
