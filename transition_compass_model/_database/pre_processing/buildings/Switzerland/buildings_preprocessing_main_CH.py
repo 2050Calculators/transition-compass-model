@@ -27,7 +27,7 @@ dm_pop = DM_pop['pop']
 dm_pop_ots = DM_pop['pop'].filter({'Years': years_ots})
 
 print("Running floor area pipeline")
-DM_floor = floor_area_run( dm_pop_ots, global_var, country_list, years_ots)
+DM_floor = floor_area_run(global_var, country_list, years_ots)
 # Extract floor area output
 dm_stock_tot = DM_floor['stock tot']
 dm_stock_cat = DM_floor['stock cat']
