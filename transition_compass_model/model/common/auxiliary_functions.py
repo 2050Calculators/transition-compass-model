@@ -1303,3 +1303,38 @@ def df_excel_to_dm(df, names_dict, var_name, unit, num_cat, keep_first=False,
 
   dm = DataMatrix.create_from_df(df_pivot, num_cat=num_cat)
   return dm
+
+
+def extrapolate_missing_years_based_on_per_capita(dm, dm_pop, years_ots, var_name):
+  assert dm_pop.col_labels['Country'] == dm.col_labels['Country']
+  dm_add_missing_variables(dm, {'Years': years_ots}, fill_nans=False)
+  a = dm[:, :, var_name, ...]
+  # Reshape pop array
+  b = dm_pop[:, :, 'lfs_population_total']
+  ndim_diff = a.ndim - b.ndim
+  if ndim_diff > 0:
+    b = b.reshape(b.shape + (1,) * ndim_diff)
+  arr =  a/b
+  dm.add(arr, dim='Variables', col_label=var_name + '_cap', unit='unit/cap')
+  linear_fitting(dm, years_ots)
+  dm[:, :, var_name, :] = dm[:, :, var_name + '_cap', ... ] * b
+  dm.drop(dim='Variables', col_label=var_name+ '_cap')
+
+  return dm
+
+
+
+def rename_cantons(dm):
+  dm.sort('Country')
+  dm.rename_col_regex(" /.*", "", dim='Country')
+  dm.rename_col_regex("-", " ", dim='Country')
+  cantons_fr = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Genève', 'Glarus', 'Graubünden', 'Jura', 'Luzern', 'Neuchâtel', 'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn', 'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud', 'Zug', 'Zürich']
+  if "Canton d'Argovie" in dm.col_labels['Country']:
+    cantons_fr = ["Canton d'Argovie", "Canton d'Appenzell Rh. E.", "Canton d'Appenzell Rh. I.",  "Canton de Bâle Campagne", "Canton de Bâle Ville", "Canton de Berne","Canton de Fribourg", "Canton de Genève", "Canton de Glaris", "Canton des Grisons", "Canton du Jura", "Canton de Lucerne", "Canton de Neuchâtel", "Canton de Nidwald", "Canton d'Obwald", "Canton de Schaffhouse",  "Canton de Schwytz", "Canton de Soleure", "Canton de Saint Gall",  "Canton de Thurgovie", "Canton du Tessin", "Canton d'Uri", "Canton du Valais", "Canton de Vaud", "Canton de Zoug", "Canton de Zurich"]
+  if "Canton d'Argau" in dm.col_labels['Country']:
+    cantons_fr = ["Canton d'Argau",  "Canton d'Appenzell Rh. E.", "Canton d'Appenzell Rh. I.", "Canton de Baselland", "Canton de Basel Stadt", "Canton de Bern", "Canton de Fribourg", "Canton de Genève", "Canton de Glarus", "Canton Graubünden", "Canton du Jura", "Canton de Luzern", "Canton de Neuchâtel", "Canton de Nidwalden", "Canton d'Obwalden", "Canton de Schaffhausen",  "Canton de Schwyz", "Canton de Solothurn", "Canton de St. Gallen",  "Canton de Thurgau", "Canton du Tessin", "Canton d'Uri",  "Canton du Valais", "Canton de Vaud", "Canton de Zug", "Canton de Zürich"]
+
+  cantons_en = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Geneva', 'Glarus', 'Graubünden', 'Jura', 'Lucerne', 'Neuchâtel', 'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn', 'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud', 'Zug', 'Zurich']
+  dm.rename_col(cantons_fr, cantons_en, dim='Country')
+
+  return
