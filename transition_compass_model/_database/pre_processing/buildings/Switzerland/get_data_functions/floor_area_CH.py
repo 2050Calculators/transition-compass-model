@@ -371,21 +371,21 @@ def extract_nb_of_apartments_per_building_type(table_id, file, cantons_fr, canto
         dm = dm_e
       else:  # Sum all construction periods
         dm.array = dm.array + dm_e.array
-      dm.groupby({'bld_apartments': '.*'}, regex=True, dim='Variables', inplace=True)
-      dm.groupby({'single-family-house': ['Maisons individuelles'],
-                  'multi-family-house': ['Maisons à plusieurs logements', "Bâtiments d'habitation avec usage annexe", "Bâtiments partiellement à usage d'habitation"]},
-                 dim='Categories1', inplace=True)
-      dm.drop(col_label = '......5892 Blonay - Saint-Légier', dim='Country')
-      dm.rename_col_regex('- ', '', dim='Country')
-      dm.rename_col_regex(" /.*", "", dim='Country')
-      dm.rename_col_regex("-", " ", dim='Country')
-      cantons_in = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Genève', 'Glarus', 'Graubünden', 'Jura', 'Luzern', 'Neuchâtel', 'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn', 'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud', 'Zug', 'Zürich']
+    dm.groupby({'bld_apartments': '.*'}, regex=True, dim='Variables', inplace=True)
+    dm.groupby({'single-family-house': ['Maisons individuelles'],
+                'multi-family-house': ['Maisons à plusieurs logements', "Bâtiments d'habitation avec usage annexe", "Bâtiments partiellement à usage d'habitation"]},
+               dim='Categories1', inplace=True)
+    dm.drop(col_label = '......5892 Blonay - Saint-Légier', dim='Country')
+    dm.rename_col_regex('- ', '', dim='Country')
+    dm.rename_col_regex(" /.*", "", dim='Country')
+    dm.rename_col_regex("-", " ", dim='Country')
+    cantons_in = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Genève', 'Glarus', 'Graubünden', 'Jura', 'Luzern', 'Neuchâtel', 'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn', 'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud', 'Zug', 'Zürich']
 
-      dm.rename_col(cantons_in, cantons_en, dim='Country')
-      dm.rename_col('Suisse', 'Switzerland', dim='Country')
-      dm.sort('Country')
-      with open(file, 'wb') as handle:
-        pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    dm.rename_col(cantons_in, cantons_en, dim='Country')
+    dm.rename_col('Suisse', 'Switzerland', dim='Country')
+    dm.sort('Country')
+    with open(file, 'wb') as handle:
+      pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
   return dm
 
