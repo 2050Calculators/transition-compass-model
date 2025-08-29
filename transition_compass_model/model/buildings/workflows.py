@@ -381,10 +381,10 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
                 unit='TWh')
 
   # SECTION Calibrate heating energy demand
-  dm_calib = DM_energy['heating-calibration']
-  dm_calib.sort('Categories1')
-  dm_energy.array[...] = dm_energy.array[...] * dm_calib.array[:, :, :,
-                                                np.newaxis, np.newaxis, :]
+  #dm_calib = DM_energy['heating-calibration']
+  #dm_calib.sort('Categories1')
+  #dm_energy.array[...] = dm_energy.array[...] * dm_calib.array[:, :, :,
+  #                                              np.newaxis, np.newaxis, :]
 
   # write datamatrix to pickle
   # current_file_directory = os.path.dirname(os.path.abspath(__file__))
