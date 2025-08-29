@@ -1,13 +1,14 @@
 import numpy as np
 import pandas as pd
 import pickle
-
-from model.common.auxiliary_functions import linear_fitting
+import time
+from model.common.auxiliary_functions import linear_fitting, rename_cantons, dm_add_missing_variables, save_url_to_file
 from _database.pre_processing.api_routines_CH import get_data_api_CH
 from model.common.data_matrix_class import DataMatrix
 from model.common.constant_data_matrix_class import ConstantDataMatrix
 
 import os
+import zipfile
 
 
 def df_excel_to_dm(df, names_dict, var_name, unit, num_cat, keep_first=False, country='Switzerland'):
@@ -51,102 +52,136 @@ def df_excel_to_dm(df, names_dict, var_name, unit, num_cat, keep_first=False, co
     return dm
 
 def extract_heating_technologies_old(table_id, file, cat_sfh, cat_mfh):
-    # Domaine de l'énergie: bâtiments selon le canton, le type de bâtiment, l'époque de construction, le type de chauffage,
-    # la production d'eau chaude, les agents énergétiques utilisés pour le chauffage et l'eau chaude, 1990 et 2000
-    try:
-        with open(file, 'rb') as handle:
-            dm_heating_old = pickle.load(handle)
-    except OSError:
-        structure, title = get_data_api_CH(table_id, mode='example', language='fr')
-        # Extract buildings floor area
-        filter = structure.copy()
-        filter['Canton'] = ['Suisse', 'Vaud']
-        mapping_dim = {'Country': 'Canton', 'Years': 'Année',
-                       'Variables': 'Epoque de construction', 'Categories1': 'Type de bâtiment',
-                       'Categories2': 'Agent énergétique pour le chauffage'}
-        dm_heating_old = None
-        tot_bld = 0
-        for t in structure['Type de chauffage']:
-            for a in structure["Agent énergétique pour l'eau chaude"]:
-                filter['Type de chauffage'] = [t]
-                filter["Agent énergétique pour l'eau chaude"] = [a]
-                unit_all = ['number'] * len(structure['Epoque de construction'])
-                dm_heating_old_t = get_data_api_CH(table_id, mode='extract', filter=filter,
-                                                mapping_dims=mapping_dim, units=unit_all, language='fr')
-                if dm_heating_old is None:
-                    dm_heating_old = dm_heating_old_t.copy()
-                else:
-                    dm_heating_old.array = dm_heating_old_t.array + dm_heating_old.array
-                partial_bld = np.nansum(dm_heating_old_t.array[0, 0, ...])
-                tot_bld = tot_bld + partial_bld
-                print(t, a, partial_bld, tot_bld)
+  # Domaine de l'énergie: bâtiments selon le canton, le type de bâtiment, l'époque de construction, le type de chauffage,
+  # la production d'eau chaude, les agents énergétiques utilisés pour le chauffage et l'eau chaude, 1990 et 2000
+  try:
+    with open(file, 'rb') as handle:
+        dm_heating_old = pickle.load(handle)
+  except OSError:
+    structure, title = get_data_api_CH(table_id, mode='example', language='fr')
+    # Extract buildings floor area
+    dm_heating_old = None
+    for cntr in structure['Canton']:
+      filter = structure.copy()
+      filter['Canton'] = [cntr]
+      mapping_dim = {'Country': 'Canton', 'Years': 'Année',
+                     'Variables': 'Epoque de construction', 'Categories1': 'Type de bâtiment',
+                     'Categories2': 'Agent énergétique pour le chauffage'}
+      dm_heating_old_cntr = None
+      tot_bld = 0
+      for t in structure['Type de chauffage']:
+        for a in structure["Agent énergétique pour l'eau chaude"]:
+          filter['Type de chauffage'] = [t]
+          filter["Agent énergétique pour l'eau chaude"] = [a]
+          unit_all = ['number'] * len(structure['Epoque de construction'])
+          dm_heating_old_t = get_data_api_CH(table_id, mode='extract', filter=filter,
+                                          mapping_dims=mapping_dim, units=unit_all, language='fr')
 
-        dm_heating_old.rename_col(['Suisse'], ['Switzerland'], dim='Country')
-        dm_heating_old.groupby({'single-family-households': ['Maisons individuelles'],
-                               'multi-family-households': ['Maisons à plusieurs logements',
-                                                           "Bâtiments d'habitation avec usage annexe",
-                                                           "Bâtiments partiellement à usage d'habitation"]},
-                                dim='Categories1', inplace=True)
+          if dm_heating_old_cntr is None:
+              dm_heating_old_cntr = dm_heating_old_t.copy()
+          else:
+              dm_heating_old_cntr.array = dm_heating_old_t.array + dm_heating_old_cntr.array
+          partial_bld = np.nansum(dm_heating_old_t.array[0, 0, ...])
+          tot_bld = tot_bld + partial_bld
+          print(t, a, partial_bld, tot_bld)
+          time.sleep(1.5)
+      #dm_heating_old_cntr.rename_col(['Suisse'], ['Switzerland'], dim='Country')
+      dm_heating_old_cntr.groupby({'single-family-households': ['Maisons individuelles'],
+                             'multi-family-households': ['Maisons à plusieurs logements',
+                                                         "Bâtiments d'habitation avec usage annexe",
+                                                         "Bâtiments partiellement à usage d'habitation"]},
+                              dim='Categories1', inplace=True)
 
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, file)
-        with open(f, 'wb') as handle:
-            pickle.dump(dm_heating_old, handle, protocol=pickle.HIGHEST_PROTOCOL)
+      if dm_heating_old is None:
+        dm_heating_old = dm_heating_old_cntr.copy()
+      else:
+        dm_heating_old.append(dm_heating_old_cntr, dim='Country')
 
-    dm_heating_old.rename_col_regex('Construits ', '', dim='Variables')
-    dm_heating_old.rename_col_regex('entre ', '', dim='Variables')
-    dm_heating_old.rename_col_regex(' et ', '-', dim='Variables')
-    dm_heating_old.rename_col_regex('avant ', 'Avant ', dim='Variables')
-    dm_heating_old.groupby({'1991-2000': ['1991-1995', '1996-2000']}, dim='Variables', inplace=True)
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    f = os.path.join(current_file_directory, file)
+    with open(f, 'wb') as handle:
+        pickle.dump(dm_heating_old, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    # Group by construction period
-    dm_heating_sfh = dm_heating_old.filter({'Categories1': ['single-family-households']}, inplace=False)
-    dm_heating_sfh.groupby({'bld_heating-mix_F':  cat_sfh['F']}, dim='Variables', inplace=True)
-    dm_heating_sfh.groupby({'bld_heating-mix_E': cat_sfh['E']}, dim='Variables', inplace=True)
-    dm_heating_sfh.groupby({'bld_heating-mix_D': cat_sfh['D']}, dim='Variables', inplace=True)
+  dm_heating_old.rename_col_regex('Construits ', '', dim='Variables')
+  dm_heating_old.rename_col_regex('entre ', '', dim='Variables')
+  dm_heating_old.rename_col_regex(' et ', '-', dim='Variables')
+  dm_heating_old.rename_col_regex('avant ', 'Avant ', dim='Variables')
+  dm_heating_old.groupby({'1991-2000': ['1991-1995', '1996-2000']}, dim='Variables', inplace=True)
 
-    dm_heating_mfh = dm_heating_old.filter({'Categories1': ['multi-family-households']}, inplace=False)
-    dm_heating_mfh.groupby({'bld_heating-mix_F': cat_mfh['F']}, dim='Variables', inplace=True)
-    dm_heating_mfh.groupby({'bld_heating-mix_E': cat_mfh['E']}, dim='Variables', inplace=True)
-    dm_heating_mfh.groupby({'bld_heating-mix_D': cat_mfh['D']}, dim='Variables', inplace=True)
+  # Group by construction period
+  dm_heating_sfh = dm_heating_old.filter({'Categories1': ['single-family-households']}, inplace=False)
+  dm_heating_sfh.groupby({'bld_heating-mix_F':  cat_sfh['F']}, dim='Variables', inplace=True)
+  dm_heating_sfh.groupby({'bld_heating-mix_E': cat_sfh['E']}, dim='Variables', inplace=True)
+  dm_heating_sfh.groupby({'bld_heating-mix_D': cat_sfh['D']}, dim='Variables', inplace=True)
 
-    # Merge sfh and mfh
-    dm_heating_mfh.append(dm_heating_sfh, dim='Categories1')
-    dm_heating_old = dm_heating_mfh
+  dm_heating_mfh = dm_heating_old.filter({'Categories1': ['multi-family-households']}, inplace=False)
+  dm_heating_mfh.groupby({'bld_heating-mix_F': cat_mfh['F']}, dim='Variables', inplace=True)
+  dm_heating_mfh.groupby({'bld_heating-mix_E': cat_mfh['E']}, dim='Variables', inplace=True)
+  dm_heating_mfh.groupby({'bld_heating-mix_D': cat_mfh['D']}, dim='Variables', inplace=True)
 
-    dm_heating_old.groupby({'other-tech': ['Autre agent énergétique (chauf.)', 'Sans chauffage']},
-                           dim='Categories2', inplace=True)
-    dm_heating_old.rename_col(['Mazout (chauf.)', 'Bois (chauf.)', 'Pompe à chaleur (chauf.)',
-                               'Electricité (chauf.)', 'Gaz (chauf.)', 'Chaleur à distance (chauf.)',
-                               'Charbon (chauf.)', 'Capteur solaire (chauf.)'],
-                              ['heating-oil', 'wood', 'heat-pump', 'electricity', 'gas', 'district-heating', 'coal', 'solar'],
-                              dim='Categories2')
+  # Merge sfh and mfh
+  dm_heating_mfh.append(dm_heating_sfh, dim='Categories1')
+  dm_heating_old = dm_heating_mfh
 
-    dm_heating_old.deepen(based_on='Variables')
-    return dm_heating_old
+  dm_heating_old.groupby({'other-tech': ['Autre agent énergétique (chauf.)', 'Sans chauffage']},
+                         dim='Categories2', inplace=True)
+  dm_heating_old.rename_col(['Mazout (chauf.)', 'Bois (chauf.)', 'Pompe à chaleur (chauf.)',
+                             'Electricité (chauf.)', 'Gaz (chauf.)', 'Chaleur à distance (chauf.)',
+                             'Charbon (chauf.)', 'Capteur solaire (chauf.)'],
+                            ['heating-oil', 'wood', 'heat-pump', 'electricity', 'gas', 'district-heating', 'coal', 'solar'],
+                            dim='Categories2')
+
+  dm_heating_old.deepen(based_on='Variables')
+
+  rename_cantons(dm_heating_old)
+  dm_heating_old.rename_col('Suisse', 'Switzerland', 'Country')
+  return dm_heating_old
 
 
 
 def extract_heating_technologies(table_id, file, cat_sfh, cat_mfh):
+
+    def extract_cntr_heating(cntr_list):
+      filter = {'Année': structure['Année'],
+                'Canton': cntr_list,
+                "Source d'énergie du chauffage": structure[
+                  "Source d'énergie du chauffage"],
+                "Source d'énergie de l'eau chaude": structure[
+                  "Source d'énergie de l'eau chaude"],
+                'Époque de construction': structure['Époque de construction'],
+                'Catégorie de bâtiment': structure['Catégorie de bâtiment']}
+      mapping_dim = {'Country': 'Canton', 'Years': 'Année',
+                     'Variables': 'Époque de construction',
+                     'Categories1': 'Catégorie de bâtiment',
+                     'Categories2': "Source d'énergie du chauffage"}
+      unit_all = ['number'] * len(structure['Époque de construction'])
+      # Get api data
+      dm_heating_cntr = get_data_api_CH(table_id, mode='extract', filter=filter,
+                                        mapping_dims=mapping_dim,
+                                        units=unit_all, language='fr')
+      return dm_heating_cntr
+
     try:
         with open(file, 'rb') as handle:
             dm_heating = pickle.load(handle)
     except OSError:
         structure, title = get_data_api_CH(table_id, mode='example', language='fr')
         # Extract buildings floor area
-        filter = {'Année': structure['Année'],
-                  'Canton': ['Suisse', 'Vaud'],
-                  "Source d'énergie du chauffage": structure["Source d'énergie du chauffage"],
-                  "Source d'énergie de l'eau chaude": structure["Source d'énergie de l'eau chaude"],
-                  'Époque de construction': structure['Époque de construction'],
-                  'Catégorie de bâtiment': structure['Catégorie de bâtiment']}
-        mapping_dim = {'Country': 'Canton', 'Years': 'Année',
-                       'Variables': 'Époque de construction', 'Categories1': 'Catégorie de bâtiment',
-                       'Categories2': "Source d'énergie du chauffage"}
-        unit_all = ['number'] * len(structure['Époque de construction'])
-        # Get api data
-        dm_heating = get_data_api_CH(table_id, mode='extract', filter=filter,
-                                        mapping_dims=mapping_dim, units=unit_all, language='fr')
+        dm_heating=None
+        # There is a problem with Neuchatel and it cannot be extracted as standalone
+        cantons_list = list(set(structure['Canton']) - {'Suisse',  'Neuchâtel', 'St. Gallen'})
+        for cntr in cantons_list:
+          cntr_list = [cntr]
+
+          dm_heating_cntr = extract_cntr_heating(cntr_list)
+          if dm_heating is None:
+            dm_heating = dm_heating_cntr
+          else:
+            dm_heating.append(dm_heating_cntr, dim='Country')
+
+        dm_heating_cntr = extract_cntr_heating(['Suisse',  'Neuchâtel', 'St. Gallen'])
+        dm_heating.append(dm_heating_cntr, dim='Country')
+
         dm_heating.rename_col(['Suisse'], ['Switzerland'], dim='Country')
         dm_heating.groupby({'single-family-households': ['Maisons individuelles'],
                                'multi-family-households': ['Maisons à plusieurs logements',
@@ -177,6 +212,7 @@ def extract_heating_technologies(table_id, file, cat_sfh, cat_mfh):
 
     dm_heating.deepen(based_on='Variables')
 
+    rename_cantons(dm_heating)
     return dm_heating
 
 
@@ -288,13 +324,13 @@ def compute_heating_mix_F_E_D_categories(dm_heating_tech, dm_heating_tech_old, y
     dm_heating_tech_old.switch_categories_order('Categories2', 'Categories3')
     dm_tmp = dm_heating_tech.filter({'Categories1': dm_heating_tech_old.col_labels['Categories1']})
     dm_heating_tech_old.append(dm_tmp, dim='Years')
-    dm_heating_tech_old.normalise(dim='Categories3')
+    #dm_heating_tech_old.normalise(dim='Categories3')
     # Remove "D" values at 0 in 1990 and use fill_nans to fill
     idx = dm_heating_tech_old.idx
     dm_heating_tech_old.array[:, idx[1990], :, idx['D'], idx['multi-family-households'], :] = np.nan
     dm_heating_tech_old.fill_nans('Years')
     linear_fitting(dm_heating_tech_old, years_ots)
-    dm_heating_tech_old.normalise('Categories3')
+    #dm_heating_tech_old.normalise('Categories3')
     return dm_heating_tech_old
 
 def compute_heating_mix_C_B_categories(dm_heating_tech, cdm_heating_archetypes, years_ots, envelope_cat_new):
@@ -303,12 +339,10 @@ def compute_heating_mix_C_B_categories(dm_heating_tech, cdm_heating_archetypes, 
     # In order to extrapolate C category for the missing years, since things change rapidely in 2021-2023,
     # I use the archetype paper to fix the values at the beginning of the construction period (this is a bit of a misuse)
 
-    # normalise
+    # normalise over fuel technology
     dm_heating_tech_new.normalise('Categories3')
     # add missing years as nan
-    years_missing = list(set(years_ots) - set(dm_heating_tech_new.col_labels['Years']))
-    dm_heating_tech_new.add(np.nan, dim='Years', dummy=True, col_label=years_missing)
-    dm_heating_tech_new.sort('Years')
+    dm_add_missing_variables(dm_heating_tech_new, {'Years': years_ots}, fill_nans=False)
     # replace the values at the beginning of the construction period for C with the archetypes values
     extra_cat = list(set(dm_heating_tech_new.col_labels['Categories3']) - set(cdm_heating_archetypes.col_labels['Categories3']))
     dm_heating_tech_new.filter({'Categories3': cdm_heating_archetypes.col_labels['Categories3']}, inplace=True)
@@ -453,3 +487,77 @@ def compute_heating_efficiency_by_archetype(dm_heating_eff, dm_all, envelope_cat
     dm_eff_cat.append(dm_eff_cat_raw, dim='Variables')
     return dm_eff_cat
 
+
+def extract_heating_technologies_EP2050(file_url, zip_name, file_pickle):
+
+  try:
+    with open(file_pickle, 'rb') as handle:
+      dm = pickle.load(handle)
+
+  except OSError:
+
+    def format_df_tech_EP250(df, start_row, var_name, unit):
+      # Years as int
+      df.set_index([df.columns[0]], inplace=True)
+      df = df.loc[:, ~df.columns.isna()]
+      df.columns = df.columns.astype(int)
+      df.reset_index(inplace=True)
+
+      # Change variables names
+      df.rename(columns={df.columns[0]: 'Energy_source'}, inplace=True)
+      full_name = [var_name + '_'+ cat + '[' + unit + ']' for cat in
+                   df['Energy_source']]
+      df['Energy_source'] = full_name
+
+      # Pivot
+      df_T = df.T
+      df_T.columns = df_T.iloc[0]
+      df_T = df_T.iloc[1:]
+      df_T.reset_index(inplace=True)
+      df_T.rename(columns={start_row: 'Years'}, inplace=True)
+      df_T['Country'] = 'Switzerland'
+
+      dm = DataMatrix.create_from_df(df_T, num_cat=1)
+      return dm
+
+    extract_dir = os.path.splitext(zip_name)[0]  # 'data/EP2050_sectors'
+    if not os.path.exists(extract_dir):
+      save_url_to_file(file_url, zip_name)
+
+      # Extract the file
+      os.makedirs(extract_dir, exist_ok=True)
+      with zipfile.ZipFile(zip_name, 'r') as zip_ref:
+        zip_ref.extractall(extract_dir)
+
+    file_industry = extract_dir + '/EP2050+_Szenarienergebnisse_Details_Nachfragesektoren/EP2050+_Detailergebnisse 2020-2060_Private Haushalte_alle Szenarien_2022-05-17.xlsx'
+    df = pd.read_excel(file_industry, sheet_name='02 Wohnungen')
+
+    df.drop(columns=[df.columns[0], df.columns[2]], inplace = True)
+
+    # Extract shares
+    table_title = 'Tabelle 02-01: Entwicklung der Beheizungsstruktur im Gebäudebestand im Szenario ZERO Basis'
+    start_table_row = df.index[df['Unnamed: 1'] == table_title].tolist()[1]
+    col_row = start_table_row+2
+    df.columns = df.iloc[col_row]
+
+    df_single = df.iloc[start_table_row + 4:start_table_row + 4+7]
+    dm_single = format_df_tech_EP250(df_single, col_row, var_name = 'bld_heating-mix_single-family-households', unit='%')
+    dm_single.deepen(based_on='Variables')
+    dm_single.switch_categories_order()
+    dm_single.rename_col(['Fernwärme/Nahwärme', 'Gas', 'Heizöl', 'Holz', 'Strom', 'Wärmepumpen', 'sonstige'],
+                        ['district-heating', 'gas', 'heating-oil', 'wood', 'electricity', 'heat-pump', 'other'], dim='Categories2')
+    dm_single.sort('Categories1')
+
+    df_multi = df.iloc[start_table_row+12: start_table_row+12+7]
+    dm_multi = format_df_tech_EP250(df_multi, col_row, var_name = 'bld_heating-mix_multi-family-households', unit='%')
+    dm_multi.deepen(based_on='Variables')
+    dm_multi.switch_categories_order()
+    dm_multi.rename_col(['Fernwärme/Nahwärme', 'Gas', 'Heizöl', 'Holz', 'Strom', 'Wärmepumpen', 'sonstige'],
+                        ['district-heating', 'gas', 'heating-oil', 'wood', 'electricity', 'heat-pump', 'other'], dim='Categories2')
+    dm_multi.sort('Categories1')
+
+    dm_shares = dm_multi
+    dm_shares.append(dm_single, dim='Categories1')
+
+
+  return dm_shares

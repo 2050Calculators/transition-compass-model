@@ -40,7 +40,7 @@ DM_renov = renovation_run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, 
 dm_all = DM_renov['floor-area-cat']
 
 print("Running heating technology pipeline")
-DM_heating = heating_tech_run(global_var, dm_all, years_ots)
+DM_heating = heating_tech_run(global_var, dm_all, country_list, years_ots)
 
 print("Running other pipeline")
 DM_other = other_run(country_list, years_ots, years_fts)
