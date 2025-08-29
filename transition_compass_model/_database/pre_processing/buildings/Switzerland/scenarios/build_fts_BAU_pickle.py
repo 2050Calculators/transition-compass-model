@@ -118,6 +118,14 @@ def run(DM_buildings, country_list, years_fts):
   ###########################################
   dm_heating_cat = DM_buildings['ots']['heating-technology-fuel']['bld_heating-technology'].copy()
   dm_heating_cat.add(np.nan, dim='Years', dummy=True, col_label=years_fts)
+  # Obligation à enlever les chauffages electriques d'ici 2033-2038
+  # https://publication.vd.ch/publications/dgaic/aide-memoire/domaines-batiments/assainissement-des-chauffages-et-chauffe-eau-electriques
+  idx = dm_heating_cat.idx
+  dm_heating_cat['Vaud', idx[2035]:, :, :, 'E', 'electricity'] = 0
+  dm_heating_cat['Vaud', idx[2035]:, :, :,  'F', 'electricity'] = 0
+  dm_heating_cat['Vaud', idx[2040]:, :, :, 'B', 'electricity'] = 0
+  dm_heating_cat['Vaud', idx[2040]:, :, :, 'C', 'electricity'] = 0
+  dm_heating_cat['Vaud', idx[2040]:, :, :, 'D', 'electricity'] = 0
   dm_heating_cat.fill_nans('Years')
   DM_buildings['fts']['heating-technology-fuel'] = dict()
   DM_buildings['fts']['heating-technology-fuel'][
