@@ -11,6 +11,7 @@ from processors.lighting_pipeline_CH import run as lighting_run
 from processors.services_pipeline_CH import run as services_run
 from scenarios.build_fts_BAU_pickle import run as fts_bau_pickle_run
 from scenarios.build_fts_LoiEnergie_Vaud_pickle import run as fts_loi_energie_vaud_run
+from scenarios.buildings_fts_EP2050_pickle import run as fts_Vaud_EP2050_run
 from get_data_functions.construction_period_param import load_construction_period_param
 
 
@@ -73,5 +74,10 @@ DM_buildings = ots_pickle_run(dm_pop_ots, DM_all, years_ots, years_fts)
 print('Compile pickle fts - all BAU')
 DM_buildings = fts_bau_pickle_run(DM_buildings, country_list, years_fts)
 
+print('Compile Scenario EP2050 - Vaud - level 3')
+DM_buildings = fts_Vaud_EP2050_run(DM_buildings, lev=3)
+
 print('Compile Scenario Loi Energie 2025 - Vaud - level 4')
 DM_buildings = fts_loi_energie_vaud_run(DM_buildings, dm_pop_ots, global_var, country_list, lev=4)
+
+
