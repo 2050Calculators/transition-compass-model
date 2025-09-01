@@ -17,6 +17,19 @@ def calculate_heating_eff_fts(dm_heating_eff, years_fts, maximum_eff, fuel_cat='
 
   return dm_heating_eff_fts
 
+def adjust_COP_based_on_envelope_cat(dm):
+  # This is taken from https://www.flumroc.ch/fileadmin/Dateiliste/flumroc/Bilder/400_steinwolle/Stromsparen-HSLU/d_250716_Kurzbericht_Studie_Flumroc_final.pdf
+  # Which is originally taken from  Döring & Richter, 2024
+  # And the information of the average energy demand per building category (SFH) from the archetype paper
+  # Pongelli, A.; Priore, Y.D.; Bacher, J.-P.; Jusselme, T. Definition of Building Archetypes Based on the Swiss Energy Performance Certificates Database. Buildings 2023, 13, 40. https://doi.org/10.3390/buildings13010040
+  avg_2023_COP = {'F': 2.3, 'E': 2.5, 'D': 3, 'C': 3.3, 'B': 3.6 }
+  for cat in dm.col_labels['Categories1']:
+    #corr_fact = avg_2023_COP[cat]/dm[:, 2023, np.newaxis, :, cat, 'heat-pump']
+    #dm[:, :, :, cat, 'heat-pump'] =  corr_fact * dm[:, :, :, cat, 'heat-pump']
+    dm[:, :, :, cat, 'heat-pump'] =  np.minimum(avg_2023_COP[cat] , dm[:, :, :, cat, 'heat-pump'])
+
+  return dm
+
 
 def run(DM_buildings, country_list, years_fts):
 
@@ -142,6 +155,7 @@ def run(DM_buildings, country_list, years_fts):
   dm_heating_eff = DM_buildings['ots']['heating-efficiency'].copy()
   dm_heating_eff_fts = calculate_heating_eff_fts(dm_heating_eff.copy(),
                                                  years_fts, maximum_eff=0.98)
+  dm_heating_eff_fts = adjust_COP_based_on_envelope_cat(dm_heating_eff_fts)
   dm_heating_eff_fts[:, :, 'bld_heating-efficiency', :, 'electricity'] = 1
   DM_buildings['fts']['heating-efficiency'] = dict()
   for lev in range(4):
