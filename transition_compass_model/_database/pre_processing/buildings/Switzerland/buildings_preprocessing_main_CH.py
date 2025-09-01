@@ -80,4 +80,5 @@ DM_buildings = fts_Vaud_EP2050_run(DM_buildings, lev=3)
 print('Compile Scenario Loi Energie 2025 - Vaud - level 4')
 DM_buildings = fts_loi_energie_vaud_run(DM_buildings, dm_pop_ots, global_var, country_list, lev=4)
 
+print('Hello')
 
