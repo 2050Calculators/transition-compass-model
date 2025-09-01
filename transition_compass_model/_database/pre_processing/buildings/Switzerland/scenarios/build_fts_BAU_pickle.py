@@ -75,7 +75,8 @@ def run(DM_buildings, country_list, years_fts):
     lev = lev + 1
     DM_buildings['fts']['building-renovation-rate']['bld_renovation-rate'][
       lev] = dm_rr.filter({'Years': years_fts})
-
+  # Build a level 1 scenario with no renovation
+  DM_buildings['fts']['building-renovation-rate']['bld_renovation-rate'][1][...] = 0
 
   ###########################################
   #####    RENOVATION-REDISTRIBUTION    #####
@@ -122,7 +123,7 @@ def run(DM_buildings, country_list, years_fts):
   # https://publication.vd.ch/publications/dgaic/aide-memoire/domaines-batiments/assainissement-des-chauffages-et-chauffe-eau-electriques
   idx = dm_heating_cat.idx
   dm_heating_cat['Vaud', idx[2035]:, :, :, 'E', 'electricity'] = 0
-  dm_heating_cat['Vaud', idx[2035]:, :, :,  'F', 'electricity'] = 0
+  dm_heating_cat['Vaud', idx[2035]:, :, :, 'F', 'electricity'] = 0
   dm_heating_cat['Vaud', idx[2040]:, :, :, 'B', 'electricity'] = 0
   dm_heating_cat['Vaud', idx[2040]:, :, :, 'C', 'electricity'] = 0
   dm_heating_cat['Vaud', idx[2040]:, :, :, 'D', 'electricity'] = 0
