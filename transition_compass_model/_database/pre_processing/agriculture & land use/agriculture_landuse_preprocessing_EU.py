@@ -2615,7 +2615,7 @@ def feed_processing():
   df_feed_lsu_pathwaycalc = df_feed_lsu_melted[['variables','value']].copy()
 
   # Pathwaycalc formatting
-  # Renaming existing columns (geoscale, timsecale, value)
+  # Renaming existing columns (geoscale, timescale, value)
   df_feed_lsu_pathwaycalc.rename(columns={'Area': 'geoscale', 'Year': 'timescale'},
                              inplace=True)
 
@@ -2633,7 +2633,7 @@ def feed_processing():
 
   # Extrapolating
   df_feed_lsu_pathwaycalc = ensure_structure(df_feed_lsu_pathwaycalc)
-  df_feed_lsu_pathwaycalc = linear_fitting_ots_db(df_feed_lsu_pathwaycalc, years_ots,
+  df_feed_lsu_pathwaycalc = linear_fitting_ots_db(df_feed_lsu_pathwaycalc, years_all,
                                               countries='all')
 
   return df_feed_lsu_pathwaycalc
@@ -5344,11 +5344,11 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     DM_agriculture_old['fxa']['ef_liv_CH4-emission_treated']['Switzerland', :, 'fxa_ef_liv_CH4-emission_treated', :] = dm['Switzerland', :, 'fxa_ef_liv_CH4-emission_treated', :]
 
     # Feed
-    #lever = 'diet'
-    #df_ots, df_fts = database_to_df(df_feed_lsu_pathwaycalc, lever, level='all')
-    #df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
-    #dm = DataMatrix.create_from_df(df_ots, num_cat=2)
-    #DM_agriculture_old['fxa']['feed'] = dm
+    lever = 'diet'
+    df_ots, df_fts = database_to_df(df_feed_lsu_pathwaycalc, lever, level='all')
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm = DataMatrix.create_from_df(df_ots, num_cat=2)
+    DM_agriculture_old['fxa']['feed'] = dm
 
     # LeversToDatamatrix FTS linear fitting of ots
 
@@ -5989,6 +5989,7 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
 # CalculationTree RUNNING LEVERS PRE-PROCESSING -----------------------------------------------------------------------------------------------
 years_ots = create_years_list(1990, 2023, 1)  # make list with years from 1990 to 2015
 years_fts = create_years_list(2025, 2050, 5)
+years_all = years_ots + years_fts
 
 if not os.path.exists('data/faostat'):
     os.makedirs('data/faostat')
@@ -6049,9 +6050,7 @@ database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, d
 # calculated based on the metabolism.
 # AND update the calibration values for cal_diet.
 # ----------------------------------------------------------------------------------------------------------------------
-years_ots = create_years_list(1990, 2023, 1)  # make list with years from 1990 to 2015
-years_fts = create_years_list(2025, 2050, 5)
-years_all = years_ots + years_fts
+
 
 
 # Load pickles

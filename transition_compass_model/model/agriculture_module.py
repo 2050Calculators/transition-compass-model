@@ -1101,7 +1101,69 @@ def livestock_manure_workflow(DM_manure, DM_livestock, dm_liv_pop, cdm_const, ye
     return dm_liv_N2O, dm_CH4, df_cal_rates_liv_N2O, df_cal_rates_liv_CH4, DM_manure
 
 
-# CalculationLeaf FEED -------------------------------------------------------------------------------------------------
+# CalculationLeaf FEED NEW VERSION -------------------------------------------------------------------------------------------------
+def feed_workflow_new(DM_feed, dm_liv_pop, CDM_const, years_setting):
+  # FEED REQUIREMENTS : cereal, oilcrop, sugarcrop, pulse
+  # Feed requirements per type and livestock [kg] = feed type per livestock [kg/lsu] * livestock [lsu]
+  idx_pop = dm_liv_pop.idx
+  idx_feed = DM_feed['feed'].idx
+  dm_temp = DM_feed['feed'].array[:, :, idx_feed['fxa_agr_feed'], :, :] \
+            * dm_liv_pop.array[:, :, idx_pop['agr_liv_population'], :, np.newaxis]
+  DM_feed['feed'].add(dm_temp, dim='Variables', col_label='agr_feed_kg',
+                             unit='kg')
+
+  # Feed requirements per type [kg] = sum per type (Feed requirements per type and livestock [kg])
+  dm_feed = DM_feed['feed'].filter({'Variables': ['agr_feed_kg']})
+  dm_feed.groupby({'all': '.*'}, dim='Categories1', regex=True, inplace=True)
+  dm_feed.rename_col_regex(str1="all_", str2="", dim="Categories1")
+  dm_feed = dm_feed.flatten()
+
+  # Unit conversion : kg to kcal
+  # Filter constants and rename
+  cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
+  cdm_kcal = CDM_const['cdm_kcal-per-t'].filter({'Categories1':
+                                                   ["crop-cereal",
+                                                    "crop-oilcrop",
+                                                    "crop-pulse",
+                                                    "crop-sugarcrop"]})
+  # Convert from [kg] to [t]
+  dm_feed.change_unit('agr_feed_kg', factor=10**-3, old_unit='kg', new_unit='t')
+  # Convert from [t] to [kcal]
+  idx_dm = dm_feed.idx
+  idx_cdm = cdm_kcal.idx
+  array_temp = dm_feed.array[:, :,
+               idx_dm['agr_feed_kg'], :] \
+               * cdm_kcal.array[idx_cdm['cp_kcal-per-t'], :]
+  dm_feed.add(array_temp, dim='Variables',
+                        col_label='agr_feed',
+                        unit='kcal')
+
+
+  # ALTERNATIVE PROTEIN SOURCE (APS) FOR LIVESTOCK FEED
+
+  # Calibration Feed demand
+  """dm_feed_demand = DM_feed['ration'].filter(
+    {'Variables': ['agr_demand_feed_raw']})
+  dm_cal_feed = DM_feed['cal_agr_demand_feed']
+  dm_cal_rates_feed = calibration_rates(dm_feed_demand, dm_cal_feed,
+                                        calibration_start_year=1990,
+                                        calibration_end_year=2023,
+                                        years_setting=years_setting)
+  DM_feed['ration'].append(dm_cal_rates_feed, dim='Variables')
+  DM_feed['ration'].operation('agr_demand_feed_raw', '*', 'cal_rate',
+                              dim='Variables', out_col='agr_demand_feed',
+                              unit='kcal')
+  df_cal_rates_feed = dm_to_database(dm_cal_rates_feed, 'none', 'agriculture',
+                                     level=0)  # Exporting calibration rates to check at the end
+  df_cal_feed = dm_to_database(dm_cal_feed, 'none', 'agriculture',
+                               level=0)  # Exporting calibration rates to check at the end
+  df_feed_demand = dm_to_database(dm_feed_demand, 'none', 'agriculture',
+                                  level=0)  # Exporting calibration rates to check at the end"""
+
+  return
+
+
+# CalculationLeaf FEED OLD VERSION-------------------------------------------------------------------------------------------------
 def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years_setting):
     # FEED REQUIREMENTS
     # Filter protein conversion efficiency constant
@@ -2448,6 +2510,7 @@ def agriculture(lever_setting, years_setting, DM_input, interface=Interface()):
     dm_liv_N2O, dm_CH4, df_cal_rates_liv_N2O, df_cal_rates_liv_CH4, DM_manure = livestock_manure_workflow(DM_manure, DM_livestock,
                                                                                                dm_liv_pop, CDM_const,
                                                                                                years_setting)
+    feed_workflow_new(DM_feed, dm_liv_pop, CDM_const, years_setting)
     DM_feed, dm_aps_ibp, dm_feed_req, dm_aps, dm_feed_demand, df_cal_rates_feed = feed_workflow(DM_feed, dm_liv_prod,
                                                                                                 dm_bev_ibp_cereal_feed,
                                                                                                 CDM_const,
