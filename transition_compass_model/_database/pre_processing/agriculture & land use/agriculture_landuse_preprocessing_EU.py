@@ -2122,24 +2122,42 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_dens
     df_losses_csl_pathwaycalc['geoscale'] = df_losses_csl_pathwaycalc['geoscale'].replace('Czechia', 'Czech Republic')
 
     # ----------------------------------------------------------------------------------------------------------------------
-    # FEED RATION HERE! ----------------------------------------------------------------------------------------------------------
+    # FEED RATION ----------------------------------------------------------------------------------------------------------
     # ---------------------------------------------------------------------------------------------------------------------
+
+    # Unit conversion : [t] => [kcal]
+    # Univ conversion [kt] => [kcal]
+    # Read excel
+    df_kcal_t = pd.read_excel(
+        'dictionaries/kcal_to_t.xlsx',
+        sheet_name='kcal_per_100g')
+    df_kcal_t = df_kcal_t[['Item', 'kcal per t']]
+    # Merge
+    merged_df = pd.merge(
+        df_kcal_t,
+        df_csl_feed,
+    )
+    # Operation
+    merged_df['Feed [kcal]'] = 1000 * merged_df['Feed'] * merged_df['kcal per t']
+    pivot_df_feed = merged_df[['Area', 'Year', 'Item', 'Feed [kcal]']]
+    pivot_df_feed = pivot_df_feed.copy()
+
     # Fill nan with zeros
-    df_csl_feed['Feed'].fillna(0, inplace=True)
+    pivot_df_feed['Feed [kcal]'].fillna(0, inplace=True)
 
     # Add a column with the total feed (per country and year)
-    df_csl_feed['Total feed'] = df_csl_feed.groupby(['Area', 'Year'])['Feed'].transform('sum')
+    pivot_df_feed['Total feed'] = pivot_df_feed.groupby(['Area', 'Year'])['Feed [kcal]'].transform('sum')
 
     # Feed ration [%] = Feed from item i / Total feed
-    df_csl_feed['Feed ratio'] = df_csl_feed['Feed'] / df_csl_feed['Total feed']
+    pivot_df_feed['Feed ratio'] = pivot_df_feed['Feed [kcal]'] / pivot_df_feed['Total feed']
 
     # Drop columns
-    df_csl_feed = df_csl_feed.drop(columns=['Feed', 'Total feed'])
+    pivot_df_feed = pivot_df_feed.drop(columns=['Feed [kcal]', 'Total feed'])
 
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
 
     # Renaming into 'Value'
-    df_csl_feed.rename(columns={'Area': 'geoscale', 'Year': 'timescale', 'Feed ratio': 'value'}, inplace=True)
+    pivot_df_feed.rename(columns={'Area': 'geoscale', 'Year': 'timescale', 'Feed ratio': 'value'}, inplace=True)
 
     # Read excel file
     df_dict_csl = pd.read_excel(
@@ -2147,7 +2165,7 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_dens
         sheet_name='climate-smart-livestock')
 
     # Merge based on 'Item'
-    df_csl_feed_pathwaycalc = pd.merge(df_dict_csl, df_csl_feed, on='Item')
+    df_csl_feed_pathwaycalc = pd.merge(df_dict_csl, pivot_df_feed, on='Item')
 
     # Drop the 'Item' column
     df_csl_feed_pathwaycalc = df_csl_feed_pathwaycalc.drop(columns=['Item'])
@@ -3413,7 +3431,7 @@ def bioernergy_capacity_processing(df_csl_feed):
     df_bioenergy_capacity_CH['agr_bioenergy-capacity_bgs-mix_thermal-biogases[%]'] = 0.0
 
     # Drop columns 'Total feed' and 'Feed ratio'
-    df_bioenergy_capacity_CH = df_bioenergy_capacity_CH.drop(columns=['Total feed', 'Feed ratio'])
+    #df_bioenergy_capacity_CH = df_bioenergy_capacity_CH.drop(columns=['Total feed', 'Feed ratio'])
 
     # Melting
     df_bioenergy_capacity_CH_pathwaycalc= pd.melt(df_bioenergy_capacity_CH, id_vars=['Area', 'Year'],
@@ -3545,7 +3563,7 @@ def biomass_bioernergy_hierarchy_processing(df_csl_feed):
     df_biomass_hierarchy_all['agr_biomass-hierarchy_bioenergy_liquid_biojetkerosene_hvo[%]'] = 1.0
 
     # Drop columns 'Total feed' and 'Feed ratio'
-    df_biomass_hierarchy_all = df_biomass_hierarchy_all.drop(columns=['Total feed', 'Feed ratio'])
+    #df_biomass_hierarchy_all = df_biomass_hierarchy_all.drop(columns=['Total feed', 'Feed ratio'])
 
     # Melt df
     df_biomass_hierarchy_pathwaycalc = pd.melt(df_biomass_hierarchy_all, id_vars=['geoscale', 'timescale'],
@@ -3605,7 +3623,7 @@ def livestock_protein_meals_processing(df_csl_feed):
     df_protein_meals_all['agr_alt-protein_meat-sheep_insect[%]'] = 0.0
 
     # Drop columns 'Total feed' and 'Feed ratio'
-    df_protein_meals_all = df_protein_meals_all.drop(columns=['Total feed', 'Feed ratio'])
+    #df_protein_meals_all = df_protein_meals_all.drop(columns=['Total feed', 'Feed ratio'])
 
     # Melt df
     df_protein_meals_pathwaycalc = pd.melt(df_protein_meals_all, id_vars=['Area', 'Year'],
@@ -6051,8 +6069,6 @@ database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, d
 # AND update the calibration values for cal_diet.
 # ----------------------------------------------------------------------------------------------------------------------
 
-
-
 # Load pickles
 with open('../../data/datamatrix/agriculture.pickle', 'rb') as handle:
     DM_agriculture = pickle.load(handle)
@@ -6064,7 +6080,10 @@ with open('../../data/datamatrix/lifestyles.pickle', 'rb') as handle:
 filter_DM(DM_agriculture, {'Country': ['Switzerland', 'Vaud', 'EU27']})
 filter_DM(DM_lifestyles, {'Country': ['Switzerland', 'Vaud', 'EU27']})
 
+# ---------------------------------------------------------------------------------------------------------
 # ADDING CONSTANTS ----------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------------------------
+
 # KCAL TO T ----------------------------------------------------------------------------------------
 
 # Read excel
@@ -6103,6 +6122,21 @@ DM_agriculture['constant']['cdm_CO2']['cp_emission-factor_CO2','liquid-ff-diesel
 DM_agriculture['constant']['cdm_CO2']['cp_emission-factor_CO2','liquid-ff-gasoline'] = 10**-6 * 73.80 / tj_to_ktoe
 DM_agriculture['constant']['cdm_CO2']['cp_emission-factor_CO2','liquid-ff-lpg'] = 10**-6 * 0.0 / tj_to_ktoe
 DM_agriculture['constant']['cdm_CO2']['cp_emission-factor_CO2','solid-ff-coal'] = 10**-6 * 0.0 / tj_to_ktoe
+
+# FEED - ENERGY CONVERSION EFFICIENCY  ----------------------------------------------------------------------------------------
+
+# Note : the unit % really means unitless
+
+# Source : Alexander, P., Brown, C., Arneth, A., Finnigan, J., Rounsevell, M.D.A., 2016.
+# Human appropriation of land for food: The role of diet. Glob. Environ.
+# Change 41, 88–98. https://doi.org/10.1016/j.gloenvcha.2016.09.005
+DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','abp-dairy-milk'] = 0.24
+DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','abp-hens-egg'] = 0.19
+DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-bovine'] = 0.019
+DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-oth-animals'] = 0.044
+DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-pig'] = 0.086
+DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-poultry'] = 0.13
+DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-sheep'] = 0.044
 
 # FXA EF NITROGEN FERTILIZER ----------------------------------------------------------------------------------------
 # Load data

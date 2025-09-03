@@ -1231,7 +1231,7 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     # dm_alt_feed.rename_col('agr_use_bev_ibp_cereal_feed', 'agr_feed-diet-switch', dim='Variables') FIXME find the issue because this line does not work, probably because of previous groupby in ALC BEV
     dm_feed_req_total.append(dm_alt_feed, dim='Variables')
 
-    # Total feed demand [kcal] = Total feed req [kcal] - Alternative feed ration [kcal] FIXME change 1st component name
+    # Crop based feed demand [kcal] = Total feed req [kcal] - Alternative feed ration [kcal] FIXME change 1st component name
     dm_feed_req_total.operation('agr_feed-requierement_total', '-', 'agr_use_bev_ibp_cereal_feed',
                                 out_col='agr_feed-demand', unit='kcal')
 
