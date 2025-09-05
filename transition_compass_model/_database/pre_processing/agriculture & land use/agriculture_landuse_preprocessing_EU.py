@@ -1521,7 +1521,7 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
     return df_climate_smart_crop_pathwaycalc, df_energy_demand_cal, df_CO2_cal
 
 # CalculationLeaf CLIMATE SMART LIVESTOCK ------------------------------------------------------------------------------
-def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_density, list_countries):
+def climate_smart_livestock_processing(df_feed_ration, df_liv_pop, df_cropland_density, list_countries):
 
     # ----------------------------------------------------------------------------------------------------------------------
     # LIVESTOCK DENSITY & GRAZING INTENSITY ---------------------------------------------------------------------------------
@@ -2125,39 +2125,48 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_dens
     # FEED RATION ----------------------------------------------------------------------------------------------------------
     # ---------------------------------------------------------------------------------------------------------------------
 
-    # Unit conversion : [t] => [kcal]
-    # Univ conversion [kt] => [kcal]
-    # Read excel
-    df_kcal_t = pd.read_excel(
-        'dictionaries/kcal_to_t.xlsx',
-        sheet_name='kcal_per_100g')
-    df_kcal_t = df_kcal_t[['Item', 'kcal per t']]
-    # Merge
-    merged_df = pd.merge(
-        df_kcal_t,
-        df_csl_feed,
-    )
-    # Operation
-    merged_df['Feed [kcal]'] = 1000 * merged_df['Feed'] * merged_df['kcal per t']
-    pivot_df_feed = merged_df[['Area', 'Year', 'Item', 'Feed [kcal]']]
-    pivot_df_feed = pivot_df_feed.copy()
-
     # Fill nan with zeros
-    pivot_df_feed['Feed [kcal]'].fillna(0, inplace=True)
+    df_feed_ration['Feed [kcal]'].fillna(0, inplace=True)
 
     # Add a column with the total feed (per country and year)
-    pivot_df_feed['Total feed'] = pivot_df_feed.groupby(['Area', 'Year'])['Feed [kcal]'].transform('sum')
+    df_feed_ration['Total feed'] = df_feed_ration.groupby(['Area', 'Year'])['Feed [kcal]'].transform('sum')
 
     # Feed ration [%] = Feed from item i / Total feed
-    pivot_df_feed['Feed ratio'] = pivot_df_feed['Feed [kcal]'] / pivot_df_feed['Total feed']
+    df_feed_ration['Feed ratio'] = df_feed_ration['Feed [kcal]'] / df_feed_ration['Total feed']
 
     # Drop columns
-    pivot_df_feed = pivot_df_feed.drop(columns=['Feed [kcal]', 'Total feed'])
+    df_feed_ration = df_feed_ration.drop(columns=['Feed [kcal]', 'Total feed'])
+
+    # For Switzerland add Fruits = 0%
+    # Duplicate rows only where Item = 'Pulses' and Area = 'Switzerland'
+    duplicated_rows = df_feed_ration[
+      (df_feed_ration['Item'] == 'Pulses') & (
+          df_feed_ration['Area'] == 'Switzerland')
+      ].copy()
+    # Modify the duplicated rows
+    duplicated_rows['Item'] = 'Fruits - Excluding Wine'
+    duplicated_rows['Feed ratio'] = 0.0
+    # Concatenate back to the main DataFrame
+    df_feed_ration = pd.concat([df_feed_ration, duplicated_rows],
+                               ignore_index=True)
+
+    # For Switzerland add Vegetable oils = 0%
+    # Duplicate rows only where Item = 'Pulses' and Area = 'Switzerland'
+    duplicated_rows = df_feed_ration[
+      (df_feed_ration['Item'] == 'Pulses') & (
+          df_feed_ration['Area'] == 'Switzerland')
+      ].copy()
+    # Modify the duplicated rows
+    duplicated_rows['Item'] = 'Vegetable Oils'
+    duplicated_rows['Feed ratio'] = 0.0
+    # Concatenate back to the main DataFrame
+    df_feed_ration = pd.concat([df_feed_ration, duplicated_rows],
+                               ignore_index=True)
 
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
 
     # Renaming into 'Value'
-    pivot_df_feed.rename(columns={'Area': 'geoscale', 'Year': 'timescale', 'Feed ratio': 'value'}, inplace=True)
+    df_feed_ration.rename(columns={'Area': 'geoscale', 'Year': 'timescale', 'Feed ratio': 'value'}, inplace=True)
 
     # Read excel file
     df_dict_csl = pd.read_excel(
@@ -2165,7 +2174,7 @@ def climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_dens
         sheet_name='climate-smart-livestock')
 
     # Merge based on 'Item'
-    df_csl_feed_pathwaycalc = pd.merge(df_dict_csl, pivot_df_feed, on='Item')
+    df_csl_feed_pathwaycalc = pd.merge(df_dict_csl, df_feed_ration, on='Item')
 
     # Drop the 'Item' column
     df_csl_feed_pathwaycalc = df_csl_feed_pathwaycalc.drop(columns=['Item'])
@@ -4652,6 +4661,10 @@ def feed_calibration(list_countries):
     pivot_df_feed = pd.concat([pivot_df_feed, duplicated_rows],
                                    ignore_index=True)  # Append duplicated rows back to the original DataFrame
 
+
+    # Create a copy for Lever : feed ration
+    df_feed_ration = pivot_df_feed.copy()
+
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
     # Food item name matching with dictionary
     # Read excel file
@@ -4673,7 +4686,7 @@ def feed_calibration(list_countries):
         columns={'Area': 'geoscale', 'Year': 'timescale', 'Feed [kcal]': 'value'},
         inplace=True)
 
-    return df_feed_calibration
+    return df_feed_calibration, df_feed_ration
 
 # CalculationLeaf CAL - LAND -----------------------------------------------------------------------------------
 
@@ -6032,9 +6045,10 @@ file_dict = {'losses': 'data/faostat/losses.csv', 'yield': 'data/faostat/yield.c
              'land': 'data/faostat/land.csv', 'nitro': 'data/faostat/nitro.csv',
              'pesticide': 'data/faostat/pesticide.csv', 'liming': 'data/faostat/liming.csv'}
 df_climate_smart_crop_pathwaycalc, df_energy_demand_cal, df_CO2_cal = climate_smart_crop_processing(list_countries, df_agri_land, file_dict)
-# Exceptionnally running livestock calibration before to use the livestock population in livestock after
+# Exceptionnally running livestock calibration & feed calibration before to re-use
 df_domestic_supply_calibration, df_liv_population_calibration, df_liv_pop = livestock_crop_calibration(df_energy_demand_cal, list_countries)
-df_climate_smart_livestock_pathwaycalc, df_csl_fxa, df_manure_n_fxa, df_manure_ch4_fxa = climate_smart_livestock_processing(df_csl_feed, df_liv_pop, df_cropland_density, list_countries)
+df_feed_calibration, df_feed_ration = feed_calibration(list_countries)
+df_climate_smart_livestock_pathwaycalc, df_csl_fxa, df_manure_n_fxa, df_manure_ch4_fxa = climate_smart_livestock_processing(df_feed_ration, df_liv_pop, df_cropland_density, list_countries)
 df_climate_smart_forestry_pathwaycalc, csf_managed = climate_smart_forestry_processing() #FutureWarning at last line
 df_land_management_pathwaycalc = land_management_processing(csf_managed)
 df_bioenergy_capacity_CH_pathwaycalc = bioernergy_capacity_processing(df_csl_feed)
@@ -6045,7 +6059,6 @@ df_protein_meals_pathwaycalc = livestock_protein_meals_processing(df_csl_feed)
 df_diet_calibration = lifestyle_calibration(list_countries)
 df_nitrogen_calibration = nitrogen_calibration(list_countries)
 df_liv_emissions_calibration, df_liv_emissions = manure_calibration(list_countries)
-df_feed_calibration = feed_calibration(list_countries)
 df_cropland_fao_calibration = cropland_calibration(list_countries)
 df_liming_urea_calibration, df_liming_urea = CO2_emissions()
 df_wood_calibration = wood_calibration(list_countries)

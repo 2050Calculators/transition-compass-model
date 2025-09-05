@@ -1243,14 +1243,20 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     DM_feed['ration'].add(dm_temp, dim='Variables', col_label='agr_demand_feed_raw', unit='kcal')
 
     # Calibration Feed demand
-    dm_feed_demand = DM_feed['ration'].filter({'Variables': ['agr_demand_feed_raw']})
     dm_cal_feed = DM_feed['cal_agr_demand_feed']
+    dm_feed_demand = DM_feed['ration'].filter({'Variables': ['agr_demand_feed_raw']})
     dm_cal_rates_feed = calibration_rates(dm_feed_demand, dm_cal_feed, calibration_start_year=1990,
                                           calibration_end_year=2023,
                                           years_setting=years_setting)
     DM_feed['ration'].append(dm_cal_rates_feed, dim='Variables')
     DM_feed['ration'].operation('agr_demand_feed_raw', '*', 'cal_rate', dim='Variables', out_col='agr_demand_feed',
                                 unit='kcal')
+    # Calibration values fill na with 0
+    dm_temp = DM_feed['ration'].filter({'Variables': ['agr_demand_feed']})
+    array_temp = dm_temp.array[:, :, :, :]
+    array_temp = np.nan_to_num(array_temp, nan=0)
+    dm_temp.array[:, :, :, :] = array_temp
+
     df_cal_rates_feed = dm_to_database(dm_cal_rates_feed, 'none', 'agriculture',
                                        level=0)  # Exporting calibration rates to check at the end
     df_cal_feed = dm_to_database(dm_cal_feed, 'none', 'agriculture',
