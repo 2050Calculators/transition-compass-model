@@ -5986,11 +5986,6 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
         'ots': dict_ots
     }
 
-    # Add EU27 and Vaud as dummys
-    add_dummy_country_to_DM(DM_agriculture, 'Germany', 'Switzerland')
-    add_dummy_country_to_DM(DM_agriculture, 'EU27', 'Germany')
-    add_dummy_country_to_DM(DM_agriculture, 'Vaud', 'Switzerland')
-
     # FXA pre-processing -----------------------------------------------------------------------------------------------
 
     # Emssion factors residues residues
@@ -6090,8 +6085,8 @@ with open('../../data/datamatrix/lifestyles.pickle', 'rb') as handle:
     DM_lifestyles = pickle.load(handle)
 
 # Filter DM
-filter_DM(DM_agriculture, {'Country': ['Switzerland', 'Vaud', 'EU27']})
-filter_DM(DM_lifestyles, {'Country': ['Switzerland', 'Vaud', 'EU27']})
+filter_DM(DM_agriculture, {'Country': ['Switzerland']})
+filter_DM(DM_lifestyles, {'Country': ['Switzerland']})
 
 # ---------------------------------------------------------------------------------------------------------
 # ADDING CONSTANTS ----------------------------------------------------------------------------------------
@@ -6179,7 +6174,7 @@ dm_input_fert.operation('cal_agr_crop_emission_N2O-emission_fertilizer', '/', 't
 linear_fitting(dm_input_fert, years_all)
 
 # Overwrite fxa_agr_emission_fertilizer in pickle
-DM_agriculture['fxa']['agr_emission_fertilizer'][:,:,'fxa_agr_emission_fertilizer'] = dm_input_fert[:,:,'fxa_agr_emission_fertilizer']
+DM_agriculture['fxa']['agr_emission_fertilizer']['Switzerland',:,'fxa_agr_emission_fertilizer'] = dm_input_fert['Switzerland',:,'fxa_agr_emission_fertilizer']
 
 # CALIBRATION DOMESTIC PROD WITH LOSSES ----------------------------------------------------------------------------------------
 
@@ -6204,10 +6199,10 @@ dm_dom_prod_crop.operation('agr_climate-smart-crop_losses', '*', 'cal_agr_domest
                                  out_col='cal_agr_domestic-production_food', unit='kcal')
 
 # Overwrite
-DM_agriculture['fxa']['cal_agr_domestic-production-liv'][:, :,'cal_agr_domestic-production-liv',:] \
-    = dm_dom_prod_liv[:, :,'cal_agr_domestic-production-liv',:]
-DM_agriculture['fxa']['cal_agr_domestic-production_food'][:, :,'cal_agr_domestic-production_food',:] \
-    = dm_dom_prod_crop[:, :,'cal_agr_domestic-production_food',:]
+DM_agriculture['fxa']['cal_agr_domestic-production-liv']['Switzerland', :,'cal_agr_domestic-production-liv',:] \
+    = dm_dom_prod_liv['Switzerland', :,'cal_agr_domestic-production-liv',:]
+DM_agriculture['fxa']['cal_agr_domestic-production_food']['Switzerland', :,'cal_agr_domestic-production_food',:] \
+    = dm_dom_prod_crop['Switzerland', :,'cal_agr_domestic-production_food',:]
 
 # LIVESTOCK YIELD USING CALIBRATION DOMESTIC PROD WITH LOSSES ----------------------------------------------------------------------------------------
 
@@ -6222,8 +6217,8 @@ dm_dom_prod_liv.operation('cal_agr_domestic-production-liv', '/', 'agr_climate-s
                                  out_col='agr_climate-smart-livestock_yield', unit='kcal/lsu')
 
 # Overwrite
-DM_agriculture['ots']['climate-smart-livestock']['climate-smart-livestock_yield'][:, :,'agr_climate-smart-livestock_yield',:] \
-    = dm_dom_prod_liv[:, :,'agr_climate-smart-livestock_yield',:]
+DM_agriculture['ots']['climate-smart-livestock']['climate-smart-livestock_yield']['Switzerland', :,'agr_climate-smart-livestock_yield',:] \
+    = dm_dom_prod_liv['Switzerland', :,'agr_climate-smart-livestock_yield',:]
 
 # DIET ----------------------------------------------------------------------------------------
 
@@ -6286,20 +6281,17 @@ dm_cal_diet.add(arr, dim='Variables', col_label='cal_agr_diet_new', unit='kcal/y
 
 # Save in DM_agriculture
 DM_agriculture['ots']['kcal-req']['Switzerland', :,'agr_kcal-req',:] = dm_req['Switzerland',:,'agr_kcal-req_temp',:]
-DM_agriculture['ots']['kcal-req']['Vaud', :,'agr_kcal-req',:] = dm_req['Vaud',:,'agr_kcal-req_temp',:]
-DM_agriculture['ots']['kcal-req']['EU27', :,'agr_kcal-req',:] = dm_req['EU27',:,'agr_kcal-req_temp',:]
 # Overwrite shares
 DM_agriculture['ots']['diet']['share']['Switzerland', :,'share',:] = dm_others['Switzerland', :,'share',:]
-DM_agriculture['ots']['diet']['share']['EU27', :,'share',:] = dm_others['EU27', :,'share',:]
-DM_agriculture['ots']['diet']['share']['Vaud', :,'share',:] = dm_others['Vaud', :,'share',:]
 # Overwrite cal_diet
 DM_agriculture['fxa']['cal_agr_diet']['Switzerland', :,'cal_agr_diet',:] = dm_cal_diet['Switzerland', :,'cal_agr_diet_new',:]
-DM_agriculture['fxa']['cal_agr_diet']['EU27', :,'cal_agr_diet',:] = dm_cal_diet['EU27', :,'cal_agr_diet_new',:]
-DM_agriculture['fxa']['cal_agr_diet']['Vaud', :,'cal_agr_diet',:] = dm_cal_diet['Vaud', :,'cal_agr_diet_new',:]
+
+# Add EU27 and Vaud as dummys
+add_dummy_country_to_DM(DM_agriculture, 'Germany', 'Switzerland')
+add_dummy_country_to_DM(DM_agriculture, 'EU27', 'Germany')
+add_dummy_country_to_DM(DM_agriculture, 'Vaud', 'Switzerland')
 
 # Overwrite in pickle
 f = '../../data/datamatrix/agriculture.pickle'
 with open(f, 'wb') as handle:
     pickle.dump(DM_agriculture, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-# Dans other enlever waste
