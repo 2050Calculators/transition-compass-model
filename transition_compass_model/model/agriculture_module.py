@@ -1172,11 +1172,13 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     # Pre processing domestic ASF prod accounting for waste [kcal]
     dm_feed_req = dm_liv_prod.filter({'Variables': ['agr_domestic_production_liv_afw']})
 
+    # Sort
+    dm_feed_req.sort('Categories1')
+    cdm_cp_efficiency.sort('Categories1')
+
     # Feed req per livestock type [kcal] = domestic ASF prod accounting for waste [kcal] / protein conversion efficiency [%]
-    idx_cdm = cdm_cp_efficiency.idx
-    idx_feed = dm_feed_req.idx
-    dm_temp = dm_feed_req.array[:, :, idx_feed['agr_domestic_production_liv_afw'], :] \
-              / cdm_cp_efficiency.array[idx_cdm['cp_efficiency_liv'], :]
+    dm_temp = dm_feed_req[:, :,'agr_domestic_production_liv_afw', :] \
+              / cdm_cp_efficiency[np.newaxis, np.newaxis, 'cp_efficiency_liv', :]
     dm_feed_req.add(dm_temp, dim='Variables', col_label='agr_feed-requierement', unit='kcal')
 
     # Total feed req [kcal] = sum(Feed req per livestock type [kcal])
