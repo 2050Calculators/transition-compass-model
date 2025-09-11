@@ -558,40 +558,47 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
     df_ssr_molasses = df_ssr_2010_2021_molasse_cake[
         df_ssr_2010_2021_molasse_cake['Item'].str.contains('Molasses', case=False)]
 
-    # Concatenating
-    df_ssr = pd.concat([df_ssr, df_ssr_molasses])
-    df_ssr = pd.concat([df_ssr, df_ssr_cake])
+    # Concatenating for feed
+    #df_ssr = pd.concat([df_ssr, df_ssr_molasses])
+    #df_ssr = pd.concat([df_ssr, df_ssr_cake])
+    df_ssr_feed = pd.concat([df_ssr_molasses, df_ssr_cake])
 
     # Filtering to keep wanted columns
     columns_to_filter = ['Area', 'Element', 'Item', 'Year', 'Value']
     df_ssr = df_ssr[columns_to_filter]
+    df_ssr_feed = df_ssr_feed[columns_to_filter]
 
     # Compute Self-Sufficiency Ratio (SSR) ---------------------------------------------------------------------------------
     # SSR [%] = (100*Production) / (Production + Imports - Exports)
     # Step 1: Pivot the DataFrame to get 'Production', 'Import Quantity', and 'Export Quantity' in separate columns
     pivot_df = df_ssr.pivot_table(index=['Area', 'Year', 'Item'], columns='Element', values='Value').reset_index()
+    pivot_df_feed = df_ssr_feed.pivot_table(index=['Area', 'Year', 'Item'],
+                                  columns='Element',
+                                  values='Value').reset_index()
 
     # Fill na with 0
     pivot_df['Production'].fillna(0.0, inplace=True)
     pivot_df['Import'].fillna(0.0, inplace=True)
     pivot_df['Export'].fillna(0.0, inplace=True)
+    pivot_df_feed['Production'].fillna(0.0, inplace=True)
+    pivot_df_feed['Import'].fillna(0.0, inplace=True)
+    pivot_df_feed['Export'].fillna(0.0, inplace=True)
 
     # Create a copy for feed pre-processing and drop irrelevant columns
-    df_csl_feed = pivot_df.copy()
+    df_csl_feed = pd.concat([pivot_df, pivot_df_feed])
     df_csl_feed = df_csl_feed.drop(columns=['Production', 'Import', 'Export'])
 
     # Step 2: Compute the SSR [%]
-    pivot_df['SSR[%]'] = (pivot_df['Production']) / (
-                pivot_df['Production'] + pivot_df['Import'] - pivot_df['Export'])
+    # Note : Update - the SSR is now computed afterwards for calibration reasons, in order to match it with the demand
+    pivot_df['SSR[%]'] = (pivot_df['Production'])
+    pivot_df_feed['SSR[%]'] = (pivot_df_feed['Production']) / (
+                pivot_df_feed['Production'] + pivot_df_feed['Import'] - pivot_df_feed['Export'])
+
+    # Concat dfs
+    pivot_df = pd.concat([pivot_df, pivot_df_feed])
 
     # Drop the columns Production, Import Quantity and Export Quantity
     pivot_df = pivot_df.drop(columns=['Production', 'Import', 'Export', 'Feed'])
-
-    # Extrapolate for missing data -----------------------------------------------------------------------------------------
-
-    # Extrapolate for 2022 for everything ?
-
-    # 'Molasses' (only 2010-2021), extrapolate for
 
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
 
@@ -6071,10 +6078,8 @@ df_manure_fxa = manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa, df
 # CalculationTree RUNNING PICKLE CREATION
 database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration, df_feed_lsu_pathwaycalc, df_diet_pathwaycalc) #Fixme duplicates in constants
 
-# CalculationTree NEW ENERGY REQUIREMENTS ------------------------------------------------------------------------------
-# The idea was to have energy requirements per demography (agr_kcal-req) based on the current consumption and not the
-# calculated based on the metabolism.
-# AND update the calibration values for cal_diet.
+# CalculationTree ADDITIONAL PRE-PROCESSING ----------------------------------------------------------------------------
+
 # ----------------------------------------------------------------------------------------------------------------------
 
 # Load pickles
@@ -6221,6 +6226,9 @@ DM_agriculture['ots']['climate-smart-livestock']['climate-smart-livestock_yield'
     = dm_dom_prod_liv['Switzerland', :,'agr_climate-smart-livestock_yield',:]
 
 # DIET ----------------------------------------------------------------------------------------
+# The idea was to have energy requirements per demography (agr_kcal-req) based on the current consumption and not the
+# calculated based on the metabolism.
+# AND update the calibration values for cal_diet.
 
 # Load data
 dm_others = DM_agriculture['ots']['diet']['share'].copy()
@@ -6277,7 +6285,7 @@ dm_req.operation('demand_per_group', '/', 'lfs_demography', out_col='agr_kcal-re
 
 # For calibration : cal_agr_diet [kcal/year] = cal_agr_diet [kcal/cap/day] * population [capita] * 365,25
 arr = dm_cal_diet[:,:,'cal_agr_diet', :] * dm_population[:,:,'lfs_population_total',np.newaxis] * 365.25
-dm_cal_diet.add(arr, dim='Variables', col_label='cal_agr_diet_new', unit='kcal/year')
+dm_cal_diet.add(arr, dim='Variables', col_label='cal_agr_diet_new', unit='kcal')
 
 # Save in DM_agriculture
 DM_agriculture['ots']['kcal-req']['Switzerland', :,'agr_kcal-req',:] = dm_req['Switzerland',:,'agr_kcal-req_temp',:]
@@ -6285,6 +6293,99 @@ DM_agriculture['ots']['kcal-req']['Switzerland', :,'agr_kcal-req',:] = dm_req['S
 DM_agriculture['ots']['diet']['share']['Switzerland', :,'share',:] = dm_others['Switzerland', :,'share',:]
 # Overwrite cal_diet
 DM_agriculture['fxa']['cal_agr_diet']['Switzerland', :,'cal_agr_diet',:] = dm_cal_diet['Switzerland', :,'cal_agr_diet_new',:]
+
+
+# SSR ----------------------------------------------------------
+
+# Load data
+dm_dom_prod = DM_agriculture['ots']['food-net-import'].copy()
+CDM_const = DM_agriculture['constant'].copy()
+cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
+#cdm_kcal.drop(dim='Categories1', col_label='crop-sugarcrop')
+cdm_kcal.drop(dim='Categories1', col_label='stm')
+dm_cal_diet = dm_cal_diet.filter({'Variables': ['cal_agr_diet_new']}).copy()
+cdm_food_yield = CDM_const['cdm_food_yield'].copy()
+
+# Separate SSR of pro-crop-processed-cake, pro-crop-processed-molasse back in dm
+dm_feed = dm_dom_prod.filter(
+  {'Categories1': ['pro-crop-processed-cake','pro-crop-processed-molasse']})
+
+# Rename categories
+cat_diet = [
+    'afat', 'beer', 'bev-alc', 'bev-fer', 'bov', 'cereals', 'cocoa', 'coffee',
+    'dfish', 'egg', 'ffish', 'fruits', 'milk', 'offal', 'oilcrops', 'oth-animals',
+    'oth-aq-animals', 'pfish', 'pigs', 'poultry', 'pulses', 'seafood',
+    'sheep', 'starch', 'sugar', 'sweet', 'tea', 'veg', 'voil', 'wine'
+]
+cat_agr = [
+    'pro-liv-abp-processed-afat', 'pro-bev-beer', 'pro-bev-bev-alc', 'pro-bev-bev-fer',
+    'pro-liv-meat-bovine', 'crop-cereal', 'cocoa', 'coffee', 'dfish',
+    'pro-liv-abp-hens-egg', 'ffish', 'crop-fruit', 'pro-liv-abp-dairy-milk',
+    'pro-liv-abp-processed-offal', 'crop-oilcrop', 'pro-liv-meat-oth-animals',
+    'oth-aq-animals', 'pfish', 'pro-liv-meat-pig', 'pro-liv-meat-poultry',
+    'crop-pulse', 'seafood', 'pro-liv-meat-sheep', 'crop-starch',
+    'pro-crop-processed-sugar', 'pro-crop-processed-sweet', 'tea', 'crop-veg',
+    'pro-crop-processed-voil', 'pro-bev-wine'
+]
+dm_cal_diet.rename_col(cat_diet, cat_agr, 'Categories1')
+
+# For sugarcrops : sugarcrops (processed) = processed sugar + processed sweet
+dm_sugarcrop = dm_cal_diet.groupby({'crop-sugarcrop': '.*-sweet|.*-sugar'}, dim='Categories1',
+                          regex=True, inplace=False)
+# Account for processing yield
+array_temp = dm_sugarcrop[:, :,
+             'cal_agr_diet_new', :] \
+             * cdm_food_yield[np.newaxis, np.newaxis, 'cp_ibp_processed', :]
+dm_sugarcrop.add(array_temp, dim='Variables',
+                      col_label='cal_agr_diet_temp', unit='kcal')
+# add back in food demand
+dm_sugarcrop = dm_sugarcrop.filter({'Variables': ['cal_agr_diet_temp']})
+dm_sugarcrop.rename_col('cal_agr_diet_temp', 'cal_agr_diet_new', dim='Variables')
+dm_cal_diet.append(dm_sugarcrop, dim='Categories1')
+
+# Check Category order
+dm_dom_prod.sort('Categories1')
+cdm_kcal.sort('Categories1')
+
+# Unit conversion: [kt] => [kcal]
+# Convert from [kt] to [t]
+dm_dom_prod.change_unit('agr_food-net-import', 10 ** 3, old_unit='%',
+                         new_unit='t')
+# Convert from [t] to [kcal]
+array_temp = dm_dom_prod[:, :,
+             'agr_food-net-import', :] \
+             * cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
+dm_dom_prod.add(array_temp, dim='Variables',
+                      col_label='agr_food-net-import_kcal',
+                      unit='kcal')
+dm_dom_prod = dm_dom_prod.filter(
+  {'Variables': ['agr_food-net-import_kcal']})
+
+# Drop columns that are not present in agr_demand (Diet calibration)
+dm_dom_prod.drop(dim='Categories1', col_label=['pro-crop-processed-cake',
+                                               'pro-crop-processed-molasse'])
+
+# Compute SSR [%] : production / agr_demand
+# Except for crop-sugarcrop, pro-crop-processed-cake, pro-crop-processed-molasse.
+dm_dom_prod.append(dm_cal_diet, dim='Variables')
+dm_dom_prod.operation('agr_food-net-import_kcal', '/', 'cal_agr_diet_new', dim='Variables',
+                          out_col='agr_food-net-import', unit='%')
+dm_dom_prod = dm_dom_prod.filter(
+  {'Variables': ['agr_food-net-import']})
+
+# Add SSR of pro-crop-processed-cake, pro-crop-processed-molasse back in dm
+dm_dom_prod.append(dm_feed, dim='Categories1')
+
+# Check Category order
+dm_dom_prod.sort('Categories1')
+DM_agriculture['ots']['food-net-import'].sort('Categories1')
+for i in range(1, 5):
+  DM_agriculture['fts']['food-net-import'][i].sort('Categories1')
+
+# Overwrite
+DM_agriculture['ots']['food-net-import']['Switzerland', :,'agr_food-net-import',:] = dm_dom_prod['Switzerland', :,'agr_food-net-import',:]
+
+# ADD DUMMY COUNTRIES ----------------------------------------------------------
 
 # Add EU27 and Vaud as dummys
 add_dummy_country_to_DM(DM_agriculture, 'Germany', 'Switzerland')
