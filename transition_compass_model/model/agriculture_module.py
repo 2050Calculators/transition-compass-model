@@ -299,7 +299,7 @@ def simulate_lifestyles_to_agriculture_input():
         dm_lfs.rename_col(cat, new_cat, dim='Categories1')
 
     # Adding abp-processed prefix
-    processed = ['afats', 'offal']
+    processed = ['afat', 'offal']
     for cat in processed:
         new_cat = 'pro-liv-abp-processed-' + cat
         # Dropping the -s at the end afats (for name matching reasons)
@@ -430,7 +430,7 @@ def lifestyle_workflow(DM_lifestyle, DM_lfs, CDM_const, years_setting):
     dm_lfs = dm_diet_food.copy()
 
     # Format for same categories as rest Agriculture module
-    cat_lfs = ['afats', 'beer', 'bev-alc', 'bev-fer', 'bov', 'cereals', 'coffee', 'dfish', 'egg', 'ffish', 'fruits', \
+    cat_lfs = ['afat', 'beer', 'bev-alc', 'bev-fer', 'bov', 'cereals', 'coffee', 'dfish', 'egg', 'ffish', 'fruits', \
                'milk', 'offal', 'oilcrops', 'oth-animals', 'oth-aq-animals', 'pfish', 'pigs', 'poultry', 'pulses',
                'rice', 'seafood', 'sheep', 'starch', 'stm', 'sugar', 'sweet', 'veg', 'voil', 'wine']
     cat_agr = ['pro-liv-abp-processed-afat', 'pro-bev-beer', 'pro-bev-bev-alc', 'pro-bev-bev-fer',
@@ -2198,12 +2198,16 @@ def agriculture_TPE_interface(CDM_const, DM_livestock, DM_crop, dm_crop_other, D
     cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
     cdm_kcal.drop(dim='Categories1', col_label='crop-sugarcrop')
     cdm_kcal.drop(dim='Categories1', col_label='stm')
+    cdm_kcal.drop(dim='Categories1', col_label='pro-crop-processed-molasse')
+    cdm_kcal.drop(dim='Categories1', col_label='pro-crop-processed-cake')
+
+    # Sort
+    dm_supply.sort('Categories1')
+    cdm_kcal.sort('Categories1')
 
     # Convert from [kcal] to [t]
-    idx_supply = dm_supply.idx
-    idx_cdm = cdm_kcal.idx
-    array_temp = dm_supply.array[:, :, idx_supply['agr_demand'], :] \
-                 / cdm_kcal.array[idx_cdm['cp_kcal-per-t'], :]
+    array_temp = dm_supply[:, :, 'agr_demand', :] \
+                 / cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
     dm_supply.add(array_temp, dim='Variables', col_label='agr_demand_tpe',
                                        unit='t')
     dm_supply = dm_supply.filter({'Variables': ['agr_demand_tpe', 'agr_demand']})
@@ -2218,12 +2222,12 @@ def agriculture_TPE_interface(CDM_const, DM_livestock, DM_crop, dm_crop_other, D
     cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
     cdm_kcal.drop(dim='Categories1', col_label='crop-sugarcrop')
     cdm_kcal.drop(dim='Categories1', col_label='stm')
+    cdm_kcal.drop(dim='Categories1', col_label='pro-crop-processed-molasse')
+    cdm_kcal.drop(dim='Categories1', col_label='pro-crop-processed-cake')
 
     # Convert from [kcal] to [t]
-    idx_supply = dm_foodwaste.idx
-    idx_cdm = cdm_kcal.idx
-    array_temp = dm_foodwaste.array[:, :, idx_supply['lfs_food-wastes'], :] \
-                 / cdm_kcal.array[idx_cdm['cp_kcal-per-t'], :]
+    array_temp = dm_foodwaste[:, :, 'lfs_food-wastes', :] \
+                 / cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
     dm_foodwaste.add(array_temp, dim='Variables', col_label='lfs_food-wastes_tpe',
                                        unit='t')
     dm_foodwaste = dm_foodwaste.filter({'Variables': ['lfs_food-wastes_tpe']})
@@ -2257,7 +2261,7 @@ def agriculture_TPE_interface(CDM_const, DM_livestock, DM_crop, dm_crop_other, D
         "crop-fruit",
         "crop-oilcrop",
         "crop-pulse",
-        "rice",
+        "crop-rice",
         "crop-starch",
         "crop-sugarcrop",
         "crop-veg"]})
