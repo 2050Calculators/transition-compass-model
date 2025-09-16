@@ -2133,16 +2133,16 @@ def climate_smart_livestock_processing(df_feed_ration, df_liv_pop, df_cropland_d
     # ---------------------------------------------------------------------------------------------------------------------
 
     # Fill nan with zeros
-    df_feed_ration['Feed [kcal]'].fillna(0, inplace=True)
+    df_feed_ration['Feed'].fillna(0, inplace=True)
 
     # Add a column with the total feed (per country and year)
-    df_feed_ration['Total feed'] = df_feed_ration.groupby(['Area', 'Year'])['Feed [kcal]'].transform('sum')
+    df_feed_ration['Total feed'] = df_feed_ration.groupby(['Area', 'Year'])['Feed'].transform('sum')
 
     # Feed ration [%] = Feed from item i / Total feed
-    df_feed_ration['Feed ratio'] = df_feed_ration['Feed [kcal]'] / df_feed_ration['Total feed']
+    df_feed_ration['Feed ratio'] = df_feed_ration['Feed'] / df_feed_ration['Total feed']
 
     # Drop columns
-    df_feed_ration = df_feed_ration.drop(columns=['Feed [kcal]', 'Total feed'])
+    df_feed_ration = df_feed_ration.drop(columns=['Feed', 'Total feed'])
 
     # For Switzerland add Fruits = 0%
     # Duplicate rows only where Item = 'Pulses' and Area = 'Switzerland'
@@ -2529,6 +2529,65 @@ def climate_smart_livestock_processing(df_feed_ration, df_liv_pop, df_cropland_d
 
 
     return df_climate_smart_livestock_pathwaycalc, df_csl_fxa, df_manure_n_fxa, df_manure_ch4_fxa
+
+# CalculationLeaf RUMINANT FEED ------------------------------------------------------------------------------
+
+def ruminant_feed_processing(df_csl_feed):
+
+  # Use df_csl_feed as a structural basis & Filter only one row
+  df_ruminant_feed = df_csl_feed[df_csl_feed['Item']=='Beer'].copy()
+
+  # Rename columns
+  df_ruminant_feed.rename(columns={'Area': 'geoscale', 'Year': 'timescale',
+                               'Feed': 'value'},
+                      inplace=True)
+  # Rename item
+  df_ruminant_feed['Item'] = 'Share grass'
+
+  # Set value
+  df_ruminant_feed['value'] = 0.5
+
+  # Pathwaycalc formatting
+  # Food item name matching with dictionary
+  # Read excel file
+  df_dict_csl = pd.read_excel(
+    'dictionaries/dictionnary_agriculture_landuse.xlsx',
+    sheet_name='ruminant-feed')
+
+  # Merge based on 'Item'
+  df_ruminant_feed_pathwaycalc = pd.merge(df_dict_csl, df_ruminant_feed, on='Item')
+
+  # Drop the 'Item' column
+  df_ruminant_feed_pathwaycalc = df_ruminant_feed_pathwaycalc.drop(
+    columns=['Item'])
+
+  # Adding the columns module, lever, level and string-pivot at the correct places
+  df_ruminant_feed_pathwaycalc['module'] = 'agriculture'
+  df_ruminant_feed_pathwaycalc['lever'] = 'ruminant-feed'
+  df_ruminant_feed_pathwaycalc['level'] = 0
+  cols = df_ruminant_feed_pathwaycalc.columns.tolist()
+  cols.insert(cols.index('value'), cols.pop(cols.index('module')))
+  cols.insert(cols.index('value'), cols.pop(cols.index('lever')))
+  cols.insert(cols.index('value'), cols.pop(cols.index('level')))
+  df_ruminant_feed_pathwaycalc = df_ruminant_feed_pathwaycalc[cols]
+
+  # Rename countries to Pathaywcalc name
+  df_ruminant_feed_pathwaycalc['geoscale'] = df_ruminant_feed_pathwaycalc[
+    'geoscale'].replace(
+    'United Kingdom of Great Britain and Northern Ireland', 'United Kingdom')
+  df_ruminant_feed_pathwaycalc['geoscale'] = df_ruminant_feed_pathwaycalc[
+    'geoscale'].replace(
+    'Netherlands (Kingdom of the)',
+    'Netherlands')
+  df_ruminant_feed_pathwaycalc['geoscale'] = df_ruminant_feed_pathwaycalc[
+    'geoscale'].replace('Czechia',
+                        'Czech Republic')
+
+  # Extrapolating
+  df_ruminant_feed_pathwaycalc = ensure_structure(df_ruminant_feed_pathwaycalc)
+  df_ruminant_feed_pathwaycalc = linear_fitting_ots_db(df_ruminant_feed_pathwaycalc, years_ots, countries='all')
+
+  return df_ruminant_feed_pathwaycalc
 
 # CalculationLeaf FEED 2025 NEW VERSION ------------------------------------------------------------------------------
 def feed_processing():
@@ -4646,7 +4705,7 @@ def feed_calibration(list_countries):
 
     # Univ conversion [kt] => [kcal]
     # Read excel
-    df_kcal_t = pd.read_excel(
+    """df_kcal_t = pd.read_excel(
         'dictionaries/kcal_to_t.xlsx',
         sheet_name='kcal_per_100g')
     df_kcal_t = df_kcal_t[['Item', 'kcal per t']]
@@ -4658,13 +4717,13 @@ def feed_calibration(list_countries):
     # Operation
     merged_df['Feed [kcal]'] = 1000 * merged_df['Feed'] * merged_df['kcal per t']
     pivot_df_feed = merged_df[['Area', 'Year', 'Item', 'Feed [kcal]']]
-    pivot_df_feed = pivot_df_feed.copy()
+    pivot_df_feed = pivot_df_feed.copy()"""
 
     # Adding meat products with 0 everywhere (no meat used as feed from FAOSTAT)
     duplicated_rows = pivot_df_feed[
         pivot_df_feed['Item'] == 'Pulses'].copy()  # Duplicate rows for random item
     duplicated_rows['Item'] = 'Animal Products'  # Change geoscale value to 'EU27' in duplicated rows
-    duplicated_rows['Feed [kcal]'] = 0 # Set the value to 0
+    duplicated_rows['Feed'] = 0 # Set the value to 0
     pivot_df_feed = pd.concat([pivot_df_feed, duplicated_rows],
                                    ignore_index=True)  # Append duplicated rows back to the original DataFrame
 
@@ -4690,7 +4749,7 @@ def feed_calibration(list_countries):
 
     # Renaming existing columns (geoscale, timesecale, value)
     df_feed_calibration.rename(
-        columns={'Area': 'geoscale', 'Year': 'timescale', 'Feed [kcal]': 'value'},
+        columns={'Area': 'geoscale', 'Year': 'timescale', 'Feed': 'value'},
         inplace=True)
 
     return df_feed_calibration, df_feed_ration
@@ -5321,7 +5380,7 @@ def fxa_preprocessing():
 # CalculationLeaf Pickle creation
 #  FIXME only Switzerland for now
 
-def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration, df_feed_lsu_pathwaycalc, df_diet_pathwaycalc):
+def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration, df_feed_lsu_pathwaycalc, df_diet_pathwaycalc, df_ruminant_feed_pathwaycalc):
     #############################################
     ##### database_from_csv_to_datamatrix() #####
     #############################################
@@ -5405,6 +5464,9 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     DM_ots = DM_agriculture_old['ots'].copy()
     DM_fts = DM_agriculture_old['fts'].copy()
 
+    # To do once when adding a new lever
+    #DM_fts['ruminant-feed'] = {'ruminant-feed': dict()}
+
     for key in DM_ots.keys():
       if isinstance(DM_ots[key], dict):
         for subkey in DM_ots[key].keys():
@@ -5421,10 +5483,10 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
           DM_fts[key][lev] = dm.filter({'Years': years_fts}, inplace=False)
 
     # LeversToDatamatrix FTS based on EuCalc fts
-    dm_fts = DM_agriculture_old['fts'].copy()
+    #dm_fts = DM_agriculture_old['fts'].copy()
 
     # Filter dm_fts to start year at 2025 not 2020 PAOLA FTS
-    filter_DM(dm_fts, {'Years': years_fts})
+    #filter_DM(dm_fts, {'Years': years_fts})
 
     # Append dummy variables for climate-smart-livestock_slaughtered categories1 abp-dairy-milk & abp-hens-egg to do only once
     #or lev in range(4):
@@ -5751,6 +5813,17 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
                                                                             'climate-smart-livestock_enteric.*', 'climate-smart-livestock_manure.*',
                                                                             'climate-smart-livestock_ration.*', 'agr_climate-smart-livestock_ef_agroforestry.*'])
     """
+
+    # Data - Lever - ruminant-feed
+    lever = 'ruminant-feed'
+    df_ots, df_fts = database_to_df(df_ruminant_feed_pathwaycalc, lever, level='all')
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm = DataMatrix.create_from_df(df_ots, num_cat=0)
+    dict_temp = {}
+    dm_temp = dm.filter_w_regex({'Variables': 'agr_ruminant-feed_share-grass.*'})
+    dict_temp['ruminant-feed'] = dm_temp
+    dict_ots[lever] = dict_temp
+
     # Data - Lever - biomass hierarchy
     lever = 'biomass-hierarchy'
     df_ots, df_fts = database_to_df(df_biomass_hierarchy_pathwaycalc, lever, level='all')
@@ -6052,6 +6125,7 @@ df_domestic_supply_calibration, df_liv_population_calibration, df_liv_pop = live
 df_feed_calibration, df_feed_ration = feed_calibration(list_countries)
 df_climate_smart_livestock_pathwaycalc, df_csl_fxa, df_manure_n_fxa, df_manure_ch4_fxa = climate_smart_livestock_processing(df_feed_ration, df_liv_pop, df_cropland_density, list_countries)
 df_climate_smart_forestry_pathwaycalc, csf_managed = climate_smart_forestry_processing() #FutureWarning at last line
+df_ruminant_feed_pathwaycalc = ruminant_feed_processing(df_csl_feed)
 df_land_management_pathwaycalc = land_management_processing(csf_managed)
 df_bioenergy_capacity_CH_pathwaycalc = bioernergy_capacity_processing(df_csl_feed)
 df_biomass_hierarchy_pathwaycalc = biomass_bioernergy_hierarchy_processing(df_csl_feed)
@@ -6076,7 +6150,7 @@ df_manure_fxa = manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa, df
 # CalculationTree RUNNING FXA PRE-PROCESSING ---------------------------------------------------------------------------
 #fxa_preprocessing()
 # CalculationTree RUNNING PICKLE CREATION
-database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration, df_feed_lsu_pathwaycalc, df_diet_pathwaycalc) #Fixme duplicates in constants
+database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycalc, df_csl_fxa, df_manure_fxa, df_calibration, df_feed_lsu_pathwaycalc, df_diet_pathwaycalc, df_ruminant_feed_pathwaycalc) #Fixme duplicates in constants
 
 # CalculationTree ADDITIONAL PRE-PROCESSING ----------------------------------------------------------------------------
 
@@ -6136,20 +6210,22 @@ DM_agriculture['constant']['cdm_CO2']['cp_emission-factor_CO2','liquid-ff-gasoli
 DM_agriculture['constant']['cdm_CO2']['cp_emission-factor_CO2','liquid-ff-lpg'] = 10**-6 * 0.0 / tj_to_ktoe
 DM_agriculture['constant']['cdm_CO2']['cp_emission-factor_CO2','solid-ff-coal'] = 10**-6 * 0.0 / tj_to_ktoe
 
-# FEED - ENERGY CONVERSION EFFICIENCY  ----------------------------------------------------------------------------------------
-
-# Note : the unit % really means unitless
+# CP - FEED - ENERGY CONVERSION EFFICIENCY  ----------------------------------------------------------------------------------------
 
 # Source : Alexander, P., Brown, C., Arneth, A., Finnigan, J., Rounsevell, M.D.A., 2016.
 # Human appropriation of land for food: The role of diet. Glob. Environ.
 # Change 41, 88–98. https://doi.org/10.1016/j.gloenvcha.2016.09.005
-DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','abp-dairy-milk'] = 0.24
-DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','abp-hens-egg'] = 0.19
-DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-bovine'] = 0.019
-DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-oth-animals'] = 0.044
-DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-pig'] = 0.086
-DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-poultry'] = 0.13
-DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-sheep'] = 0.044
+# Feed conversion ratio (kg DM feed/kg EW) EW: edible weight
+DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','abp-dairy-milk'] = 0.7
+DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','abp-hens-egg'] = 2.3
+DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-bovine'] = 25
+DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-oth-animals'] = 15
+DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-pig'] = 6.4
+DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-poultry'] = 3.3
+DM_agriculture['constant']['cdm_cp_efficiency']['cp_efficiency_liv','meat-sheep'] = 15
+
+# Change unit
+DM_agriculture['constant']['cdm_cp_efficiency'].units = 'kg DM feed/kg EW'
 
 # FXA EF NITROGEN FERTILIZER ----------------------------------------------------------------------------------------
 # Load data
@@ -6157,7 +6233,7 @@ dm_emission_fert = DM_agriculture['fxa']['cal_agr_crop_emission_N2O-emission_fer
 dm_input_fert = DM_agriculture['ots']['climate-smart-crop']['climate-smart-crop_input-use'].copy()
 dm_land = DM_agriculture['fxa']['cal_agr_lus_land'].copy()
 
-# COmpute total land
+# Compute total land
 dm_land.group_all(dim='Categories1', inplace=True)
 
 # CHange unit from Mt => t

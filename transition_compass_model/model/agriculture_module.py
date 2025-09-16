@@ -47,7 +47,6 @@ def read_data(DM_agriculture, lever_setting):
     dm_fxa_ef_liv_N2O = DM_agriculture['fxa']['ef_liv_N2O-emission']
     dm_fxa_ef_liv_CH4_treated = DM_agriculture['fxa']['ef_liv_CH4-emission_treated']
     dm_fxa_liv_nstock = DM_agriculture['fxa']['liv_manure_n-stock']
-    dm_fxa_feed = DM_agriculture['fxa']['feed']
 
     # Extract sub-data-matrices according to the flow
     # Sub-matrix for LIFESTYLE
@@ -94,6 +93,7 @@ def read_data(DM_agriculture, lever_setting):
     # Sub-matrix for FEED
     dm_ration = DM_ots_fts['climate-smart-livestock']['climate-smart-livestock_ration']
     dm_alt_protein = DM_ots_fts['alt-protein']
+    dm_ruminant_feed = DM_ots_fts['ruminant-feed']
 
     # Sub-matrix for CROP
     dm_food_net_import_crop = DM_ots_fts['food-net-import'].filter_w_regex({'Categories1': 'crop-.*',
@@ -196,7 +196,7 @@ def read_data(DM_agriculture, lever_setting):
         'ration': dm_ration,
         'alt-protein': dm_alt_protein,
         'cal_agr_demand_feed': dm_fxa_cal_demand_feed,
-        'feed': dm_fxa_feed
+        'ruminant-feed': dm_ruminant_feed
     }
 
     # Aggregated Data Matrix - CROP
@@ -1100,70 +1100,7 @@ def livestock_manure_workflow(DM_manure, DM_livestock, dm_liv_pop, cdm_const, ye
 
     return dm_liv_N2O, dm_CH4, df_cal_rates_liv_N2O, df_cal_rates_liv_CH4, DM_manure
 
-
-# CalculationLeaf FEED NEW VERSION -------------------------------------------------------------------------------------------------
-def feed_workflow_new(DM_feed, dm_liv_pop, CDM_const, years_setting):
-  # FEED REQUIREMENTS : cereal, oilcrop, sugarcrop, pulse
-  # Feed requirements per type and livestock [kg] = feed type per livestock [kg/lsu] * livestock [lsu]
-  idx_pop = dm_liv_pop.idx
-  idx_feed = DM_feed['feed'].idx
-  dm_temp = DM_feed['feed'].array[:, :, idx_feed['fxa_agr_feed'], :, :] \
-            * dm_liv_pop.array[:, :, idx_pop['agr_liv_population'], :, np.newaxis]
-  DM_feed['feed'].add(dm_temp, dim='Variables', col_label='agr_feed_kg',
-                             unit='kg')
-
-  # Feed requirements per type [kg] = sum per type (Feed requirements per type and livestock [kg])
-  dm_feed = DM_feed['feed'].filter({'Variables': ['agr_feed_kg']})
-  dm_feed.groupby({'all': '.*'}, dim='Categories1', regex=True, inplace=True)
-  dm_feed.rename_col_regex(str1="all_", str2="", dim="Categories1")
-  dm_feed = dm_feed.flatten()
-
-  # Unit conversion : kg to kcal
-  # Filter constants and rename
-  cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
-  cdm_kcal = CDM_const['cdm_kcal-per-t'].filter({'Categories1':
-                                                   ["crop-cereal",
-                                                    "crop-oilcrop",
-                                                    "crop-pulse",
-                                                    "crop-sugarcrop"]})
-  # Convert from [kg] to [t]
-  dm_feed.change_unit('agr_feed_kg', factor=10**-3, old_unit='kg', new_unit='t')
-  # Convert from [t] to [kcal]
-  idx_dm = dm_feed.idx
-  idx_cdm = cdm_kcal.idx
-  array_temp = dm_feed.array[:, :,
-               idx_dm['agr_feed_kg'], :] \
-               * cdm_kcal.array[idx_cdm['cp_kcal-per-t'], :]
-  dm_feed.add(array_temp, dim='Variables',
-                        col_label='agr_feed',
-                        unit='kcal')
-
-
-  # ALTERNATIVE PROTEIN SOURCE (APS) FOR LIVESTOCK FEED
-
-  # Calibration Feed demand
-  """dm_feed_demand = DM_feed['ration'].filter(
-    {'Variables': ['agr_demand_feed_raw']})
-  dm_cal_feed = DM_feed['cal_agr_demand_feed']
-  dm_cal_rates_feed = calibration_rates(dm_feed_demand, dm_cal_feed,
-                                        calibration_start_year=1990,
-                                        calibration_end_year=2023,
-                                        years_setting=years_setting)
-  DM_feed['ration'].append(dm_cal_rates_feed, dim='Variables')
-  DM_feed['ration'].operation('agr_demand_feed_raw', '*', 'cal_rate',
-                              dim='Variables', out_col='agr_demand_feed',
-                              unit='kcal')
-  df_cal_rates_feed = dm_to_database(dm_cal_rates_feed, 'none', 'agriculture',
-                                     level=0)  # Exporting calibration rates to check at the end
-  df_cal_feed = dm_to_database(dm_cal_feed, 'none', 'agriculture',
-                               level=0)  # Exporting calibration rates to check at the end
-  df_feed_demand = dm_to_database(dm_feed_demand, 'none', 'agriculture',
-                                  level=0)  # Exporting calibration rates to check at the end"""
-
-  return
-
-
-# CalculationLeaf FEED OLD VERSION-------------------------------------------------------------------------------------------------
+# CalculationLeaf FEED -------------------------------------------------------------------------------------------------
 def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years_setting):
     # FEED REQUIREMENTS
     # Filter protein conversion efficiency constant
@@ -1172,25 +1109,58 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     # Pre processing domestic ASF prod accounting for waste [kcal]
     dm_feed_req = dm_liv_prod.filter({'Variables': ['agr_domestic_production_liv_afw']})
 
+    # Unit conversion: [kcal] to [t]
+    # Filter
+    cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
+    cdm_kcal.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
+    cdm_kcal = cdm_kcal.filter({'Categories1': ['abp-dairy-milk', 'abp-hens-egg', 'meat-bovine', 'meat-oth-animals', 'meat-pig', 'meat-poultry', 'meat-sheep']})
+    # Sort
+    dm_feed_req.sort('Categories1')
+    cdm_kcal.sort('Categories1')
+    # Convert from [kcal] to [t]
+    array_temp = dm_feed_req[:, :, 'agr_domestic_production_liv_afw', :] \
+                 / cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
+    dm_feed_req.add(array_temp, dim='Variables', col_label='agr_domestic_production_liv_afw_t',
+                                       unit='t')
+
     # Sort
     dm_feed_req.sort('Categories1')
     cdm_cp_efficiency.sort('Categories1')
 
-    # Feed req per livestock type [kcal] = domestic ASF prod accounting for waste [kcal] / protein conversion efficiency [%]
-    dm_temp = dm_feed_req[:, :,'agr_domestic_production_liv_afw', :] \
+    # Feed req per livestock type [t] = domestic ASF prod accounting for waste [t] / feed conversion ratio [kg DM feed/kg EW] EW: edible weight
+    dm_temp = dm_feed_req[:, :,'agr_domestic_production_liv_afw_t', :] \
               / cdm_cp_efficiency[np.newaxis, np.newaxis, 'cp_efficiency_liv', :]
-    dm_feed_req.add(dm_temp, dim='Variables', col_label='agr_feed-requierement', unit='kcal')
+    dm_feed_req.add(dm_temp, dim='Variables', col_label='agr_feed-requirement', unit='t')
 
-    # Total feed req [kcal] = sum(Feed req per livestock type [kcal])
-    dm_feed_req_total = dm_feed_req.filter({'Variables': ['agr_feed-requierement']})
+    # For bovine & dairy cattle : Ruminant feed without grass [t] = ruminant feed [t] * (1-Share of grass in ruminant feed [%])
+    list_ruminant =['abp-dairy-milk', 'meat-bovine']
+    dm_feed_ruminant = dm_feed_req.filter({'Variables': ['agr_feed-requirement'],'Categories1': list_ruminant})
+    array_temp = dm_feed_ruminant[:, :, 'agr_feed-requirement', :] \
+              * DM_feed['ruminant-feed']['ruminant-feed'][:, :, np.newaxis, 'agr_ruminant-feed_share-grass']
+    dm_feed_ruminant.add(array_temp, dim='Variables', col_label='agr_feed-requirement_grass',
+                    unit='t')
+    dm_feed_ruminant.operation('agr_feed-requirement', '-',
+                                'agr_feed-requirement_grass',
+                                out_col='agr_feed-requirement_without-grass', unit='t')
+    dm_feed_ruminant = dm_feed_ruminant.filter({'Variables': ['agr_feed-requirement_without-grass']})
+
+    # Pre-processing for other feed and appending with ruminant feed without grass
+    list_others = ['abp-hens-egg', 'meat-oth-animals', 'meat-pig', 'meat-poultry', 'meat-sheep']
+    dm_feed_without_grass = dm_feed_req.filter({'Variables': ['agr_feed-requirement'], 'Categories1': list_others})
+    dm_feed_without_grass.rename_col('agr_feed-requirement',
+                           'agr_feed-requirement_without-grass', dim='Variables')
+    dm_feed_without_grass.append(dm_feed_ruminant, dim='Categories1')
+
+    # Total feed req [t] = sum(Feed req per livestock type without grass [t])
+    dm_feed_req_total = dm_feed_without_grass.filter({'Variables': ['agr_feed-requirement_without-grass']})
     dm_feed_req_total.groupby({'total': '.*'}, dim='Categories1', regex=True, inplace=True)
     dm_feed_req_total = dm_feed_req_total.flatten()
 
     # ALTERNATIVE PROTEIN SOURCE (APS) FOR LIVESTOCK FEED
     # APS [kcal] = Feed req per livestock type [kcal] * APS share per type [%]
     idx_aps = DM_feed['alt-protein'].idx
-    idx_feed = dm_feed_req.idx
-    dm_temp = dm_feed_req.array[:, :, idx_feed['agr_feed-requierement'], :, np.newaxis] \
+    idx_feed = dm_feed_without_grass.idx
+    dm_temp = dm_feed_without_grass.array[:, :, idx_feed['agr_feed-requirement_without-grass'], :, np.newaxis] \
               * DM_feed['alt-protein'].array[:, :, idx_aps['agr_alt-protein'], :, :]
     DM_feed['alt-protein'].add(dm_temp, dim='Variables', col_label='agr_feed_aps', unit='kcal')
 
@@ -1233,26 +1203,27 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     # dm_alt_feed.rename_col('agr_use_bev_ibp_cereal_feed', 'agr_feed-diet-switch', dim='Variables') FIXME find the issue because this line does not work, probably because of previous groupby in ALC BEV
     dm_feed_req_total.append(dm_alt_feed, dim='Variables')
 
-    # Crop based feed demand [kcal] = Total feed req [kcal] - Alternative feed ration [kcal] FIXME change 1st component name
-    dm_feed_req_total.operation('agr_feed-requierement_total', '-', 'agr_use_bev_ibp_cereal_feed',
-                                out_col='agr_feed-demand', unit='kcal')
+    # Crop based feed demand [kcal] = Total feed req without grass [kcal] - Alternative feed ration [kcal] FIXME change 1st component name
+    #dm_feed_req_total.operation('agr_feed-requirement_without-grass_total', '-', 'agr_use_bev_ibp_cereal_feed',
+    #                            out_col='agr_feed-demand', unit='t')
 
     # Feed demand by type [kcal] = Crop based feed demand by type [kcal] * Share of feed per type [%]
     idx_feed = dm_feed_req_total.idx
     idx_ration = DM_feed['ration'].idx
-    dm_temp = dm_feed_req_total.array[:, :, idx_feed['agr_feed-demand'], np.newaxis] \
+    dm_temp = dm_feed_req_total.array[:, :, idx_feed['agr_feed-requirement_without-grass_total'], np.newaxis] \
               * DM_feed['ration'].array[:, :, idx_ration['agr_climate-smart-livestock_ration'], :]
     DM_feed['ration'].add(dm_temp, dim='Variables', col_label='agr_demand_feed_raw', unit='kcal')
 
     # Calibration Feed demand
     dm_cal_feed = DM_feed['cal_agr_demand_feed']
+    dm_cal_feed.change_unit('cal_agr_demand_feed', factor=1000, old_unit='kt', new_unit='t')
     dm_feed_demand = DM_feed['ration'].filter({'Variables': ['agr_demand_feed_raw']})
     dm_cal_rates_feed = calibration_rates(dm_feed_demand, dm_cal_feed, calibration_start_year=1990,
                                           calibration_end_year=2023,
                                           years_setting=years_setting)
     DM_feed['ration'].append(dm_cal_rates_feed, dim='Variables')
     DM_feed['ration'].operation('agr_demand_feed_raw', '*', 'cal_rate', dim='Variables', out_col='agr_demand_feed',
-                                unit='kcal')
+                                unit='t')
     # Calibration values fill na with 0
     dm_temp = DM_feed['ration'].filter({'Variables': ['agr_demand_feed']})
     array_temp = dm_temp.array[:, :, :, :]
@@ -2522,7 +2493,6 @@ def agriculture(lever_setting, years_setting, DM_input, interface=Interface()):
     dm_liv_N2O, dm_CH4, df_cal_rates_liv_N2O, df_cal_rates_liv_CH4, DM_manure = livestock_manure_workflow(DM_manure, DM_livestock,
                                                                                                dm_liv_pop, CDM_const,
                                                                                                years_setting)
-    feed_workflow_new(DM_feed, dm_liv_pop, CDM_const, years_setting)
     DM_feed, dm_aps_ibp, dm_feed_req, dm_aps, dm_feed_demand, df_cal_rates_feed = feed_workflow(DM_feed, dm_liv_prod,
                                                                                                 dm_bev_ibp_cereal_feed,
                                                                                                 CDM_const,
