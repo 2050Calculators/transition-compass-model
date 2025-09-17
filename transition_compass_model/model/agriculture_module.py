@@ -1127,13 +1127,13 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     dm_feed_req.sort('Categories1')
     cdm_cp_efficiency.sort('Categories1')
 
-    # Feed req per livestock type [t] = domestic ASF prod accounting for waste [t] / feed conversion ratio [kg DM feed/kg EW] EW: edible weight
+    # Feed req per livestock type [t] = domestic ASF prod accounting for waste [t] * feed conversion ratio [kg DM feed/kg EW] EW: edible weight
     dm_temp = dm_feed_req[:, :,'agr_domestic_production_liv_afw_t', :] \
-              / cdm_cp_efficiency[np.newaxis, np.newaxis, 'cp_efficiency_liv', :]
+              * cdm_cp_efficiency[np.newaxis, np.newaxis, 'cp_efficiency_liv', :]
     dm_feed_req.add(dm_temp, dim='Variables', col_label='agr_feed-requirement', unit='t')
 
-    # For bovine & dairy cattle : Ruminant feed without grass [t] = ruminant feed [t] * (1-Share of grass in ruminant feed [%])
-    list_ruminant =['abp-dairy-milk', 'meat-bovine']
+    # For bovine & dairy cattle & sheep : Ruminant feed without grass [t] = ruminant feed [t] * (1-Share of grass in ruminant feed [%])
+    list_ruminant =['abp-dairy-milk', 'meat-bovine', 'meat-sheep']
     dm_feed_ruminant = dm_feed_req.filter({'Variables': ['agr_feed-requirement'],'Categories1': list_ruminant})
     array_temp = dm_feed_ruminant[:, :, 'agr_feed-requirement', :] \
               * DM_feed['ruminant-feed']['ruminant-feed'][:, :, np.newaxis, 'agr_ruminant-feed_share-grass']
@@ -1145,7 +1145,7 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     dm_feed_ruminant = dm_feed_ruminant.filter({'Variables': ['agr_feed-requirement_without-grass']})
 
     # Pre-processing for other feed and appending with ruminant feed without grass
-    list_others = ['abp-hens-egg', 'meat-oth-animals', 'meat-pig', 'meat-poultry', 'meat-sheep']
+    list_others = ['abp-hens-egg', 'meat-oth-animals', 'meat-pig', 'meat-poultry']
     dm_feed_without_grass = dm_feed_req.filter({'Variables': ['agr_feed-requirement'], 'Categories1': list_others})
     dm_feed_without_grass.rename_col('agr_feed-requirement',
                            'agr_feed-requirement_without-grass', dim='Variables')
@@ -1216,7 +1216,6 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
 
     # Calibration Feed demand
     dm_cal_feed = DM_feed['cal_agr_demand_feed']
-    dm_cal_feed.change_unit('cal_agr_demand_feed', factor=1000, old_unit='kt', new_unit='t')
     dm_feed_demand = DM_feed['ration'].filter({'Variables': ['agr_demand_feed_raw']})
     dm_cal_rates_feed = calibration_rates(dm_feed_demand, dm_cal_feed, calibration_start_year=1990,
                                           calibration_end_year=2023,

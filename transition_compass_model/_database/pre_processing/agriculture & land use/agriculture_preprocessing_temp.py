@@ -23,6 +23,70 @@ with open('../../data/datamatrix/lifestyles.pickle', 'rb') as handle:
 filter_DM(DM_agriculture, {'Country': ['Switzerland']})
 filter_DM(DM_lifestyles, {'Country': ['Switzerland']})
 
+# FEED - SHARE GRASS OTS ----------------------------------------------------------------------------------------
+
+# Load
+dm_dom_prod_liv = DM_agriculture['fxa']['cal_agr_domestic-production-liv'].copy()
+cdm_cp_efficiency = DM_agriculture['constant']['cdm_cp_efficiency']
+cdm_kcal = DM_agriculture['constant']['cdm_kcal-per-t']
+dm_feed_cal = DM_agriculture['fxa']['cal_agr_demand_feed'].copy()
+
+# ASF domestic prod with losses => Unit conversion: [kcal] to [t]
+cdm_kcal.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
+cdm_kcal = cdm_kcal.filter({'Categories1': ['abp-dairy-milk', 'abp-hens-egg',
+                                            'meat-bovine', 'meat-oth-animals',
+                                            'meat-pig', 'meat-poultry',
+                                            'meat-sheep']})
+dm_dom_prod_liv.sort('Categories1')
+cdm_kcal.sort('Categories1')
+array_temp = dm_dom_prod_liv[:, :, 'cal_agr_domestic-production-liv', :] \
+             / cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
+dm_dom_prod_liv.add(array_temp, dim='Variables',
+                col_label='agr_domestic_production_liv_afw_t',
+                unit='t')
+
+# Feed req with grass per type [t] =  ASF domestic prod with losses [kt] * FCR [%]
+dm_dom_prod_liv.sort('Categories1')
+cdm_cp_efficiency.sort('Categories1')
+dm_temp = dm_dom_prod_liv[:, :, 'agr_domestic_production_liv_afw_t', :] \
+          * cdm_cp_efficiency[np.newaxis, np.newaxis, 'cp_efficiency_liv', :]
+dm_dom_prod_liv.add(dm_temp, dim='Variables', col_label='agr_feed-requirement',
+                unit='t')
+
+# Feed req total with grass [t] =  sum per type (Feed req with grass per type [t])
+dm_dom_prod_liv = dm_dom_prod_liv.filter(
+  {'Variables': ['agr_feed-requirement']})
+dm_ruminant = dm_dom_prod_liv.filter(
+  {'Categories1': ['abp-dairy-milk', 'meat-bovine']}) # Create copy for ruminants
+dm_dom_prod_liv.groupby({'total': '.*'}, dim='Categories1', regex=True,
+                          inplace=True)
+dm_dom_prod_liv = dm_dom_prod_liv.flatten()
+
+# Feed req total without grass FAO [t] = sum (feed FBS + SQL)
+dm_feed_cal = dm_feed_cal.filter(
+  {'Variables': ['cal_agr_demand_feed']})
+dm_feed_cal.groupby({'total': '.*'}, dim='Categories1', regex=True,
+                          inplace=True)
+dm_feed_cal = dm_feed_cal.flatten()
+
+# Grass feed [t] = Feed req total with grass [t] - Feed req total without grass FAO [t]
+dm_dom_prod_liv.append(dm_feed_cal, dim='Variables')
+dm_dom_prod_liv.operation('agr_feed-requirement_total', '-', 'cal_agr_demand_feed_total',
+                                 out_col='grass_feed', unit='t')
+
+# Feed ruminant with grass [t] = sum (feed ruminant [t])
+dm_ruminant.groupby({'ruminant': '.*'}, dim='Categories1', regex=True,
+                          inplace=True)
+dm_ruminant = dm_ruminant.flatten()
+
+# Share grass feed ruminant [%] = Grass feed [t] / Feed ruminant with grass [t]
+dm_dom_prod_liv.append(dm_ruminant, dim='Variables')
+dm_dom_prod_liv.operation('grass_feed', '/', 'agr_feed-requirement_ruminant',
+                                 out_col='agr_ruminant-feed_share-grass', unit='%')
+
+# Overwrite in pickle
+DM_agriculture['ots']['ruminant-feed']['ruminant-feed']['Switzerland',:,'agr_ruminant-feed_share-grass'] = dm_dom_prod_liv['Switzerland',:,'agr_ruminant-feed_share-grass']
+
 # ---------------------------------------------------------------------------------------------------------
 # ADDING CONSTANTS ----------------------------------------------------------------------------------------
 # ---------------------------------------------------------------------------------------------------------
