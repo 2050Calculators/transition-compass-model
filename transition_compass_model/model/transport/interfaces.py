@@ -253,6 +253,11 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out):
       ]
     }
   )
+  dm_keep_mode.change_unit('tra_passenger_transport-demand-by-mode', old_unit='pkm', new_unit='Bpkm', factor=1e-9)
+  dm_keep_mode.change_unit('tra_passenger_transport-demand-vkm', old_unit='vkm', new_unit='Bvkm', factor=1e-9)
+  dm_keep_mode.change_unit('tra_passenger_vehicle-fleet', old_unit='number', new_unit='millions', factor=1e-6)
+
+
 
   dm_keep_tech = DM_passenger_out["tech"].filter(
     {"Variables": ["tra_passenger_vehicle-fleet"], "Categories1": ["LDV"]}
@@ -292,6 +297,9 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out):
   dm_energy_tot.groupby(
     {"tra_energy-demand_total": ".*"}, inplace=True, regex=True, dim="Variables"
   )
+
+  dm_soft_mobility = DM_passenger_out["soft-mobility"]
+  dm_soft_mobility.change_unit("tra_passenger_transport-demand-by-mode", old_unit='pkm', new_unit='Bpkm', factor=1e-9)
 
   # Merge datamatrices for new-app
   dm_tpe = dm_keep_mode.flattest()
