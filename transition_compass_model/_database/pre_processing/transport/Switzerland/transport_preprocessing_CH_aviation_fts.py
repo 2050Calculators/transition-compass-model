@@ -272,10 +272,10 @@ def compute_new_veh_max(dm_max):
 def compute_share_emissions(dm_skm_CH, dm_skm_abroad):
     # Emissions = skm x MJ/skm x CO2/MJ
     # Emissions_CH = skm_CH x (MJ/skm x CO2/MJ)_CH
-    # Emissions_abroad = skm_abroud x (MJ/skm x CO2/MJ)_abroad
+    # Emissions_abroad = skm_abroad x (MJ/skm x CO2/MJ)_abroad
     # Emission_CH / Emissions_abroad = skm_CH / skm_abroad ----> seats_CH / seats_abroad
-    # Multiply by 2 the Swiss seats to obtain emissions according to sold quantity principle
-    dm_skm_CH[:, :, 'tra_passenger-demand-skm_CH', ...] = 2 * dm_skm_CH[:, :, 'tra_passenger-demand-skm_CH', ...]
+    ## Multiply by 2 the Swiss seats to obtain emissions according to sold quantity principle
+    #dm_skm_CH[:, :, 'tra_passenger-demand-skm_CH', ...] = 2 * dm_skm_CH[:, :, 'tra_passenger-demand-skm_CH', ...]
     dm_skm_CH.append(dm_skm_abroad, dim='Variables')
     dm_skm_CH.operation('tra_passenger-demand-skm_CH', '/', 'tra_passenger-demand-skm',
                         out_col='tra_share-emissions-local', unit='%')
