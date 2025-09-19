@@ -289,8 +289,9 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out):
   )
 
   # Total energy demand
-  dm_energy_tot = DM_passenger_out["energy"].copy()
-  dm_energy_tot.group_all(dim="Categories1")
+  dm_energy_tot_pass = DM_passenger_out["energy"].copy()
+  dm_energy_tot_pass.group_all(dim="Categories1")
+  dm_energy_tot = dm_energy_tot_pass.copy()
   dm_energy_freight = DM_freight_out["energy"].copy()
   dm_energy_freight.group_all(dim="Categories1")
   dm_energy_tot.append(dm_energy_freight, dim="Variables")
@@ -322,7 +323,47 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out):
   dm_tpe.append(dm_keep_aviation_energy.flattest(), dim='Variables')
   dm_tpe.append(dm_tech_HDVH.flattest(), dim='Variables')
   dm_tpe.append(dm_freight_emissions.flattest(), dim='Variables')
-  return dm_tpe
+
+  KPI = []
+  yr = 2050
+  # Emissions Passenger
+  dm_pass_emi = DM_passenger_out["emissions"].copy()
+  dm_pass_emi.drop(col_label='aviation', dim='Categories1')
+  dm_pass_emi.group_all('Categories1', inplace=True)
+  value = dm_pass_emi[0, yr, 'tra_emissions-CO2e_passenger']
+  KPI.append({'title': 'Passenger land transport CO2', 'value': value, 'unit': 'Mt'})
+
+  # Aviation CO2
+  dm_avia_emi = dm_keep_aviation_emissions.group_all('Categories2', inplace=False)
+  value = dm_avia_emi[0, yr, 'tra_passenger_emissions', 'aviation', 'CO2']
+  KPI.append({'title': 'Passenger aviation CO2', 'value': value, 'unit': 'Mt'})
+
+  # Energy demand Passenger in TWh
+  value = dm_energy_tot_pass[0, yr, 'tra_passenger_energy-demand-by-fuel']
+  KPI.append(
+    {'title': 'Passenger energy demand', 'value': value, 'unit': 'TWh'})
+
+  # Energy demand Freight in TWh
+  value = dm_energy_freight[0, yr, 'tra_freight_total-energy']
+  KPI.append(
+    {'title': 'Freight energy demand', 'value': value, 'unit': 'TWh'})
+
+  # Share of public transport
+
+  # % EV cars
+  dm_LDV_EV = DM_passenger_out['tech'].filter({'Variables': ['tra_passenger_technology-share-fleet'], 'Categories1': ['LDV']}, inplace=False)
+  value = dm_LDV_EV[0, yr, 'tra_passenger_technology-share-fleet', 'LDV', 'BEV']*100
+  KPI.append({'title': 'Electric car share', 'value': value, 'unit': '%'})
+
+  # % Non fossil fuel trucks
+  dm_tech_HDVH.groupby({'Non-ICE': ['BEV', 'FCEV', 'CEV', 'PHEV-diesel', 'PHEV-gasoline']}, dim='Categories2', inplace=True)
+  value = dm_tech_HDVH[0, yr, 'tra_freight_technology-share-fleet', 'HDVH', 'Non-ICE']
+  KPI.append(
+    {'title': 'Low emission truck share', 'value': value, 'unit': '%'})
+
+
+  # Freight emissions
+  return dm_tpe, KPI
 
 
 def tra_emissions_interface(
