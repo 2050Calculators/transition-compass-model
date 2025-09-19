@@ -127,7 +127,7 @@ def bld_TPE_interface(DM_energy, DM_area):
     dm_tpe.append(DM_area['floor-area-cat'].flattest(), dim='Variables')
     dm_tpe.append(DM_area['floor-area-bld-type'].flattest(), dim='Variables')
 
-    KPI =[]
+    KPI = []
     yr = 2050
     # Emissions
     dm_tot_emi = DM_energy['energy-emissions-by-class'].filter({'Variables': ['bld_CO2-emissions_heating']})
