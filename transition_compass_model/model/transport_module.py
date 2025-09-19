@@ -184,8 +184,8 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     )
     dm_emissions.group_all("Categories2")
 
-    results_run = inter.prepare_TPE_output(DM_passenger_out, DM_freight_out)
-    return results_run
+    results_run, KPI = inter.prepare_TPE_output(DM_passenger_out, DM_freight_out)
+    return results_run, KPI
 
 
 def local_transport_run():
