@@ -767,7 +767,7 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     dm_emissions_by_GHG.array = tmp[:, :, np.newaxis, :]
     del tmp, unit, col_labels
 
-    dm_tech.rename_col('tra_freight_technology-share_fleet', 'tra_freight_techology-share-fleet', dim='Variables')
+    dm_tech.rename_col('tra_freight_technology-share_fleet', 'tra_freight_technology-share-fleet', dim='Variables')
 
     DM_freight_out['mode'] = dm_mode
     DM_freight_out['tech'] = dm_tech

@@ -298,6 +298,12 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out):
     {"tra_energy-demand_total": ".*"}, inplace=True, regex=True, dim="Variables"
   )
 
+  dm_tech_HDVH = DM_freight_out['tech'].filter({'Variables': ['tra_freight_technology-share-fleet'], 'Categories1': ['HDVH']})
+  dm_tech_HDVH.array = dm_tech_HDVH.array*100
+
+  dm_freight_emissions = DM_freight_out['emissions'].filter({'Categories2': ['CO2']})
+  dm_freight_emissions.groupby({'HDV': ['HDVH', 'HDVM', 'HDVL']}, dim='Categories1', inplace=True)
+
   dm_soft_mobility = DM_passenger_out["soft-mobility"]
   dm_soft_mobility.change_unit("tra_passenger_transport-demand-by-mode", old_unit='pkm', new_unit='Bpkm', factor=1e-9)
 
@@ -314,7 +320,8 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out):
   dm_tpe.append(dm_keep_aviation_emissions.flattest(), dim='Variables')
   dm_tpe.append(dm_keep_aviation_local.flattest(), dim='Variables')
   dm_tpe.append(dm_keep_aviation_energy.flattest(), dim='Variables')
-
+  dm_tpe.append(dm_tech_HDVH.flattest(), dim='Variables')
+  dm_tpe.append(dm_freight_emissions.flattest(), dim='Variables')
   return dm_tpe
 
 
