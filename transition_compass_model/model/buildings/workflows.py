@@ -250,6 +250,9 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots,
                                      'bld_floor-area_renovated-cumulated'],
                        'Years': years_ots + years_fts},
                       inplace=True)
+  dm_cumulated.deepen(based_on='Variables')
+  dm_cumulated.change_unit('bld_floor-area', old_unit='m2', new_unit='Mm2', factor=1e-6)
+  dm_cumulated = dm_cumulated.flatten()
 
   dm_bld_tot.filter({'Years': years_ots + years_fts}, inplace=True)
 
