@@ -5452,63 +5452,42 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
 
     # LeversToDatamatrix FTS linear fitting of ots
 
-    # Initialise everything to absolute linear fitting
-    levers_list = DM_agriculture_old['ots'].keys()
-    dict_extrap_type = dict()
-    for lev in levers_list:
-      dict_extrap_type[lev] = "abs_linear_fit"
-
-    # Put some levers to per-capita extrapolation
-    dict_extrap_type['some-lever-name'] = "cap_linear_fit"
-
-    # Put some levers to normalised
-    dict_extrap_type['some-other-name'] = "norm_linear_fit_cat1"
-
     DM_ots = DM_agriculture_old['ots'].copy()
     DM_fts = DM_agriculture_old['fts'].copy()
 
     # To do once when adding a new lever
     #DM_fts['ruminant-feed'] = {'ruminant-feed': dict()}
 
+    # Levers to be normalised
+    list_norm = ['climate-smart-livestock_ration']
+
     for key in DM_ots.keys():
       if isinstance(DM_ots[key], dict):
         for subkey in DM_ots[key].keys():
           dm = DM_ots[key][subkey].copy()
-          for lev in range(4):
-            lev = lev + 1
-            linear_fitting(dm, years_fts)
-            DM_fts[key][subkey][lev] = dm.filter({'Years': years_fts}, inplace=False)
+          linear_fitting(dm, years_fts)
+
+          for lev in range(1, 5):  # 1 to 4
+            if subkey in list_norm:  # ✅ check subkey, not key
+              dm_norm = dm.copy()
+              # Replace negative values with 0
+              array_temp = dm_norm.array[:, :, :, :]
+              array_temp[array_temp < 0] = 0.0
+              dm_norm.array[:, :, :, :] = array_temp
+              # Normalise
+              dm_norm.normalise(dim='Categories1', inplace=True)
+              DM_fts[key][subkey][lev] = dm_norm.filter(
+                {'Years': years_fts}, inplace=False
+              )
+            else:
+              DM_fts[key][subkey][lev] = dm.filter(
+                {'Years': years_fts}, inplace=False
+              )
       else:
         dm = DM_ots[key].copy()
         linear_fitting(dm, years_fts)
-        for lev in range(4):
-          lev = lev + 1
+        for lev in range(1, 5):
           DM_fts[key][lev] = dm.filter({'Years': years_fts}, inplace=False)
-
-    # LeversToDatamatrix FTS based on EuCalc fts
-    #dm_fts = DM_agriculture_old['fts'].copy()
-
-    # Filter dm_fts to start year at 2025 not 2020 PAOLA FTS
-    #filter_DM(dm_fts, {'Years': years_fts})
-
-    # Append dummy variables for climate-smart-livestock_slaughtered categories1 abp-dairy-milk & abp-hens-egg to do only once
-    #or lev in range(4):
-        #lev = lev + 1
-        # dm_fts['climate-smart-livestock']['climate-smart-livestock_slaughtered'][lev].add(0.0, dummy=True,
-        #                                                                              col_label='abp-dairy-milk',
-        #                                                                              dim='Categories1', unit='%')
-        #dm_fts['climate-smart-livestock']['climate-smart-livestock_slaughtered'][lev].add(0.0, dummy=True,
-        #                                                                              col_label='abp-hens-egg',
-        #                                                                              dim='Categories1', unit='%')
-
-    # for dm_kcal_req use linear-fitting to determine fts
-    #linear_fitting(dm_kcal_req_pathwaycalc, years_fts)
-    #dm_kcal_req_fts = dm_kcal_req_pathwaycalc.filter({'Years': years_fts}, inplace=False)
-    #dm_kcal_req_pathwaycalc.filter({'Years': years_ots}, inplace=True)
-
-    #for lev in range(4):
-     #   lev = lev+1
-     #   dm_fts['kcal-req'][lev] = dm_kcal_req_fts
 
     # To remove '_' at the ending of some keys as the ones for diet
     #for key in dm_fts.keys():
@@ -5801,6 +5780,7 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     dict_temp['climate-smart-livestock_manure'] = dm_manure
     dm_ration = dm.filter_w_regex({'Variables': 'agr_climate-smart-livestock_ration.*'})
     dm_ration.deepen()
+    dm_ration.normalise(dim='Categories1') # normalise to keep sum ration = 1
     dict_temp['climate-smart-livestock_ration'] = dm_ration
     dm_ef = dm.filter_w_regex({'Variables': 'agr_climate-smart-livestock_ef_agroforestry.*'})
     dm_ef.deepen()

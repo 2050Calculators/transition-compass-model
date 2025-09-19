@@ -2197,6 +2197,10 @@ def agriculture_TPE_interface(CDM_const, DM_livestock, DM_crop, dm_crop_other, D
     cdm_kcal.drop(dim='Categories1', col_label='pro-crop-processed-molasse')
     cdm_kcal.drop(dim='Categories1', col_label='pro-crop-processed-cake')
 
+    # Sort
+    dm_foodwaste.sort('Categories1')
+    cdm_kcal.sort('Categories1')
+
     # Convert from [kcal] to [t]
     array_temp = dm_foodwaste[:, :, 'lfs_food-wastes', :] \
                  / cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
@@ -2239,6 +2243,10 @@ def agriculture_TPE_interface(CDM_const, DM_livestock, DM_crop, dm_crop_other, D
         "crop-veg"]})
     cdm_kcal.rename_col_regex(str1="crop-", str2="", dim="Categories1")
     cdm_kcal.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
+
+    # Sort
+    dm_crop_prod_food.sort('Categories1')
+    cdm_kcal.sort('Categories1')
 
     # Convert from [kcal] to [t]
     idx_dm = dm_crop_prod_food.idx
@@ -2429,7 +2437,6 @@ def agriculture_TPE_interface(CDM_const, DM_livestock, DM_crop, dm_crop_other, D
     # Grassland
     dm_grassland = DM_livestock['ruminant_density'].filter({'Variables': ['agr_lus_land_raw_grassland','agr_climate-smart-livestock_density']})
     dm_tpe.append(dm_grassland, dim='Variables')
-
     return dm_tpe
 
 
