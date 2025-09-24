@@ -6364,6 +6364,7 @@ CDM_const = DM_agriculture['constant'].copy()
 cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
 #cdm_kcal.drop(dim='Categories1', col_label='crop-sugarcrop')
 cdm_kcal.drop(dim='Categories1', col_label='stm')
+cdm_kcal.drop(dim='Categories1', col_label='liv-meat-meal')
 dm_cal_diet = dm_cal_diet.filter({'Variables': ['cal_agr_diet_new']}).copy()
 cdm_food_yield = CDM_const['cdm_food_yield'].copy()
 
