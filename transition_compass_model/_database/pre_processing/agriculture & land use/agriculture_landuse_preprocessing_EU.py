@@ -2590,7 +2590,7 @@ def ruminant_feed_processing(df_csl_feed):
   return df_ruminant_feed_pathwaycalc
 
 # CalculationLeaf FEED 2025 NEW VERSION ------------------------------------------------------------------------------
-def feed_processing():
+def feed_processing_lca():
   # Read excel sheets
   df_LCA_livestock = pd.read_excel('agriculture_feed_v2025.xlsx',
                                    sheet_name='data_LCA_livestock')
@@ -2730,6 +2730,87 @@ def feed_processing():
                                               countries='all')
 
   return df_feed_lsu_pathwaycalc
+
+
+# CalculationLeaf SELF SUFFICIENCY FEED ------------------------------------------------------------------------------
+
+def feed_ssr_processing(years_ots):
+
+  # Read excel (Link https://www.bfs.admin.ch/bfs/fr/home/statistiques/agriculture-sylviculture/agriculture.assetdetail.36135273.html)
+  df_feed = pd.read_excel('data/OFS_bilan-fourrager.xlsx',
+                                   sheet_name='T7.2.3.1.6')
+
+  # List rows to filter
+  rows_filter = "Année| Céréales| Tourteaux| Autres"
+  filtered_df = df_feed[
+    df_feed["Bilan fourrager"].str.contains(rows_filter,
+                                            case=False, na=False)]
+
+  # Format for computations
+  # Set "Bilan fourrager" as index
+  df_indexed = filtered_df.set_index("Bilan fourrager")
+  # Transpose so that Unnamed columns become rows
+  df_T = df_indexed.T
+  # Promote "Année" row to the index
+  df_T.index.name = None
+  df_T = df_T.rename_axis("timescale").reset_index()
+  # Replace "Year" values by the row under 'Année'
+  df_T["timescale"] = df_T["Année"]
+  # Drop the "Année" column since it's now the index
+  df_T = df_T.drop(columns="Année")
+  # Drop rows where 'Year' is NaN
+  df_comp = df_T.dropna(subset=["timescale"])
+  # Conver to numeric
+  df_comp = df_comp.apply(pd.to_numeric, errors="coerce")
+
+  # Compute SSR per category
+  df_comp['SSR Cereals'] = df_comp['Production Céréales'] / (df_comp['Production Céréales'] + df_comp['Imports Céréales'])
+  df_comp['SSR Cakes'] = df_comp['Production Tourteaux'] / (
+      df_comp['Production Tourteaux'] + df_comp['Imports Tourteaux'])
+  df_comp['SSR Other (veg)'] = df_comp['Production Autres (veg)'] / (
+      df_comp['Production Autres (veg)'] + df_comp['Imports Autres (veg)'])
+  df_comp['SSR Other (sugar, ibp)'] = df_comp['Production Autres (sucre, amidon, brasseries)'] / (
+      df_comp['Production Autres (sucre, amidon, brasseries)'] + df_comp['Imports Autres (sucre, amidon, brasseries)'])
+
+  # Filter SSR columns
+  df_comp = df_comp[['timescale', 'SSR Cereals', 'SSR Cakes','SSR Other (veg)', 'SSR Other (sugar, ibp)']].copy()
+
+  # Melt df
+  df_melted = df_comp.melt(
+    id_vars='timescale',
+    var_name='Item',
+    value_name='value'
+  )
+
+  # Pathwaycalc formatting
+  # Read excel file
+  df_dict_forestry = pd.read_excel(
+    'dictionaries/dictionnary_agriculture_landuse.xlsx',
+    sheet_name='self-sufficiency')
+
+  # Merge based on 'Item'
+  df_feed_ssr_pathwaycalc = pd.merge(df_dict_forestry, df_melted, on='Item')
+
+  # Drop the 'Item' column
+  df_feed_ssr_pathwaycalc = df_feed_ssr_pathwaycalc.drop(columns=['Item'])
+
+  # Adding the columns module, lever, level and string-pivot at the correct places
+  df_feed_ssr_pathwaycalc['geoscale'] = 'Switzerland'
+  df_feed_ssr_pathwaycalc['module'] = 'agriculture'
+  df_feed_ssr_pathwaycalc['lever'] = 'climate-smart-forestry'
+  df_feed_ssr_pathwaycalc['level'] = 0
+  cols = df_feed_ssr_pathwaycalc.columns.tolist()
+  cols.insert(cols.index('value'), cols.pop(cols.index('module')))
+  cols.insert(cols.index('value'), cols.pop(cols.index('lever')))
+  cols.insert(cols.index('value'), cols.pop(cols.index('level')))
+  df_feed_ssr_pathwaycalc = df_feed_ssr_pathwaycalc[cols]
+
+  # Extrapolating
+  df_feed_ssr_pathwaycalc = ensure_structure(df_feed_ssr_pathwaycalc)
+  df_feed_ssr_pathwaycalc = linear_fitting_ots_db(df_feed_ssr_pathwaycalc, years_ots,
+                                              countries='Switzerland')
+
+  return df_feed_ssr_pathwaycalc
 
 # CalculationLeaf CLIMATE SMART FORESTRY -------------------------------------------------------------------------------
 def climate_smart_forestry_processing():
@@ -6083,7 +6164,7 @@ years_all = years_ots + years_fts
 if not os.path.exists('data/faostat'):
     os.makedirs('data/faostat')
 
-df_feed_lsu_pathwaycalc = feed_processing()
+df_feed_lsu_pathwaycalc = feed_processing_lca()
 list_countries = ['Austria', 'Belgium', 'Bulgaria', 'Croatia', 'Cyprus', 'Czechia', 'Denmark',
                   'Estonia', 'Finland', 'France', 'Germany', 'Greece', 'Hungary', 'Ireland', 'Italy', 'Latvia',
                   'Lithuania', 'Luxembourg', 'Malta', 'Netherlands (Kingdom of the)', 'Poland', 'Portugal',
@@ -6098,6 +6179,7 @@ dm_kcal_req_pathwaycalc = energy_requirements_processing(country_list=df_waste_p
 file_dict = {'ssr': 'data/faostat/ssr.csv', 'cake': 'data/faostat/ssr_cake.csv',
              'molasse': 'data/faostat/ssr_2010_2021_molasse_cake.csv'}
 df_ssr_pathwaycalc, df_csl_feed = self_sufficiency_processing(years_ots, list_countries, file_dict)
+df_feed_ssr_pathwaycalc = feed_ssr_processing(years_ots)
 df_land_use_fao_calibration, df_cropland_density, df_agri_land = land_calibration(list_countries)
 file_dict = {'losses': 'data/faostat/losses.csv', 'yield': 'data/faostat/yield.csv','cropland': 'data/faostat/cropand.csv', 'urea': 'data/faostat/urea.csv',
              'land': 'data/faostat/land.csv', 'nitro': 'data/faostat/nitro.csv',
