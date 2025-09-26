@@ -276,7 +276,7 @@ dm_req.operation('demand_per_group', '/', 'lfs_demography', out_col='agr_kcal-re
 
 # For calibration : cal_agr_diet [kcal/year] = cal_agr_diet [kcal/cap/day] * population [capita] * 365,25
 arr = dm_cal_diet[:,:,'cal_agr_diet', :] * dm_population[:,:,'lfs_population_total',np.newaxis] * 365.25
-dm_cal_diet.add(arr, dim='Variables', col_label='cal_agr_diet_new', unit='kcal/year')
+dm_cal_diet.add(arr, dim='Variables', col_label='cal_agr_diet_new', unit='kcal')
 
 # Save in DM_agriculture
 DM_agriculture['ots']['kcal-req']['Switzerland', :,'agr_kcal-req',:] = dm_req['Switzerland',:,'agr_kcal-req_temp',:]
@@ -286,15 +286,187 @@ DM_agriculture['ots']['diet']['share']['Switzerland', :,'share',:] = dm_others['
 DM_agriculture['fxa']['cal_agr_diet']['Switzerland', :,'cal_agr_diet',:] = dm_cal_diet['Switzerland', :,'cal_agr_diet_new',:]
 
 
-# SSR ----------------------------------------------------------
-
+# SSR FOOD ------------------------------------------------------------------------
+# Idea : compute the food SSR accounting for the feed, as FAO data include the feed
+# only for categories used as food and feed
 # Load data
+dm_ssr_feed = DM_agriculture['ots']['climate-smart-crop']['feed-net-import'].copy()
+dm_feed_cal = DM_agriculture['fxa']['cal_agr_demand_feed'].copy()
+dm_feed_cal.drop(dim='Categories1', col_label='fish')
+#dm_feed_cal.drop(dim='Categories1', col_label='crop-rice')
+dm_feed_cal.drop(dim='Categories1', col_label='liv-meat-meal')
 dm_dom_prod = DM_agriculture['ots']['food-net-import'].copy()
 CDM_const = DM_agriculture['constant'].copy()
 cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
 #cdm_kcal.drop(dim='Categories1', col_label='crop-sugarcrop')
 cdm_kcal.drop(dim='Categories1', col_label='stm')
+cdm_kcal.drop(dim='Categories1', col_label='liv-meat-meal')
+dm_cal_diet = dm_cal_diet.filter({'Variables': ['cal_agr_diet_new']}).copy()
+cdm_kcal_crop = cdm_kcal.copy()
+list_cat_crop = ['crop-cereal', 'crop-fruit', 'crop-oilcrop', 'crop-pulse', 'crop-rice', 'crop-starch', 'crop-sugarcrop', 'crop-veg']
+cdm_kcal_crop = cdm_kcal_crop.filter({'Categories1':list_cat_crop})
+cdm_food_yield = CDM_const['cdm_food_yield'].copy()
+
+# Dom prod feed [t] = cal_agr_demand_feed.* [t] * agr_feed-net-import [%]
+dm_ssr_feed.append(dm_feed_cal, dim='Variables')
+dm_ssr_feed.operation('cal_agr_demand_feed', '*', 'agr_feed-net-import', dim='Variables',
+                          out_col='agr_domestic-production-feed', unit='t')
+
+# Separate SSR of pro-crop-processed-cake, pro-crop-processed-molasse back in dm
+dm_feed = dm_dom_prod.filter(
+  {'Categories1': ['pro-crop-processed-cake','pro-crop-processed-molasse']})
+
+# Rename categories
+cat_diet = [
+    'afat', 'beer', 'bev-alc', 'bev-fer', 'bov', 'cereals', 'cereal', 'cocoa', 'coffee',
+    'dfish', 'egg', 'ffish', 'fruits', 'fruit', 'milk', 'offal', 'oilcrops', 'oilcrop', 'oth-animals',
+    'oth-aq-animals', 'pfish', 'pigs', 'poultry', 'pulses', 'pulse', 'seafood',
+    'sheep', 'starch', 'sugar', 'sweet', 'tea', 'veg', 'voil', 'wine', 'sugarcrop', 'crop-rice', 'rice'
+]
+cat_agr = [
+    'pro-liv-abp-processed-afat', 'pro-bev-beer', 'pro-bev-bev-alc', 'pro-bev-bev-fer',
+    'pro-liv-meat-bovine', 'crop-cereal', 'crop-cereal', 'cocoa', 'coffee', 'dfish',
+    'pro-liv-abp-hens-egg', 'ffish', 'crop-fruit', 'crop-fruit', 'pro-liv-abp-dairy-milk',
+    'pro-liv-abp-processed-offal', 'crop-oilcrop', 'crop-oilcrop', 'pro-liv-meat-oth-animals',
+    'oth-aq-animals', 'pfish', 'pro-liv-meat-pig', 'pro-liv-meat-poultry',
+    'crop-pulse', 'crop-pulse', 'seafood', 'pro-liv-meat-sheep', 'crop-starch',
+    'pro-crop-processed-sugar', 'pro-crop-processed-sweet', 'tea', 'crop-veg',
+    'pro-crop-processed-voil', 'pro-bev-wine', 'crop-sugarcrop', 'crop-rice', 'crop-rice'
+]
+dm_cal_diet.rename_col(cat_diet, cat_agr, 'Categories1')
+dm_dom_prod_crop.rename_col(cat_diet, cat_agr, 'Categories1')
+#dm_dom_prod_crop.drop(dim='Categories1', col_label='rice')
+
+# For sugarcrops : sugarcrops (processed) = processed sugar + processed sweet
+dm_sugarcrop = dm_cal_diet.groupby({'crop-sugarcrop': '.*-sweet|.*-sugar'}, dim='Categories1',
+                          regex=True, inplace=False)
+# Account for processing yield
+array_temp = dm_sugarcrop[:, :,
+             'cal_agr_diet_new', :] \
+             * cdm_food_yield[np.newaxis, np.newaxis, 'cp_ibp_processed', :]
+dm_sugarcrop.add(array_temp, dim='Variables',
+                      col_label='cal_agr_diet_temp', unit='kcal')
+# add back in food demand
+dm_sugarcrop = dm_sugarcrop.filter({'Variables': ['cal_agr_diet_temp']})
+dm_sugarcrop.rename_col('cal_agr_diet_temp', 'cal_agr_diet_new', dim='Variables')
+dm_cal_diet.append(dm_sugarcrop, dim='Categories1')
+
+# Check Category order
+dm_dom_prod.sort('Categories1')
+cdm_kcal.sort('Categories1')
+
+# Unit conversion: [kt] => [kcal]
+# Convert from [kt] to [t]
+dm_dom_prod.change_unit('agr_food-net-import', 10 ** 3, old_unit='%',
+                         new_unit='t')
+# Convert from [t] to [kcal]
+array_temp = dm_dom_prod[:, :,
+             'agr_food-net-import', :] \
+             * cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
+dm_dom_prod.add(array_temp, dim='Variables',
+                      col_label='agr_food-net-import_kcal',
+                      unit='kcal')
+dm_dom_prod = dm_dom_prod.filter(
+  {'Variables': ['agr_food-net-import_kcal']})
+
+# Convert from [kcal] to [t]
+dm_dom_prod_crop.sort(dim='Categories1')
+cdm_kcal_crop.sort(dim='Categories1')
+idx_dm = dm_dom_prod_crop.idx
+idx_cdm = cdm_kcal_crop.idx
+array_temp = dm_dom_prod_crop.array[:, :,
+             idx_dm['cal_agr_domestic-production_food'], :] \
+             / cdm_kcal_crop.array[idx_cdm['cp_kcal-per-t'], :]
+dm_dom_prod_crop.add(array_temp, dim='Variables',
+                      col_label='cal_agr_domestic-production_t',
+                      unit='t')
+dm_dom_prod_crop = dm_dom_prod_crop.filter(
+  {'Variables': ['cal_agr_domestic-production_t']})
+
+# Filter only categories used as food AND feed
+dm_ssr_food = dm_dom_prod_crop.filter({'Categories1':list_cat_crop}).copy()
+dm_ssr_feed_temp = dm_ssr_feed.filter({'Categories1':list_cat_crop})
+
+# Dom prod food [t] = dom prod tot [t] - dom prod feed [t]
+dm_ssr_food.append(dm_ssr_feed_temp, dim='Variables')
+dm_ssr_food.operation('cal_agr_domestic-production_t', '-', 'agr_domestic-production-feed', dim='Variables',
+                          out_col='agr_domestic-production-food', unit='t')
+
+# Convert from [t] to [kcal]
+dm_ssr_food.sort(dim='Categories1')
+cdm_kcal_crop.sort(dim='Categories1')
+array_temp = dm_ssr_food[:, :,'agr_domestic-production-food', :] \
+             * cdm_kcal_crop[np.newaxis, np.newaxis,'cp_kcal-per-t', :]
+dm_ssr_food.add(array_temp, dim='Variables',
+                      col_label='agr_domestic-production-food_kcal',
+                      unit='kcal')
+
+# Filer agr_demand for same categories
+dm_cal_diet_temp = dm_cal_diet.filter({'Categories1':list_cat_crop})
+dm_ssr_food.append(dm_cal_diet_temp, dim='Variables')
+
+# SSR Food [%] = Dom prod food [kcal] / cal_agr_diet_new [kcal]
+dm_ssr_food.operation('agr_domestic-production-food_kcal', '/', 'cal_agr_diet_new', dim='Variables',
+                          out_col='agr_food-net-import', unit='%')
+dm_ssr_food = dm_ssr_food.filter(
+  {'Variables': ['agr_food-net-import']})
+
+# Compute Food SSR for other categories used only for food
+cat_only_food = list(set(cat_agr) - set(list_cat_crop))
+cat_only_food = list(set(cat_only_food) - set(['pro-crop-processed-cake','pro-crop-processed-molasse']))
+dm_dom_prod = dm_dom_prod.filter({'Categories1': cat_only_food})
+dm_cal_diet = dm_cal_diet.filter({'Categories1': cat_only_food})
+
+# Compute SSR [%] : production / agr_demand
+# Except for list_cat_crop + cake & molasse
+dm_dom_prod.append(dm_cal_diet, dim='Variables')
+dm_dom_prod.operation('agr_food-net-import_kcal', '/', 'cal_agr_diet_new', dim='Variables',
+                          out_col='agr_food-net-import', unit='%')
+dm_dom_prod = dm_dom_prod.filter(
+  {'Variables': ['agr_food-net-import']})
+
+
+# Add SSR of pro-crop-processed-cake, pro-crop-processed-molasse back in dm
+dm_dom_prod.append(dm_ssr_food, dim='Categories1')
+# Add SSR of pro-crop-processed-cake, pro-crop-processed-molasse back in dm
+dm_dom_prod.append(dm_feed, dim='Categories1')
+
+# Check Category order
+dm_dom_prod.sort('Categories1')
+DM_agriculture['ots']['food-net-import'].sort('Categories1')
+for i in range(1, 5):
+  DM_agriculture['fts']['food-net-import'][i].sort('Categories1')
+
+# Overwrite
+DM_agriculture['ots']['food-net-import']['Switzerland', :,'agr_food-net-import',:] = dm_dom_prod['Switzerland', :,'agr_food-net-import',:]
+
+
+# SSR FOOD ------------------------------------------------------------------------
+# Idea : compute the food SSR accounting for the feed, as FAO data include the feed
+# only for categories used as food and feed
+
+
+# Load data
+dm_ssr_feed = DM_agriculture['ots']['climate-smart-crop']['feed-net-import'].copy()
+dm_feed_cal = DM_agriculture['fxa']['cal_agr_demand_feed'].copy()
+dm_feed_cal.drop(dim='Categories1', col_label='fish')
+dm_feed_cal.drop(dim='Categories1', col_label='liv-meat-meal')
+dm_dom_prod = DM_agriculture['ots']['food-net-import'].copy()
+CDM_const = DM_agriculture['constant'].copy()
+cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
+#cdm_kcal.drop(dim='Categories1', col_label='crop-sugarcrop')
+cdm_kcal.drop(dim='Categories1', col_label='stm')
+cdm_kcal.drop(dim='Categories1', col_label='liv-meat-meal')
 dm_cal_diet = DM_agriculture['fxa']['cal_agr_diet'].copy()
+cdm_kcal_crop = cdm_kcal.copy()
+list_cat_crop = ['crop-cereal', 'crop-fruit', 'crop-oilcrop', 'crop-pulse', 'crop-starch', 'crop-sugarcrop', 'crop-veg']
+cdm_kcal_crop.filter({'Categories1':list_cat_crop})
+
+# Dom prod feed [t] = cal_agr_demand_feed.* [t] * agr_feed-net-import [%]
+dm_ssr_feed.append(dm_feed_cal, dim='Variables')
+dm_ssr_feed.operation('cal_agr_demand_feed', '*', 'agr_feed-net-import', dim='Variables',
+                          out_col='agr_domestic-production-feed', unit='t')
+
 
 # Separate SSR of pro-crop-processed-cake, pro-crop-processed-molasse back in dm
 dm_feed = dm_dom_prod.filter(
@@ -321,6 +493,8 @@ dm_cal_diet.rename_col(cat_diet, cat_agr, 'Categories1')
 
 # Unit conversion: [kt] => [kcal]
 # Convert from [kcal] to [t]
+dm_dom_prod.sort(dim='Categories1')
+cdm_kcal.sort(dim='Categories1')
 idx_dm = dm_dom_prod.idx
 idx_cdm = cdm_kcal.idx
 array_temp = dm_dom_prod.array[:, :,
@@ -331,6 +505,22 @@ dm_dom_prod.add(array_temp, dim='Variables',
                       unit='kcal')
 dm_dom_prod = dm_dom_prod.filter(
   {'Variables': ['agr_food-net-import_kcal']})
+
+# Convert from [kcal] to [t]
+dm_dom_prod_crop.sort(dim='Categories1')
+cdm_kcal_crop.sort(dim='Categories1')
+idx_dm = dm_dom_prod_crop.idx
+idx_cdm = cdm_kcal_crop.idx
+array_temp = dm_dom_prod_crop.array[:, :,
+             idx_dm['cal_agr_domestic-production_food'], :] \
+             * cdm_kcal_crop.array[idx_cdm['cp_kcal-per-t'], :]
+dm_dom_prod_crop.add(array_temp, dim='Variables',
+                      col_label='cal_agr_domestic-production_kt',
+                      unit='kt')
+dm_dom_prod_crop = dm_dom_prod_crop.filter(
+  {'Variables': ['agr_food-net-import_kcal']})
+
+
 
 # Drop columns that are not present in agr_demand (Diet calibration)
 dm_dom_prod.drop(dim='Categories1', col_label=['pro-crop-processed-cake',

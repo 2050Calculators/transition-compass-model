@@ -107,6 +107,7 @@ def read_data(DM_agriculture, lever_setting):
     dm_cal_crop = DM_agriculture['fxa']['cal_agr_domestic-production_food']
     # dm_crop.append(dm_cal_crop, dim='Variables')
     dm_ef_residues = DM_agriculture['fxa']['ef_burnt-residues']
+    dm_ssr_feed_crop = DM_ots_fts['climate-smart-crop']['feed-net-import']
 
     # Sub-matrix for LAND
     dm_cal_land = DM_agriculture['fxa']['cal_agr_lus_land']
@@ -206,7 +207,8 @@ def read_data(DM_agriculture, lever_setting):
         'ef_residues': dm_ef_residues,
         'residues_yield': dm_residues_yield,
         'hierarchy_residues_cereals': dm_hierarchy_residues_cereals,
-        'food-net-import-pro': dm_food_net_import_pro
+        'food-net-import-pro': dm_food_net_import_pro,
+        'feed-net-import_crop': dm_ssr_feed_crop
     }
 
     # Aggregated Data Matrix - LAND
@@ -1309,18 +1311,13 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
 
     # Unprocessed Feed - Accounting for SSR
     # Domestic production [kcal] = Unprocessed Feed-demand [kcal] * net import [%]
-    list_crop_feed_unprocessed = ['cereal', 'fruit','pulse', 'rice', 'starch', 'veg']
-    dm_ssr_feed_unpro = DM_crop['crop'].filter(
-      {'Variables': ['agr_food-net-import'],
+    list_crop_feed_unprocessed = ['crop-cereal', 'crop-fruit','crop-pulse',
+                                  'crop-rice', 'crop-starch', 'crop-veg']
+    dm_ssr_feed_unpro = DM_crop['feed-net-import_crop'].filter(
+      {'Variables': ['agr_feed-net-import'],
        'Categories1': list_crop_feed_unprocessed}).copy()
-    dm_ssr_feed_unpro.rename_col('cereal', 'crop-cereal', dim='Categories1')
-    dm_ssr_feed_unpro.rename_col('fruit', 'crop-fruit', dim='Categories1')
-    dm_ssr_feed_unpro.rename_col('pulse', 'crop-pulse', dim='Categories1')
-    dm_ssr_feed_unpro.rename_col('rice', 'crop-rice', dim='Categories1')
-    dm_ssr_feed_unpro.rename_col('starch', 'crop-starch', dim='Categories1')
-    dm_ssr_feed_unpro.rename_col('veg', 'crop-veg', dim='Categories1')
     dm_feed_unprocessed.append(dm_ssr_feed_unpro, dim='Variables')
-    dm_feed_unprocessed.operation('agr_demand_feed', '*', 'agr_food-net-import',
+    dm_feed_unprocessed.operation('agr_demand_feed', '*', 'agr_feed-net-import',
                                 out_col='agr_domestic-production_feed_unpro',
                                 unit='kcal')
 
@@ -1328,19 +1325,18 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
     dm_feed_unprocessed.add(0.0, dummy=True, col_label='crop-oilcrop', dim='Categories1', unit='kcal')
     dm_feed_unprocessed.add(0.0, dummy=True, col_label='crop-sugarcrop', dim='Categories1', unit='kcal')
 
-
     # Processed Feed - Accounting for SSR
     # Domestic production [kcal] = Processed Feed-demand [kcal] * net import [%]
-    dm_ssr_feed_pro = DM_crop['food-net-import-pro'].filter(
-        {'Variables': ['agr_food-net-import'], 'Categories1': ['pro-crop-processed-cake', 'pro-crop-processed-molasse',
-                                                               'pro-crop-processed-sugar',
-                                                               'pro-crop-processed-voil']}).copy()
-    dm_ssr_feed_pro.rename_col('pro-crop-processed-cake', 'cake-to-oilcrop', dim='Categories1')
-    dm_ssr_feed_pro.rename_col('pro-crop-processed-molasse', 'molasse-to-sugarcrop', dim='Categories1')
-    dm_ssr_feed_pro.rename_col('pro-crop-processed-sugar', 'sugar-to-sugarcrop', dim='Categories1')
-    dm_ssr_feed_pro.rename_col('pro-crop-processed-voil', 'voil-to-oilcrop', dim='Categories1')
+    dm_ssr_feed_pro = DM_crop['feed-net-import_crop'].filter(
+        {'Variables': ['agr_feed-net-import'], 'Categories1': ['crop-processed-cake', 'crop-processed-molasse',
+                                                               'crop-processed-sugar',
+                                                               'crop-processed-voil']}).copy()
+    dm_ssr_feed_pro.rename_col('crop-processed-cake', 'cake-to-oilcrop', dim='Categories1')
+    dm_ssr_feed_pro.rename_col('crop-processed-molasse', 'molasse-to-sugarcrop', dim='Categories1')
+    dm_ssr_feed_pro.rename_col('crop-processed-sugar', 'sugar-to-sugarcrop', dim='Categories1')
+    dm_ssr_feed_pro.rename_col('crop-processed-voil', 'voil-to-oilcrop', dim='Categories1')
     dm_feed_processed.append(dm_ssr_feed_pro, dim='Variables')
-    dm_feed_processed.operation('agr_demand_feed', '*', 'agr_food-net-import',
+    dm_feed_processed.operation('agr_demand_feed', '*', 'agr_feed-net-import',
                                 out_col='agr_domestic-production_feed_pro',
                                 unit='kcal')
 
@@ -1614,7 +1610,7 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
 
     # Gino: Adding SSR DM to send to the TPE
     DM_ssr  = {'food': dm_ssr_food,
-               'feed': dm_ssr_feed_pro,
+               'feed': DM_crop['feed-net-import_crop'],
                'bioenergy': dm_ssr_bioe_pro,
                'processed': dm_ssr_food_pro}
 
@@ -2458,15 +2454,15 @@ def agriculture_TPE_interface(CDM_const, DM_livestock, DM_crop, dm_crop_other, D
     # SSR ------------------------------------------------------
 
     # Self-sufficiency ratio
-    dm_ssr_food = DM_ssr['food']
-    dm_ssr_feed = DM_ssr['feed']
-    dm_ssr_bioenergy = DM_ssr['bioenergy']
-    dm_ssr_processed = DM_food_demand['food-net-import-pro']
+    dm_ssr_food = DM_ssr['food'].flattest()
+    dm_ssr_feed = DM_ssr['feed'].flattest()
+    dm_ssr_bioenergy = DM_ssr['bioenergy'].flattest()
+    dm_ssr_processed = DM_food_demand['food-net-import-pro'].flattest()
     dm_ssr = dm_ssr_food.copy()
-    dm_ssr.append(dm_ssr_feed, dim='Categories1')
-    dm_ssr.append(dm_ssr_processed, dim='Categories1')
-    dm_ssr.append(dm_ssr_bioenergy, dim='Categories1')
-    dm_tpe.append(dm_ssr.flattest(), dim='Variables')
+    dm_ssr.append(dm_ssr_feed, dim='Variables')
+    dm_ssr.append(dm_ssr_processed, dim='Variables')
+    dm_ssr.append(dm_ssr_bioenergy, dim='Variables')
+    dm_tpe.append(dm_ssr, dim='Variables')
 
     # INPUTS ------------------------------------------------------
 
