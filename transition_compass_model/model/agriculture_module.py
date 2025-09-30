@@ -379,7 +379,7 @@ def lifestyle_workflow(DM_lifestyle, DM_lfs, CDM_const, years_setting):
     dm_population = DM_lfs['lfs_population_']
     idx_p = dm_population.idx
     ay_total_diet = dm_diet_share.array[:, :, idx_d['lfs_consumers-diet'], :] * \
-                    dm_population.array[:, :, idx_p['lfs_population_total'], np.newaxis] * 365
+                    dm_population.array[:, :, idx_p['lfs_population_total'], np.newaxis] * 365.25
     start = time.time()
     dm_diet_tmp = DataMatrix.based_on(ay_total_diet[:, :, np.newaxis, :], dm_diet_share,
                                       change={'Variables': ['lfs_diet_raw']}, units={'lfs_diet_raw': 'kcal'})
@@ -405,9 +405,70 @@ def lifestyle_workflow(DM_lifestyle, DM_lfs, CDM_const, years_setting):
     # Total calorie demand = food intake + food waste
     dm_diet_food.append(dm_diet_tmp, dim='Categories1')  # Append all food categories
     dm_diet_food.append(dm_diet_fwaste, dim='Variables')  # Append with fwaste
+    dm_diet_pre = dm_diet_food.filter({'Variables': ['lfs_diet_raw']}).copy() # create copy
     dm_diet_food.operation('lfs_diet_raw', '+', 'lfs_food-wastes', dim='Variables', out_col='agr_demand_raw',
                            unit='kcal')
     dm_diet_food.filter({'Variables': ['agr_demand_raw']}, inplace=True)
+
+
+    # Format the diet for lever and health assessment --------------------------
+    # Unit conversion: [kcal/country/year] => [kcal/cap/day]
+    array_temp = dm_diet_pre[:, :, 'lfs_diet_raw', :] / \
+                    dm_population[:, :,'lfs_population_total', np.newaxis] / 365.25
+    dm_diet_pre.add(array_temp, dim='Variables', col_label='lfs_diet_raw_cap',
+                                       unit='kcal/cap/day')
+
+    # Unit conversion: [kcal/cap/day] => [g/cap/day]
+    # Format for same categories as rest Agriculture module
+    cat_lfs = ['afat', 'beer', 'bev-alc', 'bev-fer', 'bov', 'cereals', 'coffee', 'dfish', 'egg', 'ffish', 'fruits', \
+               'milk', 'offal', 'oilcrops', 'oth-animals', 'oth-aq-animals', 'pfish', 'pigs', 'poultry', 'pulses',
+               'rice', 'seafood', 'sheep', 'starch', 'stm', 'sugar', 'sweet', 'veg', 'voil', 'wine']
+    cat_agr = ['pro-liv-abp-processed-afat', 'pro-bev-beer', 'pro-bev-bev-alc', 'pro-bev-bev-fer',
+               'pro-liv-meat-bovine',
+               'crop-cereal', 'coffee', 'dfish', 'pro-liv-abp-hens-egg', 'ffish', 'crop-fruit',
+               'pro-liv-abp-dairy-milk',
+               'pro-liv-abp-processed-offal', 'crop-oilcrop', 'pro-liv-meat-oth-animals', 'oth-aq-animals', 'pfish',
+               'pro-liv-meat-pig', 'pro-liv-meat-poultry', 'crop-pulse', 'crop-rice', 'seafood', 'pro-liv-meat-sheep',
+               'crop-starch', 'stm', 'pro-crop-processed-sugar', 'pro-crop-processed-sweet', 'crop-veg',
+               'pro-crop-processed-voil', 'pro-bev-wine']
+    dm_diet_pre.rename_col(cat_lfs, cat_agr, 'Categories1')
+    dm_diet_pre.sort('Categories1')
+    cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
+    cdm_kcal.drop(dim='Categories1', col_label='stm')
+    cdm_kcal.drop(dim='Categories1', col_label='crop-sugarcrop')
+    cdm_kcal.drop(dim='Categories1', col_label='pro-crop-processed-molasse')
+    cdm_kcal.drop(dim='Categories1', col_label='pro-crop-processed-cake')
+    cdm_kcal.drop(dim='Categories1', col_label='liv-meat-meal')
+    # Sort
+    # Check that categories are the same
+    #set(cdm_kcal.col_labels['Categories1']) - set(dm_diet_pre.col_labels['Categories1'])
+    dm_diet_pre.sort('Categories1')
+    cdm_kcal.sort('Categories1')
+    # Convert from [kcal/cap/day] to [t/cap/day]
+    array_temp = dm_diet_pre[:, :, 'lfs_diet_raw_cap', :] \
+                 / cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
+    dm_diet_pre.add(array_temp, dim='Variables', col_label='lfs_consumers-diet',
+                                       unit='t/cap/day')
+    dm_diet_pre = dm_diet_pre.filter({'Variables': ['lfs_consumers-diet']})
+    # Convert from [t/cap/day] to [g/cap/day]
+    dm_diet_pre.change_unit('lfs_consumers-diet', factor=1e6, old_unit='t/cap/day',
+                 new_unit='g/cap/day')
+
+    # Filter years ots
+    years_ots = create_years_list(1990, 2023, 1)
+    dm_diet_pre = dm_diet_pre.filter({'Years': years_ots})
+
+    # Format as df with variables as rows and years as columns
+    df_diet_pre = dm_to_database(dm_diet_pre, 'none', 'agriculture',
+                                       level=0)
+    df_diet_pre = df_diet_pre[df_diet_pre['geoscale']=='Switzerland'].copy()
+    df_diet_pre = df_diet_pre[['timescale', 'variables', 'value']].copy()
+    df_pivot = df_diet_pre.pivot(index="variables", columns="timescale",
+                                 values="value")
+    df_pivot = df_pivot.reset_index().rename_axis(None, axis=1)
+
+    # Export as excel file
+    #df_pivot.to_excel("TCF-Calc_diet_ots.xlsx", index=True)
 
     # Calibration factors
     dm_cal_diet = DM_lifestyle['cal_diet']
@@ -755,6 +816,19 @@ def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs_pro):
                           'agr_ibp_bev_beer_fdk_cereal',
                           out_col='agr_use_bev_ibp_cereal_feed', unit='kcal')
     dm_bev_ibp_cereal_feed = dm_bev_beer.filter({'Variables': ['agr_use_bev_ibp_cereal_feed']})
+
+    # Unit conversion: [kcal] to [t]
+    # Filter
+    cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
+    cdm_kcal = cdm_kcal.filter({'Categories1': ['crop-cereal']})
+    cdm_kcal = cdm_kcal.flatten()
+
+    # Convert from [kcal] to [t]
+    array_temp = dm_bev_ibp_cereal_feed[:, :, 'agr_use_bev_ibp_cereal_feed'] \
+                 / cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t_crop-cereal']
+    dm_bev_ibp_cereal_feed.add(array_temp, dim='Variables',
+                    col_label='agr_use_bev_ibp_cereal_feed_t',
+                    unit='t')
 
     # (Not used after) Fruits bev allocated to non-food [kcal] = dom prod bev alc + dom prod bev wine + bev byproducts for fertilizer
 
@@ -1164,28 +1238,33 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     idx_feed = dm_feed_without_grass.idx
     dm_temp = dm_feed_without_grass.array[:, :, idx_feed['agr_feed-requirement_without-grass'], :, np.newaxis] \
               * DM_feed['alt-protein'].array[:, :, idx_aps['agr_alt-protein'], :, :]
-    DM_feed['alt-protein'].add(dm_temp, dim='Variables', col_label='agr_feed_aps', unit='kcal')
+    DM_feed['alt-protein'].add(dm_temp, dim='Variables', col_label='agr_feed_aps', unit='t')
 
-    # Algae meals [kcal] = sum algae feed req
+    # Insect meals [t] = sum algae feed req
     dm_aps = DM_feed['alt-protein'].filter({'Variables': ['agr_feed_aps'], 'Categories2': ['algae']})
     dm_aps = dm_aps.flatten()
     dm_aps.groupby({'algae': '.*'}, dim='Categories1', regex=True, inplace=True)
 
-    # Insect meals [kcal] = sum insect feed req
+    # Insect meals [t] = sum insect feed req
     dm_insect = DM_feed['alt-protein'].filter({'Variables': ['agr_feed_aps'], 'Categories2': ['insect']})
     dm_insect = dm_insect.flatten()
     dm_insect.groupby({'insect': '.*'}, dim='Categories1', regex=True, inplace=True)
     dm_aps.append(dm_insect, dim='Categories1')
 
+    # APS meals [t] = Insect meals [t] + Insect meals [t]
+    dm_aps_feed = dm_aps.copy()
+    dm_aps_feed.groupby({'total': '.*'}, dim='Categories1', regex=True, inplace=True)
+    dm_aps_feed = dm_aps_feed.flatten()
+
     # Filter APS byproduct ration constant
     cdm_aps_ibp = CDM_const['cdm_aps_ibp']
 
-    # APS byproducts [kcal] = APS production [kcal] * byproduct ratio [%]
+    # APS byproducts [t] = APS production [t] * byproduct ratio [%]
     idx_cdm = cdm_aps_ibp.idx
     idx_aps = dm_aps.idx
     dm_temp = dm_aps.array[:, :, idx_aps['agr_feed_aps'], np.newaxis, :, np.newaxis] \
               * cdm_aps_ibp.array[idx_cdm['cp_ibp_aps'], np.newaxis, :, :]
-    # dm_aps.add(dm_temp, dim='Variables', col_label='agr_aps', unit='kcal') FIXME find correct dm to add to or create one
+    # dm_aps.add(dm_temp, dim='Variables', col_label='agr_aps', unit='t') FIXME find correct dm to add to or create one
 
     # Create datamatrix by depth
     col_labels = {
@@ -1198,16 +1277,16 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     dm_aps_ibp = DataMatrix(col_labels, units={'agr_aps': 'kcal'})
     dm_aps_ibp.array = dm_temp
 
-    # FEED RATION
-    # Alternative feed ration [kcal] = sum (cereals from bev for feed, APS, grass) FIXME check what is supposed to be considered
-    idx_ibp_bev = dm_bev_ibp_cereal_feed.idx
-    dm_alt_feed = dm_bev_ibp_cereal_feed.copy()
-    # dm_alt_feed.rename_col('agr_use_bev_ibp_cereal_feed', 'agr_feed-diet-switch', dim='Variables') FIXME find the issue because this line does not work, probably because of previous groupby in ALC BEV
-    dm_feed_req_total.append(dm_alt_feed, dim='Variables')
+    # Alternative feed ration [kcal] = sum (cereals from bev for feed, APS)
+    dm_aps_feed.append(dm_bev_ibp_cereal_feed, dim='Variables')
+    dm_aps_feed.operation('agr_feed_aps_total', '+', 'agr_use_bev_ibp_cereal_feed_t', dim='Variables',
+               out_col='agr_alt-feed-ration',
+               unit='t')
 
     # Crop based feed demand [kcal] = Total feed req without grass [kcal] - Alternative feed ration [kcal] FIXME change 1st component name
-    #dm_feed_req_total.operation('agr_feed-requirement_without-grass_total', '-', 'agr_use_bev_ibp_cereal_feed',
-    #                            out_col='agr_feed-demand', unit='t')
+    dm_feed_req_total.append(dm_aps_feed, dim='Variables')
+    dm_feed_req_total.operation('agr_feed-requirement_without-grass_total', '-', 'agr_alt-feed-ration',
+                                out_col='agr_crop-feed-demand', unit='t')
 
     # Feed demand by type [kcal] = Crop based feed demand by type [kcal] * Share of feed per type [%]
     idx_feed = dm_feed_req_total.idx
