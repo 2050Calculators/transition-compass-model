@@ -105,6 +105,7 @@ def read_data(DM_agriculture, lever_setting):
     dm_residues_yield = DM_agriculture['fxa']['residues_yield']
     dm_hierarchy_residues_cereals = DM_ots_fts['biomass-hierarchy']['biomass-hierarchy_crop_cereal']
     dm_cal_crop = DM_agriculture['fxa']['cal_agr_domestic-production_food']
+    dm_cal_crop_bev = DM_agriculture['fxa']['cal_agr_domestic-production_bev']
     # dm_crop.append(dm_cal_crop, dim='Variables')
     dm_ef_residues = DM_agriculture['fxa']['ef_burnt-residues']
     dm_ssr_feed_crop = DM_ots_fts['climate-smart-crop']['feed-net-import']
@@ -204,6 +205,7 @@ def read_data(DM_agriculture, lever_setting):
     DM_crop = {
         'crop': dm_crop,
         'cal_crop': dm_cal_crop,
+        'cal_bev': dm_cal_crop_bev,
         'ef_residues': dm_ef_residues,
         'residues_yield': dm_residues_yield,
         'hierarchy_residues_cereals': dm_hierarchy_residues_cereals,
@@ -1309,6 +1311,7 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     array_temp = dm_temp.array[:, :, :, :]
     array_temp = np.nan_to_num(array_temp, nan=0)
     dm_temp.array[:, :, :, :] = array_temp
+    DM_feed['ration'][:, :, 'agr_demand_feed_t', :] = dm_temp[:, :, 'agr_demand_feed_t', :]
 
     # Unit conversion : [t] => [kcal]
     cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
@@ -1641,8 +1644,26 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
     DM_crop['crop'].operation('agr_domestic-production', '*', 'agr_climate-smart-crop_losses',
                               out_col='agr_domestic-production_afw_raw', unit='kcal')
 
+    # Processing for calibration :
+    dm_cal_bev_fruit = DM_crop['cal_bev'].filter({'Categories1': ['wine', 'bev-alc']})
+    dm_cal_bev_cereal = DM_crop['cal_bev'].filter(
+      {'Categories1': ['bev-beer', 'bev-fer']})
+    # Groupby fruits or cereals
+    dm_cal_bev_fruit.groupby({'fruit': '.*'}, dim='Categories1', regex=True,
+                    inplace=True)
+    dm_cal_bev_cereal.groupby({'cereal': '.*'}, dim='Categories1', regex=True,
+                    inplace=True)
+    # cal_crop total = cal_crop_food (actually also includes feed) + cal_crop_bef
+    dm_cal_crop = DM_crop['cal_crop'].copy()
+    array_temp_cereal = dm_cal_bev_cereal[:,:,'cal_agr_domestic-production_bev','cereal'] \
+                        + dm_cal_crop[:,:,'cal_agr_domestic-production_food','cereal']
+    dm_cal_crop[:, :, 'cal_agr_domestic-production_food', 'cereal'] = array_temp_cereal
+    array_temp_fruit = dm_cal_bev_fruit[:,:,'cal_agr_domestic-production_bev','fruit'] \
+                        + dm_cal_crop[:,:,'cal_agr_domestic-production_food','fruit']
+    dm_cal_crop[:, :, 'cal_agr_domestic-production_food', 'fruit'] = array_temp_fruit
+
     # CALIBRATION CROP PRODUCTION --------------------------------------------------------------------------------------
-    dm_cal_crop = DM_crop['cal_crop']
+    #dm_cal_crop = DM_crop['cal_crop']
     dm_crop = DM_crop['crop'].filter({'Variables': ['agr_domestic-production_afw_raw']})
     dm_cal_rates_crop = calibration_rates(dm_crop, dm_cal_crop, calibration_start_year=1990,
                                           calibration_end_year=2023, years_setting=years_setting)
@@ -1656,7 +1677,7 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
 
     # Fill NaN with 0.0 for rice (because no rice produced in Switzerland)
     array_temp = DM_crop['crop'].array[:, :, :, :]
-    array_temp = np.nan_to_num(array_temp, nan=0)
+    array_temp = np.nan_to_num(array_temp, nan=0.0)
     DM_crop['crop'].array[:, :, :, :] = array_temp
 
     # CROP RESIDUES ----------------------------------------------------------------------------------------------------
