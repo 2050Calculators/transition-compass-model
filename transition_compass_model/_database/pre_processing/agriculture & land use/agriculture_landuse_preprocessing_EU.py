@@ -4126,7 +4126,7 @@ def livestock_crop_calibration(df_energy_demand_cal, list_countries):
                   'Starchy Roots + (Total)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
                   'Milk - Excluding Butter + (Total)', 'Eggs + (Total)',
                   'Bovine Meat', 'Meat, Other', 'Pigmeat',
-                  'Poultry Meat', 'Mutton & Goat Meat']
+                  'Poultry Meat', 'Mutton & Goat Meat', 'Beverages, Fermented', 'Beverages, Alcoholic', 'Beer', 'Wine']
 
     # 1990 - 2013
     ld = faostat.list_datasets()
@@ -4154,7 +4154,7 @@ def livestock_crop_calibration(df_energy_demand_cal, list_countries):
                   'Starchy Roots + (Total)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
                   'Milk - Excluding Butter + (Total)', 'Eggs + (Total)',
                   'Bovine Meat', 'Meat, Other', 'Pigmeat',
-                  'Poultry Meat', 'Mutton & Goat Meat']
+                  'Poultry Meat', 'Mutton & Goat Meat', 'Beverages, Fermented', 'Beverages, Alcoholic', 'Beer', 'Wine']
     code = 'FBS'
     my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
@@ -5711,10 +5711,16 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     dm_cal_feed.deepen(based_on='Variables')
     DM_agriculture_old['fxa']['cal_agr_demand_feed'] = dm_cal_feed
 
-    # Data - Fixed assumptions - Calibration factors - Crop production
+    # Data - Fixed assumptions - Calibration factors - Crop production without beverages
     dm_cal_crop = dm_cal.filter_w_regex({'Variables': 'cal_agr_domestic-production_food.*'})
     dm_cal_crop.deepen(based_on='Variables')
     DM_agriculture_old['fxa']['cal_agr_domestic-production_food'] = dm_cal_crop
+
+    # Data - Fixed assumptions - Calibration factors - Beverages Crop production
+    dm_cal_bev = dm_cal.filter_w_regex(
+      {'Variables': 'cal_agr_domestic-production_bev.*'})
+    dm_cal_bev.deepen(based_on='Variables')
+    DM_agriculture_old['fxa']['cal_agr_domestic-production_bev'] = dm_cal_bev
 
     # Data - Fixed assumptions - Calibration factors - Cropland
     dm_cal_cropland = dm_cal.filter_w_regex({'Variables': 'cal_agr_lus_land_cropland.*'})
@@ -6243,7 +6249,7 @@ filter_DM(DM_agriculture, {'Country': ['Switzerland']})
 filter_DM(DM_lifestyles, {'Country': ['Switzerland']})
 
 # ---------------------------------------------------------------------------------------------------------
-# ADDING CONSTANTS ----------------------------------------------------------------------------------------
+# CalculationLeaf ADDING CONSTANTS ----------------------------------------------------------------------------------------
 # ---------------------------------------------------------------------------------------------------------
 
 # KCAL TO T ----------------------------------------------------------------------------------------
@@ -6334,7 +6340,7 @@ linear_fitting(dm_input_fert, years_all)
 # Overwrite fxa_agr_emission_fertilizer in pickle
 DM_agriculture['fxa']['agr_emission_fertilizer']['Switzerland',:,'fxa_agr_emission_fertilizer'] = dm_input_fert['Switzerland',:,'fxa_agr_emission_fertilizer']
 
-# CALIBRATION DOMESTIC PROD WITH LOSSES ----------------------------------------------------------------------------------------
+# CalculationLeaf CALIBRATION DOMESTIC PROD WITH LOSSES ----------------------------------------------------------------------------------------
 
 # Load data
 dm_dom_prod_liv = DM_agriculture['fxa']['cal_agr_domestic-production-liv'].copy()
@@ -6362,7 +6368,7 @@ DM_agriculture['fxa']['cal_agr_domestic-production-liv']['Switzerland', :,'cal_a
 DM_agriculture['fxa']['cal_agr_domestic-production_food']['Switzerland', :,'cal_agr_domestic-production_food',:] \
     = dm_dom_prod_crop['Switzerland', :,'cal_agr_domestic-production_food',:]
 
-# LIVESTOCK YIELD USING CALIBRATION DOMESTIC PROD WITH LOSSES ----------------------------------------------------------------------------------------
+# CalculationLeaf LIVESTOCK YIELD USING CALIBRATION DOMESTIC PROD WITH LOSSES ----------------------------------------------------------------------------------------
 
 # Load data
 dm_dom_prod_liv = DM_agriculture['fxa']['cal_agr_domestic-production-liv'].copy()
@@ -6378,7 +6384,7 @@ dm_dom_prod_liv.operation('cal_agr_domestic-production-liv', '/', 'agr_climate-s
 DM_agriculture['ots']['climate-smart-livestock']['climate-smart-livestock_yield']['Switzerland', :,'agr_climate-smart-livestock_yield',:] \
     = dm_dom_prod_liv['Switzerland', :,'agr_climate-smart-livestock_yield',:]
 
-# DIET ----------------------------------------------------------------------------------------
+# CalculationLeaf DIET ----------------------------------------------------------------------------------------
 # The idea was to have energy requirements per demography (agr_kcal-req) based on the current consumption and not the
 # calculated based on the metabolism.
 # AND update the calibration values for cal_diet.
@@ -6447,7 +6453,7 @@ DM_agriculture['ots']['diet']['share']['Switzerland', :,'share',:] = dm_others['
 # Overwrite cal_diet
 DM_agriculture['fxa']['cal_agr_diet']['Switzerland', :,'cal_agr_diet',:] = dm_cal_diet['Switzerland', :,'cal_agr_diet_new',:]
 
-# SSR FOOD ------------------------------------------------------------------------
+# CalculationLeaf SSR FOOD ------------------------------------------------------------------------
 # Idea : compute the food SSR accounting for the feed, as FAO data include the feed
 # only for categories used as food and feed
 # Load data
@@ -6548,6 +6554,12 @@ dm_dom_prod_crop = dm_dom_prod_crop.filter(
 dm_ssr_food = dm_dom_prod_crop.filter({'Categories1':list_cat_crop}).copy()
 dm_ssr_feed_temp = dm_ssr_feed.filter({'Categories1':list_cat_crop})
 
+# Fill Nan
+dm_ssr_feed_temp
+array_temp = dm_ssr_feed_temp.array[:, :, :, :]
+array_temp = np.nan_to_num(array_temp, nan=0.0)
+dm_ssr_feed_temp.array[:, :, :, :] = array_temp
+
 # Dom prod food [t] = dom prod tot [t] - dom prod feed [t]
 dm_ssr_food.append(dm_ssr_feed_temp, dim='Variables')
 dm_ssr_food.operation('cal_agr_domestic-production_t', '-', 'agr_domestic-production-feed', dim='Variables',
@@ -6601,6 +6613,42 @@ for i in range(1, 5):
 # Overwrite
 DM_agriculture['ots']['food-net-import']['Switzerland', :,'agr_food-net-import',:] = dm_dom_prod['Switzerland', :,'agr_food-net-import',:]
 
+
+# CalculationLeaf BEV DOM PROD ------------------------------------------------------------------------
+# Here we want to convert the domestic production of beverages in raw materials
+# (e.g. in fruits and not wine) for wine & bev-alc
+
+# Load data
+dm_dom_prod_bev = DM_agriculture['fxa']['cal_agr_domestic-production_bev'].copy()
+cdm_yield_bev_wine = CDM_const['cdm_cp_ibp_bev_wine'].copy()
+cdm_yield_bev_alc = CDM_const['cdm_cp_ibp_bev_alc'].copy()
+cdm_yield_bev_fer = CDM_const['cdm_cp_ibp_bev_fer'].copy()
+cdm_yield_bev_beer = CDM_const['cdm_cp_ibp_bev_beer'].copy()
+
+
+# Wine : Raw materials [kcal] = product [kcal] * processing yield [%]
+array_temp = dm_dom_prod_bev[:, :,'cal_agr_domestic-production_bev', 'wine'] \
+             * cdm_yield_bev_wine[np.newaxis, np.newaxis,'cp_ibp_bev_wine_brf_crop_grape', np.newaxis]
+# Overwrite
+DM_agriculture['fxa']['cal_agr_domestic-production_bev']['Switzerland', :,'cal_agr_domestic-production_bev','wine'] = array_temp
+
+# Bev-alc : Raw materials [kcal] = product [kcal] * processing yield [%]
+array_temp = dm_dom_prod_bev[:, :,'cal_agr_domestic-production_bev', 'bev-alc'] \
+             * cdm_yield_bev_alc[np.newaxis, np.newaxis,'cp_ibp_bev_bev-alc_brf_crop_fruit', np.newaxis]
+# Overwrite
+DM_agriculture['fxa']['cal_agr_domestic-production_bev']['Switzerland', :,'cal_agr_domestic-production_bev','bev-alc'] = array_temp
+
+# Bev-fer : Raw materials [kcal] = product [kcal] * processing yield [%]
+array_temp = dm_dom_prod_bev[:, :,'cal_agr_domestic-production_bev', 'bev-fer'] \
+             * cdm_yield_bev_fer[np.newaxis, np.newaxis,'cp_ibp_bev_bev-fer_brf_crop_cereal', np.newaxis]
+# Overwrite
+DM_agriculture['fxa']['cal_agr_domestic-production_bev']['Switzerland', :,'cal_agr_domestic-production_bev','bev-fer'] = array_temp
+
+# Beer : Raw materials [kcal] = product [kcal] * processing yield [%]
+array_temp = dm_dom_prod_bev[:, :,'cal_agr_domestic-production_bev', 'bev-beer'] \
+             * cdm_yield_bev_beer[np.newaxis, np.newaxis,'cp_ibp_bev_beer_brf_crop_cereal', np.newaxis]
+# Overwrite
+DM_agriculture['fxa']['cal_agr_domestic-production_bev']['Switzerland', :,'cal_agr_domestic-production_bev','bev-beer'] = array_temp
 
 """
 # PREVIOUS VERSION WITHOUT ACCOUTING FOR FEED
@@ -6695,7 +6743,7 @@ for i in range(1, 5):
 # Overwrite
 DM_agriculture['ots']['food-net-import']['Switzerland', :,'agr_food-net-import',:] = dm_dom_prod['Switzerland', :,'agr_food-net-import',:]"""
 
-# FEED - SHARE GRASS OTS ----------------------------------------------------------------------------------------
+# CalculationLeaf FEED - SHARE GRASS OTS ----------------------------------------------------------------------------------------
 
 # Load
 dm_dom_prod_liv = DM_agriculture['fxa']['cal_agr_domestic-production-liv'].copy()
