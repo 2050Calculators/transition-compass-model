@@ -12,6 +12,9 @@ from processors.services_pipeline_CH import run as services_run
 from scenarios.build_fts_BAU_pickle import run as fts_bau_pickle_run
 from scenarios.build_fts_LoiEnergie_Vaud_pickle import run as fts_loi_energie_vaud_run
 from scenarios.buildings_fts_EP2050_pickle import run as fts_Vaud_EP2050_run
+from scenarios.build_fts_Tint_heating_pickle import run as fts_Tint_heating_run
+from scenarios.build_fts_floor_area_pickle import run as fts_floor_area_run
+from scenarios.build_fts_heating_efficiency_pickle import run as fts_efficiency_run
 from get_data_functions.construction_period_param import load_construction_period_param
 
 
@@ -79,6 +82,15 @@ DM_buildings = fts_Vaud_EP2050_run(DM_buildings, lev=3)
 
 print('Compile Scenario Loi Energie 2025 - Vaud - level 4')
 DM_buildings = fts_loi_energie_vaud_run(DM_buildings, dm_pop_ots, global_var, country_list, lev=4)
+
+print('Add scenarios for internal temperature setting')
+DM_buildings = fts_Tint_heating_run(DM_buildings, years_ots, years_fts)
+
+print('Add scenarios for floor area/cap')
+DM_buildings = fts_floor_area_run(DM_buildings, years_ots, years_fts)
+
+print('Add scenarios for heating efficiency (heat-pumps)')
+DM_buildings = fts_efficiency_run(DM_buildings, years_fts)
 
 print('Hello')
 

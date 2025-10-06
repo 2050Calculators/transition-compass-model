@@ -6,7 +6,8 @@ from model.common.auxiliary_functions import linear_fitting, create_years_list, 
 
 
 def calculate_heating_eff_fts(dm_heating_eff, years_fts, maximum_eff, fuel_cat='Categories2'):
-
+  # Linear fitting of all efficiencies except based on the 2015-2023 period
+  # For all efficiencies except heat-pump, the efficiency is capped at 98%
   dm_heat_pump = dm_heating_eff.filter({fuel_cat: ['heat-pump']})
   dm_heating_eff.drop(dim=fuel_cat, col_label='heat-pump')
   linear_fitting(dm_heating_eff, years_fts, based_on=list(range(2015, 2023)))
