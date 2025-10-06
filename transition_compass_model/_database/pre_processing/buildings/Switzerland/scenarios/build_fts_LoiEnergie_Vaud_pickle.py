@@ -127,6 +127,7 @@ def run(DM_buildings, dm_pop, global_var, country_list, lev=4):
   # Compute renovation rate loi energie
   dm_rr_fts_2 = compute_renovation_loi_energie(dm_stock_area, dm_num_bld, dm_stock_cat, env_cat_mfh, env_cat_sfh, DM_buildings)
   DM_buildings['fts']['building-renovation-rate']['bld_renovation-rate'][3] = dm_rr_fts_2
+  DM_buildings['fts']['building-renovation-rate']['bld_renovation-rate'][4] = dm_rr_fts_2
 
   # SECTION: Loi energy - Heating tech
   # Plus de gaz, mazout, charbon dans les prochain 15-20 ans. Pas de gaz, mazout, charbon dans les nouvelles constructions
