@@ -1,12 +1,16 @@
 import numpy as np
 import pickle
 import os
+import pandas as pd
 
 from model.common.auxiliary_functions import create_years_list, load_pop, dm_add_missing_variables
+from model.common.data_matrix_class import DataMatrix
 
 import _database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH as fla
 
 from _database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import load_construction_period_param
+from model.common.data_matrix_class import DataMatrix
+
 
 def fill_missing_years_using_FSO_data(dm, dm_raw):
 
@@ -20,6 +24,33 @@ def fill_missing_years_using_FSO_data(dm, dm_raw):
   dm.fill_nans('Years')
   dm[:, :, 'bld_floor-area_stock', :] = dm[:, :, 'cal_factor', :] * dm[:, :, 'bld_floor-area_stock_raw', :]
   dm.filter({'Variables': ['bld_floor-area_stock']}, inplace=True)
+
+  return dm
+
+def clean_WP_ERA_file(df, cantons_name_list):
+  # Select only residential
+  df_residential = df.loc[df['NAME'].isin(['EFH', 'MFH', 'Sonstige_Wohngeb'])].T
+  df_residential.reset_index(inplace=True)
+  df_residential.columns = df_residential.iloc[0]
+  df_residential = df_residential.iloc[1:]
+  df_residential.rename(columns={'NAME': 'Country', 'EFH': 'bld_floor-area_stock_single-family-households[m2]',
+                                 'MFH': 'bld_floor-area_stock_multi-family-households[m2]',
+                                 'Sonstige_Wohngeb': 'bld_floor-area_stock_other[m2]'}, inplace=True)
+  df_residential['Years'] = 2023
+  dm = DataMatrix.create_from_df(df_residential, num_cat=1)
+  dm_other = dm.filter({'Categories1': ['other']})
+  dm.drop('Categories1', 'other')
+  dm_other_split= dm.normalise('Categories1', inplace=False)
+  dm_other_split[:, 2023, :, :] = dm_other_split[:, 2023, :, :] * dm_other[:, 2023, :, :]
+  dm[...] = dm_other_split[...] + dm[...]
+
+  dm.groupby({'single-family-households': 'single-family.*'}, regex=True, dim='Categories1', inplace=True)
+  dm_CH = dm.groupby({'Switzerland':'.*'}, regex=True, dim='Country')
+  dm.append(dm_CH,dim='Country')
+  dm.sort('Country')
+  dm.sort('Categories1')
+  WP_cantons_name_list = dm.col_labels['Country'].copy()
+  dm.rename_col(WP_cantons_name_list, cantons_name_list, dim='Country')
 
   return dm
 
@@ -97,6 +128,14 @@ def run(global_vars, country_list, years_ots):
   dm_stock_tot.append(dm_stock_tot_CH, dim='Country')
   dm_stock_tot.sort('Country')
 
+  # Adjust stock by canton for based on the 2023 data by Wuest & Partner
+  file_path = os.path.join(this_dir, '../data/WP_EBF_cantons_2023.xlsx')
+  df_WP = pd.read_excel(file_path, sheet_name='EBF')
+  dm_WP = clean_WP_ERA_file(df_WP, cantons_name_list=dm_stock_tot.col_labels['Country'])
+  # !FIXME: You are here!
+  arr_adj_factor = dm_WP[:, 2023, 'bld_floor-area_stock', :] / dm_stock_tot[:, 2023, 'bld_floor-area_stock', :]
+  dm_stock_tot[:, :, 'bld_floor-area_stock', :] = dm_stock_tot[:, :, 'bld_floor-area_stock', :] * arr_adj_factor[:, np.newaxis, :]
+
   # Adjust cantonal stock by energy class
   dm_stock_cat.normalise('Categories2')
   assert dm_stock_tot.col_labels['Categories1'] == dm_stock_cat.col_labels['Categories1']
@@ -114,7 +153,6 @@ def run(global_vars, country_list, years_ots):
         'stock cat': dm_stock_cat.filter({'Country': country_list}),
         'new cat': dm_new_cat.filter({'Country': country_list}),
         'waste cat': dm_waste_cat.filter({'Country': country_list})}
-
 
   return DM
 
