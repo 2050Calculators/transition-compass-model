@@ -117,7 +117,7 @@ def bld_agriculture_interface(dm_agriculture):
     return dm_agriculture
 
 
-def bld_TPE_interface(DM_energy, DM_area):
+def bld_TPE_interface(DM_energy, DM_area, DM_services, DM_appliances, DM_light, DM_hotwater):
 
     dm_tpe = DM_energy['energy-emissions-by-class'].flattest()
     dm_tpe.append(DM_energy['energy-demand-heating'].flattest(), dim='Variables')
@@ -126,6 +126,22 @@ def bld_TPE_interface(DM_energy, DM_area):
     dm_tpe.append(DM_area['floor-area-cumulated'].flattest(), dim='Variables')
     dm_tpe.append(DM_area['floor-area-cat'].flattest(), dim='Variables')
     dm_tpe.append(DM_area['floor-area-bld-type'].flattest(), dim='Variables')
+
+    # Hot water residential
+    dm_hw = DM_hotwater.filter({'Variables':['bld_hot-water_energy-demand']})
+    dm_tpe.append(dm_hw.flattest(), dim='Variables')
+
+    # Lighting residential
+    dm_tpe.append(DM_light.flattest(), dim='Variables')
+
+    # Appliances residential
+    dm_tpe.append(DM_appliances, dim='Variables')
+
+    # Non-residential
+    dm_nonres_fuels = DM_services.group_all('Categories1', inplace=False)
+    dm_nonres_type = DM_services.group_all('Categories2', inplace=False)
+    dm_tpe.append(dm_nonres_type.flattest(), dim='Variables')
+    dm_tpe.append(dm_nonres_fuels.flattest(), dim='Variables')
 
     KPI = []
     yr = 2050

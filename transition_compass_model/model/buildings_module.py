@@ -112,7 +112,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     DM_light_out = {'TPE': dm_light.copy(), 'energy': dm_light.copy()}
     
     # TPE
-    results_run, KPI = inter.bld_TPE_interface(DM_energy_out['TPE'], DM_floor_out['TPE'])
+    results_run, KPI = inter.bld_TPE_interface(DM_energy_out['TPE'], DM_floor_out['TPE'], DM_services_out['TPE'], DM_appliances_out['power'], DM_light_out['TPE'], DM_hotwater_out['power'])
 
     # 'District-heating' module interface
     interface.add_link(from_sector='buildings', to_sector='district-heating', dm=DM_energy_out['district-heating'])
