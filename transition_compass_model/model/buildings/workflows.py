@@ -1087,6 +1087,8 @@ def compute_eff_fts_based_on_heat_eff(dm_heating, dm_hw_eff,  years_ots, years_f
 
   dm_heat_eff.sort('Categories1')
 
+  dm_heat_eff.fill_nans('Years')
+
   return dm_heat_eff
 
 def bld_hotwater_workflow(DM_hotwater, dm_heating, dm_lfs, years_ots, years_fts):
