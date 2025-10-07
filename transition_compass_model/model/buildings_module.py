@@ -123,10 +123,10 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
                        'households_electricity': DM_appliances_out['power'],
                        'services_all': DM_services_out['energy']}
     interface.add_link(from_sector='buildings', to_sector='energy', dm=DM_inter_energy)
-    this_dir = os.path.dirname(os.path.abspath(__file__))
-    file = os.path.join(this_dir, '../_database/data/interface/buildings_to_energy.pickle')
-    with open(file, "wb") as handle:
-      pickle.dump(DM_inter_energy, handle, protocol=pickle.HIGHEST_PROTOCOL )
+    #this_dir = os.path.dirname(os.path.abspath(__file__))
+    #file = os.path.join(this_dir, '../_database/data/interface/buildings_to_energy.pickle')
+    #with open(file, "wb") as handle:
+   #   pickle.dump(DM_inter_energy, handle, protocol=pickle.HIGHEST_PROTOCOL )
 
     interface.add_link(from_sector='buildings', to_sector='emissions', dm=DM_energy_out['TPE']['emissions'])
 
