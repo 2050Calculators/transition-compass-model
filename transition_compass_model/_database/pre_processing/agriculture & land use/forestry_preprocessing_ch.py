@@ -470,6 +470,9 @@ def create_dummy_Vaud_waste(dm_forest_area, dm_wood_wastes, years_ots):
 # SIMULATE INTERFACE
 #####################################################################
 # Find excel on google drive:
+#from model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
+#DM = filter_country_and_load_data_from_pickles(['Vaud', 'Switzerland'], 'forestry')
+#DM_fts = DM['forestry']
 
 simulate_industry_input()
 dm_fxa_wood_demand = simulate_industry_other_wood()
@@ -753,6 +756,8 @@ dm_wood_type.filter({'Years': years_ots}, inplace=True)
 dm_wood_type.add(np.nan, col_label=years_fts, dim='Years', dummy=True)
 # Linear extrapolation on future years
 linear_fitting(dm_wood_type, years_fts)
+dm_wood_type.array = np.maximum(dm_wood_type.array, 0)
+dm_wood_type.normalise('Categories2')
 
 ################################################################
 # FXA - Exploited forest shares
@@ -945,7 +950,6 @@ DM_forestry['fxa']['coniferous-share'] = dm_wood_type
 DM_forestry['fxa']['any-other-industrial-wood'] = dm_fxa_wood_demand
 DM_forestry['fxa']['forest-exploited-share'] = dm_forest_exploited_share
 DM_forestry['fxa']['wood-waste-energy'] = dm_wood_wastes
-DM_forestry
 
 ### Final DM is ots:, fts:, fxa:, (keys of ots must be lever name)
 
@@ -965,7 +969,7 @@ add_dummy_country_to_DM(DM_forestry, ref_country='Switzerland', new_country='EU2
 
 # save
 f = '../../data/datamatrix/forestry.pickle'
-with open(f, 'wb') as handle:
-    pickle.dump(DM_forestry, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
+#with open(f, 'wb') as handle:
+#    pickle.dump(DM_forestry, handle, protocol=pickle.HIGHEST_PROTOCOL)
+my_pickle_dump(DM_forestry, f)
 sort_pickle(f)
