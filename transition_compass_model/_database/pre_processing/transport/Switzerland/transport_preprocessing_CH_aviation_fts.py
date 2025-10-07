@@ -827,7 +827,7 @@ for lev in range(4):
 # Create less ambitious scenarios
 DM[1].array[...] = 0
 DM[2].array[...] = 1/2*DM[1].array[...] + 1/2*DM[3].array[...]
-DM[4].array[...] = 1
+DM[4].array[...] = DM[3].array[...]
 
 for lev in range(4):
     dm_fuel_mix_orig = DM_transport['fts']['fuel-mix'][lev+1]
