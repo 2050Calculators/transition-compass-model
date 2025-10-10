@@ -23,6 +23,34 @@ with open('../../data/datamatrix/lifestyles.pickle', 'rb') as handle:
 filter_DM(DM_agriculture, {'Country': ['Switzerland']})
 filter_DM(DM_lifestyles, {'Country': ['Switzerland']})
 
+# PROCESSING YIELD ----------------------------------------------------------------------------------------
+# Note: Modifying for sugar crops because inverse ratio
+
+# Load data
+cdm_food_yield_sugar = DM_agriculture['constant']['cdm_food_yield'].copy()
+cdm_feed_yield_sugar = DM_agriculture['constant']['cdm_feed_yield'].filter({'Categories1': ['molasse-to-sugarcrop', 'sugar-to-sugarcrop']}).copy()
+
+# Add dummy of 1
+cdm_food_yield_sugar.add(1.0, dummy=True, col_label='temp', dim='Variables', unit='%')
+cdm_feed_yield_sugar.add(1.0, dummy=True, col_label='temp', dim='Variables', unit='%')
+
+# cp = 1 / cp
+array_temp = cdm_food_yield_sugar['temp', :] \
+             / cdm_food_yield_sugar[ 'cp_ibp_processed', :]
+cdm_food_yield_sugar.add(array_temp, dim='Variables',
+                col_label='cp_ibp_processed_true',
+                unit='t')
+array_temp = cdm_feed_yield_sugar['temp', :] \
+             / cdm_feed_yield_sugar[ 'cp_ibp_processed', :]
+cdm_feed_yield_sugar.add(array_temp, dim='Variables',
+                col_label='cp_ibp_processed_true',
+                unit='t')
+
+# Overwrite
+DM_agriculture['constant']['cdm_food_yield']['cp_ibp_processed',:] = cdm_food_yield_sugar['cp_ibp_processed_true',:]
+DM_agriculture['constant']['cdm_feed_yield']['cp_ibp_processed','molasse-to-sugarcrop'] = cdm_feed_yield_sugar['cp_ibp_processed_true','molasse-to-sugarcrop']
+DM_agriculture['constant']['cdm_feed_yield']['cp_ibp_processed','sugar-to-sugarcrop'] = cdm_feed_yield_sugar['cp_ibp_processed_true','sugar-to-sugarcrop']
+
 # FEED - SHARE GRASS OTS ----------------------------------------------------------------------------------------
 
 # Load
