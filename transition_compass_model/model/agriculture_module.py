@@ -109,6 +109,7 @@ def read_data(DM_agriculture, lever_setting):
     # dm_crop.append(dm_cal_crop, dim='Variables')
     dm_ef_residues = DM_agriculture['fxa']['ef_burnt-residues']
     dm_ssr_feed_crop = DM_ots_fts['climate-smart-crop']['feed-net-import']
+    dm_ssr_processing_crop = DM_ots_fts['climate-smart-crop']['processing-net-import']
 
     # Sub-matrix for LAND
     dm_cal_land = DM_agriculture['fxa']['cal_agr_lus_land']
@@ -210,7 +211,8 @@ def read_data(DM_agriculture, lever_setting):
         'residues_yield': dm_residues_yield,
         'hierarchy_residues_cereals': dm_hierarchy_residues_cereals,
         'food-net-import-pro': dm_food_net_import_pro,
-        'feed-net-import_crop': dm_ssr_feed_crop
+        'feed-net-import_crop': dm_ssr_feed_crop,
+        'processing-net-import_crop': dm_ssr_processing_crop
     }
 
     # Aggregated Data Matrix - LAND
@@ -1422,11 +1424,11 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
                                 out_col='agr_domestic-production_feed_pro',
                                 unit='kcal')
 
-    # Processed Feed crop dom prod [kcal] = processed crops [kcal] / processing yield [%]
+    # Processed Feed crop dom prod [kcal] = processed crops [kcal] * processing yield [%]
     idx_cdm = cdm_feed_yield.idx
     idx_feed = dm_feed_processed.idx
     dm_temp = dm_feed_processed.array[:, :, idx_feed['agr_domestic-production_feed_pro'], :] \
-              / cdm_feed_yield.array[idx_cdm['cp_ibp_processed'], :]
+              * cdm_feed_yield.array[idx_cdm['cp_ibp_processed'], :]
     dm_feed_processed.add(dm_temp, dim='Variables', col_label='agr_domestic-production_feed_pro_raw', unit='kcal')
     dm_feed_processed.drop(dim='Variables', col_label=['agr_demand_feed'])
     # Summing by crop category (oilcrop and sugarcrop)
@@ -1483,7 +1485,7 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
     dm_food_processed.operation('agr_demand', '*', 'agr_food-net-import', out_col='agr_domestic-production_food_pro',
                                 unit='kcal')
 
-    # Processed Food crop demand [kcal] = processed crops [kcal] / processing yield [%] (only for sweets & processed sugar)
+    # Processed Food crop demand [kcal] = processed crops [kcal] * processing yield [%] (only for sweets & processed sugar)
     # sum processed sugar in one variable : sweets : sweets + processed sugar
     dm_food_processed.groupby({'pro-crop-processed-sweet': '.*'}, dim='Categories1', regex=True, inplace=True)
     dm_food_processed.rename_col('pro-crop-processed-sweet', 'crop-sugarcrop', dim='Categories1')
@@ -1492,7 +1494,7 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
     idx_cdm = cdm_food_yield.idx
     idx_food = dm_food_processed.idx
     dm_temp = dm_food_processed.array[:, :, idx_food['agr_domestic-production_food_pro_temp'], :] \
-              / cdm_food_yield.array[idx_cdm['cp_ibp_processed'], :]
+              * cdm_food_yield.array[idx_cdm['cp_ibp_processed'], :]
     dm_food_processed.add(dm_temp, dim='Variables', col_label='agr_domestic-production_food', unit='kcal')
 
     # NON-PROCESSED FOOD ---------------------------------------------------------------------------------------------------

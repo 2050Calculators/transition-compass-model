@@ -391,7 +391,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
 
         # FOOD BALANCE SHEETS (FBS) - For everything except molasses and cakes -------------------------------------------------
         # List of elements
-        list_elements = ['Production Quantity', 'Import Quantity', 'Export Quantity', 'Feed']
+        list_elements = ['Production Quantity', 'Import Quantity', 'Export Quantity', 'Feed', 'Processed']
 
         list_items = ['Cereals - Excluding Beer + (Total)', 'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
                       'Pulses + (Total)', 'Rice (Milled Equivalent)',
@@ -431,7 +431,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
 
         # 2010 - 2022
 
-        list_elements = ['Production Quantity', 'Import quantity', 'Export quantity', 'Feed']
+        list_elements = ['Production Quantity', 'Import quantity', 'Export quantity', 'Feed', 'Processed']
         # Different list becuse different in item nomination such as rice
         list_items = ['Cereals - Excluding Beer + (Total)', 'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
                       'Pulses + (Total)', 'Rice and products',
@@ -513,8 +513,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
         list_items = ['Molasses', 'Cake of  linseed', 'Cake of  soya beans', 'Cake of copra', 'Cake of cottonseed',
                       'Cake of groundnuts', 'Cake of hempseed', 'Cake of kapok', 'Cake of maize', 'Cake of mustard seed',
                       'Cake of palm kernel', 'Cake of rapeseed', 'Cake of rice bran', 'Cake of safflowerseed',
-                      'Cake of sesame seed', 'Cake of sunflower seed', 'Cake, oilseeds nes', 'Cake, poppy seed',
-                      'Cocoa powder and cake']
+                      'Cake of sesame seed', 'Cake of sunflower seed', 'Cake, oilseeds nes', 'Cake, poppy seed']
         code = 'SCL'
         my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
         my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
@@ -572,6 +571,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
     # SSR [%] = (100*Production) / (Production + Imports - Exports)
     # Step 1: Pivot the DataFrame to get 'Production', 'Import Quantity', and 'Export Quantity' in separate columns
     pivot_df = df_ssr.pivot_table(index=['Area', 'Year', 'Item'], columns='Element', values='Value').reset_index()
+    pivot_df_processed = pivot_df.copy()
     pivot_df_feed = df_ssr_feed.pivot_table(index=['Area', 'Year', 'Item'],
                                   columns='Element',
                                   values='Value').reset_index()
@@ -586,7 +586,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
 
     # Create a copy for feed pre-processing and drop irrelevant columns
     df_csl_feed = pd.concat([pivot_df, pivot_df_feed])
-    df_csl_feed = df_csl_feed.drop(columns=['Production', 'Import', 'Export'])
+    df_csl_feed = df_csl_feed.drop(columns=['Production', 'Import', 'Export', 'Processing'])
 
     # Step 2: Compute the SSR [%]
     # Note : Update - the SSR is now computed afterwards for calibration reasons, in order to match it with the demand
@@ -598,7 +598,17 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
     pivot_df = pd.concat([pivot_df, pivot_df_feed])
 
     # Drop the columns Production, Import Quantity and Export Quantity
-    pivot_df = pivot_df.drop(columns=['Production', 'Import', 'Export', 'Feed'])
+    pivot_df = pivot_df.drop(columns=['Production', 'Import', 'Export', 'Feed', 'Processing'])
+
+    # Format for SSR of Processed crops ---------------------------------------------------------------------------------
+
+    # Filter columns
+    pivot_df_processed = pivot_df_processed[['Area', 'Year', 'Item', 'Processing']].copy()
+
+    # Filter rows to keep only Oilcrops & Sugarcrop
+    my_items_list = ['Oilcrops', 'Sugar Crops']
+    pivot_df_processed = pivot_df_processed[pivot_df_processed['Item'].isin(my_items_list)]
+
 
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
 
@@ -608,14 +618,25 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
         'dictionaries/dictionnary_agriculture_landuse.xlsx',
         sheet_name='self-sufficiency')
 
+    # Prepend 'SSR' and 'Processed'
+    pivot_df['Item'] = pivot_df['Item'].apply(lambda x: f"SSR {x}")
+    pivot_df_processed['Item'] = pivot_df_processed ['Item'].apply(lambda x: f"Processed {x}")
+
+    # Renaming existing columns (geoscale, timsecale, value)
+    pivot_df.rename(columns={'Area': 'geoscale', 'Year': 'timescale', 'SSR[%]': 'value'}, inplace=True)
+    pivot_df_processed.rename(
+      columns={'Area': 'geoscale', 'Year': 'timescale', 'Processing': 'value'},
+      inplace=True)
+
+    # Concat
+    pivot_df = pd.concat([pivot_df, pivot_df_processed])
+
     # Merge based on 'Item'
     df_ssr_pathwaycalc = pd.merge(df_dict_ssr, pivot_df, on='Item')
 
     # Drop the 'Item' column
     df_ssr_pathwaycalc = df_ssr_pathwaycalc.drop(columns=['Item'])
 
-    # Renaming existing columns (geoscale, timsecale, value)
-    df_ssr_pathwaycalc.rename(columns={'Area': 'geoscale', 'Year': 'timescale', 'SSR[%]': 'value'}, inplace=True)
 
     # Adding the columns module, lever, level and string-pivot at the correct places
     df_ssr_pathwaycalc['module'] = 'agriculture'
@@ -4733,8 +4754,7 @@ def feed_calibration(list_countries):
     list_items = ['Molasses', 'Cake of  linseed', 'Cake of  soya beans', 'Cake of copra', 'Cake of cottonseed',
                   'Cake of groundnuts', 'Cake of hempseed', 'Cake of kapok', 'Cake of maize', 'Cake of mustard seed',
                   'Cake of palm kernel', 'Cake of rapeseed', 'Cake of rice bran', 'Cake of safflowerseed',
-                  'Cake of sesame seed', 'Cake of sunflower seed', 'Cake, oilseeds nes', 'Cake, poppy seed',
-                  'Cocoa powder and cake']
+                  'Cake of sesame seed', 'Cake of sunflower seed', 'Cake, oilseeds nes', 'Cake, poppy seed']
     code = 'SCL'
     my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
@@ -5537,7 +5557,7 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     DM_fts = DM_agriculture_old['fts'].copy()
 
     # To do once when adding a new lever
-    #DM_fts['climate-smart-crop']['feed-net-import'] = {'feed-net-import': dict()}
+    #DM_fts['climate-smart-crop']['processing-net-import'] = {'processing-net-import': dict()}
 
     # Levers to be normalised
     list_norm = ['climate-smart-livestock_ration']
@@ -5837,8 +5857,11 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     lever = 'food-net-import'
     df_ots, df_fts = database_to_df(df_ssr_pathwaycalc, lever, level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
-    dm = DataMatrix.create_from_df(df_ots, num_cat=1)
-    dict_ots[lever] = dm
+    dm = DataMatrix.create_from_df(df_ots, num_cat=0)
+    dm_temp = dm.filter_w_regex(
+      {'Variables': 'agr_food-net-import.*'})
+    dm_temp.deepen()
+    dict_ots[lever] = dm_temp
 
     # Data - Lever - climate smart livestock
     lever = 'climate-smart-livestock'
@@ -6004,6 +6027,15 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
       {'Variables': 'agr_feed-net-import.*'})
     dm_temp.deepen()
     dict_temp['feed-net-import'] = dm_temp
+    # Lever Processing SSR Crop
+    df_ots, df_fts = database_to_df(df_ssr_pathwaycalc, 'food-net-import',
+                                    level='all')
+    df_ots = df_ots.drop(columns=['food-net-import'])  # Drop column with lever name
+    dm = DataMatrix.create_from_df(df_ots, num_cat=0)
+    dm_temp = dm.filter_w_regex(
+      {'Variables': 'agr_processing-net-import.*'})
+    dm_temp.deepen()
+    dict_temp['processing-net-import'] = dm_temp
 
     dict_ots[lever] = dict_temp
     """dict_ots, dict_fts = read_database_to_ots_fts_dict_w_groups(file, lever, num_cat_list=[1, 1, 1, 1],
@@ -6453,9 +6485,10 @@ DM_agriculture['ots']['diet']['share']['Switzerland', :,'share',:] = dm_others['
 # Overwrite cal_diet
 DM_agriculture['fxa']['cal_agr_diet']['Switzerland', :,'cal_agr_diet',:] = dm_cal_diet['Switzerland', :,'cal_agr_diet_new',:]
 
-# CalculationLeaf SSR FOOD ------------------------------------------------------------------------
-# Idea : compute the food SSR accounting for the feed, as FAO data include the feed
-# only for categories used as food and feed
+# SSR FOOD ------------------------------------------------------------------------
+# Idea : compute the food SSR accounting for the feed and processing (oilcrops & sugarcrops)
+# as FAO data include the feed only for categories used as food and feed
+
 # Load data
 dm_ssr_feed = DM_agriculture['ots']['climate-smart-crop']['feed-net-import'].copy()
 dm_feed_cal = DM_agriculture['fxa']['cal_agr_demand_feed'].copy()
@@ -6473,6 +6506,7 @@ cdm_kcal_crop = cdm_kcal.copy()
 list_cat_crop = ['crop-cereal', 'crop-fruit', 'crop-oilcrop', 'crop-pulse', 'crop-rice', 'crop-starch', 'crop-sugarcrop', 'crop-veg']
 cdm_kcal_crop = cdm_kcal_crop.filter({'Categories1':list_cat_crop})
 cdm_food_yield = CDM_const['cdm_food_yield'].copy()
+dm_ssr_processing = DM_agriculture['ots']['climate-smart-crop']['processing-net-import'].copy()
 
 # Dom prod feed [t] = cal_agr_demand_feed.* [t] * agr_feed-net-import [%]
 dm_ssr_feed.append(dm_feed_cal, dim='Variables')
@@ -6554,28 +6588,79 @@ dm_dom_prod_crop = dm_dom_prod_crop.filter(
 dm_ssr_food = dm_dom_prod_crop.filter({'Categories1':list_cat_crop}).copy()
 dm_ssr_feed_temp = dm_ssr_feed.filter({'Categories1':list_cat_crop})
 
-# Fill Nan
-dm_ssr_feed_temp
-array_temp = dm_ssr_feed_temp.array[:, :, :, :]
-array_temp = np.nan_to_num(array_temp, nan=0.0)
-dm_ssr_feed_temp.array[:, :, :, :] = array_temp
-
-# Dom prod food [t] = dom prod tot [t] - dom prod feed [t]
+# Append SSR (with processing for oilcrop & sugarcrop)
 dm_ssr_food.append(dm_ssr_feed_temp, dim='Variables')
+
+# FOR OILCROP, SUGARCROP -------------------------------------------------------
+
+# Add ssr food = 1
+dm_ssr_processing.add(1.0, dummy=True, col_label='agr_food-net-import', dim='Variables', unit='%')
+
+# Append with relevant categories
+dm_cal_diet_processing = dm_cal_diet.filter({'Categories1': ['crop-oilcrop','crop-sugarcrop']}).copy()
+dm_ssr_feed_processing = dm_ssr_feed.filter({'Categories1': ['crop-oilcrop','crop-sugarcrop'],
+                                             'Variables': ['agr_domestic-production-feed']}).copy()
+dm_dom_prod_processing = dm_dom_prod_crop.filter({'Categories1': ['crop-oilcrop','crop-sugarcrop'],
+                                             'Variables': ['cal_agr_domestic-production_t']}).copy()
+dm_ssr_processing.append(dm_cal_diet_processing, dim='Variables')
+dm_ssr_processing.append(dm_ssr_feed_processing, dim='Variables')
+dm_ssr_processing.append(dm_dom_prod_processing, dim='Variables')
+
+# Convert diet from kcal to t
+cdm_kcal_processing = cdm_kcal.filter({'Categories1': ['crop-oilcrop','crop-sugarcrop']}).copy()
+dm_ssr_processing.sort(dim='Categories1')
+cdm_kcal_processing.sort(dim='Categories1')
+array_temp = dm_ssr_processing[:, :,'cal_agr_diet_new', :] \
+             / cdm_kcal_processing[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
+dm_ssr_processing.add(array_temp, dim='Variables',
+                      col_label='cal_agr_diet_new_t',
+                      unit='t')
+
+# Dom prod food = ssr food * agr demand food
+dm_ssr_processing.operation('agr_food-net-import', '*', 'cal_agr_diet_new_t', dim='Variables',
+                          out_col='agr_domestic-production-food', unit='t')
+
+# Dom crop processed = dom prod tot - dom prod food - dom prod feed
+dm_ssr_processing.operation('cal_agr_domestic-production_t', '-', 'agr_domestic-production-food', dim='Variables',
+                          out_col='temp', unit='t')
+dm_ssr_processing.operation('temp', '-', 'agr_domestic-production-feed', dim='Variables',
+                          out_col='agr_domestic-production_processed', unit='t')
+
+# Unit converstion t => kt
+dm_ssr_processing.change_unit('agr_domestic-production_processed', old_unit='t', new_unit='kt', factor=10**(-3))
+
+# ssr processed = Dom crop processed / Processed demand (either with processed or something else)
+# note : agr_processing-net-import = "Processed" from FAOSTAT FBS
+dm_ssr_processing.rename_col('agr_processing-net-import', 'processing_demand', 'Categories1')
+dm_ssr_processing.operation('agr_domestic-production_processed', '/', 'processing_demand', dim='Variables',
+                          out_col='agr_processing-net-import', unit='%')
+
+# Overwrite SSR processing
+DM_agriculture['ots']['climate-smart-crop']['processing-net-import'][:,:,'agr_processing-net-import',:] = dm_ssr_processing[:,:,'agr_processing-net-import',:]
+
+# FOR CEREAL, FRUIT, VEG, PULSE, STARCH, RICE ----------------------------------
+# Dom prod food [t] = dom prod tot [t] - dom prod feed [t]
+dm_ssr_food.drop(dim='Categories1', col_label=['crop-oilcrop',
+                                               'crop-sugarcrop'])
 dm_ssr_food.operation('cal_agr_domestic-production_t', '-', 'agr_domestic-production-feed', dim='Variables',
                           out_col='agr_domestic-production-food', unit='t')
 
 # Convert from [t] to [kcal]
+cdm_kcal_crop_temp = cdm_kcal_crop.copy()
+cdm_kcal_crop_temp.drop(dim='Categories1', col_label=['crop-oilcrop',
+                                               'crop-sugarcrop'])
 dm_ssr_food.sort(dim='Categories1')
-cdm_kcal_crop.sort(dim='Categories1')
+cdm_kcal_crop_temp.sort(dim='Categories1')
 array_temp = dm_ssr_food[:, :,'agr_domestic-production-food', :] \
-             * cdm_kcal_crop[np.newaxis, np.newaxis,'cp_kcal-per-t', :]
+             * cdm_kcal_crop_temp[np.newaxis, np.newaxis,'cp_kcal-per-t', :]
 dm_ssr_food.add(array_temp, dim='Variables',
                       col_label='agr_domestic-production-food_kcal',
                       unit='kcal')
 
 # Filer agr_demand for same categories
 dm_cal_diet_temp = dm_cal_diet.filter({'Categories1':list_cat_crop})
+dm_cal_diet_temp.drop(dim='Categories1', col_label=['crop-oilcrop',
+                                               'crop-sugarcrop'])
 dm_ssr_food.append(dm_cal_diet_temp, dim='Variables')
 
 # SSR Food [%] = Dom prod food [kcal] / cal_agr_diet_new [kcal]
@@ -6603,6 +6688,10 @@ dm_dom_prod = dm_dom_prod.filter(
 dm_dom_prod.append(dm_ssr_food, dim='Categories1')
 # Add SSR of pro-crop-processed-cake, pro-crop-processed-molasse back in dm
 dm_dom_prod.append(dm_feed, dim='Categories1')
+# Add SSR food of oilcrops & sugarcrops
+dm_ssr_processing = dm_ssr_processing.filter(
+  {'Variables': ['agr_food-net-import']}).copy()
+dm_dom_prod.append(dm_ssr_processing, dim='Categories1')
 
 # Check Category order
 dm_dom_prod.sort('Categories1')
