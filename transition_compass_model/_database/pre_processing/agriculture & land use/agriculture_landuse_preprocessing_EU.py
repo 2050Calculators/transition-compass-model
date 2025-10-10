@@ -591,8 +591,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
     # Step 2: Compute the SSR [%]
     # Note : Update - the SSR is now computed afterwards for calibration reasons, in order to match it with the demand
     pivot_df['SSR[%]'] = (pivot_df['Production'])
-    pivot_df_feed['SSR[%]'] = (pivot_df_feed['Production']) / (
-                pivot_df_feed['Production'] + pivot_df_feed['Import'] - pivot_df_feed['Export'])
+    pivot_df_feed['SSR[%]'] = (pivot_df_feed['Production'])
 
     # Concat dfs
     pivot_df = pd.concat([pivot_df, pivot_df_feed])
@@ -6284,6 +6283,36 @@ filter_DM(DM_lifestyles, {'Country': ['Switzerland']})
 # CalculationLeaf ADDING CONSTANTS ----------------------------------------------------------------------------------------
 # ---------------------------------------------------------------------------------------------------------
 
+""""# TO RUN ONCE DO NOT DELETE
+# PROCESSING YIELD ----------------------------------------------------------------------------------------
+# Note: Modifying for sugar crops because inverse ratio
+
+# Load data
+cdm_food_yield_sugar = DM_agriculture['constant']['cdm_food_yield'].copy()
+cdm_feed_yield_sugar = DM_agriculture['constant']['cdm_feed_yield'].filter({'Categories1': ['molasse-to-sugarcrop', 'sugar-to-sugarcrop']}).copy()
+
+# Add dummy of 1
+cdm_food_yield_sugar.add(1.0, dummy=True, col_label='temp', dim='Variables', unit='%')
+cdm_feed_yield_sugar.add(1.0, dummy=True, col_label='temp', dim='Variables', unit='%')
+
+# cp = 1 / cp
+array_temp = cdm_food_yield_sugar['temp', :] \
+             / cdm_food_yield_sugar[ 'cp_ibp_processed', :]
+cdm_food_yield_sugar.add(array_temp, dim='Variables',
+                col_label='cp_ibp_processed_true',
+                unit='t')
+array_temp = cdm_feed_yield_sugar['temp', :] \
+             / cdm_feed_yield_sugar[ 'cp_ibp_processed', :]
+cdm_feed_yield_sugar.add(array_temp, dim='Variables',
+                col_label='cp_ibp_processed_true',
+                unit='t')
+
+# Overwrite
+DM_agriculture['constant']['cdm_food_yield']['cp_ibp_processed',:] = cdm_food_yield_sugar['cp_ibp_processed_true',:]
+DM_agriculture['constant']['cdm_feed_yield']['cp_ibp_processed','molasse-to-sugarcrop'] = cdm_feed_yield_sugar['cp_ibp_processed_true','molasse-to-sugarcrop']
+DM_agriculture['constant']['cdm_feed_yield']['cp_ibp_processed','sugar-to-sugarcrop'] = cdm_feed_yield_sugar['cp_ibp_processed_true','sugar-to-sugarcrop']
+"""
+
 # KCAL TO T ----------------------------------------------------------------------------------------
 
 # Read excel
@@ -6485,7 +6514,7 @@ DM_agriculture['ots']['diet']['share']['Switzerland', :,'share',:] = dm_others['
 # Overwrite cal_diet
 DM_agriculture['fxa']['cal_agr_diet']['Switzerland', :,'cal_agr_diet',:] = dm_cal_diet['Switzerland', :,'cal_agr_diet_new',:]
 
-# SSR FOOD ------------------------------------------------------------------------
+# CalculationLeaf SSR FOOD, FEED & PROCESSED ------------------------------------------------------------------------
 # Idea : compute the food SSR accounting for the feed and processing (oilcrops & sugarcrops)
 # as FAO data include the feed only for categories used as food and feed
 
@@ -6631,7 +6660,7 @@ dm_ssr_processing.change_unit('agr_domestic-production_processed', old_unit='t',
 
 # ssr processed = Dom crop processed / Processed demand (either with processed or something else)
 # note : agr_processing-net-import = "Processed" from FAOSTAT FBS
-dm_ssr_processing.rename_col('agr_processing-net-import', 'processing_demand', 'Categories1')
+dm_ssr_processing.rename_col('agr_processing-net-import', 'processing_demand', 'Variables')
 dm_ssr_processing.operation('agr_domestic-production_processed', '/', 'processing_demand', dim='Variables',
                           out_col='agr_processing-net-import', unit='%')
 

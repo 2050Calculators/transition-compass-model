@@ -1421,20 +1421,31 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
     dm_ssr_feed_pro.rename_col('crop-processed-voil', 'voil-to-oilcrop', dim='Categories1')
     dm_feed_processed.append(dm_ssr_feed_pro, dim='Variables')
     dm_feed_processed.operation('agr_demand_feed', '*', 'agr_feed-net-import',
-                                out_col='agr_domestic-production_feed_pro',
+                                out_col='agr_demand_feed_pro',
                                 unit='kcal')
 
     # Processed Feed crop dom prod [kcal] = processed crops [kcal] * processing yield [%]
     idx_cdm = cdm_feed_yield.idx
     idx_feed = dm_feed_processed.idx
-    dm_temp = dm_feed_processed.array[:, :, idx_feed['agr_domestic-production_feed_pro'], :] \
+    dm_temp = dm_feed_processed.array[:, :, idx_feed['agr_demand_feed_pro'], :] \
               * cdm_feed_yield.array[idx_cdm['cp_ibp_processed'], :]
-    dm_feed_processed.add(dm_temp, dim='Variables', col_label='agr_domestic-production_feed_pro_raw', unit='kcal')
-    dm_feed_processed.drop(dim='Variables', col_label=['agr_demand_feed'])
+    dm_feed_processed.add(dm_temp, dim='Variables', col_label='agr_demand_feed_pro_raw', unit='kcal')
     # Summing by crop category (oilcrop and sugarcrop)
     dm_feed_processed.groupby({'crop-oilcrop': '.*-to-oilcrop', 'crop-sugarcrop': '.*-to-sugarcrop'}, dim='Categories1',
                               regex=True,
                               inplace=True)
+
+    # PROCESSING FEED & FOOD - SHARE OF RAW MATERIALS PRODUCED DOMESTICALLY ----------------------------------------------------
+    # For oilcrop and sugarcrop.
+    # Note : for oilcrops we don't account for voil because byproducts of cake.
+
+    # Domestic production [kcal] = Processed Feed crop dom prod [kcal] * processing net import [%]
+    dm_feed_processed.append(DM_crop['processing-net-import_crop'], dim='Variables')
+    dm_feed_processed.operation('agr_demand_feed_pro_raw', '*', 'agr_processing-net-import',
+                                out_col='agr_domestic-production_feed_pro_raw',
+                                unit='kcal')
+    dm_feed_processed.filter({'Variables': ['agr_domestic-production_feed_pro_raw']}, inplace=True)
+
     # Adding dummy columns filled with nan for total feed demand calculations
     dm_feed_processed.add(0.0, dummy=True, col_label='crop-cereal', dim='Categories1', unit='kcal')
     dm_feed_processed.add(0.0, dummy=True, col_label='crop-pulse', dim='Categories1', unit='kcal')
@@ -1445,17 +1456,6 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
     # Filling the dummy columns with zeros and sorting alphabetically
     dm_feed_processed.sort(dim='Categories1')
     # dm_feed_processed = np.nan_to_num(dm_feed_processed.array)
-
-    # Pre processing total feed demand per category (with dummy categories when necessary)
-    """dm_crop_feed_demand = DM_feed['ration'].filter_w_regex(
-        {'Variables': 'agr_demand_feed', 'Categories1': 'crop-'})
-    # Dropping processed crops feed demand
-    dm_crop_feed_demand.drop(dim='Categories1', col_label=['crop-processed-cake', 'crop-processed-molasse',
-                                                           'crop-processed-sugar', 'crop-processed-voil'])
-    # Fill NaN with 0.0
-    array_temp = dm_crop_feed_demand.array[:, :, :, :]
-    array_temp = np.nan_to_num(array_temp, nan=0)
-    dm_crop_feed_demand.array[:, :, :, :] = array_temp"""
 
     # Accounting for processed feed demand : Adding the columns for sugarcrops and oilcrops from previous calculation
     # Appending with dm_feed_processed
@@ -1497,6 +1497,7 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
               * cdm_food_yield.array[idx_cdm['cp_ibp_processed'], :]
     dm_food_processed.add(dm_temp, dim='Variables', col_label='agr_domestic-production_food', unit='kcal')
 
+
     # NON-PROCESSED FOOD ---------------------------------------------------------------------------------------------------
 
     # Pre processing total food demand per category (with dummy categories when necessary)
@@ -1527,6 +1528,7 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
     dm_crop_demand.add(0.0, dummy=True, col_label='lgn-energycrop', dim='Categories1', unit='kcal')
     dm_crop_demand.add(0.0, dummy=True, col_label='algae', dim='Categories1', unit='kcal')
     dm_crop_demand.add(0.0, dummy=True, col_label='insect', dim='Categories1', unit='kcal')
+
 
     # PROCESSED BEV ----------------------------------------------------------------------------------------------------
 
