@@ -1,11 +1,13 @@
-from amplpy import AMPL, add_to_path
-from typing import List, Dict
+#from amplpy import AMPL, add_to_path
+#from typing import List, Dict
+from model.energy.energyscopepyomo.ses_pyomo import load_data, build_model, make_highs, attach, solve, extract_results
+import pyomo.environ as pyo
 from model.common.interface_class import Interface
 from model.common.data_matrix_class import DataMatrix
 import os
 from model.common.auxiliary_functions import filter_DM, create_years_list, \
   filter_geoscale, filter_country_and_load_data_from_pickles, \
-  dm_add_missing_variables
+  dm_add_missing_variables, return_lever_data
 import pickle
 import json
 import numpy as np
@@ -15,35 +17,127 @@ import model.energy.utils as utils
 import re
 
 
-def dummy_read_data(ampl):
-    # Define row and column labels
-    index = ["ELECTRICITY", "LIGHTING", "HEAT_HIGH_T", "HEAT_LOW_T_SH",
-             "HEAT_LOW_T_HW", "MOBILITY_PASSENGER", "MOBILITY_FREIGHT"]
-    columns = ["HOUSEHOLDS", "SERVICES", "INDUSTRY", "TRANSPORTATION"]
+def define_sets_pyomo(m: pyo.ConcreteModel):
+  # --- Base / main sets (explicit values) ---
+  m.PERIODS = pyo.Set(initialize=range(1, 13), ordered=True)
 
-    # Define data as a 2D array
-    data = [
-        [10848.1, 15026.5, 10443.5, 0.0],
-        [425.1, 3805.2, 1263.8, 0.0],
-        [0.0, 0.0, 19021.5, 0.0],
-        [29489.2, 14524.8, 4947.5, 0.0],
-        [7537.8, 3256.0, 1281.8, 0.0],
-        [0.0, 0.0, 0.0, 146049.3],
-        [0.0, 0.0, 0.0, 39966.7]
-    ]
+  m.SECTORS = pyo.Set(initialize=[
+      "HOUSEHOLDS", "SERVICES", "INDUSTRY", "TRANSPORTATION"
+  ])
 
-    # Convert the data into a dictionary format
-    data_dict = {}
-    for i, row in enumerate(index):
-        for j, col in enumerate(columns):
-            data_dict[(row, col)] = data[i][j]
+  m.END_USES_INPUT = pyo.Set(initialize=[
+      "ELECTRICITY", "LIGHTING", "HEAT_HIGH_T", "HEAT_LOW_T_SH",
+      "HEAT_LOW_T_HW", "MOBILITY_PASSENGER", "MOBILITY_FREIGHT"
+  ])
 
-    # Load data into AMPL with correct set names
-    ampl.getSet("END_USES_INPUT").setValues(index)
-    ampl.getSet("SECTORS").setValues(columns)
-    ampl.getParameter("end_uses_demand_year").setValues(data_dict)
-    ampl.getParameter("end_uses_demand_year")["MOBILITY_PASSENGER", "TRANSPORTATION"] = 130000.0
-    return
+  m.END_USES_CATEGORIES = pyo.Set(initialize=[
+      "ELECTRICITY", "HEAT_HIGH_T", "HEAT_LOW_T",
+      "MOBILITY_PASSENGER", "MOBILITY_FREIGHT"
+  ])
+
+  m.EXPORT = pyo.Set(initialize=["ELEC_EXPORT"])
+  m.BIOFUELS = pyo.Set(initialize=["BIOETHANOL", "BIODIESEL", "SNG"])
+
+  m.RESOURCES = pyo.Set(initialize=[
+      "ELECTRICITY", "GASOLINE", "DIESEL", "BIOETHANOL", "BIODIESEL", "LFO", "LNG",
+      "NG", "NG_CCS", "SNG", "WOOD", "COAL", "COAL_CCS", "URANIUM", "WASTE", "H2",
+      "ELEC_EXPORT"
+  ])
+
+  m.STORAGE_TECH = pyo.Set(initialize=["PUMPED_HYDRO", "POWER2GAS"])
+
+  m.INFRASTRUCTURE = pyo.Set(initialize=[
+      "EFFICIENCY", "DHN", "GRID", "POWER2GAS_1", "POWER2GAS_2", "POWER2GAS_3",
+      "H2_ELECTROLYSIS", "H2_NG", "H2_BIOMASS", "GASIFICATION_SNG", "PYROLYSIS"
+  ])
+
+  m.COGEN = pyo.Set(initialize=[
+      "IND_COGEN_GAS", "IND_COGEN_WOOD", "IND_COGEN_WASTE", "DHN_COGEN_GAS",
+      "DHN_COGEN_WOOD", "DHN_COGEN_WASTE", "DEC_COGEN_GAS", "DEC_COGEN_OIL",
+      "DEC_ADVCOGEN_GAS", "DEC_ADVCOGEN_H2"
+  ])
+
+  m.BOILERS = pyo.Set(initialize=[
+      "IND_BOILER_GAS", "IND_BOILER_WOOD", "IND_BOILER_OIL", "IND_BOILER_COAL",
+      "IND_BOILER_WASTE", "DHN_BOILER_GAS", "DHN_BOILER_WOOD", "DHN_BOILER_OIL",
+      "DEC_BOILER_GAS", "DEC_BOILER_WOOD", "DEC_BOILER_OIL"
+  ])
+
+  # END_USES_TYPES_OF_CATEGORY is a set-of-sets indexed by END_USES_CATEGORIES
+  _types_of_cat = {
+      "ELECTRICITY": ["ELECTRICITY"],
+      "HEAT_HIGH_T": ["HEAT_HIGH_T"],
+      "HEAT_LOW_T": ["HEAT_LOW_T_DHN", "HEAT_LOW_T_DECEN"],
+      "MOBILITY_PASSENGER": ["MOB_PUBLIC", "MOB_PRIVATE"],
+      "MOBILITY_FREIGHT": ["MOB_FREIGHT_RAIL", "MOB_FREIGHT_ROAD"],
+  }
+  m.END_USES_TYPES_OF_CATEGORY = pyo.Set(
+      m.END_USES_CATEGORIES, initialize=_types_of_cat
+  )
+
+  # Secondary: END_USES_TYPES := union over categories
+  m.END_USES_TYPES = pyo.Set(
+      initialize=lambda m: {j for i in m.END_USES_CATEGORIES for j in m.END_USES_TYPES_OF_CATEGORY[i]}
+  )
+
+  # TECHNOLOGIES_OF_END_USES_TYPE is a set-of-sets indexed by END_USES_TYPES
+  _tech_of_type = {
+      "ELECTRICITY": [
+          "NUCLEAR", "CCGT", "CCGT_CCS", "COAL_US", "COAL_IGCC", "COAL_US_CCS", "COAL_IGCC_CCS",
+          "PV", "WIND", "HYDRO_DAM", "NEW_HYDRO_DAM", "HYDRO_RIVER", "NEW_HYDRO_RIVER", "GEOTHERMAL"
+      ],
+      "HEAT_HIGH_T": [
+          "IND_COGEN_GAS", "IND_COGEN_WOOD", "IND_COGEN_WASTE", "IND_BOILER_GAS", "IND_BOILER_WOOD",
+          "IND_BOILER_OIL", "IND_BOILER_COAL", "IND_BOILER_WASTE", "IND_DIRECT_ELEC"
+      ],
+      "HEAT_LOW_T_DHN": [
+          "DHN_HP_ELEC", "DHN_COGEN_GAS", "DHN_COGEN_WOOD", "DHN_COGEN_WASTE", "DHN_BOILER_GAS",
+          "DHN_BOILER_WOOD", "DHN_BOILER_OIL", "DHN_DEEP_GEO"
+      ],
+      "HEAT_LOW_T_DECEN": [
+          "DEC_HP_ELEC", "DEC_THHP_GAS", "DEC_COGEN_GAS", "DEC_COGEN_OIL", "DEC_ADVCOGEN_GAS",
+          "DEC_ADVCOGEN_H2", "DEC_BOILER_GAS", "DEC_BOILER_WOOD", "DEC_BOILER_OIL", "DEC_SOLAR",
+          "DEC_DIRECT_ELEC"
+      ],
+      "MOB_PUBLIC": [
+          "TRAMWAY_TROLLEY", "BUS_COACH_DIESEL", "BUS_COACH_HYDIESEL", "BUS_COACH_CNG_STOICH",
+          "BUS_COACH_FC_HYBRIDH2", "TRAIN_PUB"
+      ],
+      "MOB_PRIVATE": [
+          "CAR_GASOLINE", "CAR_DIESEL", "CAR_NG", "CAR_HEV", "CAR_PHEV", "CAR_BEV", "CAR_FUEL_CELL"
+      ],
+      "MOB_FREIGHT_RAIL": ["TRAIN_FREIGHT"],
+      "MOB_FREIGHT_ROAD": ["TRUCK"],
+  }
+  m.TECHNOLOGIES_OF_END_USES_TYPE = pyo.Set(
+      m.END_USES_TYPES, initialize=_tech_of_type
+  )
+
+  # Secondary: LAYERS := (RESOURCES \ BIOFUELS \ EXPORT) ∪ END_USES_TYPES
+  m.LAYERS = pyo.Set(
+      initialize=lambda m: (set(m.RESOURCES) - set(m.BIOFUELS) - set(m.EXPORT)) | set(m.END_USES_TYPES)
+  )
+
+  # Secondary: TECHNOLOGIES := (⋃ over types TECHNOLOGIES_OF_END_USES_TYPE[type]) ∪ STORAGE_TECH ∪ INFRASTRUCTURE
+  def _tech_init(m):
+      techs = set().union(*[set(m.TECHNOLOGIES_OF_END_USES_TYPE[t]) for t in m.END_USES_TYPES])
+      techs |= set(m.STORAGE_TECH) | set(m.INFRASTRUCTURE)
+      return techs
+  m.TECHNOLOGIES = pyo.Set(initialize=_tech_init)
+
+  # Secondary: TECHNOLOGIES_OF_END_USES_CATEGORY[i] within TECHNOLOGIES
+  # For each category, union of all technologies belonging to that category’s end-use types
+  def _tech_of_cat_init(m, cat):
+      types = list(m.END_USES_TYPES_OF_CATEGORY[cat])
+      techs = set().union(*[set(m.TECHNOLOGIES_OF_END_USES_TYPE[t]) for t in types])
+      # Enforce the "within TECHNOLOGIES" intent by intersecting (defensive)
+      return techs & set(m.TECHNOLOGIES)
+
+  m.TECHNOLOGIES_OF_END_USES_CATEGORY = pyo.Set(
+      m.END_USES_CATEGORIES, within=m.TECHNOLOGIES, initialize=_tech_of_cat_init
+  )
+
+  return
 
 
 def define_sets(ampl):
@@ -429,6 +523,21 @@ def balance_demand_prod_with_net_import(dm_prod_cap_cntr, dm_demand_trend, share
 
   return dm_prod_cap_cntr
 
+
+def energyscope_pyomo(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, country_list):
+  with open(data_path, 'rb') as handle:
+    DM_energy = pickle.load(handle)
+
+  data = load_data("ses_main.json")
+  m = build_model(data, objective="gwp")
+  opt = make_highs()
+  attach(opt, m)
+  res = solve(opt, m, warmstart=True)
+
+  return
+
+
+
 def energyscope(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, country_list):
     endyr = years_fts[-1]
 
@@ -581,7 +690,7 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
 
   current_file_directory = os.path.dirname(os.path.abspath(__file__))
   data_filepath = os.path.join(current_file_directory, '../_database/data/datamatrix/energy.pickle')
-  results_run = energyscope(data_filepath, DM_transport, DM_buildings, DM_industry, years_ots, years_fts, country_list)
+  results_run = energyscope_pyomo(data_filepath, DM_transport, DM_buildings, DM_industry, years_ots, years_fts, country_list)
 
   return results_run
 
