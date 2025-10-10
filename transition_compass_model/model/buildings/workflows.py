@@ -415,6 +415,7 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
   # Energy demand
   # cooling demand x tech x efficiency (we assume the technology is the heat-pump)
   idx = dm_floor_area.idx
+  # ! FIXME add efficiency specific for cooling
   arr = dm_floor_area.array[:, :, idx['bld_cooling'], :, :] \
         / dm_eff.array[:, :, idx_e['bld_heating-efficiency'], np.newaxis, :,
           idx_e['heat-pump']]

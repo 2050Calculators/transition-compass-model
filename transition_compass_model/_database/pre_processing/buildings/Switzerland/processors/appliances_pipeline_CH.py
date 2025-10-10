@@ -138,7 +138,6 @@ def run(dm_pop, country_list, years_ots, years_fts):
           }
   }
 
-  # !FIXME add this to the pickle
   return DM
 
 
