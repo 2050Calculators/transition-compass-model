@@ -335,6 +335,7 @@ list_cat_crop = ['crop-cereal', 'crop-fruit', 'crop-oilcrop', 'crop-pulse', 'cro
 cdm_kcal_crop = cdm_kcal_crop.filter({'Categories1':list_cat_crop})
 cdm_food_yield = CDM_const['cdm_food_yield'].copy()
 dm_ssr_processing = DM_agriculture['ots']['climate-smart-crop']['processing-net-import'].copy()
+dm_stock = DM_agriculture['fxa']['crop_stock-variation'].copy()
 
 # Dom prod feed [t] = cal_agr_demand_feed.* [t] * agr_feed-net-import [%]
 dm_ssr_feed.append(dm_feed_cal, dim='Variables')
@@ -448,18 +449,25 @@ dm_ssr_processing.add(array_temp, dim='Variables',
 dm_ssr_processing.operation('agr_food-net-import', '*', 'cal_agr_diet_new_t', dim='Variables',
                           out_col='agr_domestic-production-food', unit='t')
 
-# Dom crop processed = dom prod tot - dom prod food - dom prod feed
+# Append with stock variation
+dm_stock.change_unit('fxa_agr_stock-variation', old_unit='kt', new_unit='t', factor=10**3)
+dm_ssr_processing.append(dm_stock, dim='Variables')
+
+
+# Dom crop processed = dom prod tot - dom prod food - dom prod feed - Stock variation
 dm_ssr_processing.operation('cal_agr_domestic-production_t', '-', 'agr_domestic-production-food', dim='Variables',
-                          out_col='temp', unit='t')
-dm_ssr_processing.operation('temp', '-', 'agr_domestic-production-feed', dim='Variables',
+                          out_col='temp_1', unit='t')
+dm_ssr_processing.operation('temp_1', '-', 'agr_domestic-production-feed', dim='Variables',
+                          out_col='temp_2', unit='t')
+dm_ssr_processing.operation('temp_2', '-', 'fxa_agr_stock-variation', dim='Variables',
                           out_col='agr_domestic-production_processed', unit='t')
 
-# Unit converstion t => kt
+# Unit conversion t => kt
 dm_ssr_processing.change_unit('agr_domestic-production_processed', old_unit='t', new_unit='kt', factor=10**(-3))
 
 # ssr processed = Dom crop processed / Processed demand (either with processed or something else)
 # note : agr_processing-net-import = "Processed" from FAOSTAT FBS
-dm_ssr_processing.rename_col('agr_processing-net-import', 'processing_demand', 'Categories1')
+dm_ssr_processing.rename_col('agr_processing-net-import', 'processing_demand', 'Variables')
 dm_ssr_processing.operation('agr_domestic-production_processed', '/', 'processing_demand', dim='Variables',
                           out_col='agr_processing-net-import', unit='%')
 

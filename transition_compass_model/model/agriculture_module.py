@@ -110,6 +110,8 @@ def read_data(DM_agriculture, lever_setting):
     dm_ef_residues = DM_agriculture['fxa']['ef_burnt-residues']
     dm_ssr_feed_crop = DM_ots_fts['climate-smart-crop']['feed-net-import']
     dm_ssr_processing_crop = DM_ots_fts['climate-smart-crop']['processing-net-import']
+    dm_fxa_stock = DM_agriculture['fxa']['crop_stock-variation']
+    dm_ssr_processing_crop.append(dm_fxa_stock,dim='Variables')
 
     # Sub-matrix for LAND
     dm_cal_land = DM_agriculture['fxa']['cal_agr_lus_land']
@@ -1444,7 +1446,14 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
     dm_feed_processed.operation('agr_demand_feed_pro_raw', '*', 'agr_processing-net-import',
                                 out_col='agr_domestic-production_feed_pro_raw',
                                 unit='kcal')
-    dm_feed_processed.filter({'Variables': ['agr_domestic-production_feed_pro_raw']}, inplace=True)
+
+    # Accounting for stock variation: Domestic production [kcal] + Stock variation [kcal]
+    dm_feed_processed.operation('agr_domestic-production_feed_pro_raw', '+',
+                                'fxa_agr_stock-variation',
+                                out_col='agr_domestic-production_feed_pro_raw_stock',
+                                unit='kcal')
+    dm_feed_processed.filter(
+      {'Variables': ['agr_domestic-production_feed_pro_raw_stock']}, inplace=True)
 
     # Adding dummy columns filled with nan for total feed demand calculations
     dm_feed_processed.add(0.0, dummy=True, col_label='crop-cereal', dim='Categories1', unit='kcal')
@@ -1462,7 +1471,7 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
     dm_feed_unprocessed = dm_feed_unprocessed.filter({'Variables': ['agr_domestic-production_feed_unpro']})
     dm_feed_unprocessed.append(dm_feed_processed, dim='Variables')
     # Summing
-    dm_feed_unprocessed.operation('agr_domestic-production_feed_pro_raw', '+', 'agr_domestic-production_feed_unpro', out_col='agr_domestic-production_feed',
+    dm_feed_unprocessed.operation('agr_domestic-production_feed_pro_raw_stock', '+', 'agr_domestic-production_feed_unpro', out_col='agr_domestic-production_feed',
                                   unit='kcal')
     dm_feed_unprocessed = dm_feed_unprocessed.filter({'Variables': ['agr_domestic-production_feed']})
 

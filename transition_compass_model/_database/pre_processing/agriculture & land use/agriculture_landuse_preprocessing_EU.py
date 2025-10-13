@@ -391,7 +391,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
 
         # FOOD BALANCE SHEETS (FBS) - For everything except molasses and cakes -------------------------------------------------
         # List of elements
-        list_elements = ['Production Quantity', 'Import Quantity', 'Export Quantity', 'Feed', 'Processed']
+        list_elements = ['Production Quantity', 'Import Quantity', 'Export Quantity', 'Feed', 'Processed', 'Stock Variation']
 
         list_items = ['Cereals - Excluding Beer + (Total)', 'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
                       'Pulses + (Total)', 'Rice (Milled Equivalent)',
@@ -431,7 +431,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
 
         # 2010 - 2022
 
-        list_elements = ['Production Quantity', 'Import quantity', 'Export quantity', 'Feed', 'Processed']
+        list_elements = ['Production Quantity', 'Import quantity', 'Export quantity', 'Feed', 'Processed', 'Stock Variation']
         # Different list becuse different in item nomination such as rice
         list_items = ['Cereals - Excluding Beer + (Total)', 'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
                       'Pulses + (Total)', 'Rice and products',
@@ -586,7 +586,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
 
     # Create a copy for feed pre-processing and drop irrelevant columns
     df_csl_feed = pd.concat([pivot_df, pivot_df_feed])
-    df_csl_feed = df_csl_feed.drop(columns=['Production', 'Import', 'Export', 'Processing'])
+    df_csl_feed = df_csl_feed.drop(columns=['Production', 'Import', 'Export', 'Processing', 'Stock Variation'])
 
     # Step 2: Compute the SSR [%]
     # Note : Update - the SSR is now computed afterwards for calibration reasons, in order to match it with the demand
@@ -597,12 +597,12 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
     pivot_df = pd.concat([pivot_df, pivot_df_feed])
 
     # Drop the columns Production, Import Quantity and Export Quantity
-    pivot_df = pivot_df.drop(columns=['Production', 'Import', 'Export', 'Feed', 'Processing'])
+    pivot_df = pivot_df.drop(columns=['Production', 'Import', 'Export', 'Feed', 'Processing','Stock Variation'])
 
     # Format for SSR of Processed crops ---------------------------------------------------------------------------------
 
     # Filter columns
-    pivot_df_processed = pivot_df_processed[['Area', 'Year', 'Item', 'Processing']].copy()
+    pivot_df_processed = pivot_df_processed[['Area', 'Year', 'Item', 'Processing', 'Stock Variation']].copy()
 
     # Filter rows to keep only Oilcrops & Sugarcrop
     my_items_list = ['Oilcrops', 'Sugar Crops']
@@ -619,12 +619,23 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
 
     # Prepend 'SSR' and 'Processed'
     pivot_df['Item'] = pivot_df['Item'].apply(lambda x: f"SSR {x}")
-    pivot_df_processed['Item'] = pivot_df_processed ['Item'].apply(lambda x: f"Processed {x}")
+
+    # Melt the DataFrame
+    pivot_df_processed = pivot_df_processed.melt(
+      id_vars=["Area", "Year", "Item"],
+      value_vars=["Processing", "Stock Variation"],
+      var_name="Element",
+      value_name="value"
+    )
+    # Concatenate Item and Element (both as strings)
+    pivot_df_processed["Item"] = pivot_df_processed["Element"].astype(str) + " " + pivot_df_processed["Item"]
+    # Filter
+    pivot_df_processed = pivot_df_processed[['Area', 'Year', 'Item', 'value']].copy()
 
     # Renaming existing columns (geoscale, timsecale, value)
     pivot_df.rename(columns={'Area': 'geoscale', 'Year': 'timescale', 'SSR[%]': 'value'}, inplace=True)
     pivot_df_processed.rename(
-      columns={'Area': 'geoscale', 'Year': 'timescale', 'Processing': 'value'},
+      columns={'Area': 'geoscale', 'Year': 'timescale'},
       inplace=True)
 
     # Concat
@@ -5550,6 +5561,30 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     dm = DataMatrix.create_from_df(df_ots, num_cat=2)
     DM_agriculture_old['fxa']['feed'] = dm
 
+    # Stock Variation (oilcrops & sugarcrops)
+    df_stock = df_ssr_pathwaycalc[
+      df_ssr_pathwaycalc['variables'].str.contains('fxa_agr_stock-variation', case=False)]
+    df_stock = ensure_structure(df_stock)
+    df_stock = linear_fitting_ots_db(df_stock, years_all, countries='all')
+    df_ots, df_fts = database_to_df(df_stock, 'food-net-import',
+                                    level='all')
+    df_ots = df_ots.drop(columns=['food-net-import'])  # Drop column with lever name
+    #df_ots = linear_fitting_ots_db(df_ots, years_all, countries='all')
+    dm = DataMatrix.create_from_df(df_ots, num_cat=0)
+    dm_stock = dm.filter_w_regex(
+      {'Variables': 'fxa_agr_stock-variation.*'})
+    dm_stock.deepen()
+    # For future computations in module: Stock variation: Change unit from [kt] => [kcal]
+    cdm_kcal_processing = DM_agriculture_old['constant']['cdm_kcal-per-t'].filter(
+      {'Categories1': ['crop-oilcrop', 'crop-sugarcrop']}).copy()
+    dm_stock.sort(dim='Categories1')
+    dm_stock.sort(dim='Categories1')
+    array_temp = 10**3 * dm_stock[:, :, 'fxa_agr_stock-variation', :] \
+                 * cdm_kcal_processing[np.newaxis, np.newaxis, 'cp_kcal-per-t',
+                   :]
+    dm_stock[:,:,'fxa_agr_stock-variation',:] = array_temp
+    DM_agriculture_old['fxa']['crop_stock-variation'] = dm_stock
+
     # LeversToDatamatrix FTS linear fitting of ots
 
     DM_ots = DM_agriculture_old['ots'].copy()
@@ -5728,6 +5763,10 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     # Data - Fixed assumptions - Calibration factors - Feed demand
     dm_cal_feed = dm_cal.filter_w_regex({'Variables': 'cal_agr_demand_feed.*'})
     dm_cal_feed.deepen(based_on='Variables')
+    # Replace nan with 0
+    array_temp = dm_cal_feed.array[:, :, :, :]
+    array_temp = np.nan_to_num(array_temp, nan=0.0)
+    dm_cal_feed.array[:, :, :, :] = array_temp
     DM_agriculture_old['fxa']['cal_agr_demand_feed'] = dm_cal_feed
 
     # Data - Fixed assumptions - Calibration factors - Crop production without beverages
@@ -6536,6 +6575,9 @@ list_cat_crop = ['crop-cereal', 'crop-fruit', 'crop-oilcrop', 'crop-pulse', 'cro
 cdm_kcal_crop = cdm_kcal_crop.filter({'Categories1':list_cat_crop})
 cdm_food_yield = CDM_const['cdm_food_yield'].copy()
 dm_ssr_processing = DM_agriculture['ots']['climate-smart-crop']['processing-net-import'].copy()
+dm_stock = DM_agriculture['fxa']['crop_stock-variation'].copy()
+dm_stock.filter({'Years':years_ots}, inplace=True)
+
 
 # Dom prod feed [t] = cal_agr_demand_feed.* [t] * agr_feed-net-import [%]
 dm_ssr_feed.append(dm_feed_cal, dim='Variables')
@@ -6649,10 +6691,26 @@ dm_ssr_processing.add(array_temp, dim='Variables',
 dm_ssr_processing.operation('agr_food-net-import', '*', 'cal_agr_diet_new_t', dim='Variables',
                           out_col='agr_domestic-production-food', unit='t')
 
-# Dom crop processed = dom prod tot - dom prod food - dom prod feed
+# Unit conversion: stock variation [kcal] => [t]
+cdm_kcal_processing = cdm_kcal.filter(
+  {'Categories1': ['crop-oilcrop', 'crop-sugarcrop']}).copy()
+dm_stock.sort(dim='Categories1')
+dm_stock.sort(dim='Categories1')
+array_temp = dm_stock[:, :, 'fxa_agr_stock-variation', :] \
+             / cdm_kcal_processing[np.newaxis, np.newaxis, 'cp_kcal-per-t',
+               :]
+dm_stock[:, :, 'fxa_agr_stock-variation', :] = array_temp
+dm_stock.change_unit('fxa_agr_stock-variation', old_unit='kcal', new_unit='t', factor=1)
+
+# Append with stock variation
+dm_ssr_processing.append(dm_stock, dim='Variables')
+
+# Dom crop processed = dom prod tot - dom prod food - dom prod feed - Stock variation
 dm_ssr_processing.operation('cal_agr_domestic-production_t', '-', 'agr_domestic-production-food', dim='Variables',
-                          out_col='temp', unit='t')
-dm_ssr_processing.operation('temp', '-', 'agr_domestic-production-feed', dim='Variables',
+                          out_col='temp_1', unit='t')
+dm_ssr_processing.operation('temp_1', '-', 'agr_domestic-production-feed', dim='Variables',
+                          out_col='temp_2', unit='t')
+dm_ssr_processing.operation('temp_2', '-', 'fxa_agr_stock-variation', dim='Variables',
                           out_col='agr_domestic-production_processed', unit='t')
 
 # Unit converstion t => kt
