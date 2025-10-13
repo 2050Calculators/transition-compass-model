@@ -99,7 +99,7 @@ dm_fert.sort("Country")
 year_missing = np.array(dm.col_labels["Years"])[[c not in dm_fert.col_labels["Years"] for c in dm.col_labels["Years"]]].tolist()
 dm_fert.add(np.nan, "Years", year_missing, dummy=True)
 dm_fert.sort("Years")
-dm_fert.rename_col("fertilizer", "calib_emissions", "Variables")
+dm_fert.rename_col("fertilizer", "calib-emissions", "Variables")
 # dm_fert.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
 
 # subtract fertilizer emissions from overall industry
