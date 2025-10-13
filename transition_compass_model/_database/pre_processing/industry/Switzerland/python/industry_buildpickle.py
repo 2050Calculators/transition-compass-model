@@ -20,13 +20,6 @@ warnings.simplefilter("ignore")
 # directories
 current_file_directory = os.getcwd()
 
-# tomorrow: 
-# for EU: in calibration data, make sure all 3 calib variables have 40 years (decide what
-# to do with fts, probably put missing values, and understand how calibration is done
-# for fts when levers change, if any ... probably calibration should be done only in baseline)
-# also revisit calibration data and if you need to extrapolate it, rather put nan
-# and finally do the ammonia emission / energy demand thing
-
 ###############################################################################
 ############################### EXECUTE SCRIPTS ###############################
 ###############################################################################
@@ -194,15 +187,11 @@ with open(filepath, 'rb') as handle:
     dm = pickle.load(handle)
 DM_cal_amm["material-production"] = dm.copy()
 
-# TODO: here we need to add the calibration of energy demand and emissions of ammonia manufacturing.
-# for energy demand: probably can be inferred from emissions and constants, though we would need the energy mix (probably we can use the one of chemicals in JRC)
-# for emissions: FAOSTAT -> Climate Change -> Totals and Indicators -> Emissions totals -> Fertilizer manufacturing
+filepath = os.path.join(current_file_directory, '../data/datamatrix/' + "calibration_emissions_ammonia.pickle")
+with open(filepath, 'rb') as handle:
+    dm = pickle.load(handle)
+DM_cal_amm["emissions"] = dm.copy()
 
-# note: In practice, ammonia production is often responsible for the bulk of fertilizer manufacturing emissions, 
-# but the FAO (and IPCC inventories) keep the broader category since other steps matter too (notably N₂O from nitric acid)
-# in my case, for emission factors of ammonia-tech I have taken both CO2 and N2O, so probably in my case ammonia-tech
-# is closer to fertilizer manufacturing in general. So it probably makes sense to take emissions from fertilizer
-# manufacturing from FAO as calibration for the emission of the Ammonia module. Do this tomorrow.
 
 # #####################
 # ##### CONSTANTS #####
