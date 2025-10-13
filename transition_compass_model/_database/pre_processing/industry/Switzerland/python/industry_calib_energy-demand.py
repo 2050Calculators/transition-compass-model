@@ -99,6 +99,7 @@ dm.add(np.nan,"Years",list(range(1990,1998+1,1)), dummy=True)
 dm.add(np.nan,"Years",list(range(2025,2050+5,5)), dummy=True)
 dm.sort("Years")
 dm.sort("Categories1")
+dm.rename_col("calib-energy-demand-excl-feedstock", "calib-energy-demand", "Variables")
 f = os.path.join(current_file_directory, '../data/datamatrix/calibration_energy-demand.pickle')
 with open(f, 'wb') as handle:
     pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
