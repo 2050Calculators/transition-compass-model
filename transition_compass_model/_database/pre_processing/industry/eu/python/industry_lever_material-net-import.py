@@ -605,9 +605,24 @@ dm_matprod_fxa = dm_matprod.filter({"Categories1" : ["fbt","mae","ois","textiles
 ##### MAKE CALIBRATION DATA FOR MATERIAL PRODUCTION #####
 #########################################################
 
+# TODO: need to change this data with data from material flow analysis
+
 dm_matprod_calib = get_prodcom_data("ds-056121")
 dm_matprod_calib.rename_col("material-demand", "material-production", "Variables")
 dm_matprod_calib.change_unit("material-production", 1e-6, "kg", "kt")
+materials = dm_matprod.col_labels["Categories1"]
+current_materials = dm_matprod_calib.col_labels["Categories1"]
+for m in materials:
+    if m not in current_materials:
+        dm_matprod_calib.add(np.nan, "Categories1", m, dummy=True)
+dm_matprod_calib.sort("Categories1")
+dm_matprod_calib.drop("Years",2024)
+current_years = dm_matprod_calib.col_labels["Years"]
+for y in years_ots + years_fts:
+    if y not in current_years:
+        dm_matprod_calib.add(np.nan, "Years", [y], dummy=True)
+dm_matprod_calib.sort("Years")
+
 # dm_matprod_calib.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
 # df_temp = dm_matprod_calib.filter({"Country" : ["EU27"],"Years" : [2023]}).write_df()
 # df_temp = df_temp.melt(["Country","Years"])
