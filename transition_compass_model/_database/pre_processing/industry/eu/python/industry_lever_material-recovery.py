@@ -138,7 +138,7 @@ dict_map = {"vehicles" : ['ELV_shredding-and-dismantling_recycling-best',
             "fridge" : ["fridge_total-recovery"],
             "dishwasher" : ["dishwasher_combined-treatment"], # I take the combined treatment for now, as otherwise we would need to see how to combine the 4 we have (sometimes take average, sometimes take max, etc)
             "electronics" : ["WEEE"],
-            "mt" : ["metrotram_light-dismantling", "	metrotram_deep-dismantling"],
+            # "mt" : ["metrotram_light-dismantling", "	metrotram_deep-dismantling"], for the moment we do not have metro as product in industry, so in transport we have aggregated mt to trains, so we will simply use the mat decomp of trains for now
             "train" : ["train_ICE-Diesel_light-dismantling", "train_ICE-Diesel_deep-dismantling", 
                        "train_CEV_light-dismantling", "train_CEV_deep-dismantling"],
             "plastic-pack" : ["plastic-packaging"],
@@ -251,13 +251,15 @@ dm_veh = make_dm(df_elv)
 #################################
 
 # select only trains and metrotram
-df_temp = df_agg.loc[df_agg["variable"].isin(["train","mt"]),:]
+df_temp = df_agg.loc[df_agg["variable"].isin(["train",
+                                              # "mt"
+                                              ]),:]
 
-# for mt, put steel same of train
-df_temp.loc[(df_temp["variable"] == "mt") & (df_temp["material"] == "steel"),"value"] = 0.2
+# # for mt, put steel same of train
+# df_temp.loc[(df_temp["variable"] == "mt") & (df_temp["material"] == "steel"),"value"] = 0.2
 
 # rename
-df_temp.loc[df_temp["variable"] == "mt","variable"] = "metrotram"
+# df_temp.loc[df_temp["variable"] == "mt","variable"] = "metrotram"
 df_temp.loc[df_temp["variable"] == "train","variable"] = "trains"
     
 # fix variables
@@ -477,7 +479,9 @@ dm_level4["EU27",2050,:,"paper-pack","paper"] = 1
 dm_level4["EU27",2050,:,"paper-print","paper"] = 1
 dm_level4["EU27",2050,:,"paper-san","paper"] = 1
 dm_level4["EU27",2050,:,"plastic-pack","chem"] = 0.9
-products = ["metrotram","trains","planes","ships"]
+products = ["trains","planes","ships",
+            # "metrotram",
+            ]
 for p in products:
     dm_level4["EU27",2050,:,p,"aluminium"] = 1
     dm_level4["EU27",2050,:,p,"chem"] = 0.9
