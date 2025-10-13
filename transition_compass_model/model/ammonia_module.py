@@ -839,19 +839,17 @@ def ammonia(lever_setting, years_setting, DM_input, interface = Interface(), cal
     
 def local_ammonia_run():
     
-    # get years and lever setting
-    years_setting = [1990, 2023, 2025, 2050, 5]
-    current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    f = open(os.path.join(current_file_directory, '../config/lever_position.json'))
+    # Configures initial input for model run
+    f = open('../config/lever_position.json')
     lever_setting = json.load(f)[0]
-    # lever_setting["lever_energy-carrier-mix"] = 3
-    # lever_setting["lever_cc"] = 3
-    # lever_setting["lever_material-switch"] = 3
-    # lever_setting["lever_technology-share"] = 4
-    
-    # get geoscale
-    country_list = ['EU27', 'Switzerland', 'Vaud']
-    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'ammonia')
+    years_setting = [1990, 2023, 2025, 2050, 5]
+
+    country_list = ["Vaud"]
+
+    sectors = ['ammonia']
+    # Filter geoscale
+    # from database/data/datamatrix/.* reads the pickles, filters the geoscale, and loads them
+    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = sectors)
 
     # run
     results_run = ammonia(lever_setting, years_setting, DM_input['ammonia'])
