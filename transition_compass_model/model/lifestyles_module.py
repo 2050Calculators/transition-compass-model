@@ -87,5 +87,7 @@ def local_lifestyles_run(write_pickle=False):
     return
 
 # Update/Create the Pickle
-#local_lifestyles_run()  # to un-comment to run in local
+if __name__ == "__main__":
+  local_lifestyles_run()
+
 
