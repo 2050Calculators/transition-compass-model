@@ -170,3 +170,29 @@ dm_amm_prod_cal.change_unit("material-production", 1e-3, "t", "kt")
 f = os.path.join(current_file_directory, '../data/datamatrix/calibration_material-production_ammonia.pickle')
 with open(f, 'wb') as handle:
     pickle.dump(dm_amm_prod_cal, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
+# calib data for ammonia emissions
+
+# TODO: here we need to add the calibration of energy demand and emissions of ammonia manufacturing.
+# for energy demand: probably can be inferred from emissions and constants, though we would need the energy mix (probably we can use the one of chemicals in JRC)
+# for emissions: FAOSTAT -> Climate Change -> Totals and Indicators -> Emissions totals -> Fertilizer manufacturing
+
+# note: In practice, ammonia production is often responsible for the bulk of fertilizer manufacturing emissions, 
+# but the FAO (and IPCC inventories) keep the broader category since other steps matter too (notably N₂O from nitric acid)
+# in my case, for emission factors of ammonia-tech I have taken both CO2 and N2O, so probably in my case ammonia-tech
+# is closer to fertilizer manufacturing in general. So it probably makes sense to take emissions from fertilizer
+# manufacturing from FAO as calibration for the emission of the Ammonia module.
+
+# note: FAO data has only available data for "synthetic fertilizers" (and only N2O), and not "fertlizier manufacturing"
+# I would assume that nitrogen emissions from synthetic fertilizers are from the use and not manufacturing.
+# So for the moment I do not take nothing, and I create an empty database for this calibration
+
+filepath = os.path.join(current_file_directory,  '../data/datamatrix/calibration_emissions.pickle')
+with open(filepath, 'rb') as handle:
+    dm = pickle.load(handle)
+dm_amm = dm.copy()
+dm_amm.array[...] = np.nan
+f = os.path.join(current_file_directory, '../data/datamatrix/calibration_emissions_ammonia.pickle')
+import pickle
+with open(f, 'wb') as handle:
+    pickle.dump(dm_amm, handle, protocol=pickle.HIGHEST_PROTOCOL)
