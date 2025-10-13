@@ -15,8 +15,9 @@ def tra_industry_interface(
     dm_passenger_veh.add(np.nan, dim="Categories2", col_label="ICE", dummy=True)
   dm_veh = dm_passenger_veh.copy()
   dm_veh.groupby({"CEV": ["mt", "CEV"]}, "Categories2", inplace=True)
-  dm_veh = dm_veh.filter_w_regex({"Categories1": "LDV|aviation|bus|rail"})
-  dm_veh.rename_col(["rail", "aviation"], ["trains", "planes"], "Categories1")
+  dm_veh.groupby({"trains": ["metrotram", "rail"]}, "Categories1", inplace=True)
+  dm_veh = dm_veh.filter_w_regex({"Categories1": "LDV|aviation|bus|trains"})
+  dm_veh.rename_col(["aviation"], ["planes"], "Categories1")
   dm_veh.rename_col(
     [
       "tra_passenger_new-vehicles",
