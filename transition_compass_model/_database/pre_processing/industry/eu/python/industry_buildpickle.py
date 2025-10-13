@@ -195,14 +195,17 @@ for i in range(0, len(files_temp)):
     with open(filepath, 'rb') as handle:
         dm = pickle.load(handle)
     DM_cal[names_temp[i]] = dm
-    
-# TODO: here we need to add the calibration of energy demand and emissions of ammonia manufacturing.
-# for energy demand: probably can be inferred from emissions and constants, though we would need the energy mix (probably we can use the one of chemicals in JRC)
-# for emissions: FAOSTAT -> Climate Change -> Totals and Indicators -> Emissions totals -> Fertilizer manufacturing
+
+# TODO: think about calibration of energy demand of ammonia manufacturing.
+# probably can be inferred from emissions and constants, though we would need the energy mix (probably we can use the one of chemicals in JRC)
 
 # drop ammonia
 DM_cal_amm["material-production"] = DM_cal["material-production"].filter({"Categories1" : ["ammonia"]})
 DM_cal["material-production"].drop("Categories1","ammonia")
+
+DM_cal_amm["emissions"] = DM_cal["emissions_ammonia"].copy()
+DM_cal.pop("emissions_ammonia")
+
 
 #####################
 ##### CONSTANTS #####

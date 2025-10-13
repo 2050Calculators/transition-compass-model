@@ -112,7 +112,7 @@ def get_pop_eurostat(code_pop, EU27_cntr_list, dict_iso2, years_ots):
     return dm_pop_age, dm_pop_tot
 
 
-def get_pop_eurostat_fts(code_pop_fts, EU27_cntr_list, years_fts, dict_iso2):
+def get_pop_eurostat_fts(code_pop_fts, EU27_cntr_list, years_fts, dict_iso2, dm_pop_age_ots, dm_pop_tot_ots):
 
     # Scenarios
     # 1- Baseline, 2- Lower mortality, 3-Lower migration, 4-Lower fertility
@@ -127,6 +127,19 @@ def get_pop_eurostat_fts(code_pop_fts, EU27_cntr_list, years_fts, dict_iso2):
     mapping_dim = {'Country': 'geo\\TIME_PERIOD',
                    'Variables': 'projection'}
     dm_pop_tot = get_data_api_eurostat(code_pop_fts, filter, mapping_dim, 'inhabitants')
+    
+    # scale years    
+    dm_pop_tot_ots.drop("Country","United Kingdom")
+    dm_pop_tot_ots.sort("Country")
+    dm_pop_tot.sort("Country")
+    factors_2024 = (dm_pop_tot_ots[:,2024,:] - dm_pop_tot[:,2024,:])/dm_pop_tot[:,2024,:] # get factor for 2024 to be used later
+    years_common = [2022, 2023, 2024]
+    for y in years_common:
+        factors = (dm_pop_tot_ots[:,y,:] - dm_pop_tot[:,y,:])/dm_pop_tot[:,y,:]
+        dm_pop_tot[:,y,:] = dm_pop_tot[:,y,:] * (1+factors)
+    other_years = dm_pop_tot.col_labels["Years"].copy()
+    for y in years_common: other_years.remove(y)
+    for y in other_years: dm_pop_tot[:,y,:] = dm_pop_tot[:,y,:] * (1+factors_2024) # this is applying the 2024 factors to all future years
 
     # Keep only years_fts
     dm_pop_tot.filter({'Years': years_fts}, inplace=True)
@@ -140,9 +153,6 @@ def get_pop_eurostat_fts(code_pop_fts, EU27_cntr_list, years_fts, dict_iso2):
                    'Categories1': 'sex',
                    'Categories2': 'age'}
     dm_pop_age = get_data_api_eurostat(code_pop_fts, filter, mapping_dim, 'inhabitants')
-
-    # Keep only years_fts
-    dm_pop_age.filter({'Years': years_fts}, inplace=True)
 
     dm_pop_age.drop(dim='Categories2',
                     col_label=['TOTAL', 'Y15-64', 'Y15-74', 'Y20-64', 'YGE75', 'YGE65', 'YGE80', 'YLT15', 'YLT20'])
@@ -176,14 +186,30 @@ def get_pop_eurostat_fts(code_pop_fts, EU27_cntr_list, years_fts, dict_iso2):
     dm_pop_age = dm_pop_age.flatten()
     dm_pop_age.rename_col_regex("female_", "female-", "Categories1")
     dm_pop_age.rename_col_regex("male_", "male-", "Categories1")
-
-    dm_pop_tot.drop(dim='Country', col_label='EU27')
-    dm_EU27_tot = dm_pop_tot.groupby({'EU27': EU27_cntr_list}, dim='Country')
-    dm_pop_tot.append(dm_EU27_tot, dim='Country')
-
-    dm_pop_age.drop(dim='Country', col_label='EU27')
-    dm_EU27_age = dm_pop_age.groupby({'EU27': EU27_cntr_list}, dim='Country')
-    dm_pop_age.append(dm_EU27_age, dim='Country')
+    
+    # scale years    
+    dm_pop_age_ots.drop("Country","United Kingdom")
+    dm_pop_age_ots.sort("Country")
+    dm_pop_age.sort("Country")
+    factors_2024 = (dm_pop_age_ots[:,2024,...] - dm_pop_age[:,2024,...])/dm_pop_age[:,2024,...] # get factor for 2024 to be used later
+    years_common = [2022, 2023, 2024]
+    for y in years_common:
+        factors = (dm_pop_age_ots[:,y,...] - dm_pop_age[:,y,...])/dm_pop_age[:,y,...]
+        dm_pop_age[:,y,...] = dm_pop_age[:,y,...] * (1+factors)
+    other_years = dm_pop_age.col_labels["Years"].copy()
+    for y in years_common: other_years.remove(y)
+    for y in other_years: dm_pop_age[:,y,...] = dm_pop_age[:,y,...] * (1+factors_2024) # this is applying the 2024 factors to all future years
+    
+    # Keep only years_fts
+    dm_pop_age.filter({'Years': years_fts}, inplace=True)
+    
+    # # remake eu27 total
+    # dm_pop_tot.drop(dim='Country', col_label='EU27')
+    # dm_EU27_tot = dm_pop_tot.groupby({'EU27': EU27_cntr_list}, dim='Country')
+    # dm_pop_tot.append(dm_EU27_tot, dim='Country')
+    # dm_pop_age.drop(dim='Country', col_label='EU27')
+    # dm_EU27_age = dm_pop_age.groupby({'EU27': EU27_cntr_list}, dim='Country')
+    # dm_pop_age.append(dm_EU27_age, dim='Country')
 
     # Make sure sum over ages matches with total age
     dm_pop_age.sort(dim='Country')
@@ -299,10 +325,10 @@ dict_iso2.pop('CH')  # Remove Switzerland
 #toc_pop = eurostat.subset_toc_df(toc, 'house')
 
 # Get population total and by age group (ots)
-dm_pop_age, dm_pop_tot = get_pop_eurostat('demo_pjan', EU27_cntr_list, dict_iso2, years_ots)
+dm_pop_age, dm_pop_tot = get_pop_eurostat('demo_pjan', EU27_cntr_list, dict_iso2, list(range(1990,2024+1)))
 
 # Get raw fts pop data (fts)
-dict_dm_pop_fts, dict_dm_pop_fts_tot = get_pop_eurostat_fts('proj_23np', EU27_cntr_list, years_fts, dict_iso2)
+dict_dm_pop_fts, dict_dm_pop_fts_tot = get_pop_eurostat_fts('proj_23np', EU27_cntr_list, years_fts, dict_iso2, dm_pop_age.copy(), dm_pop_tot.copy())
 
 # create UK for fts with projections of Germany
 idx = dm_pop_age.idx
@@ -324,8 +350,16 @@ for i in range(1,4+1):
     arr_rates = dm_temp.array[idx["Germany"],...] / arr_2023[np.newaxis,...]
     arr_uk = arr_2023_uk[np.newaxis,...] * arr_rates
     dict_dm_pop_fts_tot[i].add(arr_uk, "Country", "United Kingdom")
-    
+
 # save full datamatrix with all countries (to be used in other pre processing if needed)
+dm_pop_age.drop("Years",2024)
+dm_pop_tot.drop("Years",2024)
+dm_pop_age.sort("Country")
+dm_pop_tot.sort("Country")
+for key in dict_dm_pop_fts.keys():
+    dict_dm_pop_fts[1].sort("Country")
+for key in dict_dm_pop_fts_tot.keys():
+    dict_dm_pop_fts_tot[1].sort("Country")
 DM_lfs = {"ots" : {"pop" : {"lfs_demography_":[],
                             "lfs_population_" : []}},
           "fts" : {"pop" : {"lfs_demography_": {1:[],2:[],3:[],4:[]},
@@ -338,7 +372,7 @@ DM_lfs['ots']['pop']['lfs_population_'] = dm_pop_tot
 for lev in range(4):
     lev = lev + 1
     DM_lfs['fts']['pop']['lfs_population_'][lev] = dict_dm_pop_fts_tot[lev]
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 file = os.path.join(current_file_directory, 'data/lifestyles_allcountries.pickle')
 my_pickle_dump(DM_lfs, file)
 
@@ -349,6 +383,11 @@ for i in range(1,4+1):
 dm_pop_tot = dm_pop_tot.filter({"Country" : ["EU27"]})
 for i in range(1,4+1):
     dict_dm_pop_fts_tot[i] = dict_dm_pop_fts_tot[i].filter({"Country" : ["EU27"]})
+
+# # check
+# dm_temp = dm_pop_tot.copy()
+# dm_temp.append(dict_dm_pop_fts_tot[1],"Years")
+# dm_temp.datamatrix_plot()
 
 # Save pickle
 DM_lfs = {"ots" : {"pop" : {"lfs_demography_":[],
@@ -365,7 +404,7 @@ for lev in range(4):
     DM_lfs['fts']['pop']['lfs_population_'][lev] = dict_dm_pop_fts_tot[lev]
 
 # save
-current_file_directory = os.path.dirname(os.path.abspath(__file__))
+current_file_directory = os.getcwd()
 file = os.path.join(current_file_directory, '../../../data/datamatrix/lifestyles.pickle')
 my_pickle_dump(DM_lfs, file)
 
