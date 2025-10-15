@@ -23,12 +23,81 @@ with open('../../data/datamatrix/lifestyles.pickle', 'rb') as handle:
 filter_DM(DM_agriculture, {'Country': ['Switzerland']})
 filter_DM(DM_lifestyles, {'Country': ['Switzerland']})
 
+
+# CalculationLeaf DIET ----------------------------------------------------------------------------------------
+# The idea was to have energy requirements per demography (agr_kcal-req) based on the current consumption and not the
+# calculated based on the metabolism.
+
+# Load data
+CDM_const = DM_agriculture['constant'].copy()
+cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
+dm_others = DM_agriculture['ots']['diet']['share'].copy()
+dm_others.change_unit('share', old_unit='%', new_unit='kcal/cap/day', factor=1)
+dm_diet = DM_agriculture['ots']['diet']['lfs_consumers-diet'].copy()
+dm_waste = DM_agriculture['ots']['fwaste'].copy()
+dm_waste.filter({'Categories1':dm_others.col_labels['Categories1']}, inplace=True)
+dm_req = DM_agriculture['ots']['kcal-req'].copy()
+dm_demography = DM_lifestyles['ots']['pop']['lfs_demography_'].copy()
+dm_population = DM_lifestyles['ots']['pop']['lfs_population_'].copy()
+
+# for dm_diet: Change unit: [kt] => [kcal/cap/day]
+# Rename categories
+cat_diet_lifestyle = [
+    'afat', 'beer', 'bev-alc', 'bev-fer', 'bov', 'cereals', 'egg', 'fruits', 'milk', 'offal', 'oilcrops', 'oth-animals', 'pigs', 'poultry', 'pulses',
+    'sheep', 'starch', 'sugar', 'sweet', 'veg', 'voil', 'wine', 'sugarcrop'
+]
+cat_diet_cdm = [
+    'pro-liv-abp-processed-afat', 'pro-bev-beer', 'pro-bev-bev-alc', 'pro-bev-bev-fer',
+    'pro-liv-meat-bovine', 'crop-cereal',
+    'pro-liv-abp-hens-egg', 'crop-fruit','pro-liv-abp-dairy-milk',
+    'pro-liv-abp-processed-offal', 'crop-oilcrop', 'pro-liv-meat-oth-animals', 'pro-liv-meat-pig', 'pro-liv-meat-poultry',
+    'crop-pulse', 'pro-liv-meat-sheep', 'crop-starch',
+    'pro-crop-processed-sugar', 'pro-crop-processed-sweet', 'crop-veg',
+    'pro-crop-processed-voil', 'pro-bev-wine', 'crop-sugarcrop',
+]
+cdm_kcal.rename_col(cat_diet_cdm, cat_diet_lifestyle, 'Categories1')
+# Filter constants depending on dm
+cdm_kcal_diet = cdm_kcal.copy()
+cdm_kcal_diet = cdm_kcal_diet.filter({'Categories1': dm_diet.col_labels['Categories1']})
+cdm_kcal_others = cdm_kcal.copy()
+cdm_kcal_others = cdm_kcal_others.filter({'Categories1': dm_others.col_labels['Categories1']})
+# Check Category order
+dm_diet.sort('Categories1')
+cdm_kcal_diet.sort('Categories1')
+# Unit conversion: [kt] => [kcal]
+array_temp = 10**3 * dm_diet[:, :,'lfs_consumers-diet', :] \
+             * cdm_kcal_diet[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
+dm_diet[:, :,'lfs_consumers-diet', :] = array_temp
+# Unit conversion: [kcal] => [kcal/cap/day]
+array_temp = dm_diet[:, :,'lfs_consumers-diet', :] \
+             / dm_population[:, :, 'lfs_population_total', np.newaxis] / 365.25
+dm_diet[:, :,'lfs_consumers-diet', :] = array_temp
+
+# for dm_others: Change unit: [kt] => [kcal/cap/day]
+# Check Category order
+dm_others.sort('Categories1')
+cdm_kcal_others.sort('Categories1')
+# Unit conversion: [kt] => [kcal]
+array_temp = 10**3 * dm_others[:, :,'share', :] \
+             * cdm_kcal_others[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
+dm_others[:, :,'share', :] = array_temp
+# Unit conversion: [kcal] => [kcal/cap/day]
+array_temp = dm_others[:, :,'share', :] \
+             / dm_population[:, :, 'lfs_population_total', np.newaxis] / 365.25
+dm_others[:, :,'share', :] = array_temp
+
+# Overwrite
+DM_agriculture['ots']['diet']['share'][:, :,'share', :] = dm_others[:, :,'share', :]
+DM_agriculture['ots']['diet']['lfs_consumers-diet'][:, :,'lfs_consumers-diet', :] = dm_diet[:, :,'lfs_consumers-diet', :]
+
 # PROCESSING YIELD ----------------------------------------------------------------------------------------
 # Note: Modifying for sugar crops because inverse ratio
 
 # Load data
 cdm_food_yield_sugar = DM_agriculture['constant']['cdm_food_yield'].copy()
 cdm_feed_yield_sugar = DM_agriculture['constant']['cdm_feed_yield'].filter({'Categories1': ['molasse-to-sugarcrop', 'sugar-to-sugarcrop']}).copy()
+
+
 
 # Add dummy of 1
 cdm_food_yield_sugar.add(1.0, dummy=True, col_label='temp', dim='Variables', unit='%')
@@ -114,6 +183,8 @@ dm_dom_prod_liv.operation('grass_feed', '/', 'agr_feed-requirement_ruminant',
 
 # Overwrite in pickle
 DM_agriculture['ots']['ruminant-feed']['ruminant-feed']['Switzerland',:,'agr_ruminant-feed_share-grass'] = dm_dom_prod_liv['Switzerland',:,'agr_ruminant-feed_share-grass']
+
+
 
 # ---------------------------------------------------------------------------------------------------------
 # ADDING CONSTANTS ----------------------------------------------------------------------------------------
