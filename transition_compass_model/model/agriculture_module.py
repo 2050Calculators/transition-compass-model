@@ -109,6 +109,7 @@ def read_data(DM_agriculture, lever_setting):
     # dm_crop.append(dm_cal_crop, dim='Variables')
     dm_ef_residues = DM_agriculture['fxa']['ef_burnt-residues']
     dm_ssr_feed_crop = DM_ots_fts['climate-smart-crop']['feed-net-import']
+    dm_processing_yield = DM_agriculture['fxa']['processing-yield']
     """dm_ssr_processing_crop = DM_ots_fts['climate-smart-crop']['processing-net-import']
     dm_fxa_stock = DM_agriculture['fxa']['crop_stock-variation']
     dm_ssr_processing_crop.append(dm_fxa_stock,dim='Variables')"""
@@ -213,7 +214,8 @@ def read_data(DM_agriculture, lever_setting):
         'residues_yield': dm_residues_yield,
         'hierarchy_residues_cereals': dm_hierarchy_residues_cereals,
         'food-net-import-pro': dm_food_net_import_pro,
-        'feed-net-import_crop': dm_ssr_feed_crop
+        'feed-net-import_crop': dm_ssr_feed_crop,
+        'processing-yields': dm_processing_yield
     }
 
     # Aggregated Data Matrix - LAND
@@ -1381,11 +1383,13 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
     cdm_food_yield = CDM_const['cdm_food_yield']
 
     # Processed Feed pre-processing
-    list_crop_feed_processed = ['crop-processed-cake', 'crop-processed-molasse', 'crop-processed-sugar',
+    """list_crop_feed_processed = ['crop-processed-cake', 'crop-processed-molasse', 'crop-processed-sugar',
+                         'crop-processed-voil']"""
+    list_crop_feed_processed = ['crop-processed-cake', 'crop-processed-sugar',
                          'crop-processed-voil']
     dm_feed_processed = DM_feed['ration'].filter({'Variables': ['agr_demand_feed'],'Categories1': list_crop_feed_processed})
     dm_feed_processed.rename_col('crop-processed-cake', 'cake-to-oilcrop', dim='Categories1')
-    dm_feed_processed.rename_col('crop-processed-molasse', 'molasse-to-sugarcrop', dim='Categories1')
+    #dm_feed_processed.rename_col('crop-processed-molasse', 'molasse-to-sugarcrop', dim='Categories1')
     dm_feed_processed.rename_col('crop-processed-sugar', 'sugar-to-sugarcrop', dim='Categories1')
     dm_feed_processed.rename_col('crop-processed-voil', 'voil-to-oilcrop', dim='Categories1')
 
@@ -1413,11 +1417,15 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
     # Processed Feed - Accounting for SSR
     # Domestic production [kcal] = Processed Feed-demand [kcal] * net import [%]
     dm_ssr_feed_pro = DM_crop['food-net-import-pro'].filter(
-        {'Variables': ['agr_food-net-import'], 'Categories1': ['pro-crop-processed-cake', 'pro-crop-processed-molasse',
+        {'Variables': ['agr_food-net-import'], 'Categories1': ['pro-crop-processed-cake',
                                                                'pro-crop-processed-sugar',
                                                                'pro-crop-processed-voil']}).copy()
+    """dm_ssr_feed_pro = DM_crop['food-net-import-pro'].filter(
+        {'Variables': ['agr_food-net-import'], 'Categories1': ['pro-crop-processed-cake', 'pro-crop-processed-molasse',
+                                                               'pro-crop-processed-sugar',
+                                                               'pro-crop-processed-voil']}).copy()"""
     dm_ssr_feed_pro.rename_col('pro-crop-processed-cake', 'cake-to-oilcrop', dim='Categories1')
-    dm_ssr_feed_pro.rename_col('pro-crop-processed-molasse', 'molasse-to-sugarcrop', dim='Categories1')
+    #dm_ssr_feed_pro.rename_col('pro-crop-processed-molasse', 'molasse-to-sugarcrop', dim='Categories1')
     dm_ssr_feed_pro.rename_col('pro-crop-processed-sugar', 'sugar-to-sugarcrop', dim='Categories1')
     dm_ssr_feed_pro.rename_col('pro-crop-processed-voil', 'voil-to-oilcrop', dim='Categories1')
     dm_feed_processed.append(dm_ssr_feed_pro, dim='Variables')
@@ -1425,12 +1433,22 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
                                 out_col='agr_demand_feed_pro',
                                 unit='kcal')
 
+    # Summing sugar & sweets together
+    dm_feed_processed.groupby({'sugar-to-sugarcrop': '.*-to-sugarcrop'}, dim='Categories1',
+                              regex=True,
+                              inplace=True)
+
     # Processed Feed crop dom prod [kcal] = processed crops [kcal] * processing yield [%]
-    idx_cdm = cdm_feed_yield.idx
-    idx_feed = dm_feed_processed.idx
-    dm_temp = dm_feed_processed.array[:, :, idx_feed['agr_demand_feed_pro'], :] \
-              * cdm_feed_yield.array[idx_cdm['cp_ibp_processed'], :]
-    dm_feed_processed.add(dm_temp, dim='Variables', col_label='agr_demand_feed_pro_raw', unit='kcal')
+    dm_pro_yield = DM_crop['processing-yields'].filter({'Categories1': [
+      'cake-to-oilcrop',
+      'sugar-to-sugarcrop',
+      'voil-to-oilcrop']})
+    dm_feed_processed.append(dm_pro_yield, dim='Variables')
+    dm_feed_processed.operation('agr_demand_feed_pro', '*', 'fxa_agr_processing-yield',
+                                out_col='agr_demand_feed_pro_raw',
+                                unit='kcal')
+
+
     # Summing by crop category (oilcrop and sugarcrop)
     dm_feed_processed.groupby({'crop-oilcrop': '.*-to-oilcrop', 'crop-sugarcrop': '.*-to-sugarcrop'}, dim='Categories1',
                               regex=True,
@@ -1476,10 +1494,10 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
     # Accounting for processed feed demand : Adding the columns for sugarcrops and oilcrops from previous calculation
     # Appending with dm_feed_processed
     dm_feed_unprocessed = dm_feed_unprocessed.filter({'Variables': ['agr_demand_feed']})
-    dm_feed_processed = dm_feed_processed.filter({'Variables': ['agr_demand_feed_pro']})
+    dm_feed_processed = dm_feed_processed.filter({'Variables': ['agr_demand_feed_pro_raw']})
     dm_feed_unprocessed.append(dm_feed_processed, dim='Variables')
     # Summing
-    dm_feed_unprocessed.operation('agr_demand_feed_pro', '+', 'agr_demand_feed', out_col='agr_demand_feed_total',
+    dm_feed_unprocessed.operation('agr_demand_feed_pro_raw', '+', 'agr_demand_feed', out_col='agr_demand_feed_total',
                                   unit='kcal')
     dm_feed_unprocessed = dm_feed_unprocessed.filter({'Variables': ['agr_demand_feed_total']})
 
@@ -1492,6 +1510,7 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
     # PROCESSED FOOD ---------------------------------------------------------------------------------------------------
 
     # Processed food - Accounting for SSR
+
     # Domestic production [kcal] = Processed Food-demand [kcal] * net import [%]
     dm_food_processed = dm_lfs_pro.filter(
         {'Variables': ['agr_demand'], 'Categories1': ['pro-crop-processed-sweet', 'pro-crop-processed-sugar']})
@@ -1508,11 +1527,14 @@ def crop_workflow(DM_crop, DM_feed, DM_bioenergy, dm_voil, dm_lfs, dm_lfs_pro, d
     dm_food_processed.rename_col('pro-crop-processed-sweet', 'crop-sugarcrop', dim='Categories1')
     dm_food_processed.rename_col('agr_domestic-production_food_pro', 'agr_domestic-production_food_pro_temp',
                                  dim='Variables')
-    idx_cdm = cdm_food_yield.idx
-    idx_food = dm_food_processed.idx
-    dm_temp = dm_food_processed.array[:, :, idx_food['agr_domestic-production_food_pro_temp'], :] \
-              * cdm_food_yield.array[idx_cdm['cp_ibp_processed'], :]
-    dm_food_processed.add(dm_temp, dim='Variables', col_label='agr_demand_food', unit='kcal')
+
+    dm_pro_yield = DM_crop['processing-yields'].filter({'Categories1': ['sugar-to-sugarcrop']})
+    dm_pro_yield.rename_col('sugar-to-sugarcrop', 'crop-sugarcrop',
+                                 dim='Categories1')
+    dm_food_processed.append(dm_pro_yield, dim='Variables')
+    dm_food_processed.operation('agr_domestic-production_food_pro_temp', '*', 'fxa_agr_processing-yield',
+                                out_col='agr_demand_food',
+                                unit='kcal')
 
 
     # NON-PROCESSED FOOD ---------------------------------------------------------------------------------------------------
