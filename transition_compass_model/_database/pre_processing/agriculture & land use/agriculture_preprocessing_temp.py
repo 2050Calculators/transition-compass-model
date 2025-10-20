@@ -24,6 +24,44 @@ filter_DM(DM_agriculture, {'Country': ['Switzerland']})
 filter_DM(DM_lifestyles, {'Country': ['Switzerland']})
 
 
+# PROCESSING YIELD -------------------------------------------------------------------
+# The idea is to change unit from t input / t output to kcal input / kcal output
+# because that is what is used in the Calculator
+
+# Load data
+dm_yield = DM_agriculture['fxa']['processing-yield'].copy()
+cdm_kcal = DM_agriculture['constant']['cdm_kcal-per-t'].copy()
+
+
+# Yield [kcal input / kcal output] = Yield [t input / t output] * (kcal per t input) / (kcal per t output)
+
+# Voil
+array_temp = dm_yield[:, :,'fxa_agr_processing-yield', 'voil-to-oilcrop'] \
+             * cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', 'crop-oilcrop'] \
+             / cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', 'pro-crop-processed-voil']
+DM_agriculture['fxa']['processing-yield'][:, :,'fxa_agr_processing-yield', 'voil-to-oilcrop'] = array_temp
+
+# Cake
+array_temp = dm_yield[:, :,'fxa_agr_processing-yield', 'cake-to-oilcrop'] \
+             * cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', 'crop-oilcrop'] \
+             / cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', 'pro-crop-processed-cake']
+DM_agriculture['fxa']['processing-yield'][:, :,'fxa_agr_processing-yield', 'cake-to-oilcrop'] = array_temp
+
+# Molasse
+array_temp = dm_yield[:, :,'fxa_agr_processing-yield', 'molasse-to-sugarcrop'] \
+             * cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', 'crop-sugarcrop'] \
+             / cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', 'pro-crop-processed-molasse']
+DM_agriculture['fxa']['processing-yield'][:, :,'fxa_agr_processing-yield', 'molasse-to-sugarcrop'] = array_temp
+
+# Sugar
+array_temp = dm_yield[:, :,'fxa_agr_processing-yield', 'sugar-to-sugarcrop'] \
+             * cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', 'crop-sugarcrop'] \
+             / cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', 'pro-crop-processed-sugar']
+DM_agriculture['fxa']['processing-yield'][:, :,'fxa_agr_processing-yield', 'sugar-to-sugarcrop'] = array_temp
+
+
+
+
 # CalculationLeaf DIET ----------------------------------------------------------------------------------------
 # The idea was to have energy requirements per demography (agr_kcal-req) based on the current consumption and not the
 # calculated based on the metabolism.
