@@ -608,11 +608,16 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
     columns_to_filter = ['Area', 'Year', 'Item', 'Feed']
     df_csl_feed = df_csl_feed[columns_to_filter].copy()
 
+    # Create a copy for milk feed food ratio (fxa)
+    pivot_df_milk = pivot_df[pivot_df['Item'] =='Milk - Excluding Butter'].copy()
+
     # Delete rows where 'Residuals' is <50 or >50 because of inconsistencies
     #pivot_df = pivot_df[(pivot_df['Residuals'] > -50) & (pivot_df['Residuals'] < 50)]
 
     # Step 2: Compute the SSR [%]
-    pivot_df['SSR[%]'] = pivot_df['Production']/(pivot_df['Food'] + pivot_df['Feed'] + pivot_df['Processing'])
+    # (previously with special condition for milk because we
+    # don't account for it as feed & processed. but now fixed with and fxa_ratio)
+    pivot_df['SSR[%]'] = pivot_df['Production'] / (pivot_df['Food'] + pivot_df['Feed'] + pivot_df['Processing'])
     # Fill nan
     pivot_df_feed['SSR[%]'] = pivot_df_feed['Production']/(pivot_df_feed['Feed'])
 
@@ -694,11 +699,12 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
     # Extrapolation
     df_ssr_pathwaycalc = linear_fitting_ots_db(df_ssr_pathwaycalc, years_ots, countries='all')
 
-    return df_ssr_pathwaycalc, df_csl_feed, df_processing_yield_fxa
+    return df_ssr_pathwaycalc, df_csl_feed, df_processing_yield_fxa, pivot_df_milk
 
-# CalculationLeaf FXA PROCESSING YIELD ---------------------------------------------------------------------------------------------
-def fxa_processing_yield(df_processing_yield_fxa):
+# CalculationLeaf FXA PROCESSING YIELD & MILK FEED FOOD RATIO---------------------------------------------------------------------------------------------
+def fxa_processing_yield(df_processing_yield_fxa, pivot_df_milk):
 
+  # PROCESSING YIELD
   # Pivot df
   pivot_df = df_processing_yield_fxa.pivot_table(index=['Area', 'Year', 'Item'],
                                 columns='Element', values='Value').reset_index()
@@ -773,16 +779,21 @@ def fxa_processing_yield(df_processing_yield_fxa):
   # Filter
   df_oil = df_oil[['Area', 'Year', 'Item', 'value']]
 
+  # MILK FEED FOOD PROCESSING RATIO
+  pivot_df_milk['value'] = (pivot_df_milk['Feed'] + pivot_df_milk['Food'] + pivot_df_milk['Processing']) / pivot_df_milk['Food']
+  pivot_df_milk = pivot_df_milk[['Area', 'Year', 'Item', 'value']]
+
   # Calc Formatting ------------------------------------------------------------
 
   # Concat dfs
   df_calc_processing_yield = pd.concat([df_oil, df_sugar])
+  df_calc_processing_yield = pd.concat([df_calc_processing_yield, pivot_df_milk])
 
   # Food item name matching with dictionary
   # Read excel file
   df_dict = pd.read_excel(
     'dictionaries/dictionnary_agriculture_landuse.xlsx',
-    sheet_name='processing-yields')
+    sheet_name='fxa')
 
   # Renaming existing columns (geoscale, timsecale, value)
   df_calc_processing_yield.rename(
@@ -5710,8 +5721,20 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, dm_kcal_req_pathwaycal
     lever = 'food-net-import'
     df_ots, df_fts = database_to_df(df_calc_processing_yield, lever, level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
-    dm = DataMatrix.create_from_df(df_ots, num_cat=1)
+    dm = DataMatrix.create_from_df(df_ots, num_cat=0)
+    dm = dm.filter_w_regex(
+      {'Variables': 'fxa_agr_processing-yield.*'})
+    dm.deepen()
     DM_agriculture_old['fxa']['processing-yield'] = dm
+
+    # Feed Food Processed ratio (milk)
+    lever = 'food-net-import'
+    df_ots, df_fts = database_to_df(df_calc_processing_yield, lever, level='all')
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm = DataMatrix.create_from_df(df_ots, num_cat=0)
+    dm = dm.filter_w_regex(
+      {'Variables': 'fxa_agr_feed-processing-food-ratio.*'})
+    DM_agriculture_old['fxa']['ratio_milk'] = dm
 
     # Feed
     lever = 'diet'
@@ -6426,8 +6449,8 @@ df_waste_pathwaycalc = food_waste_processing(df_diet)
 dm_kcal_req_pathwaycalc = energy_requirements_processing(country_list=df_waste_pathwaycalc['geoscale'].unique(), years_ots=years_ots)
 file_dict = {'ssr': 'data/faostat/ssr.csv', 'cake': 'data/faostat/ssr_cake.csv',
              'molasse': 'data/faostat/ssr_2010_2021_molasse_cake.csv'}
-df_ssr_pathwaycalc, df_csl_feed, df_processing_yield_fxa = self_sufficiency_processing(years_ots, list_countries, file_dict)
-df_calc_processing_yield = fxa_processing_yield(df_processing_yield_fxa)
+df_ssr_pathwaycalc, df_csl_feed, df_processing_yield_fxa, pivot_df_milk = self_sufficiency_processing(years_ots, list_countries, file_dict)
+df_calc_processing_yield = fxa_processing_yield(df_processing_yield_fxa, pivot_df_milk)
 df_feed_ssr_pathwaycalc = feed_ssr_processing(years_ots)
 df_land_use_fao_calibration, df_cropland_density, df_agri_land = land_calibration(list_countries)
 file_dict = {'losses': 'data/faostat/losses.csv', 'yield': 'data/faostat/yield.csv','cropland': 'data/faostat/cropand.csv', 'urea': 'data/faostat/urea.csv',
