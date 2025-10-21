@@ -66,6 +66,7 @@ def read_data(DM_agriculture, lever_setting):
     dm_livestock_yield = DM_ots_fts['climate-smart-livestock']['climate-smart-livestock_yield']
     dm_livestock_slaughtered = DM_ots_fts['climate-smart-livestock']['climate-smart-livestock_slaughtered']
     dm_livestock_density = DM_ots_fts['climate-smart-livestock']['climate-smart-livestock_density']
+    dm_fxa_ratio_milk = DM_agriculture['fxa']['ratio_milk']
 
     # Sub-matrix for ALCOHOLIC BEVERAGES
     dm_alc_bev = DM_ots_fts['biomass-hierarchy']['biomass-hierarchy-bev-ibp-use-oth']
@@ -165,7 +166,8 @@ def read_data(DM_agriculture, lever_setting):
         'liv_slaughtered_rate': dm_livestock_slaughtered,
         'cal_liv_prod': dm_fxa_cal_liv_prod,
         'cal_liv_population': dm_fxa_cal_liv_pop,
-        'ruminant_density': dm_livestock_density
+        'ruminant_density': dm_livestock_density,
+        'ratio_milk': dm_fxa_ratio_milk
     }
 
     # Aggregated Data Matrix - ALCOHOLIC BEVERAGES
@@ -559,6 +561,12 @@ def livestock_workflow(DM_livestock, CDM_const, dm_lfs_pro, years_setting):
 
     # Append dm_lfs_pro_liv to DM_livestock['losses']
     DM_livestock['losses'].append(dm_lfs_pro_liv, dim='Variables')
+
+    # Account for milk as Feed and Processed
+    # Milk Food & Feed [kcal] = Milk Food [kcal] * fxa_milk_feed_food_ratio [%]
+    array_temp = DM_livestock['losses'][:,:,'agr_domestic_production','abp-dairy-milk'] * \
+                 DM_livestock['ratio_milk'][:,:,'fxa_agr_feed-processing-food-ratio_abp-dairy-milk']
+    DM_livestock['losses'][:,:,'agr_domestic_production','abp-dairy-milk'] = array_temp
 
     # Livestock domestic prod with losses [kcal] = livestock domestic prod [kcal] * Production losses livestock [%]
     DM_livestock['losses'].operation('agr_climate-smart-livestock_losses', '*', 'agr_domestic_production',
