@@ -161,6 +161,7 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     # !FIXME: add km infrastructure data, using compute_stock with tot_km and renovation rate as input.
     #  data for ch ok, data for eu, backcalculation? dummy based on swiss pop?
     interface.add_link(from_sector="transport", to_sector="industry", dm=DM_industry)
+    interface.add_link(from_sector="transport", to_sector="lca", dm=DM_industry)
     # interface.add_link(from_sector='transport', to_sector='minerals', dm=DM_minerals)
 
     # Emissions
