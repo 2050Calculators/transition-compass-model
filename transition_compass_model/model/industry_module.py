@@ -777,7 +777,7 @@ def end_of_life(dm_tra_waste, dm_tra_infra_waste, dm_bld_waste, dm_pack_waste, d
         "material-recovered" : dm_rec_agg_corrected,
         # "veh_eol_to_wst_mgt" : dm_transport_waste_bywsm_layer1,
         # "veh_el_to_collection" : dm_transport_waste_bywsm_layer2,
-        # "veh_eol_to_recycling" : dm_veh_eol_to_recycling
+        "veh_eol_to_recycling" : dm_tra_waste_bywsm_layer2.filter({"Categories3" : ["recycling"]}).group_all("Categories3",inplace=False)
         }
     
     return DM_eol
@@ -1833,6 +1833,27 @@ def industry_forestry_interface(dm_material_demand, dm_fxa_demand_wwp):
     
     return dm_temp
     
+def industry_lca_interface(cdm_matdec_veh,
+                           veh_eol_to_recycling, write_pickle = False):
+        
+        # DM_ind = {"prod-domestic-production_bld-floor" : DM_production["bld-floor"],
+        #           "prod-domestic-production_bld-domapp" : DM_production["bld-domapp"],
+        #           "prod-domestic-production_bld-electronics" : DM_production["bld-electronics"],
+        #           "prod-domestic-production_tra-infra" : DM_production["tra-infra"],
+        #           "prod-domestic-production_tra-veh" : DM_production["tra-veh"],
+        #           "prod-domestic-production_pack" : DM_production["pack"],
+        #           "mat-demand" : DM_material_demand["material-demand"],
+        #           "veh-to-recycling" : veh_eol_to_recycling}
+        
+        DM_ind = {"veh-matdec" : cdm_matdec_veh,
+                  "veh-to-recycling" : veh_eol_to_recycling}
+        
+        # of write_pickle is True, write pickle
+        if write_pickle is True:
+            current_file_directory = os.path.dirname(os.path.abspath(__file__))
+            f = os.path.join(current_file_directory, '../_database/data/interface/industry_to_lca.pickle')
+            with open(f, 'wb') as handle:
+                pickle.dump(DM_ind, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 def industry(lever_setting, years_setting, DM_input, interface = Interface(), calibration = True):
 
@@ -1995,6 +2016,10 @@ def industry(lever_setting, years_setting, DM_input, interface = Interface(), ca
     dm_for = industry_forestry_interface(DM_material_demand["material-demand"], DM_fxa["demand"])
     interface.add_link(from_sector='industry', to_sector='forestry', dm=dm_for)
     
+    # interface lca
+    DM_lca = industry_lca_interface(CDM_const["material-decomposition_veh"], DM_eol["veh_eol_to_recycling"])
+    interface.add_link(from_sector='industry', to_sector='lca', dm=DM_lca)
+    
     # # interface refinery
     # dm_refinery = industry_refinery_interface(DM_energy_demand)
     # interface.add_link(from_sector='industry', to_sector='oil-refinery', dm=dm_refinery)
@@ -2041,7 +2066,7 @@ def local_industry_run():
     lever_setting = json.load(f)[0]
     years_setting = [1990, 2023, 2025, 2050, 5]
 
-    country_list = ["Vaud"]
+    country_list = ["EU27","Switzerland","Vaud"]
 
     sectors = ['industry']
     # Filter geoscale
