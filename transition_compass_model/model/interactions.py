@@ -15,6 +15,7 @@ from model.industry_module import industry
 from model.power_module import power
 from model.landuse_module import land_use
 from model.oilrefinery_module import refinery
+from model.lca_module import lca
 
 import math
 import copy
@@ -65,6 +66,10 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
         start_time = time.time()
         TPE['ammonia'] = ammonia(lever_setting, years_setting, DM_input['ammonia'], interface)
         logger.info('Execution time Ammonia: {0:.3g} s'.format(time.time() - start_time))
+    if 'lca' in sectors:
+        start_time = time.time()
+        TPE['lca'] = lca(lever_setting, years_setting, DM_input['lca'], interface)
+        logger.info('Execution time LCA: {0:.3g} s'.format(time.time() - start_time))
     #start_time = time.time()
     #TPE['agriculture'] = agriculture(lever_setting, years_setting, interface)
     #logger.info('Execution time Agriculture: {0:.3g} s'.format(time.time() - start_time))
