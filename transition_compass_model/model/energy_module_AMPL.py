@@ -1,5 +1,6 @@
-from model.energy.energyscopepyomo.ses_pyomo import load_data, build_model, \
-  make_highs, attach, solve, extract_results, build_model_structure, set_constraints
+from amplpy import AMPL, add_to_path
+#from typing import List, Dict
+from model.energy.energyscopepyomo.ses_pyomo import load_data, build_model, make_highs, attach, solve, extract_results
 import pyomo.environ as pyo
 from model.common.interface_class import Interface
 from model.common.data_matrix_class import DataMatrix
@@ -8,109 +9,107 @@ from model.common.auxiliary_functions import filter_DM, create_years_list, \
   filter_geoscale, filter_country_and_load_data_from_pickles, \
   dm_add_missing_variables, return_lever_data
 import pickle
+import json
 import numpy as np
+import pandas as pd
 import model.energy.interfaces as inter
 import model.energy.utils as utils
 import re
-import json
+
+def define_sets(ampl):
+
+    # Declare sets using declareSet()
+    # Assign values to sets
+    ampl.getSet("PERIODS").setValues(list(range(1, 13)))
+    ampl.getSet("SECTORS").setValues(["HOUSEHOLDS", "SERVICES", "INDUSTRY", "TRANSPORTATION"])
+    ampl.getSet("END_USES_INPUT").setValues(["ELECTRICITY", "LIGHTING", "HEAT_HIGH_T", "HEAT_LOW_T_SH",
+                                             "HEAT_LOW_T_HW", "MOBILITY_PASSENGER", "MOBILITY_FREIGHT"])
+    ampl.getSet("END_USES_CATEGORIES").setValues(["ELECTRICITY", "HEAT_HIGH_T", "HEAT_LOW_T",
+                                                  "MOBILITY_PASSENGER", "MOBILITY_FREIGHT"])
+
+    ampl.getSet("EXPORT").setValues(["ELEC_EXPORT"])
+    ampl.getSet("BIOFUELS").setValues(["BIOETHANOL", "BIODIESEL", "SNG"])
+    ampl.getSet("RESOURCES").setValues(["ELECTRICITY", "GASOLINE", "DIESEL", "BIOETHANOL", "BIODIESEL", "LFO", "LNG",
+                                        "NG", "NG_CCS", "SNG", "WOOD", "COAL", "COAL_CCS","URANIUM", "WASTE", "H2", "ELEC_EXPORT"])
+    ampl.getSet("STORAGE_TECH").setValues(["PUMPED_HYDRO", "POWER2GAS"])
+    ampl.getSet("INFRASTRUCTURE").setValues(["EFFICIENCY", "DHN", "GRID", "POWER2GAS_1", "POWER2GAS_2", "POWER2GAS_3",
+                                             "H2_ELECTROLYSIS", "H2_NG", "H2_BIOMASS", "GASIFICATION_SNG", "PYROLYSIS"])
+    ampl.getSet("COGEN").setValues(["IND_COGEN_GAS", "IND_COGEN_WOOD", "IND_COGEN_WASTE", "DHN_COGEN_GAS",
+                                     "DHN_COGEN_WOOD", "DHN_COGEN_WASTE", "DEC_COGEN_GAS", "DEC_COGEN_OIL",
+                                     "DEC_ADVCOGEN_GAS", "DEC_ADVCOGEN_H2"])
+    ampl.getSet("BOILERS").setValues(["IND_BOILER_GAS", "IND_BOILER_WOOD", "IND_BOILER_OIL", "IND_BOILER_COAL",
+                                      "IND_BOILER_WASTE", "DHN_BOILER_GAS", "DHN_BOILER_WOOD", "DHN_BOILER_OIL",
+                                      "DEC_BOILER_GAS", "DEC_BOILER_WOOD", "DEC_BOILER_OIL"])
+
+    ampl.getSet("END_USES_TYPES_OF_CATEGORY").setValues({
+        "ELECTRICITY": ["ELECTRICITY"],
+        "HEAT_HIGH_T": ["HEAT_HIGH_T"],
+        "HEAT_LOW_T": ["HEAT_LOW_T_DHN", "HEAT_LOW_T_DECEN"],
+        "MOBILITY_PASSENGER": ["MOB_PUBLIC", "MOB_PRIVATE"],
+        "MOBILITY_FREIGHT": ["MOB_FREIGHT_RAIL", "MOB_FREIGHT_ROAD"]
+    })
+
+    ampl.getSet("TECHNOLOGIES_OF_END_USES_TYPE").setValues({
+            "ELECTRICITY": [
+                "NUCLEAR", "CCGT", "CCGT_CCS", "COAL_US", "COAL_IGCC", "COAL_US_CCS", "COAL_IGCC_CCS",
+                "PV", "WIND", "HYDRO_DAM", "NEW_HYDRO_DAM", "HYDRO_RIVER", "NEW_HYDRO_RIVER", "GEOTHERMAL"
+            ],
+            "HEAT_HIGH_T": [
+                "IND_COGEN_GAS", "IND_COGEN_WOOD", "IND_COGEN_WASTE", "IND_BOILER_GAS", "IND_BOILER_WOOD",
+                "IND_BOILER_OIL", "IND_BOILER_COAL", "IND_BOILER_WASTE", "IND_DIRECT_ELEC"
+            ],
+            "HEAT_LOW_T_DHN": [
+                "DHN_HP_ELEC", "DHN_COGEN_GAS", "DHN_COGEN_WOOD", "DHN_COGEN_WASTE", "DHN_BOILER_GAS",
+                "DHN_BOILER_WOOD", "DHN_BOILER_OIL", "DHN_DEEP_GEO"
+            ],
+            "HEAT_LOW_T_DECEN": [
+                "DEC_HP_ELEC", "DEC_THHP_GAS", "DEC_COGEN_GAS", "DEC_COGEN_OIL", "DEC_ADVCOGEN_GAS",
+                "DEC_ADVCOGEN_H2", "DEC_BOILER_GAS", "DEC_BOILER_WOOD", "DEC_BOILER_OIL", "DEC_SOLAR",
+                "DEC_DIRECT_ELEC"
+            ],
+            "MOB_PUBLIC": [
+                "TRAMWAY_TROLLEY", "BUS_COACH_DIESEL", "BUS_COACH_HYDIESEL", "BUS_COACH_CNG_STOICH",
+                "BUS_COACH_FC_HYBRIDH2", "TRAIN_PUB"
+            ],
+            "MOB_PRIVATE": [
+                "CAR_GASOLINE", "CAR_DIESEL", "CAR_NG", "CAR_HEV", "CAR_PHEV", "CAR_BEV", "CAR_FUEL_CELL"
+            ],
+            "MOB_FREIGHT_RAIL": ["TRAIN_FREIGHT"],
+            "MOB_FREIGHT_ROAD": ["TRUCK"]
+    })
+
+    return
 
 
+def read_2050_data(ampl, DM, country, endyr):
 
-def capture_model_state(model, filename):
-  """Capture all model parameters and their values"""
-  state = {}
+    define_sets(ampl)
+    for key in DM.keys():
+        dm = DM[key].filter({'Country': [country], 'Years': [endyr]})
+        idx = dm.idx
+        if key == 'param':
+            for var in dm.col_labels['Variables']:
+                ampl.getParameter(var).setValues([dm.array[0, 0, idx[var]]])
+        elif 'index' in key:
+            for var in dm.col_labels['Variables']:
+                if '1' in dm.col_labels['Categories1']:
+                    index = list(map(int, dm.col_labels['Categories1']))
+                else:
+                    index = dm.col_labels['Categories1']
+                data = dm.array[0, 0, idx[var], :]
+                data_dict = dict(zip(index, data))
+                ampl.getParameter(var).setValues(data_dict)
+        else:
+            index = dm.col_labels['Categories1']
+            if '1' in dm.col_labels['Categories2']:
+                columns = list(map(int, dm.col_labels['Categories2']))
+            else:
+                columns = dm.col_labels['Categories2']
+            data = dm.array[0, 0, 0, :, :]
+            df = pd.DataFrame(data, index=index, columns=columns)
+            ampl.getParameter(key).setValues(df)
 
-  # Capture all parameters
-  state['parameters'] = {}
-  for param in model.component_objects(pyo.Param):
-    param_data = {}
-    if param.is_indexed():
-      param_data['values'] = {}
-      for idx in param:
-        try:
-          # Use pyo.value() to handle expressions
-          val = pyo.value(param[idx])
-          param_data['values'][str(idx)] = val
-        except:
-          # If it still fails, store as string
-          param_data['values'][str(idx)] = str(param[idx])
-      param_data['count'] = len(param)
-    else:
-      try:
-        param_data['values'] = pyo.value(
-          param) if param.value is not None else None
-      except:
-        param_data['values'] = str(param)
-      param_data['count'] = 1
-    param_data['mutable'] = param.mutable
-    state['parameters'][param.name] = param_data
-
-  # Capture constraint info (not expressions, just structure)
-  state['constraints'] = {}
-  for con in model.component_objects(pyo.Constraint):
-    con_data = {
-      'count': len(con) if con.is_indexed() else 1,
-      'active_count': sum(
-        1 for idx in con if con[idx].active) if con.is_indexed() else (
-        1 if con.active else 0)
-    }
-    state['constraints'][con.name] = con_data
-
-  # Capture variable info
-  state['variables'] = {}
-  for var in model.component_objects(pyo.Var):
-    var_data = {
-      'count': len(var) if var.is_indexed() else 1
-    }
-    state['variables'][var.name] = var_data
-
-  with open(filename, 'w') as f:
-    json.dump(state, f, indent=2)
-
-  return state
-
-# Compare
-def compare_states(before, after):
-  """Find differences between two model states"""
-  issues = []
-
-  # Check parameters
-  for param_name in before['parameters']:
-    if param_name not in after['parameters']:
-      issues.append(f"Parameter {param_name} disappeared!")
-      continue
-
-    before_param = before['parameters'][param_name]
-    after_param = after['parameters'][param_name]
-
-    if before_param['count'] != after_param['count']:
-      issues.append(
-        f"Parameter {param_name}: count changed from {before_param['count']} to {after_param['count']}")
-
-    if before_param['mutable'] != after_param['mutable']:
-      issues.append(
-        f"Parameter {param_name}: mutable changed from {before_param['mutable']} to {after_param['mutable']}")
-
-  # Check constraints
-  for con_name in before['constraints']:
-    if con_name not in after['constraints']:
-      issues.append(f"Constraint {con_name} disappeared!")
-      continue
-
-    before_con = before['constraints'][con_name]
-    after_con = after['constraints'][con_name]
-
-    if before_con['count'] != after_con['count']:
-      issues.append(
-        f"Constraint {con_name}: count changed from {before_con['count']} to {after_con['count']}")
-
-    if before_con['active_count'] != after_con['active_count']:
-      issues.append(
-        f"⚠️ Constraint {con_name}: ACTIVE count changed from {before_con['active_count']} to {after_con['active_count']}")
-
-  return issues
-
-
+    return
 
 
 def extract_sankey_energy_flow(DM):
@@ -212,82 +211,66 @@ def extract_sankey_energy_flow(DM):
 
   return DM
 
-def extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy):
 
-  DM = utils.get_pyomo_output(m, country_prod, endyr)
+def extract_2050_output(ampl, country_prod, endyr, years_fts, DM_energy):
 
-  # From ses_eval.mod
-  # Hours in a month
-  DM['hours_month'] = DM_energy['index0'].filter(
-    {'Variables': ['t_op'], 'Years': [endyr]})
-  # Efficiency (layers_in_out)
-  resources = set(m.RESOURCES)
-  technologies = set(m.TECHNOLOGIES)
-  storage = set(m.STORAGE_TECH)
-  index_list = list((resources | technologies) - storage)
-  DM['efficiency'] = utils.pyomo_param_to_dm(m,
-                                            pyomo_var_name='layers_in_out',
-                                            cntr_name=country_prod,
-                                            end_yr=endyr,
-                                            indexes=['explicit', 'LAYERS'],
-                                            unit_dict={'efficiency': '%'},
-                                            explicit=index_list)
-  # Sankey / Energy flows
-  DM_tmp = extract_sankey_energy_flow(DM)
-  DM = DM | DM_tmp
+    DM = utils.get_ampl_output(ampl, country_prod, endyr)
 
-  # Rename power-production DM
+    # From ses_eval.mod
+    # Hours in a month
+    DM['hours_month'] = DM_energy['index0'].filter({'Variables': ['t_op'], 'Years': [endyr]})
+    # Efficiency (layers_in_out)
+    resources = set(r[0] for r in ampl.get_set('RESOURCES').get_values())
+    technologies = set(t[0] for t in ampl.get_set('TECHNOLOGIES').get_values())
+    storage = set(s[0] for s in ampl.get_set('STORAGE_TECH').get_values())
+    index_list = list((resources | technologies) - storage)
+    DM['efficiency'] = utils.ampl_param_to_dm(ampl, ampl_var_name='layers_in_out', cntr_name=country_prod, end_yr=endyr,
+                                        indexes=['explicit', 'LAYERS'], unit_dict={'efficiency': '%'},
+                                        explicit=index_list)
+    # Sankey / Energy flows
+    DM_tmp = extract_sankey_energy_flow(DM)
+    DM = DM | DM_tmp
 
-  # If I'm using natural gas, then it's GasCC, else if I'm using NG_CCS it's GasCC-CCS
-  # if 'NG' in DM['energy-demand-final-use'].col_labels['Categories2']:
-  # DM['power-production'].groupby({'CHP': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
-  # elif 'NG_CCS' in DM['energy-demand-final-use'].col_labels['Categories2']:
-  #    DM['power-production'].groupby({'CHP-CCS': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
-  map_prod = {'Net-import': ['ELECTRICITY'], 'PV-roof': ['PV'],
-              'WindOn': ['WIND'], 'Dam': ['HYDRO_DAM'],
-              'RoR': ['HYDRO_RIVER'], 'GasCC-CCS': ['NG_CCS'],
-              'GasCC': ['CCGT']}
-  for key, value in list(map_prod.items()):
-    if value[0] not in DM['power-production'].col_labels['Categories1']:
-      map_prod.pop(key)
-  DM['power-production'].groupby(map_prod, dim='Categories1', inplace=True)
+    # Rename power-production DM
 
-  # Drop from installed GW
-  power_categories = list(m.TECHNOLOGIES_OF_END_USES_TYPE["ELECTRICITY"])
-  cogen_categories = list(m.COGEN)
-  DM['installed_GW'].filter(
-    {'Categories1': power_categories + cogen_categories}, inplace=True)
+    # If I'm using natural gas, then it's GasCC, else if I'm using NG_CCS it's GasCC-CCS
+    #if 'NG' in DM['energy-demand-final-use'].col_labels['Categories2']:
+    #DM['power-production'].groupby({'CHP': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
+    #elif 'NG_CCS' in DM['energy-demand-final-use'].col_labels['Categories2']:
+    #    DM['power-production'].groupby({'CHP-CCS': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
+    map_prod = {'Net-import': ['ELECTRICITY'], 'PV-roof': ['PV'], 'WindOn': ['WIND'], 'Dam': ['HYDRO_DAM'],
+                'RoR': ['HYDRO_RIVER'], 'GasCC-CCS': ['NG_CCS'], 'GasCC': ['CCGT']}
+    for key, value in list(map_prod.items()):
+        if value[0] not in DM['power-production'].col_labels['Categories1']:
+            map_prod.pop(key)
+    DM['power-production'].groupby(map_prod, dim='Categories1', inplace=True)
 
-  reversed_mapping = {'GasCC': ['CCGT'], 'GasCC-CCS': ['CCGT_CCS'],
-                      'Nuclear': ['NUCLEAR'],
-                      'PV-roof': ['PV'], 'WindOn': ['WIND'],
-                      'Dam': ['NEW_HYDRO_DAM', 'HYDRO_DAM'],
-                      'RoR': ['NEW_HYDRO_RIVER', 'HYDRO_RIVER'],
-                      'Coal': ['COAL_US', 'COAL_IGCC', 'COAL_US_CCS',
-                               'COAL_IGCC_CCS'],
-                      'Geothermal': ['GEOTHERMAL']}
+    # Drop from installed GW
+    power_categories = list(ampl.get_set("TECHNOLOGIES_OF_END_USES_TYPE").get("ELECTRICITY"))
+    cogen_categories = list(ampl.getSet("COGEN"))
+    DM['installed_GW'].filter({'Categories1': power_categories+ cogen_categories}, inplace=True)
 
-  # !FIXME: This is probably not all in the same units. Why is GasCC zero here?
-  DM['installed_GW'].groupby({'CHP': '.*COGEN.*'}, regex=True,
-                             dim='Categories1', inplace=True)
-  DM['installed_GW'].groupby(reversed_mapping, dim='Categories1',
-                             inplace=True)
+    reversed_mapping = {'GasCC': ['CCGT'], 'GasCC-CCS': ['CCGT_CCS'], 'Nuclear': ['NUCLEAR'],
+                        'PV-roof': ['PV'], 'WindOn': ['WIND'], 'Dam': ['NEW_HYDRO_DAM', 'HYDRO_DAM'],
+                        'RoR': ['NEW_HYDRO_RIVER', 'HYDRO_RIVER'],
+                        'Coal': ['COAL_US', 'COAL_IGCC', 'COAL_US_CCS', 'COAL_IGCC_CCS'],
+                        'Geothermal': ['GEOTHERMAL']}
 
-  # Rename installed N
-  DM['installed_N'].filter(
-    {'Categories1': power_categories + cogen_categories}, inplace=True)
-  DM['installed_N'].groupby({'CHP': '.*COGEN.*'}, regex=True,
-                            dim='Categories1', inplace=True)
-  DM['installed_N'] = DM['installed_N'].groupby(reversed_mapping,
-                                                dim='Categories1',
-                                                inplace=False)
+    # !FIXME: This is probably not all in the same units. Why is GasCC zero here?
+    DM['installed_GW'].groupby({'CHP': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
+    DM['installed_GW'].groupby(reversed_mapping, dim='Categories1', inplace=True)
 
-  # Rename fuel-supply
-  # mapping = {'diesel': ['DIESEL'], 'H2': ['H2_NG', 'H2_ELECTROLYSIS'], 'gasoline': ['GASOLINE'],
-  #           'gas': ['NG', 'NG_CCS'], 'heating-oil': ['LFO', 'oil'], 'waste': ['WASTE'], 'wood': ['WOOD']}
-  # DM['oil-gas-supply'].groupby(mapping, inplace=True, dim='Categories1')
+    # Rename installed N
+    DM['installed_N'].filter({'Categories1': power_categories+ cogen_categories}, inplace=True)
+    DM['installed_N'].groupby({'CHP': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
+    DM['installed_N'] = DM['installed_N'].groupby(reversed_mapping, dim='Categories1', inplace=False)
 
-  return DM
+    # Rename fuel-supply
+    #mapping = {'diesel': ['DIESEL'], 'H2': ['H2_NG', 'H2_ELECTROLYSIS'], 'gasoline': ['GASOLINE'],
+    #           'gas': ['NG', 'NG_CCS'], 'heating-oil': ['LFO', 'oil'], 'waste': ['WASTE'], 'wood': ['WOOD']}
+    #DM['oil-gas-supply'].groupby(mapping, inplace=True, dim='Categories1')
+
+    return DM
 
 
 def create_future_country_trend(DM_2050, DM_input, years_ots, years_fts):
@@ -417,92 +400,107 @@ def balance_demand_prod_with_net_import(dm_prod_cap_cntr, dm_demand_trend, share
   return dm_prod_cap_cntr
 
 
-def energyscope_pyomo(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, country_list):
-  with open(data_path, 'rb') as handle:
-    DM_energy = pickle.load(handle)
+def energyscope(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, country_list):
+    endyr = years_fts[-1]
 
-  dm_capacity = DM_energy.pop('capacity')
-  dm_production = DM_energy.pop('production')
-  dm_fuels_supply = DM_energy.pop('fuels')
-  DM_input = {'cal-capacity': dm_capacity,
-              'cal-production': dm_production,
-              'hist-fuels-supply': dm_fuels_supply,
-              'demand-bld': DM_bld,
-              'demand-tra': DM_tra,
-              'demand-ind': DM_ind}
+    add_to_path(r'/Applications/AMPL')
 
-  this_dir =  os.path.dirname(os.path.abspath(__file__))
-  data_file_path = os.path.join(this_dir, 'energy/energyscopepyomo/ses_main.json')
-  data = load_data(data_file_path)
-  m = build_model_structure(data)
-  #set_constraints(m, objective = "cost")
-  #opt = make_highs()
-  #attach(opt, m)
+    with open(data_path, 'rb') as handle:
+        DM_energy = pickle.load(handle)
 
-  # YOUR OVERWRITING FUNCTION HERE
-
-  #res = solve(opt, m, warmstart=True)
-
-  endyr = years_fts[-1]
-  if ['EU27'] == country_list:  # If you are running for EU27
-    country_prod = 'EU27'
-    country_dem = 'EU27'
-    inter.impose_capacity_constraints_pyomo(m, endyr, dm_capacity,
-                                      country=country_prod)
-    share_of_pop = 1
-  else:  # Else you are running for a canton, a canton + Switzerland, or just Switzerland
-    country_prod = 'Switzerland'
-    country_dem = 'Switzerland'
-    inter.impose_capacity_constraints_pyomo(m, endyr, dm_capacity,
-                                      country=country_prod)
-    if country_prod in country_list:
-      share_of_pop = 1
-    else:
-      # FIXME: This needs to be given as input from lifestyles and it depends on the canton
-      country_dem = country_list[0]
-      # You should also check that you are not running with more than a canton at the time if Switzerland
-      # is not in the mix
-      share_of_pop = 0.095
+    #DM_energy['index3'][:, :, 'c_inv', 'PV'] = 400
+    # Create an AMPL object
+    ampl = AMPL()
+    ampl.eval('reset;')
+    ampl.setOption("presolve_eps", 1e-12)
 
 
-  dm_tra_demand_trend = inter.impose_transport_demand_pyomo(m, endyr, share_of_pop, DM_tra, country_dem)
-  dm_bld_demand_trend = inter.impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind,country_dem)
-  dm_ind_demand_trend = inter.impose_industry_demand_pyomo(m, endyr, share_of_pop, DM_ind, country_dem)
+    # Use glpk solver
+    ampl.option["solver"] = 'highs'
 
-  # Group all the demand fts trends
-  dm_demand_trend = dm_bld_demand_trend
-  dm_demand_trend.append(dm_ind_demand_trend, dim='Variables')
-  dm_add_missing_variables(dm_tra_demand_trend, {
-    'Categories1': dm_demand_trend.col_labels['Categories1']}, fill_nans=False)
-  dm_demand_trend.append(dm_tra_demand_trend, dim='Variables')
-  dm_demand_trend.groupby({'total-energy-consumption': '.*'}, dim='Variables',
-                          regex=True, inplace=True)
-  # No nuclear
-  m.avail['URANIUM'] = 0
-  # ampl.getParameter('avail').setValues({'WOOD': 1.5*12279})
-  m.f_max['CCGT'] = 0
-  m.f_min['CCGT'] = 0
-  # ampl.getParameter('avail').setValues({'NG_CCS': 0})
-  m.avail['COAL_CCS'] = 0
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    f = os.path.join(current_file_directory, "energy/energyscope-MILP/ses_main.mod")
+    # Read the model
+    ampl.read(f)
+    #.readData("energyscope-MILP/ses_main.dat")
+    # Extract existing capacity data + Nexus-e forecast
+    dm_capacity = DM_energy.pop('capacity')
+    dm_production = DM_energy.pop('production')
+    dm_fuels_supply = DM_energy.pop('fuels')
+    DM_input = {'cal-capacity': dm_capacity,
+                'cal-production': dm_production,
+                'hist-fuels-supply': dm_fuels_supply,
+                'demand-bld': DM_bld,
+                'demand-tra': DM_tra,
+                'demand-ind': DM_ind}
 
-  set_constraints(m, objective = "cost")
-  opt = make_highs()
-  attach(opt, m)
-  res = solve(opt, m, warmstart=True)
+    if ['EU27'] == country_list:  # If you are running for EU27
+        country_prod = 'EU27'
+        country_dem = 'EU27'
+        read_2050_data(ampl, DM_energy, country=country_prod, endyr=endyr)
+        inter.impose_capacity_constraints(ampl, endyr, dm_capacity, country=country_prod)
+        share_of_pop = 1
+    else:  # Else you are running for a canton, a canton + Switzerland, or just Switzerland
+        country_prod = 'Switzerland'
+        country_dem = 'Switzerland'
+        read_2050_data(ampl, DM_energy, country=country_prod, endyr=endyr)
+        inter.impose_capacity_constraints(ampl, endyr, dm_capacity, country=country_prod)
+        if country_prod in country_list:
+            share_of_pop = 1
+        else:
+            # FIXME: This needs to be given as input from lifestyles and it depends on the canton
+            country_dem = country_list[0]
+            # You should also check that you are not running with more than a canton at the time if Switzerland
+            # is not in the mix
+            share_of_pop = 0.095
 
-  DM_2050 = extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy)
 
-  dm_prod_cap_cntr = create_future_country_trend(DM_2050, DM_input, years_ots,
-                                                 years_fts)
+    # Impose the 2050 demand and return the full fts demand for electricity
+    dm_tra_demand_trend = inter.impose_transport_demand(ampl, endyr, share_of_pop, DM_tra, country_dem)
+    dm_bld_demand_trend = inter.impose_buildings_demand(ampl, endyr, share_of_pop, DM_bld, DM_ind, country_dem)
+    dm_ind_demand_trend = inter.impose_industry_demand(ampl, endyr, share_of_pop, DM_ind, country_dem)
 
-  # Add demand - production balancing through net import
-  dm_prod_cap_cntr = balance_demand_prod_with_net_import(dm_prod_cap_cntr,
-                                                         dm_demand_trend,
-                                                         share_of_pop)
+    # Group all the demand fts trends
+    dm_demand_trend = dm_bld_demand_trend
+    dm_demand_trend.append(dm_ind_demand_trend, dim='Variables')
+    dm_add_missing_variables(dm_tra_demand_trend, {'Categories1': dm_demand_trend.col_labels['Categories1']}, fill_nans=False)
+    dm_demand_trend.append(dm_tra_demand_trend, dim='Variables')
+    dm_demand_trend.groupby({'total-energy-consumption': '.*'}, dim='Variables', regex=True, inplace=True)
 
-  results_run = inter.prepare_TPE_output(dm_prod_cap_cntr)
+    # No nuclear
+    ampl.getParameter('avail').setValues({'URANIUM': 0})
+    #ampl.getParameter('avail').setValues({'WOOD': 1.5*12279})
+    ampl.getParameter('f_max').setValues({'CCGT': 0})
+    ampl.getParameter('f_min').setValues({'CCGT': 0})
+    #ampl.getParameter('avail').setValues({'NG_CCS': 0})
+    ampl.getParameter('avail').setValues({'COAL_CCS': 0})
 
-  return results_run
+
+    # Solve the model (togliere comando “solve" dal mod)
+    print(f"Before solve")
+    ampl.solve()
+    print(f"After solve")
+
+    DM_2050 = extract_2050_output(ampl, country_prod, endyr, years_fts, DM_energy)
+
+    dm_prod_cap_cntr = create_future_country_trend(DM_2050, DM_input, years_ots, years_fts)
+
+    # Add demand - production balancing through net import
+    dm_prod_cap_cntr = balance_demand_prod_with_net_import(dm_prod_cap_cntr, dm_demand_trend, share_of_pop)
+
+    results_run = inter.prepare_TPE_output(dm_prod_cap_cntr)
+
+    # Downscale from Country_prod to Country_dem
+    #dm_prod_cap_canton = downscale_country_to_canton(dm_prod_cap_cntr, DM_input['cal-capacity'], country_dem, share_of_pop)
+
+   # current_file_directory = os.path.dirname(os.path.abspath(__file__))
+   # file = os.path.join(current_file_directory, 'energy/energyscope-MILP/ses_eval.mod')
+    # Print output
+    #ampl.read(file)
+
+    # Close AMPL
+   # ampl.close()
+    return results_run
 
 
 def energy(lever_setting, years_setting, country_list, interface=Interface()):
@@ -555,7 +553,7 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
 
   current_file_directory = os.path.dirname(os.path.abspath(__file__))
   data_filepath = os.path.join(current_file_directory, '../_database/data/datamatrix/energy.pickle')
-  results_run = energyscope_pyomo(data_filepath, DM_transport, DM_buildings, DM_industry, years_ots, years_fts, country_list)
+  results_run = energyscope(data_filepath, DM_transport, DM_buildings, DM_industry, years_ots, years_fts, country_list)
 
   return results_run
 
