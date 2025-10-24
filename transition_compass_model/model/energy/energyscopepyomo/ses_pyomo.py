@@ -136,7 +136,7 @@ def build_model(data, objective="gwp"):
 
     # Combined indices
     m.RES_OR_TECH = pyo.Set(initialize=sorted(set(m.RESOURCES) | set(m.TECHNOLOGIES)))
-    m.NON_STORAGE_X = pyo.Set(initialize=sorted(set(m.RESOURCES) | (set(m.TECHNOLOGIES) - set(m.STORAGE_TECH))))
+    m.NON_STORAGE_X = pyo.Set(initialize=sorted((set(m.RESOURCES) | set(m.TECHNOLOGIES)) - set(m.STORAGE_TECH)))
     m.X_TECH_RES = pyo.Set(initialize=sorted((set(m.RESOURCES) | set(m.TECHNOLOGIES)) - set(m.STORAGE_TECH)))
 
     # ---------- Parameters ----------
@@ -188,7 +188,13 @@ def build_model(data, objective="gwp"):
     )
     # Build-time positive contributors into each end-use layer (to avoid symbolic boolean tests)
     def _pos_providers_init(m, i):
-        return [j for j in m.NON_STORAGE_X if P.get("layers_in_out", {}).get(f"{j},{i}", 0.0) > 0.0]
+        providers = []
+        for j in m.NON_STORAGE_X:
+            # Check the actual Pyomo parameter, not the raw data
+            if pyo.value(m.layers_in_out[j, i]) > 0.0:
+                providers.append(j)
+        return providers
+
     m.POS_PROVIDERS = pyo.Set(m.END_USES_TYPES, initialize=_pos_providers_init)
 
     # Technology attributes
@@ -268,7 +274,12 @@ def build_model(data, objective="gwp"):
         m.PERIODS, domain=pyo.NonNegativeReals
     )
 
-    # Binaries for storage no-transfer
+    # immediately fix DEC_SOLAR entries to 0 (so they behave as if they don't exist)
+    if "DEC_SOLAR" in m.TECHNOLOGIES_OF_END_USES_TYPE["HEAT_LOW_T_DECEN"]:
+        for t in m.PERIODS:
+            m.X_Solar_Backup_Aux["DEC_SOLAR", t].fix(0)
+
+    # Binaries for storage no-transfer (for Eq. 1.17)
     m.Y_Sto_In  = pyo.Var(m.STORAGE_TECH, m.PERIODS, domain=pyo.Binary)
     m.Y_Sto_Out = pyo.Var(m.STORAGE_TECH, m.PERIODS, domain=pyo.Binary)
 
@@ -276,7 +287,7 @@ def build_model(data, objective="gwp"):
     m.Max_Heat_Demand_DHN = pyo.Var(domain=pyo.NonNegativeReals)
 
     # ---------- Constraints ----------
-    # End-uses demand rules
+    # [Figure 1.4] End-uses demand rules
     def end_uses_rule(m, l, t):
         if l == "ELECTRICITY":
             return m.End_Uses[l, t] == ((m.end_uses_input[l] / m.total_time) +
@@ -301,26 +312,27 @@ def build_model(data, objective="gwp"):
             return m.End_Uses[l, t] == 0
     m.end_uses_t = pyo.Constraint(m.LAYERS, m.PERIODS, rule=end_uses_rule)
 
-    # Number of units (TECHNOLOGIES \ INFRASTRUCTURE)
+    # [Eq. 1.7] Number of units (TECHNOLOGIES \ INFRASTRUCTURE)
     m.number_of_units = pyo.Constraint(
         m.TECHNOLOGIES - m.INFRASTRUCTURE, rule=lambda m,i: m.Number_Of_Units[i] == m.F_Mult[i] / m.ref_size[i]
     )
 
-    # Size limits
+    # [Eq. 1.6] Size limits
     m.size_limit = pyo.Constraint(
         m.TECHNOLOGIES, rule=lambda m,i: pyo.inequality(m.f_min[i], m.F_Mult[i], m.f_max[i])
     )
 
-    # Period capacity factor
+    # [Eq. 1.8] Period capacity factor
     m.capacity_factor_t = pyo.Constraint(
         m.TECHNOLOGIES, m.PERIODS, rule=lambda m,i,t: m.F_Mult_t[i, t] <= m.F_Mult[i] * m.c_p_t[i, t]
     )
 
-    # Annual capacity factor
+    # [Eq. 1.9] Annual capacity factor
     m.capacity_factor = pyo.Constraint(
         m.TECHNOLOGIES, rule=lambda m,i: sum(m.F_Mult_t[i, t] * m.t_op[t] for t in m.PERIODS) <= m.F_Mult[i] * m.c_p[i] * m.total_time
     )
 
+    # Linearization of Eq. 1.19
     # Decentralized heat operating strategy (linearized)
     m.op_strategy_decen_1_linear = pyo.Constraint(
         m.TECHNOLOGIES_OF_END_USES_TYPE["HEAT_LOW_T_DECEN"], m.PERIODS,
@@ -350,10 +362,12 @@ def build_model(data, objective="gwp"):
         )
     )
 
-    # Only one backup
+    # [Eq. 1.20] ]Only one backup
     m.op_strategy_decen_2 = pyo.Constraint(expr = sum(m.Y_Solar_Backup[i] for i in m.TECHNOLOGIES) <= 1)
 
-    # Layer balance with storage
+    ## Layers
+
+    # [Eq. 1.13] Layer balance with storage
     m.layer_balance = pyo.Constraint(
         m.LAYERS, m.PERIODS,
         rule=lambda m,l,t: 0 ==
@@ -362,19 +376,25 @@ def build_model(data, objective="gwp"):
             m.End_Uses[l, t]
     )
 
-    # Resources availability
+    # [Eq. 1.12] Resources availability
     m.resource_availability = pyo.Constraint(
         m.RESOURCES, rule=lambda m,i: sum(m.F_Mult_t[i, t] * m.t_op[t] for t in m.PERIODS) <= m.avail[i]
     )
 
+    # [Eq. 1.15-1.16] Each storage technology can have input/output only to certain layers.
+    # If incompatible then the variable is set to 0 ceil (x) operator rounds a number to the highest nearest integer.
     # Storage compatibility: if eff==0, var == 0 (ceil trick equivalent)
-    def _stor_in_rule(m, i, l, t):
-        return m.Storage_In[i, l, t] == 0 if pyo.value(m.storage_eff_in[i, l]) == 0 else pyo.Constraint.Skip
-    def _stor_out_rule(m, i, l, t):
-        return m.Storage_Out[i, l, t] == 0 if pyo.value(m.storage_eff_out[i, l]) == 0 else pyo.Constraint.Skip
-    m.storage_layer_in  = pyo.Constraint(m.STORAGE_TECH, m.LAYERS, m.PERIODS, rule=_stor_in_rule)
-    m.storage_layer_out = pyo.Constraint(m.STORAGE_TECH, m.LAYERS, m.PERIODS, rule=_stor_out_rule)
+    # If eff = 0 ⇒ var == 0; if eff = 1 ⇒ 0 == 0 (vacuous)
+    m.storage_layer_in = pyo.Constraint(
+        m.STORAGE_TECH, m.LAYERS, m.PERIODS,
+        rule=lambda m, i, l, t: m.Storage_In[i, l, t] * (1 - m.storage_eff_in[i, l]) == 0
+    )
+    m.storage_layer_out = pyo.Constraint(
+        m.STORAGE_TECH, m.LAYERS, m.PERIODS,
+        rule=lambda m, i, l, t: m.Storage_Out[i, l, t] * (1 - m.storage_eff_out[i, l]) == 0
+    )
 
+    # Linearization of [Eq. 1.17]
     # Storage no-transfer linearization
     m.storage_no_transfer_1 = pyo.Constraint(
         m.STORAGE_TECH, m.PERIODS,
@@ -391,21 +411,24 @@ def build_model(data, objective="gwp"):
         rule=lambda m,i,t: m.Y_Sto_In[i, t] + m.Y_Sto_Out[i, t] <= 1
     )
 
-    # Storage level with wrap-around
-    periods = list(m.PERIODS.data())
-    def _prev(t):
-        idx = periods.index(t)
-        return periods[-1] if idx == 0 else periods[idx-1]
-    m.storage_level = pyo.Constraint(
-        m.STORAGE_TECH, m.PERIODS,
-        rule=lambda m,i,t: m.F_Mult_t[i, t] == (
-            (m.F_Mult_t[i, periods[-1]] if t == periods[0] else m.F_Mult_t[i, _prev(t)]) +
-            (sum(m.Storage_In[i, l, t] * m.storage_eff_in[i, l] for l in m.LAYERS if pyo.value(m.storage_eff_in[i, l]) > 0) -
-             sum(m.Storage_Out[i, l, t] / m.storage_eff_out[i, l] for l in m.LAYERS if pyo.value(m.storage_eff_out[i, l]) > 0)) * m.t_op[t]
+    # [Eq. 1.14] Storage level with wrap-around
+    def storage_level_rule(m, i, t):
+        prev_t = m.PERIODS.last() if t == m.PERIODS.first() else m.PERIODS.prev(t)
+        inflow = sum(
+            m.Storage_In[i, l, t] * m.storage_eff_in[i, l]
+            for l in m.LAYERS
+            if pyo.value(m.storage_eff_in[i, l]) > 0
         )
-    )
+        outflow = sum(
+            m.Storage_Out[i, l, t] / m.storage_eff_out[i, l]
+            for l in m.LAYERS
+            if pyo.value(m.storage_eff_out[i, l]) > 0
+        )
+        return m.F_Mult_t[i, t] == m.F_Mult_t[i, prev_t] + (inflow - outflow) * m.t_op[t]
 
-    # Network losses (pre-filtered contributors)
+    m.storage_level = pyo.Constraint(m.STORAGE_TECH, m.PERIODS, rule=storage_level_rule)
+
+    # [Eq. 1.18] Network losses (pre-filtered contributors)
     m.network_losses = pyo.Constraint(
         m.END_USES_TYPES, m.PERIODS,
         rule=lambda m,i,t: m.Losses[i, t] == (
@@ -413,8 +436,8 @@ def build_model(data, objective="gwp"):
         ) * m.loss_coeff[i]
     )
 
-    # f_max_perc / f_min_perc per end-use type (Eq 1.22)
-    m.f_max_perc_con = pyo.Constraint(
+    # [Eq 1.22] f_max_perc / f_min_perc per end-use type
+    m.f_max_perc = pyo.Constraint(
         m.END_USES_TYPES, m.TECHNOLOGIES,
         rule=lambda m,i,j: pyo.Constraint.Skip
             if (j not in set(m.TECHNOLOGIES_OF_END_USES_TYPE[i]))
@@ -422,7 +445,7 @@ def build_model(data, objective="gwp"):
                   <= m.fmax_perc[j] * sum(m.F_Mult_t[j2, t2] * m.t_op[t2]
                                            for j2 in m.TECHNOLOGIES_OF_END_USES_TYPE[i] for t2 in m.PERIODS))
     )
-    m.f_min_perc_con = pyo.Constraint(
+    m.f_min_perc = pyo.Constraint(
         m.END_USES_TYPES, m.TECHNOLOGIES,
         rule=lambda m,i,j: pyo.Constraint.Skip
             if (j not in set(m.TECHNOLOGIES_OF_END_USES_TYPE[i]))
@@ -431,7 +454,7 @@ def build_model(data, objective="gwp"):
                                            for j2 in m.TECHNOLOGIES_OF_END_USES_TYPE[i] for t2 in m.PERIODS))
     )
 
-    # Seasonal storage in hydro dams (Eq 1.24) — rule-based with Skip
+    # [Eq. 1.24] Seasonal storage in hydro dams — rule-based with Skip
     def _hydro_cap_rule(m):
         if ("PUMPED_HYDRO" in m.TECHNOLOGIES) and ("NEW_HYDRO_DAM" in m.TECHNOLOGIES):
             return m.F_Mult["PUMPED_HYDRO"] <= m.f_max["PUMPED_HYDRO"] * (
@@ -441,83 +464,71 @@ def build_model(data, objective="gwp"):
         return pyo.Constraint.Skip
     m.storage_level_hydro_dams = pyo.Constraint(rule=_hydro_cap_rule)
 
-    # Hydro dams can only shift production (Eq 1.25) — rule-based with Skip
-    def _hydro_shift_rule(m, t):
-        if ("PUMPED_HYDRO" in m.RES_OR_TECH) and ("HYDRO_DAM" in m.RES_OR_TECH) and ("NEW_HYDRO_DAM" in m.RES_OR_TECH) and ("ELECTRICITY" in m.LAYERS):
-            return m.Storage_In["PUMPED_HYDRO", "ELECTRICITY", t] <= (m.F_Mult_t["HYDRO_DAM", t] + m.F_Mult_t["NEW_HYDRO_DAM", t])
-        return pyo.Constraint.Skip
-    m.hydro_dams_shift = pyo.Constraint(m.PERIODS, rule=_hydro_shift_rule)
+    # [Eq. 1.25] Hydro dams can only shift production — rule-based with Skip ------   !  HERE  !
+    m.hydro_dams_shift = pyo.Constraint(
+        m.PERIODS,
+        rule=lambda m, t: m.Storage_In["PUMPED_HYDRO", "ELECTRICITY", t]
+                          <= m.F_Mult_t["HYDRO_DAM", t] + m.F_Mult_t["NEW_HYDRO_DAM", t]
+    )
 
-    # DHN: cost and peak (Eq 1.26, 1.27)
-    def _extra_dhn_rule(m):
-        if ("DHN" in m.TECHNOLOGIES) and ("HEAT_LOW_T_DHN" in m.END_USES_TYPES):
-            return m.F_Mult["DHN"] == sum(m.F_Mult[j] for j in m.TECHNOLOGIES_OF_END_USES_TYPE["HEAT_LOW_T_DHN"])
-        return pyo.Constraint.Skip
-    m.extra_dhn = pyo.Constraint(rule=_extra_dhn_rule)
+    # [Eq. 1.26] DHN: assigning a cost to the network
+    # Note that in Moret (2017), page 26, there is a ">=" sign instead of an "=". The two formulations are equivalent as long as the problem minimises cost and the DHN has a cost > 0
+    m.extra_dhn = pyo.Constraint(
+        rule=lambda m: m.F_Mult["DHN"] ==
+                       sum(m.F_Mult[j] for j in m.TECHNOLOGIES_OF_END_USES_TYPE["HEAT_LOW_T_DHN"])
+    )
 
-    def _max_dhn_rule(m, t):
-        if "HEAT_LOW_T_DHN" in m.END_USES_TYPES:
-            return m.Max_Heat_Demand_DHN >= m.End_Uses["HEAT_LOW_T_DHN", t]
-        return pyo.Constraint.Skip
-    m.max_dhn_heat_demand = pyo.Constraint(m.PERIODS, rule=_max_dhn_rule)
+    # [Eq. 1.27] Calculation of max heat demand in DHN
+    m.max_dhn_heat_demand = pyo.Constraint(
+        m.PERIODS,
+        rule=lambda m, t: m.Max_Heat_Demand_DHN >= m.End_Uses["HEAT_LOW_T_DHN", t]
+    )
 
-    def _peak_dhn_rule(m):
-        if "HEAT_LOW_T_DHN" in m.END_USES_TYPES:
-            return sum(m.F_Mult[j] for j in m.TECHNOLOGIES_OF_END_USES_TYPE["HEAT_LOW_T_DHN"]) >= m.peak_dhn_factor * m.Max_Heat_Demand_DHN
-        return pyo.Constraint.Skip
-    m.peak_dhn = pyo.Constraint(rule=_peak_dhn_rule)
+    # peak_dhn
+    m.peak_dhn = pyo.Constraint(
+        rule=lambda m: sum(m.F_Mult[j] for j in m.TECHNOLOGIES_OF_END_USES_TYPE["HEAT_LOW_T_DHN"])
+                       >= m.peak_dhn_factor * m.Max_Heat_Demand_DHN
+    )
 
-    # Extra grid (Eq 1.28) — rule-based with Skip
-    def _extra_grid_rule(m):
-        if all(x in m.TECHNOLOGIES for x in ["GRID", "WIND", "PV"]):
-            return m.F_Mult["GRID"] == 1 + (9400 / m.c_inv["GRID"]) * (m.F_Mult["WIND"] + m.F_Mult["PV"]) / (m.f_max["WIND"] + m.f_max["PV"])
-        return pyo.Constraint.Skip
-    m.extra_grid = pyo.Constraint(rule=_extra_grid_rule)
+    # [Eq. 1.28] 9.4 BCHF is the extra investment needed if there is a big deployment of stochastic renewables
+    m.extra_grid = pyo.Constraint(
+        rule=lambda m: m.F_Mult["GRID"] ==
+                       1 + (9400 / m.c_inv["GRID"]) * (m.F_Mult["WIND"] + m.F_Mult["PV"]) /
+                       (m.f_max["WIND"] + m.f_max["PV"])
+    )
 
-    # Power2Gas linking (Eq 1.29) — rule-based with Skip
-    def _p2g1(m):
-        if all(x in m.TECHNOLOGIES for x in ["POWER2GAS_3", "POWER2GAS_1"]):
-            return m.F_Mult["POWER2GAS_3"] >= m.F_Mult["POWER2GAS_1"]
-        return pyo.Constraint.Skip
-    def _p2g2(m):
-        if all(x in m.TECHNOLOGIES for x in ["POWER2GAS_3", "POWER2GAS_2"]):
-            return m.F_Mult["POWER2GAS_3"] >= m.F_Mult["POWER2GAS_2"]
-        return pyo.Constraint.Skip
-    m.extra_power2gas_1 = pyo.Constraint(rule=_p2g1)
-    m.extra_power2gas_2 = pyo.Constraint(rule=_p2g2)
+    # [Eq. 1.29] Power2Gas investment cost is calculated on the max size of the two units
+    m.extra_power2gas_1 = pyo.Constraint(rule=lambda m: m.F_Mult["POWER2GAS_3"] >= m.F_Mult["POWER2GAS_1"])
+    m.extra_power2gas_2 = pyo.Constraint(rule=lambda m: m.F_Mult["POWER2GAS_3"] >= m.F_Mult["POWER2GAS_2"])
 
-    # Private mobility operating strategy (Eq 1.23)
-    def _mob_union():
-        a = set()
-        if "MOBILITY_PASSENGER" in S["END_USES_CATEGORIES"]:
-            a |= set(m.TECHNOLOGIES_OF_END_USES_CATEGORY["MOBILITY_PASSENGER"])
-        if "MOBILITY_FREIGHT" in S["END_USES_CATEGORIES"]:
-            a |= set(m.TECHNOLOGIES_OF_END_USES_CATEGORY["MOBILITY_FREIGHT"])
-        return list(a)
-    mob_set = _mob_union()
-    if len(mob_set) > 0:
-        m.op_strategy_mob_private = pyo.Constraint(
-            mob_set, m.PERIODS,
-            rule=lambda m,i,t: m.F_Mult_t[i, t] >= sum(m.F_Mult_t[i, t2] * m.t_op[t2] for t2 in m.PERIODS) / m.total_time
-        )
+    # [Eq. 1.23] Operating strategy in private mobility (to make model more realistic)
+    m.op_strategy_mob_private = pyo.Constraint(
+        m.TECHNOLOGIES, m.PERIODS,
+        rule=lambda m, i, t: pyo.Constraint.Skip
+        if i not in (set(m.TECHNOLOGIES_OF_END_USES_CATEGORY["MOBILITY_PASSENGER"])
+                     | set(m.TECHNOLOGIES_OF_END_USES_CATEGORY["MOBILITY_FREIGHT"]))
+        else m.F_Mult_t[i, t] >= sum(m.F_Mult_t[i, t2] * m.t_op[t2] / m.total_time for t2 in m.PERIODS)
+    )
 
-    # Energy efficiency (Eq 1.18)
-    def _eff_rule(m):
-        if "EFFICIENCY" in m.TECHNOLOGIES:
-            return m.F_Mult["EFFICIENCY"] == 1 / (1 + m.i_rate)
-        return pyo.Constraint.Skip
-    m.extra_efficiency = pyo.Constraint(rule=_eff_rule)
+    # Energy efficiency is a fixed cost
+    m.extra_efficiency = pyo.Constraint(
+        rule=lambda m: m.F_Mult["EFFICIENCY"] == 1 / (1 + m.i_rate)
+    )
 
     # ----- Cost -----
+    # [Eq. 1.3] Investment cost of each technology
     m.investment_cost_calc = pyo.Constraint(
         m.TECHNOLOGIES, rule=lambda m,i: m.C_inv[i] == m.c_inv[i] * m.F_Mult[i]
     )
+    # [Eq. 1.4] O&M cost of each technology
     m.main_cost_calc = pyo.Constraint(
         m.TECHNOLOGIES, rule=lambda m,i: m.C_maint[i] == m.c_maint[i] * m.F_Mult[i]
     )
+    # [Eq. 1.10] Total cost of each resource
     m.op_cost_calc = pyo.Constraint(
         m.RESOURCES, rule=lambda m,i: m.C_op[i] == sum(m.c_op[i, t] * m.F_Mult_t[i, t] * m.t_op[t] for t in m.PERIODS)
     )
+    # [Eq. 1.1]
     m.totalcost_cal = pyo.Constraint(
         expr = m.TotalCost == sum(m.tau[i] * m.C_inv[i] + m.C_maint[i] for i in m.TECHNOLOGIES) + sum(m.C_op[j] for j in m.RESOURCES)
     )
