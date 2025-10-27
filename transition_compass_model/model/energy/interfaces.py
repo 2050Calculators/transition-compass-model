@@ -634,6 +634,7 @@ def impose_capacity_constraints_pyomo(m, endyr, dm_capacity, country):
                       'PUMPED_HYDRO': ['Pump-Open'], 'POWER2GAS': ['GasCC-Syn'],
                       'OIL': ['Oil'], 'WASTE': ['Waste']}
   dm_CH.groupby(category_mapping, dim='Categories1', inplace=True)
+
   for renewable in ['WIND', 'PV']:
     existing_cap = dm_CH[0, endyr, 'pow_existing-capacity', renewable]
     max_cap = dm_CH[0, endyr, 'pow_capacity-Pmax', renewable]
@@ -641,11 +642,13 @@ def impose_capacity_constraints_pyomo(m, endyr, dm_capacity, country):
     m.f_max[renewable] = max_cap
     m.fmax_perc[renewable] = 0.3
 
-  # !FIXME: NEW_HYDRO_DAM is actually used for storage!
-  for renewable in ['NEW_HYDRO_RIVER', 'NEW_HYDRO_DAM']:
-    max_cap = dm_CH[0, endyr, 'pow_capacity-Pmax', renewable]
-    m.f_min[renewable] = 0
-    m.f_max[renewable] = max_cap
+  max_cap = dm_CH[0, endyr, 'pow_capacity-Pmax', 'NEW_HYDRO_RIVER']
+  m.f_min['NEW_HYDRO_RIVER'] = 0
+  m.f_max['NEW_HYDRO_RIVER'] = max_cap - existing_ror_cap
+
+  max_cap = dm_CH[0, endyr, 'pow_capacity-Pmax', 'NEW_HYDRO_DAM']
+  m.f_min['NEW_HYDRO_DAM'] = 0
+  m.f_max['NEW_HYDRO_DAM'] = max_cap - existing_dam_cap
 
   for non_ren in ['NUCLEAR', 'CCGT', 'CCGT_CCS']:
     ref_size = pyo.value(m.ref_size[non_ren])

@@ -29,6 +29,11 @@ def pyomo_var_to_dm(m, pyomo_var_name: str, cntr_name: str, end_yr: int,
       value = variable[cat1, cat2].value
       if value != 0:
         dm.array[0, 0, 0, idx[cat1], idx[cat2]] = value
+  if len(indexes) == 3:
+    for cat1, cat2, cat3 in variable:
+      value = variable[cat1, cat2, cat3].value
+      if value != 0:
+        dm.array[0, 0, 0, idx[cat1], idx[cat2], idx[cat3]] = value
 
   return dm
 

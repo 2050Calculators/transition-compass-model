@@ -147,13 +147,13 @@ def extract_sankey_energy_flow(DM):
   # Power production
   #! FIXME: check this natural gas situation
   dm_power_prod = dm_energy_prod.filter_w_regex({'Categories1': '.*ELECTRICITYv2'})
-  if 'NG_CCS-NG_CCSv2' in dm_energy_prod.col_labels['Categories1']:
-    dm_natural_gas_elec = dm_energy_prod.filter({'Categories1': ['NG_CCS-NG_CCSv2']})
-    dm_power_prod.append(dm_natural_gas_elec, dim='Categories1')
-  if 'CCGT_CCS-ELECTRICITYv2' in dm_power_prod.col_labels['Categories1']:
-    dm_power_prod.drop('Categories1', 'CCGT_CCS-ELECTRICITYv2')
+  #if 'NG_CCS-NG_CCSv2' in dm_energy_prod.col_labels['Categories1']:
+  #  dm_natural_gas_elec = dm_energy_prod.filter({'Categories1': ['NG_CCS-NG_CCSv2']})
+  #  dm_power_prod.append(dm_natural_gas_elec, dim='Categories1')
+  #if 'CCGT_CCS-ELECTRICITYv2' in dm_power_prod.col_labels['Categories1']:
+  #  dm_power_prod.drop('Categories1', 'CCGT_CCS-ELECTRICITYv2')
 
-  cat_elec = dm_power_prod.col_labels['Categories1']
+  #cat_elec = dm_power_prod.col_labels['Categories1']
   dm_power_prod.deepen(sep='-')
   dm_power_prod.group_all('Categories2')
 
@@ -244,13 +244,14 @@ def extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy):
   # elif 'NG_CCS' in DM['energy-demand-final-use'].col_labels['Categories2']:
   #    DM['power-production'].groupby({'CHP-CCS': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
   map_prod = {'Net-import': ['ELECTRICITY'], 'PV-roof': ['PV'],
-              'WindOn': ['WIND'], 'Dam': ['HYDRO_DAM'],
-              'RoR': ['HYDRO_RIVER'], 'GasCC-CCS': ['NG_CCS'],
+              'WindOn': ['WIND'], 'Dam': ['HYDRO_DAM'], 'Dam_new': ['NEW_HYDRO_DAM'],
+              'RoR': ['HYDRO_RIVER'],  "RoR_new": ['NEW_HYDRO_RIVER'], 'GasCC-CCS': ['CCGT_CCS'],
               'GasCC': ['CCGT']}
   for key, value in list(map_prod.items()):
     if value[0] not in DM['power-production'].col_labels['Categories1']:
       map_prod.pop(key)
   DM['power-production'].groupby(map_prod, dim='Categories1', inplace=True)
+  DM['power-production'].groupby({'RoR': 'RoR.*', 'Dam': 'Dam.*'}, regex=True, inplace=True, dim='Categories1')
 
   # Drop from installed GW
   power_categories = list(m.TECHNOLOGIES_OF_END_USES_TYPE["ELECTRICITY"])
