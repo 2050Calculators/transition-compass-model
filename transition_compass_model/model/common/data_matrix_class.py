@@ -194,7 +194,7 @@ class DataMatrix:
                 units[var] = unit
 
         self.col_labels["Country"] = sorted(list(set(df["Country"])))
-        self.col_labels["Years"] = sorted(list(set(df["Years"].astype(int))))
+        self.col_labels["Years"] = sorted(list(set(df["Years"])))
         self.col_labels["Variables"] = sorted(variables)
         for i in range(num_cat):
             i = i + 1
