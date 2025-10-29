@@ -37,57 +37,52 @@ def read_data(DM_lfs, lever_setting):
 
 
 # CORE module
-def lifestyles(lever_setting, years_setting, DM_input, interface=Interface(), write_pickle = False):
+def population(lever_setting, years_setting, DM_input, interface=Interface(), write_pickle = False):
 
     # get population data
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     DM_pop = read_data(DM_input, lever_setting)
     dm_pop = DM_pop['pop']["lfs_population_"]
 
-    # send population to agriculture
+    # send population to Dietary Habits
     if write_pickle is True:
-        f = os.path.join(current_file_directory, '../_database/data/interface/lifestyles_to_agriculture.pickle')
+        f = os.path.join(current_file_directory, '../_database/data/interface/population_to_dietary-habits.pickle')
         my_pickle_dump(DM_new=DM_pop['pop'], local_pickle_file=f)
-    interface.add_link(from_sector='lifestyles', to_sector='agriculture', dm=DM_pop['pop'])
+    interface.add_link(from_sector='population', to_sector='dietary-habits', dm=DM_pop['pop'])
     
     # send population to transport
     if write_pickle is True:
-        f = os.path.join(current_file_directory, '../_database/data/interface/lifestyles_to_transport.pickle')
+        f = os.path.join(current_file_directory, '../_database/data/interface/population_to_transport.pickle')
         my_pickle_dump(DM_new={'pop': dm_pop}, local_pickle_file=f)
-    interface.add_link(from_sector='lifestyles', to_sector='transport', dm={'pop': dm_pop})
+    interface.add_link(from_sector='population', to_sector='transport', dm={'pop': dm_pop})
     
     # send population to buildings
     if write_pickle is True:
-        f = os.path.join(current_file_directory, '../_database/data/interface/lifestyles_to_buildings.pickle')
+        f = os.path.join(current_file_directory, '../_database/data/interface/population_to_buildings.pickle')
         my_pickle_dump(DM_new={'pop': dm_pop}, local_pickle_file=f)
-    interface.add_link(from_sector='lifestyles', to_sector='buildings', dm={'pop': dm_pop})
-    
+    interface.add_link(from_sector='population', to_sector='buildings', dm={'pop': dm_pop})
+
     # send population to industry
     if write_pickle is True:
-        f = os.path.join(current_file_directory, '../_database/data/interface/lifestyles_to_industry.pickle')
+        f = os.path.join(current_file_directory, '../_database/data/interface/population_to_industry.pickle')
         my_pickle_dump(DM_new={'pop': dm_pop}, local_pickle_file=f)
-    interface.add_link(from_sector='lifestyles', to_sector='industry', dm={'pop': dm_pop})
-
-    # dm_minerals = DM_industry['macro']
-    # dm_minerals.append(DM_industry['population'], dim='Variables')
-    # interface.add_link(from_sector='lifestyles', to_sector='minerals', dm=dm_minerals)
+    interface.add_link(from_sector='population', to_sector='industry', dm={'pop': dm_pop})
 
     return dm_pop
 
 
-# Local run of lifestyles
-def local_lifestyles_run(write_pickle=False):
+# Local run of population
+def local_population_run(write_pickle=False):
     # Initiate the year & lever setting
     years_setting, lever_setting = init_years_lever()
 
     country_list = ['EU27', 'Switzerland', 'Vaud']
     DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'lifestyles')
-
-    lifestyles(lever_setting, years_setting, DM_input['lifestyles'], write_pickle=write_pickle)
+    population(lever_setting, years_setting, DM_input['lifestyles'], write_pickle=write_pickle)
     return
 
 # Update/Create the Pickle
 if __name__ == "__main__":
-  local_lifestyles_run()
+  local_population_run()
 
 

@@ -1,4 +1,4 @@
-from model.lifestyles_module import lifestyles
+from model.population_module import population
 from model.buildings_module import buildings
 
 from model.forestry_module import forestry

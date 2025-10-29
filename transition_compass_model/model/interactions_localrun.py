@@ -1,6 +1,6 @@
 
 from model.transport_module import transport
-from model.lifestyles_module import lifestyles
+from model.population_module import population
 from model.buildings_module import buildings
 
 from model.forestry_module import forestry
@@ -42,9 +42,9 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
       start_time = time.time()
       TPE["climate"] = climate(lever_setting, years_setting, DM_input['climate'], interface)
       logger.info("Execution time Climate: {0:.3g} s".format(time.time() - start_time))
-    if 'lifestyles' in sectors:
+    if 'population' in sectors:
       start_time = time.time()
-      TPE["lifestyles"] = lifestyles(lever_setting, years_setting, DM_input['lifestyles'], interface)
+      TPE["population"] = population(lever_setting, years_setting, DM_input['lifestyles'], interface)
       logger.info("Execution time Lifestyles: {0:.3g} s".format(time.time() - start_time))
     if 'transport' in sectors:
       start_time = time.time()
@@ -118,7 +118,7 @@ def local_interactions_run():
 
     country_list = ["Switzerland"]
 
-    sectors = ['climate', 'lifestyles', 'buildings', 'transport', 'industry', 'forestry', 'ammonia', 'agriculture', 'lca']
+    sectors = ['climate', 'population', 'buildings', 'transport', 'industry', 'forestry', 'ammonia', 'agriculture', 'lca']
     # Filter geoscale
     # from database/data/datamatrix/.* reads the pickles, filters the geoscale, and loads them
     DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = sectors)
