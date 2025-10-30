@@ -16,7 +16,7 @@ years_all = years_ots + years_fts
 with open('../../data/datamatrix/agriculture.pickle', 'rb') as handle:
     DM_agriculture = pickle.load(handle)
 
-with open('../../data/datamatrix/lifestyles.pickle', 'rb') as handle:
+with open('../../data/datamatrix/population.pickle', 'rb') as handle:
     DM_lifestyles = pickle.load(handle)
 
 # Filter DM
