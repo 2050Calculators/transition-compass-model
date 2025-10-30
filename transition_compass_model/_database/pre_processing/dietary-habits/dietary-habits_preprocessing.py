@@ -252,7 +252,7 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
     df_waste_pathwaycalc = pd.merge(df_dict_waste, pivot_df_diet, on='Item')
 
     # Food waste [-]
-    df_waste_pathwaycalc['value'] = df_waste_pathwaycalc['Proportion']
+    df_waste_pathwaycalc['value'] = 1.0 - df_waste_pathwaycalc['Proportion']
 
     # Drop the unused columns
     df_waste_pathwaycalc = df_waste_pathwaycalc.drop(columns=['Item', 'Food', 'Proportion'])
@@ -348,7 +348,7 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
                    np.newaxis] / 365.25
     dm_others[:, :, 'share', :] = array_temp
 
-    # for food waste: Change unit: [kt] => [kcal/cap/day]
+    """# for food waste: Change unit: [kt] => [kcal/cap/day]
     # Check Category order
     dm_waste_temp.sort('Categories1')
     cdm_kcal_fwaste.sort('Categories1')
@@ -357,18 +357,17 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
                  * cdm_kcal_fwaste[np.newaxis, np.newaxis, 'cp_kcal-per-t', :] \
                  / dm_population[:, :, 'lfs_population_total',
                    np.newaxis] / 365.25
-    dm_waste_temp[:, :, 'lfs_consumers-food-wastes', :] = array_temp
+    dm_waste_temp[:, :, 'lfs_consumers-food-wastes', :] = array_temp"""
 
     # Filter fwaste only relevant categories for future calculations
     dm_waste_temp.filter({'Categories1': dm_others.col_labels['Categories1']},
                     inplace=True)
 
-    # Diet demand [kcal/cap/day] = food supply [kcal/cap/day] - food waste [kcal/cap/day]
+    # Diet demand [kcal/cap/day] = food supply [kcal/cap/day] / food waste [%] (actually 1 - food waste)
     dm_others.append(dm_waste_temp, dim='Variables')
-    dm_others.operation('share', '-', 'lfs_consumers-food-wastes',
+    dm_others.operation('share', '*', 'lfs_consumers-food-wastes',
                         out_col='lfs_consumers-diet', unit='kcal/cap/day')
 
-    # In dm_diet, compute lfs_consumers-diet + lfs_consumers-food-wastes
     # Create copy
     dm_diet_temp = dm_diet.copy()
     # Append together
