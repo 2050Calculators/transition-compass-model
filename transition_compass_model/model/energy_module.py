@@ -214,6 +214,8 @@ def extract_sankey_energy_flow(DM):
 
 def extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy):
 
+  #DM.keys = {'installed_GW', 'installed_N', 'emissions', 'storage_in',
+  # 'storage_out', 'monthly_operation_GW', 'Losses'}
   DM = utils.get_pyomo_output(m, country_prod, endyr)
 
   # From ses_eval.mod
@@ -236,6 +238,12 @@ def extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy):
   DM_tmp = extract_sankey_energy_flow(DM)
   DM = DM | DM_tmp
 
+  # Losses:
+  # Sum-product over hours
+  arr_losses = np.nansum(DM['Losses'].array * DM['hours_month'].array[:, :, :, np.newaxis, :], axis=-1, keepdims=False)
+  DM['Losses'].group_all('Categories2')
+  DM['Losses'].array = - arr_losses/1000
+  DM['Losses'].units = {'Losses': 'TWh'}
   # Rename power-production DM
 
   # If I'm using natural gas, then it's GasCC, else if I'm using NG_CCS it's GasCC-CCS
@@ -251,7 +259,13 @@ def extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy):
     if value[0] not in DM['power-production'].col_labels['Categories1']:
       map_prod.pop(key)
   DM['power-production'].groupby(map_prod, dim='Categories1', inplace=True)
+  # Work-around for when new_hydro_river or new_hydro_dam are not available
   DM['power-production'].groupby({'RoR': 'RoR.*', 'Dam': 'Dam.*'}, regex=True, inplace=True, dim='Categories1')
+  # Append Losses to power production
+  dm_losses = DM['Losses'].copy()
+  dm_losses.rename_col('Losses', 'pow_production', 'Variables')
+  dm_losses.rename_col('ELECTRICITY', 'Losses', 'Categories1')
+  DM['power-production'].append(dm_losses, dim='Categories1')
 
   # Drop from installed GW
   power_categories = list(m.TECHNOLOGIES_OF_END_USES_TYPE["ELECTRICITY"])
@@ -283,6 +297,7 @@ def extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy):
                                                 dim='Categories1',
                                                 inplace=False)
 
+
   # Rename fuel-supply
   # mapping = {'diesel': ['DIESEL'], 'H2': ['H2_NG', 'H2_ELECTROLYSIS'], 'gasoline': ['GASOLINE'],
   #           'gas': ['NG', 'NG_CCS'], 'heating-oil': ['LFO', 'oil'], 'waste': ['WASTE'], 'wood': ['WOOD']}
@@ -291,7 +306,7 @@ def extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy):
   return DM
 
 
-def create_future_country_trend(DM_2050, DM_input, years_ots, years_fts):
+def create_future_country_production_trend(DM_2050, DM_input, years_ots, years_fts):
 
     # Capacity trend - Country level
     dm_cap_2050 = DM_2050['installed_GW'].copy()
@@ -333,48 +348,54 @@ def create_future_country_trend(DM_2050, DM_input, years_ots, years_fts):
 
     # Production trend - Country level
     dm_prod_2050 = DM_2050['power-production']
-    dm_prod_hist = DM_input['cal-production']
-    #dm_prod_hist.rename_col('Oil-Gas', 'GasCC', dim='Categories1')
-    #dm_prod_stor = dm_prod_hist.filter({'Categories1': ['Pump-Open']})
+    dm_prod_hist = DM_input['cal-production'].copy()
+
+    # Append prod EnergyScope 2050 to historical production at Country level
     dm_prod_hist.drop(dim='Categories1', col_label='Pump-Open')
     missing_cat = list(set(dm_prod_hist.col_labels['Categories1']) - set(dm_prod_2050.col_labels['Categories1']))
     dm_prod_2050.add(0, dummy=True, dim='Categories1', col_label=missing_cat)
     missing_cat = list(set(dm_prod_2050.col_labels['Categories1']) - set(dm_prod_hist.col_labels['Categories1']))
     dm_prod_hist.add(0, dummy=True, dim='Categories1', col_label=missing_cat)
     dm_prod_hist.append(dm_prod_2050, dim='Years')
-    years_missing = list(set(years_fts) - set(dm_prod_hist.col_labels['Years']))
-    dm_prod_hist.add(np.nan, dim='Years', col_label=years_missing, dummy=True)
-    dm_prod_hist.sort('Years')
+    dm_add_missing_variables(dm_prod_hist, {'Years': years_fts}, fill_nans=False)
+    dm_prod_trend = dm_prod_hist
+
+    ## Use Capacity to create a Pathway at Country level
     dm_cap_tmp = dm_cap.filter({'Variables': ['pow_capacity']})
-    # Create fts trend by using the pow_cap-fact
-    fake_net_import_cap = dm_prod_hist[:, :, 'pow_production', 'Net-import', np.newaxis]
-    dm_cap_tmp.add(fake_net_import_cap, dummy=True, dim='Categories1', col_label='Net-import')
-    dm_prod_hist.append(dm_cap_tmp.filter({'Categories1': dm_prod_hist.col_labels['Categories1']}), dim='Variables')
-    dm_prod_hist.operation('pow_production', '/', 'pow_capacity', out_col='pow_cap-fact', unit='TWh/MW', div0='interpolate')
-    dm_prod_hist.fill_nans('Years')
-    idx = dm_prod_hist.idx
+    # Create fts trend by using the pow_cap-fact = production / capacity
+    #fake_net_import_cap = dm_prod_hist[:, :, 'pow_production', 'Net-import', np.newaxis]
+    #dm_cap_tmp.add(fake_net_import_cap, dummy=True, dim='Categories1', col_label='Net-import')
+    # Remove losses
+    dm_losses = dm_prod_trend.filter({'Categories1': ['Losses']})
+    dm_net_import = dm_prod_trend.filter({'Categories1': ['Net-import']})
+    dm_prod_trend.drop('Categories1', ['Losses', 'Net-import'])
+    # Compute capacity factor
+    dm_prod_trend.append(dm_cap_tmp.filter({'Categories1': dm_prod_trend.col_labels['Categories1']}), dim='Variables')
+    dm_prod_trend.operation('pow_production', '/', 'pow_capacity', out_col='pow_cap-fact', unit='TWh/MW', div0='interpolate')
+    dm_prod_trend.fill_nans('Years')
+    idx = dm_prod_trend.idx
     idx_fts = [idx[yr] for yr in years_fts]
-    dm_prod_hist.array[0, idx_fts, idx['pow_production'], :] = dm_prod_hist.array[0, idx_fts, idx['pow_capacity'], :]\
-                                                         * dm_prod_hist.array[0, idx_fts, idx['pow_cap-fact'], :]
+    dm_prod_trend.array[0, idx_fts, idx['pow_production'], :] = dm_prod_trend.array[0, idx_fts, idx['pow_capacity'], :]\
+                                                         * dm_prod_trend.array[0, idx_fts, idx['pow_cap-fact'], :]
 
-    dm_prod_hist.change_unit('pow_cap-fact', old_unit='TWh/MW', new_unit='%', factor=8.760*1e-3, operator='/')
-    dm_prod_hist.change_unit('pow_capacity', old_unit='MW', new_unit='GW', factor=1e-3, operator='*')
+    dm_prod_trend.change_unit('pow_cap-fact', old_unit='TWh/MW', new_unit='%', factor=8.760*1e-3, operator='/')
+    dm_prod_trend.change_unit('pow_capacity', old_unit='MW', new_unit='GW', factor=1e-3, operator='*')
 
-    # Fossil-fuels
-    # !FIXME: you are dropping Kerosene - get kerosene demand from transport, or add aviation to the model
-   # dm_fuel = DM_input['hist-fuels-supply']
-   # dm_2050_fuel = DM_2050['oil-gas-supply'].copy()
-   # dm_2050_fuel.rename_col('pow_production', 'pow_fuel-supply', dim='Variables')
-   # dm_fuel.add(0, dim='Categories1', col_label='H2', dummy=True)
-   # dm_fuel.drop(dim='Categories1', col_label='kerosene')
-   # dm_fuel.append(dm_2050_fuel, dim='Years')
-   # missing_years = list(set(years_fts) - set(dm_fuel.col_labels['Years']))
+    ## Compute Losses trend
+    # Compute total production
+    dm_tot_prod = dm_prod_trend.groupby({'Total': '.*'}, dim='Categories1', regex=True, inplace=False)
+    dm_tot_prod.filter({'Variables': ['pow_production']}, inplace=True)
+    # Losses / Prod = Loss-rate
+    dm_losses.append(dm_tot_prod, dim='Categories1')
+    dm_losses.operation('Losses', '/', 'Total', out_col='Loss-rate', unit='%', dim='Categories1')
+    # fill-nan loss rate
+    dm_losses.fill_nans('Years')
+    # Losses = Prod * Loss-rate
+    dm_losses.drop('Categories1', 'Losses')
+    dm_losses.operation('Loss-rate', '*', 'Total', out_col='Losses', unit='TWh', dim='Categories1')
+    dm_losses.filter({'Categories1': ['Losses']}, inplace=True)
 
-    # !FIXME: big discontinuity between historical and future values on heating oil and gas. Check historical building.
-    #  Calibration missing? Check Swiss data, what did you calibrate against? Consumption or supply ?
- #   dm_fuel.add(np.nan, dim='Years', col_label=missing_years, dummy=True)
-
-    return dm_prod_hist
+    return dm_prod_hist, dm_losses, dm_net_import
 
 
 def downscale_country_to_canton(dm_prod_cap_cntr, dm_cal_capacity, country_dem, share_of_pop):
@@ -493,10 +514,22 @@ def energyscope_pyomo(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, c
 
   DM_2050 = extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy)
 
-  dm_prod_cap_cntr = create_future_country_trend(DM_2050, DM_input, years_ots,
-                                                 years_fts)
+  # I should map the losses based on the canton share of the country production
+  dm_prod_cap_cntr, dm_losses, dm_net_import \
+    = create_future_country_production_trend(DM_2050, DM_input, years_ots, years_fts)
 
-  # Add demand - production balancing through net import
+  # !FIXME: you are here
+  # Compare Demand = prod - losses + net_import  with the Calculator demand
+  #dm_balance = dm_prod_cap_cntr.filter({'Variables': ['pow_production']})
+  #dm_balance.append(dm_losses, dim='Categories1')
+  #dm_balance.append(dm_net_import, dim='Categories1')
+  #dm_balance.group_all('Categories1')
+  # Group Calculator demand
+  #dm_demand_trend.drop('Categories1', 'district-heating')
+  #dm_demand_trend.group_all('Categories1')
+  #dm_balance.append(dm_demand_trend, dim='Variables')
+
+  # Add demand - production balancing through net import & losses
   dm_prod_cap_cntr = balance_demand_prod_with_net_import(dm_prod_cap_cntr,
                                                          dm_demand_trend,
                                                          share_of_pop)
@@ -570,7 +603,7 @@ def local_energy_run():
     # Function to run only transport module without converter and tpe
 
     # get geoscale
-    country_list = ['Vaud']
+    country_list = ['Switzerland']
 
     results_run = energy(lever_setting, years_setting, country_list)
 

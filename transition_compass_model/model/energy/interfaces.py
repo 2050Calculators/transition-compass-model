@@ -440,6 +440,34 @@ def reorganise_space_heat_hot_water(DM_bld, DM_ind):
 def impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind, cntr):
   eps = 1e-5
 
+  validation = False
+  if validation:
+    DM_bld['households_heating'].filter(
+      {'Variables': ['bld_energy-demand_heating', 'bld_energy-demand_cooling']},
+      inplace=True)
+    DM_bld['households_heating'].filter(
+      {'Categories1': ['electricity', 'heat-pump']},
+      inplace=True)
+    DM_bld['households_heating'].group_all('Categories1')
+    DM_bld['households_hot-water'].filter(
+      {'Variables': ['bld_hot-water_energy-demand'],
+       'Categories1': ['electricity', 'heat-pump']}, inplace=True)
+    DM_bld['households_hot-water'].group_all('Categories1')
+    dm_household_elec = DM_bld['households_heating'].copy()
+    dm_household_elec.append(DM_bld['households_hot-water'], dim='Variables')
+    dm_household_elec.append(DM_bld['households_lighting'], dim='Variables')
+    dm_household_elec.append(DM_bld['households_electricity'], dim='Variables')
+
+
+    DM_ind['ind-energy-demand'].filter({'Categories2': ['electricity', 'heat-pump']}, inplace=True)
+    DM_ind['ind-energy-demand'].group_all('Categories2')
+    DM_ind['ind-energy-demand'].group_all('Categories1')
+
+    DM_bld['services_all'].filter({'Variables': ['bld_services_energy-consumption'], 'Categories2': ['electricity', 'heat-pump']}, inplace=True)
+    DM_bld['services_all'].group_all('Categories2')
+    DM_bld['services_all'].group_all('Categories1')
+
+
   # SPACE HEATING AND HOT WATER (LOW TEMPERATURE HEAT)
   dm_heat, dm_ind_heat = reorganise_space_heat_hot_water(DM_bld, DM_ind)
 
@@ -648,7 +676,7 @@ def impose_capacity_constraints_pyomo(m, endyr, dm_capacity, country):
 
   max_cap = dm_CH[0, endyr, 'pow_capacity-Pmax', 'NEW_HYDRO_DAM']
   m.f_min['NEW_HYDRO_DAM'] = 0
-  m.f_max['NEW_HYDRO_DAM'] = max_cap - existing_dam_cap
+  #m.f_max['NEW_HYDRO_DAM'] = max_cap - existing_dam_cap
 
   for non_ren in ['NUCLEAR', 'CCGT', 'CCGT_CCS']:
     ref_size = pyo.value(m.ref_size[non_ren])
@@ -656,6 +684,17 @@ def impose_capacity_constraints_pyomo(m, endyr, dm_capacity, country):
     max_cap = dm_CH[0, endyr, 'pow_capacity-Pmax', non_ren] / ref_size
     m.f_min[non_ren] = existing_cap
     m.f_max[non_ren] = max_cap
+
+  # For hydro historical efficiency and forecasted efficiency do not match
+  # The adjusting factors I am using here are chosen so that the final efficiency
+  # (capacity factor) look coherent
+  for period in m.PERIODS:
+    m.c_p_t["HYDRO_DAM", period] = 1.3 * m.c_p_t["HYDRO_DAM", period]
+    m.c_p_t["NEW_HYDRO_DAM", period] =  1.3 * m.c_p_t["NEW_HYDRO_DAM", period]
+
+  for period in m.PERIODS:
+    m.c_p_t["HYDRO_RIVER", period] = 1.4 * m.c_p_t["HYDRO_RIVER", period]
+    m.c_p_t["NEW_HYDRO_RIVER", period] =  1.4 * m.c_p_t["NEW_HYDRO_RIVER", period]
 
   return
 
