@@ -313,12 +313,14 @@ def extract_production_data(file_url, local_filename):
             'dont renouvelable 2']
 
     dm_out = dm.groupby({'pow_production_RoR': ".*au fil de l'eau.*", 'pow_production_Nuclear': '.*nucléaire.*',
-                         'pow_production_Oil-Gas-Waste': '.*class.*|.*biogaz.*', 'pow_production_Dam': '.*accumulation.*',
+                         'pow_production_Oil-Gas-Waste': '.*class.*|.*biogaz.*', 'pow_production_Dam-gross': '.*accumulation.*',
                          'pow_production_WindOn': '.*Eoliennes.*',
                          'pow_production_PV-roof': '.*photo.*', 'pow_production_Pump-Open': '.*Pompage.*',
                          'pow_production_Waste': '.*dont renouvelable.*'},
                         regex=True, dim='Variables', inplace=False)
     dm_out.deepen()
+    dm_out.operation('Dam-gross', '-', 'Pump-Open', out_col='Dam', dim='Categories1')
+    dm_out.drop(dim='Categories1', col_label=['Dam-gross'])
     dm_out.operation('Oil-Gas-Waste', '-', 'Waste', out_col='Oil-Gas', dim='Categories1')
     dm_out.drop(dim='Categories1', col_label='Oil-Gas-Waste')
     dm_out.filter({'Years': years_ots}, inplace=True)
@@ -406,7 +408,7 @@ def extract_importexport_data(file_url, local_filename, sheet_name, var_name, ma
     dm_out = dm.groupby(mapping, regex=True, dim='Variables', inplace=False)
     dm_out.deepen()
     dm_out.filter({'Years': years_ots}, inplace=True)
-    dm_out.change_unit(var_name, 277.8, 'TJ', 'MWh')
+    dm_out.change_unit(var_name, 3.6*1e-3, 'TJ', 'MWh', operator='/')
 
     return dm_out
 
@@ -775,7 +777,7 @@ dm_energy = extract_energy_data(energy_url, local_path, baseyear, years_ots, out
 
 # change units from TJ to TWh
 for var in dm_energy.col_labels['Variables']:
-    dm_energy.change_unit(var, factor=2.778e-4, old_unit='TJ', new_unit='TWh')
+    dm_energy.change_unit(var, factor=3600, old_unit='TJ', new_unit='TWh', operator='/')
 
 # Some visualisation
 plotting = False
@@ -791,7 +793,7 @@ if plotting:
 file = 'data/Capacity_Nexuse.xlsx'
 dm_capacity, dm_const = extract_nexuse_capacity_data(file)
 dm_capacity_group = dm_capacity.copy()
-dm_capacity_group.groupby({'Gas': 'Gas.*', 'Hydro': 'Pump-Open|Dam|RoR'}, regex=True, dim='Categories1', inplace=True)
+dm_capacity_group.groupby({'Gas': 'Gas.*', 'Hydro': 'Dam|RoR'}, regex=True, dim='Categories1', inplace=True)
 
 # SECTION - Extract Hydro Capacity ots, 1990-2020 from OFS
 # Hydro-power
@@ -1038,6 +1040,21 @@ parameters['unit'] = None
 dm_fuels_supply = extract_energy_statistics_data(file_url, local_filename, sheet_name='T10', parameters=parameters)
 
 
+##### Losses
+parameters = dict()
+mapping = {'Losses': '.*Centrales électriques.*'}
+parameters['mapping'] = mapping  # dictionary,  to rename column headers
+parameters['var name'] = 'pow_production'  # string, dm variable name
+parameters['headers indexes'] = (3, 4)  # tuple with index of rows to keep for header
+parameters['first row'] = 5  # integer with the first row to keep
+parameters['cols to drop'] = '.*Raffineries.*|.*Usines.*|.*Chaleur.*|.*Total.*|.*Consommation.*|.*%.*'
+parameters['unit'] = 'TJ'
+
+dm_losses = extract_energy_statistics_data(file_url, local_filename, sheet_name='T13', parameters=parameters)
+dm_losses.change_unit('pow_production', factor=3600, old_unit='TJ', new_unit='TWh', operator='/')
+dm_losses.array = -dm_losses.array
+dm_production.append(dm_losses, dim='Categories1')
+
 #######################################
 ###      Oil Supply by type     #######
 #######################################
@@ -1068,7 +1085,7 @@ dm_fuels_supply.append(dm_oil_split, dim='Categories1')
 dm_fuels_supply.drop(dim='Categories1', col_label=['oil'])
 keep_fuel_cat = ['gasoline', 'gas', 'waste', 'heating-oil', 'wood', 'diesel', 'kerosene']
 dm_fuels_supply.filter({'Categories1': keep_fuel_cat}, inplace=True)
-dm_fuels_supply.change_unit('pow_fuel-supply', 277.8*1e-6, 'TJ', 'TWh')
+dm_fuels_supply.change_unit('pow_fuel-supply', factor=3600, old_unit='TJ', new_unit='TWh', operator='/')
 
 # District-heating
 #mapping = {'wood': 'Bois', 'coal': 'Charbon', 'nuclear': 'Combustibles nucléaires3', 'other': 'Divers4',
