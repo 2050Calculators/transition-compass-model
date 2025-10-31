@@ -398,7 +398,6 @@ def database_to_df(df_db, lever, level='all'):
     rename_cols = {'geoscale': "Country", 'timescale': 'Years', 'level': lever}
     df_ots.rename(columns=rename_cols, inplace=True)
     df_fts.rename(columns=rename_cols, inplace=True)
-
     return df_ots, df_fts
 
 

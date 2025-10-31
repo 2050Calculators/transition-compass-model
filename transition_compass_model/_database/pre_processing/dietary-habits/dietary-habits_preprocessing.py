@@ -277,7 +277,6 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_waste = DataMatrix.create_from_df(df_ots, num_cat=1)
 
-    # CalculationLeaf DIET ----------------------------------------------------------------------------------------
     # The idea was to have energy requirements per demography (agr_kcal-req) based on the current consumption and not the
     # calculated based on the metabolism, and to update the food waste values (from % to kcal/cap/day)
 
@@ -425,7 +424,7 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
 
     return dm_diet, dm_waste, dm_others, dm_kcal_req
 
-# CalculationLeaf ENERGY REQUIREMENTS -----------------------------------------------------------------------------------
+# CalculationLeaf ENERGY REQUIREMENTS (OVERCONSUMPTION) -----------------------------------------------------------------------------------
 def energy_requirements_processing(country_list, years_ots):
     # Calorie requirements [kcal/cap/day] = BMR * PAL = ( C(age, sex) + S (age,sex) * BW(age,sex)) * PAL
     # BMR : Basal Metabolic Rate, PAL : Physical Activity Level (kept constant), BW : Body Weight
@@ -511,6 +510,25 @@ def energy_requirements_processing(country_list, years_ots):
     dm_kcal_req.change_unit('agr_kcal-req', old_unit='inhabitants', new_unit='kcal/cap/day', factor=1)
 
     return dm_kcal_req
+
+# CalculationLeaf SHARE DIET ADHERENCE -----------------------------------------------------------------------------------
+def diet_adherence_processing(list_countries, years_ots):
+
+  # Create df with dummy year
+  df_adherence = pd.DataFrame({
+    'Years': [2020],
+    'Country': ['Switzerland'],
+    'share_diet_adherence[-]': [0.0]
+  })
+
+  # Format as dm
+  dm_adherence = DataMatrix.create_from_df(df_adherence, num_cat=0)
+
+  # Linear fitting (1 for all ots)
+  linear_fitting(dm_adherence, years_ots)
+
+  return dm_adherence
+
 
 # CalculationLeaf CAL - DIETARY HABITS -----------------------------------------------------------------------------------
 def dietaryhabits_calibration(list_countries, cdm_kcal):
@@ -776,9 +794,34 @@ def constant():
 
   return cdm_kcal, cdm_lifestyle
 
+# CalculationLeaf FTS  ------------------------------
+def fts_processing(list_countries, years_ots, years_fts):
+
+  # Read Excel
+  df_fts_data = pd.read_excel(
+    'data/dietary-habits_fts.xlsx',
+    sheet_name='fts')
+  df_fts_data = df_fts_data[['variables', 'timescale', 'geoscale', 'level', 'value', 'lever']]
+
+  # Format as dms for each lever
+  dm_fts = {}
+  dm = {}
+  for lever in df_fts_data['lever'].unique():
+    for level in df_fts_data['level'].unique():
+      df_fts_level = df_fts_data[df_fts_data['level'] == level]
+      df_ots, df_fts = database_to_df(df_fts_level, lever, level='all')
+      df_fts = df_fts.drop(columns=[lever])  # Drop column with lever name
+      dm[level] = DataMatrix.create_from_df(df_fts, num_cat=0)
+    dm_fts[lever] = dm
+
+  # Format for each lever as necessary
+
+
+  return dm_fts
+
 # CalculationLeaf PICKLE CREATION ------------------------------
 
-def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_diet, dm_diet, dm_others, cdm_kcal, cdm_lifestyle):
+def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_diet, dm_diet, dm_others, dm_adherence, cdm_kcal, cdm_lifestyle, dm_fts):
 
   # Make list with all years
   years_all = years_ots + years_fts
@@ -807,19 +850,23 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_die
   # Energy requirements
   dict_ots['kcal-req'] = dm_kcal_req
 
+  # Share diet adherence
+  dict_ots['diet-adherence'] = dm_adherence
+
   # LeversToDatamatrix FTS -----------------------------------------------------
   dict_fts = {}
 
   # FTS linear fitting of ots
   DM_ots = dict_ots.copy()
 
-  # Adding a new lever
+  # Adding a new lever with dummy values
   dict_temp = {}
   dict_temp['lfs_consumers-diet'] = {'lfs_consumers-diet': dict()}
   dict_temp['share'] = {'share': dict()}
   dict_fts['diet'] = dict_temp
   dict_fts['fwaste'] = {'fwaste': dict()}
   dict_fts['kcal-req'] = {'kcal-req': dict()}
+  dict_fts['diet-adherence'] = {'diet-adherence': dict()}
 
   # Levers to be normalised
   list_norm = ['climate-smart-livestock_ration']
@@ -851,6 +898,15 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_die
       linear_fitting(dm, years_fts)
       for lev in range(1, 5):
         dict_fts[key][lev] = dm.filter({'Years': years_fts}, inplace=False)
+
+  # Linear fitting between ots and fts objective (2050) ------------------
+
+  # Lever - diet-adherence
+  for level in range(1,5):
+    dm_fts['diet-adherence'][level].append(dict_ots['diet-adherence'], dim='Years')
+    linear_fitting(dm_fts['diet-adherence'][level], years_fts)
+    dm_fts['diet-adherence'][level].filter({'Years':years_fts}, inplace=True)
+  dict_fts['diet-adherence'] = dm_fts['diet-adherence']
 
 
   # ConstantsToDatamatrix ------------------------------------------------------
@@ -889,7 +945,9 @@ dm_cal_diet = dietaryhabits_calibration(list_countries, cdm_kcal)
 dm_kcal_req_temp = energy_requirements_processing(list_countries, years_ots)
 file = 'data/faostat/diet.csv' # Create file for storing data
 dm_diet, dm_waste, dm_others, dm_kcal_req = diet_processing(list_countries, file, cdm_kcal, dm_kcal_req_temp)
+dm_adherence = diet_adherence_processing(list_countries, years_ots)
+dm_fts = fts_processing(list_countries, years_ots, years_fts)
 
 
 # CalculationTree RUNNING PICKLE CREATION
-datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_diet, dm_diet, dm_others, cdm_kcal, cdm_lifestyle)
+datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_diet, dm_diet, dm_others, dm_adherence, cdm_kcal, cdm_lifestyle, dm_fts)
