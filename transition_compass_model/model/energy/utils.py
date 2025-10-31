@@ -144,9 +144,17 @@ def get_pyomo_output(m, country, endyr):
                           unit_dict={'GWP_op': 'ktCO2-eq./y'})
 
   dm_f_mult_t = f_mult_t_pyomo_var_to_dm(m, cntr_name=country, end_yr=endyr)
+
+  dm_Losses = pyomo_var_to_dm(m, pyomo_var_name='Losses', cntr_name=country,
+                              end_yr=endyr,
+                              indexes=['END_USES_TYPES', 'PERIODS'],
+                              unit_dict={'Losses': 'GW'})
+
+  dm_Losses.filter({'Categories1': ['ELECTRICITY']}, inplace=True)
+
   DM = {'installed_GW': dm_f_mult, 'installed_N': dm_installed_n,
         'emissions': dm_GWP, 'storage_in': dm_storage_in,
-        'storage_out': dm_storage_out, 'monthly_operation_GW': dm_f_mult_t}
+        'storage_out': dm_storage_out, 'monthly_operation_GW': dm_f_mult_t, 'Losses': dm_Losses}
   # You now have to do 2 things, do a linear fitting for the installed technologies to cover all years,
   # look at the demand to compute the difference and use import instead.
   # Assign a portion of the installed technology to Vaud based on the relative Max potential (Nexus-e)
