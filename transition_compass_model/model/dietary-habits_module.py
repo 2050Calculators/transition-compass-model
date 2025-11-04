@@ -31,8 +31,7 @@ def read_data(DM_diet_input, lever_setting):
 
     # Sub-matrix for DIETARY HABITS
     dm_diet_requirement = DM_ots_fts['kcal-req']
-    dm_diet_split = DM_ots_fts['diet']['lfs_consumers-diet']
-    dm_diet_share = DM_ots_fts['diet']['share']
+    dm_diet_split = DM_ots_fts['diet-split']
     dm_diet_fwaste = DM_ots_fts['fwaste']
     dm_fxa_cal_diet = DM_diet_input['fxa']['cal_agr_diet']
     dm_diet_adherence = DM_ots_fts['diet-adherence']
@@ -41,7 +40,6 @@ def read_data(DM_diet_input, lever_setting):
     DM_diet = {
         'energy-requirement': dm_diet_requirement,
         'diet-split': dm_diet_split,
-        'diet-share': dm_diet_share,
         'diet-fwaste': dm_diet_fwaste,
         'cal_diet': dm_fxa_cal_diet,
         'diet-adherence': dm_diet_adherence
@@ -87,48 +85,22 @@ def diet_adherence_scenarios(DM_diet, DM_pop, CDM_const, bau):
                                 unit='kcal/cap/day')
   dm_diet_requirement.filter({'Variables': ['lfs_kcal-req_req']}, inplace=True)
 
-  # Energy intake [kcal/cap/day] = sum( intake [kcal/cap/day])
-  # (of categories explicitely mentionned in dietary recommendations)
-  dm_diet_split = DM_diet['diet-split'].copy()
-  ay_diet_intake = dm_diet_split[:, :, var_consumers_diet, :].sum(axis=-1)
-
-  # Gap from healthy diet [kcal/cap/day] = energy requirements [kcal/cap/day] - energy intake [kcal/cap/day]
-  #                                        (of categories explicitely mentionned in dietary recommendations)
-  dm_diet_requirement.add(ay_diet_intake, dim='Variables',
-                          col_label='lfs_energy-intake_total',
-                          unit='kcal/cap/day')
-  dm_diet_requirement.operation('lfs_kcal-req_req', '-',
-                                'lfs_energy-intake_total',
-                                dim="Variables", out_col='lfs_healthy-gap',
-                                unit='kcal/cap/day')
-
-  # Intake of undefined categories i [kcal/cap/day] = Gap from healthy diet [kcal/country/year] * diet adherence [%] * share of i [%]
+  # Intake of food categories i [kcal/country/year] = kcal-req [kcal/cap/day] * diet adherence [%] * share of i [%] * pop * days per year
   cdm_lifestyle = CDM_const['cdm_lifestyle'].copy()
-  dm_diet_share = DM_diet['diet-share'].copy()
+  dm_diet_split = DM_diet['diet-split'].copy()
   dm_population = DM_pop['lfs_population_'].copy()
-  ay_total_diet = dm_diet_requirement[:, :, 'lfs_healthy-gap', np.newaxis] * \
+  ay_total_diet = dm_diet_requirement[:, :, 'lfs_kcal-req_req', np.newaxis] * \
                   dm_population[:, :, 'lfs_population_total', np.newaxis] * \
-                  dm_diet_share[:, :, 'share', :] * cdm_lifestyle[
+                  dm_diet_split[:, :, var_consumers_diet, :] * cdm_lifestyle[
                     'cp_time_days-per-year'] * dm_adherence[:,:,'share_diet_adherence', np.newaxis]
-  dm_diet_tmp = DataMatrix.based_on(ay_total_diet[:, :, np.newaxis, :],
-                                    dm_diet_share,
+  dm_diet_food = DataMatrix.based_on(ay_total_diet[:, :, np.newaxis, :],
+                                    dm_diet_split,
                                     change={'Variables': ['lfs_diet_raw']},
                                     units={'lfs_diet_raw': 'kcal'})
 
-  # Intake of defined categories j [kcal/country/year] = intake j [kcal/cap/day] * pop [cap] * diet adherence [%] * days per year [day/year]
-  ay_total_food = dm_diet_split[:, :, var_consumers_diet, :] * dm_population[
-                                                                 :, :,
-                                                                 'lfs_population_total',
-                                                                 np.newaxis] \
-                  * cdm_lifestyle['cp_time_days-per-year'] * dm_adherence[:,:,'share_diet_adherence', np.newaxis]
-  dm_diet_food = DataMatrix.based_on(ay_total_food[:, :, np.newaxis, :],
-                                     dm_diet_split,
-                                     change={'Variables': ['lfs_diet_raw']},
-                                     units={'lfs_diet_raw': 'kcal'})
-
   # Total calorie demand [kcal/country/year] = food intake [kcal/country/year] / food waste [-]
-  dm_diet_food.append(dm_diet_tmp,
-                      dim='Categories1')  # Append all food categories
+  #dm_diet_food.append(dm_diet_tmp,
+  #                    dim='Categories1')  # Append all food categories
   dm_diet_food.append(DM_diet['diet-fwaste'],
                       dim='Variables')  # Append with fwaste
   dm_diet_food.operation('lfs_diet_raw', '/', 'lfs_consumers-food-wastes',
