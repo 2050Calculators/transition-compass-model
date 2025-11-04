@@ -920,6 +920,20 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_die
     dm_fts['fwaste'][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
   dict_fts['fwaste'] = dm_fts['fwaste']
 
+  # Lever - kcal-req
+  for level in range(1,5):
+    # Compute the reduction objective in 2050 compared to the last ots value,
+    # for each food category
+    dm_ots = dict_ots['kcal-req'].copy()
+    array_temp = dm_ots[:,years_ots[-1],'agr_kcal-req',:] \
+                  * dm_fts['kcal-req'][level][:,years_fts[-1],'agr_kcal-req', np.newaxis]
+    # Append with ots
+    dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
+    # Linear fit
+    linear_fitting(dm_ots, years_fts)
+    dm_fts['kcal-req'][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
+  dict_fts['kcal-req'] = dm_fts['kcal-req']
+
 
   # ConstantsToDatamatrix ------------------------------------------------------
   dict_const = {}
