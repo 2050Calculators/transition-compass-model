@@ -805,17 +805,15 @@ def fts_processing(list_countries, years_ots, years_fts):
 
   # Format as dms for each lever
   dm_fts = {}
-  dm = {}
   for lever in df_fts_data['lever'].unique():
+    dm = {}
     for level in df_fts_data['level'].unique():
-      df_fts_level = df_fts_data[df_fts_data['level'] == level]
-      df_ots, df_fts = database_to_df(df_fts_level, lever, level='all')
+      df_fts_filtered = df_fts_data[df_fts_data['level'] == level]
+      df_fts_filtered = df_fts_filtered[df_fts_filtered['lever'] == lever]
+      df_ots, df_fts = database_to_df(df_fts_filtered, lever, level='all')
       df_fts = df_fts.drop(columns=[lever])  # Drop column with lever name
       dm[level] = DataMatrix.create_from_df(df_fts, num_cat=0)
     dm_fts[lever] = dm
-
-  # Format for each lever as necessary
-
 
   return dm_fts
 
@@ -907,6 +905,20 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_die
     linear_fitting(dm_fts['diet-adherence'][level], years_fts)
     dm_fts['diet-adherence'][level].filter({'Years':years_fts}, inplace=True)
   dict_fts['diet-adherence'] = dm_fts['diet-adherence']
+
+  # Lever - fwaste
+  for level in range(1,5):
+    # Compute the reduction objective in 2050 compared to the last ots value,
+    # for each food category
+    dm_ots = dict_ots['fwaste'].copy()
+    array_temp =  1 - ( 1 - dm_ots[:,years_ots[-1],'lfs_consumers-food-wastes',:]) \
+                  * dm_fts['fwaste'][level][:,years_fts[-1],'lfs_consumers-food-wastes', np.newaxis]
+    # Append with ots
+    dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
+    # Linear fit
+    linear_fitting(dm_ots, years_fts)
+    dm_fts['fwaste'][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
+  dict_fts['fwaste'] = dm_fts['fwaste']
 
 
   # ConstantsToDatamatrix ------------------------------------------------------

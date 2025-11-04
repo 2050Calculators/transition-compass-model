@@ -310,10 +310,9 @@ class DataMatrix:
         self_shape = self.array.shape
         a = self.dim_labels.index(dim)
         new_shape = list(self_shape)
-        if isinstance(col_label, str):
-            # if I'm adding only one column
-            col_label = [col_label]
-            unit = [unit]
+        if not isinstance(col_label, (list, tuple, np.ndarray)):
+          col_label = [col_label]
+          unit = [unit]
         new_shape[a] = len(col_label)
         new_shape = tuple(new_shape)
         # If it is adding a new array of constant value (e.g. nan) to have a dummy dimension:
