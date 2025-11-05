@@ -31,7 +31,8 @@ def read_data(DM_diet_input, lever_setting):
 
     # Sub-matrix for DIETARY HABITS
     dm_diet_requirement = DM_ots_fts['kcal-req']
-    dm_diet_split = DM_ots_fts['diet-split']
+    dm_diet_split_share = DM_ots_fts['diet-split-share']
+    dm_diet_split_kcal = DM_ots_fts['diet-split-kcal']
     dm_diet_fwaste = DM_ots_fts['fwaste']
     dm_fxa_cal_diet = DM_diet_input['fxa']['cal_agr_diet']
     dm_diet_adherence = DM_ots_fts['diet-adherence']
@@ -39,7 +40,8 @@ def read_data(DM_diet_input, lever_setting):
     # Aggregate Data Matrix - DIETARY HABITS
     DM_diet = {
         'energy-requirement': dm_diet_requirement,
-        'diet-split': dm_diet_split,
+        'diet-split-share': dm_diet_split_share,
+        'diet-split-kcal': dm_diet_split_kcal,
         'diet-fwaste': dm_diet_fwaste,
         'cal_diet': dm_fxa_cal_diet,
         'diet-adherence': dm_diet_adherence
@@ -60,7 +62,7 @@ def simulate_population_to_dietaryhabits_input():
     return DM_pop
 
 # CalculationLeaf DIET WITH ADHERENCE SCENARIO --------------------------------------------------------------
-def diet_adherence_scenarios(DM_diet, DM_pop, CDM_const, bau):
+def diet_adherence_scenarios(DM_diet, DM_pop, CDM_const, bau, tpe_scenario):
 
   # Processing for diet-adherence
   dm_adherence = DM_diet['diet-adherence'].copy()
@@ -73,21 +75,46 @@ def diet_adherence_scenarios(DM_diet, DM_pop, CDM_const, bau):
     var_consumers_diet = 'lfs_consumers-diet'
     var_kcal_req = 'agr_kcal-req'
 
+  dm_diet_food = {}
+  if tpe_scenario == 'diet-split-share':
+    # Average kcal-req [kcal/cap/day] = sum(demography [inhabitants] * kcal-req by demography [kcal/cap/day]) / sum(demography [inhabitants])
+    dm_diet_requirement = DM_diet['energy-requirement'].copy()
+    dm_diet_requirement.append(DM_pop['lfs_demography_'], dim='Variables')
+    dm_diet_requirement.operation('lfs_demography', '*', var_kcal_req,
+                                  out_col='lfs_kcal-req', unit='kcal/day')
+    dm_diet_requirement.group_all('Categories1')
+    dm_diet_requirement.operation('lfs_kcal-req', '/', 'lfs_demography',
+                                  out_col='lfs_kcal-req_req',
+                                  unit='kcal/cap/day')
+    dm_diet_requirement.filter({'Variables': ['lfs_kcal-req_req']},
+                               inplace=True)
 
-  # Average kcal-req [kcal/cap/day] = sum(demography [inhabitants] * kcal-req by demography [kcal/cap/day]) / sum(demography [inhabitants])
-  dm_diet_requirement = DM_diet['energy-requirement'].copy()
-  dm_diet_requirement.append(DM_pop['lfs_demography_'], dim='Variables')
-  dm_diet_requirement.operation('lfs_demography', '*', var_kcal_req,
-                                out_col='lfs_kcal-req', unit='kcal/day')
-  dm_diet_requirement.group_all('Categories1')
-  dm_diet_requirement.operation('lfs_kcal-req', '/', 'lfs_demography',
-                                out_col='lfs_kcal-req_req',
-                                unit='kcal/cap/day')
-  dm_diet_requirement.filter({'Variables': ['lfs_kcal-req_req']}, inplace=True)
+    #  Intake of food categories i [kcal/cap/cay] = kcal-req [kcal/cap/day] * share of i [%]
+    dm_diet_split = DM_diet['diet-split-share'].copy()
+    ay_total_diet = dm_diet_requirement[:, :, 'lfs_kcal-req_req', np.newaxis] * \
+                    dm_diet_split[:, :, var_consumers_diet, :]
+    dm_diet_food = DataMatrix.based_on(ay_total_diet[:, :, np.newaxis, :],
+                                       dm_diet_split,
+                                       change={'Variables': [var_consumers_diet]},
+                                       units={var_consumers_diet: 'kcal/cap/day'})
 
-  # Intake of food categories i [kcal/country/year] = kcal-req [kcal/cap/day] * diet adherence [%] * share of i [%] * pop * days per year
+  elif tpe_scenario =='diet-split-kcal':
+    # Format
+    dm_diet_food = DM_diet['diet-split-kcal'].filter({'Variables':[var_consumers_diet]}).copy()
+
+  # Intake of food categories i [kcal/country/year] = Intake of food cat i [kcal/cap/cay] * diet adherence [%] * pop * days per year
   cdm_lifestyle = CDM_const['cdm_lifestyle'].copy()
-  dm_diet_split = DM_diet['diet-split'].copy()
+  dm_population = DM_pop['lfs_population_'].copy()
+  ay_total_diet = dm_population[:, :, 'lfs_population_total', np.newaxis] * \
+                  dm_diet_food[:, :, var_consumers_diet, :] * cdm_lifestyle['cp_time_days-per-year'] \
+                  * dm_adherence[:,:,'share_diet_adherence', np.newaxis]
+  dm_diet_food.add(ay_total_diet, dim='Variables',
+                       col_label='lfs_diet_raw',
+                       unit='kcal')
+
+  """# Intake of food categories i [kcal/country/year] = kcal-req [kcal/cap/day] * diet adherence [%] * share of i [%] * pop * days per year
+  cdm_lifestyle = CDM_const['cdm_lifestyle'].copy()
+  dm_diet_split = DM_diet['diet-split-share'].copy()
   dm_population = DM_pop['lfs_population_'].copy()
   ay_total_diet = dm_diet_requirement[:, :, 'lfs_kcal-req_req', np.newaxis] * \
                   dm_population[:, :, 'lfs_population_total', np.newaxis] * \
@@ -96,7 +123,7 @@ def diet_adherence_scenarios(DM_diet, DM_pop, CDM_const, bau):
   dm_diet_food = DataMatrix.based_on(ay_total_diet[:, :, np.newaxis, :],
                                     dm_diet_split,
                                     change={'Variables': ['lfs_diet_raw']},
-                                    units={'lfs_diet_raw': 'kcal'})
+                                    units={'lfs_diet_raw': 'kcal'})"""
 
   # Total calorie demand [kcal/country/year] = food intake [kcal/country/year] / food waste [-]
   #dm_diet_food.append(dm_diet_tmp,
@@ -169,24 +196,23 @@ def diet_adherence_scenarios(DM_diet, DM_pop, CDM_const, bau):
 
   return dm_diet_food, dm_diet_consumed
 
-
-# CalculationLeaf LIFESTYLE TO DIET/FOOD DEMAND --------------------------------------------------------------
-def lifestyle_workflow(DM_diet, DM_pop, CDM_const, years_setting):
+# CalculationLeaf LIFESTYLE (SHARE) TO DIET/FOOD DEMAND --------------------------------------------------------------
+def lifestyle_share_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scenario):
 
     # DIFFERENTIATE BETWEEN BAU & SCENARIOS ------------------------------------
 
-    # Create BAU variables - diet-split
-    array_temp = DM_diet['diet-split'][:, :,'lfs_consumers-diet',:]
-    DM_diet['diet-split'].add(array_temp, dummy=False, col_label='lfs_consumers-diet_bau', dim='Variables', unit='kcal/cap/day')
+    # Create BAU variables - diet-split-share
+    array_temp = DM_diet['diet-split-share'][:, :,'lfs_consumers-diet',:]
+    DM_diet['diet-split-share'].add(array_temp, dummy=False, col_label='lfs_consumers-diet_bau', dim='Variables', unit='-')
 
-    # Extrapolate BAU fts - diet-split
+    # Extrapolate BAU fts - diet-split-share
     years_ots = create_years_list(years_setting[0], years_setting[1], 1)
     years_fts = create_years_list(years_setting[2], years_setting[3], 5)
-    dm_ots_temp = DM_diet['diet-split'].filter({'Years':years_ots})
+    dm_ots_temp = DM_diet['diet-split-share'].filter({'Years':years_ots})
     dm_bau_fts = linear_forecast_BAU(dm_ots_temp, years_setting[0], years_ots, years_fts, min_tb=None,
                         max_tb=None)
     for i in years_fts:
-      DM_diet['diet-split'][:, i, 'lfs_consumers-diet_bau', :] = dm_bau_fts[:, i, 'lfs_consumers-diet_bau', :]
+      DM_diet['diet-split-share'][:, i, 'lfs_consumers-diet_bau', :] = dm_bau_fts[:, i, 'lfs_consumers-diet_bau', :]
 
     # Create BAU variables - energy-requirement
     array_temp = DM_diet['energy-requirement'][:, :,'agr_kcal-req',:]
@@ -200,9 +226,75 @@ def lifestyle_workflow(DM_diet, DM_pop, CDM_const, years_setting):
       DM_diet['energy-requirement'][:, i, 'agr_kcal-req_bau', :] = dm_bau_fts[:, i, 'agr_kcal-req_bau', :]
 
     # Computing diets considering the adherence to the diet levers
-    dm_diet_food_bau, dm_diet_consumed_bau = diet_adherence_scenarios(DM_diet, DM_pop, CDM_const, bau=True)
+    dm_diet_food_bau, dm_diet_consumed_bau = diet_adherence_scenarios(DM_diet, DM_pop, CDM_const, bau=True, tpe_scenario=tpe_scenario)
     dm_diet_food_scenario, dm_diet_consumed_scenario = diet_adherence_scenarios(DM_diet, DM_pop, CDM_const,
-                                                bau=False)
+                                                bau=False, tpe_scenario=tpe_scenario)
+
+    # Overall diet = diet bau [kcal/country share/year] + diet scenario [kcal/country share/year]
+    dm_diet_food = dm_diet_food_bau.copy()
+    dm_diet_food[:, :, 'lfs_diet_raw', :] = dm_diet_food_bau[:, :, 'lfs_diet_raw', :] + \
+                                                dm_diet_food_scenario[:, :,
+                                                'lfs_diet_raw', :]
+
+    # Overall diet consumed = diet cons bau [kcal/country share/year] + diet cons scenario [kcal/country share/year]
+    # (without food wastes)
+    dm_diet_consumed = dm_diet_consumed_bau.copy()
+    dm_diet_consumed[:, :, 'lfs_consumers-diet', :] = dm_diet_consumed_bau[:, :, 'lfs_consumers-diet', :] + \
+                                                dm_diet_consumed_scenario[:, :,
+                                                'lfs_consumers-diet', :]
+
+
+    # Calibration - Food supply (accounting for food wastes)
+    dm_cal_diet = DM_diet['cal_diet']
+    dm_lfs = dm_diet_food.filter({'Variables':['agr_demand_raw']}, inplace=False)
+    dm_cal_rates_diet = calibration_rates(dm_lfs, dm_cal_diet, calibration_start_year=1990,
+                                          calibration_end_year=2023,
+                                          years_setting=years_setting)
+    dm_lfs.append(dm_cal_rates_diet, dim='Variables')
+    dm_lfs.operation('agr_demand_raw', '*', 'cal_rate', dim='Variables', out_col='agr_demand', unit='kcal')
+
+    # Format for same categories as rest of modules
+    cat_lfs = ['afat', 'beer', 'bev-alc', 'bev-fer', 'bov', 'cereals', 'coffee', 'dfish', 'egg', 'ffish', 'fruits',
+               'milk', 'offal', 'oilcrops', 'oth-animals', 'oth-aq-animals', 'pfish', 'pigs', 'poultry', 'pulses',
+               'rice', 'seafood', 'sheep', 'starch', 'stm', 'sugar', 'sweet', 'veg', 'voil', 'wine']
+    cat_agr = ['pro-liv-abp-processed-afat', 'pro-bev-beer', 'pro-bev-bev-alc', 'pro-bev-bev-fer',
+               'pro-liv-meat-bovine',
+               'crop-cereal', 'coffee', 'dfish', 'pro-liv-abp-hens-egg', 'ffish', 'crop-fruit',
+               'pro-liv-abp-dairy-milk',
+               'pro-liv-abp-processed-offal', 'crop-oilcrop', 'pro-liv-meat-oth-animals', 'oth-aq-animals', 'pfish',
+               'pro-liv-meat-pig', 'pro-liv-meat-poultry', 'crop-pulse', 'rice', 'seafood', 'pro-liv-meat-sheep',
+               'crop-starch', 'stm', 'pro-crop-processed-sugar', 'pro-crop-processed-sweet', 'crop-veg',
+               'pro-crop-processed-voil', 'pro-bev-wine']
+
+    #dm_lfs.rename_col(cat_lfs, cat_agr, 'Categories1')
+    dm_lfs.sort('Categories1')
+
+    return dm_lfs, dm_diet_consumed, dm_diet_consumed_bau, dm_diet_consumed_scenario, dm_diet_food
+
+
+
+# CalculationLeaf LIFESTYLE (KCAL) TO DIET/FOOD DEMAND --------------------------------------------------------------
+def lifestyle_kcal_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scenario):
+
+    # DIFFERENTIATE BETWEEN BAU & SCENARIOS ------------------------------------
+
+    # Create BAU variables - diet-split-kcal
+    array_temp = DM_diet['diet-split-kcal'][:, :,'lfs_consumers-diet',:]
+    DM_diet['diet-split-kcal'].add(array_temp, dummy=False, col_label='lfs_consumers-diet_bau', dim='Variables', unit='kcal/cap/day')
+
+    # Extrapolate BAU fts - diet-split-share
+    years_ots = create_years_list(years_setting[0], years_setting[1], 1)
+    years_fts = create_years_list(years_setting[2], years_setting[3], 5)
+    dm_ots_temp = DM_diet['diet-split-kcal'].filter({'Years':years_ots})
+    dm_bau_fts = linear_forecast_BAU(dm_ots_temp, years_setting[0], years_ots, years_fts, min_tb=None,
+                        max_tb=None)
+    for i in years_fts:
+      DM_diet['diet-split-kcal'][:, i, 'lfs_consumers-diet_bau', :] = dm_bau_fts[:, i, 'lfs_consumers-diet_bau', :]
+
+    # Computing diets considering the adherence to the diet levers
+    dm_diet_food_bau, dm_diet_consumed_bau = diet_adherence_scenarios(DM_diet, DM_pop, CDM_const, bau=True, tpe_scenario=tpe_scenario)
+    dm_diet_food_scenario, dm_diet_consumed_scenario = diet_adherence_scenarios(DM_diet, DM_pop, CDM_const,
+                                                bau=False, tpe_scenario=tpe_scenario)
 
     # Overall diet = diet bau [kcal/country share/year] + diet scenario [kcal/country share/year]
     dm_diet_food = dm_diet_food_bau.copy()
@@ -323,7 +415,7 @@ def dietaryhabits_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario
   return DM_TCAF_health_diet
 
 
-def dietaryhabits(lever_setting, years_setting, DM_input, interface=Interface()):
+def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, interface=Interface()):
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     DM_ots_fts, DM_diet, CDM_const = read_data(DM_input, lever_setting)
@@ -342,7 +434,16 @@ def dietaryhabits(lever_setting, years_setting, DM_input, interface=Interface())
             DM_pop[key].filter({'Country': country_list}, inplace=True)
 
     # CalculationTree DIETARY HABITS
-    dm_lfs, dm_diet_consumed, dm_diet_consumed_bau, dm_diet_consumed_scenario, dm_diet_food = lifestyle_workflow(DM_diet, DM_pop, CDM_const, years_setting)
+
+    dm_diet_consumed_bau = {}
+    dm_diet_consumed_scenario = {}
+
+    if tpe_scenario == 'diet-split-share':
+      dm_lfs, dm_diet_consumed, dm_diet_consumed_bau, dm_diet_consumed_scenario, dm_diet_food = lifestyle_share_workflow(
+        DM_diet, DM_pop, CDM_const, years_setting, tpe_scenario=tpe_scenario)
+    elif tpe_scenario == 'diet-split-kcal':
+      dm_lfs, dm_diet_consumed, dm_diet_consumed_bau, dm_diet_consumed_scenario, dm_diet_food = lifestyle_kcal_workflow(
+        DM_diet, DM_pop, CDM_const, years_setting, tpe_scenario=tpe_scenario)
 
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 
@@ -362,7 +463,7 @@ def dietaryhabits_local_run():
     country_list = ['Switzerland', 'Vaud']
     DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'dietary-habits')
     years_setting, lever_setting = init_years_lever()
-    dietaryhabits(lever_setting, years_setting, DM_input['dietary-habits'])
+    dietaryhabits(lever_setting, years_setting, DM_input['dietary-habits'], tpe_scenario='diet-split-share')
 
 
 if __name__ == "__main__":

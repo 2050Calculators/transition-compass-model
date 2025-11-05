@@ -198,8 +198,8 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
     df_ots, df_fts = database_to_df(df_diet_pathwaycalc, lever, level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm = DataMatrix.create_from_df(df_ots, num_cat=0)
-    dm_diet = dm.filter_w_regex({'Variables': 'lfs_consumers-diet.*'})
-    dm_diet.deepen()
+    dm_diet_share = dm.filter_w_regex({'Variables': 'lfs_consumers-diet.*'})
+    dm_diet_share.deepen()
 
     # CalculationLeaf FOOD WASTE PROPORTION ----------------------------------------------------------------------------------------
 
@@ -251,41 +251,46 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
     dm_population = DM_population['ots']['pop']['lfs_population_'].copy()
     dm_waste_temp = dm_waste.copy()
 
-    # for dm_diet: Change unit: [kt] => [kcal/cap/day]
+    # for dm_diet_share: Change unit: [kt] => [kcal/cap/day]
     cdm_kcal_copy = cdm_kcal.copy()
     # Filter constants depending on dm
     cdm_kcal_diet = cdm_kcal_copy.filter(
-      {'Categories1': dm_diet.col_labels['Categories1']})
+      {'Categories1': dm_diet_share.col_labels['Categories1']})
     cdm_kcal_fwaste = cdm_kcal.copy()
     cdm_kcal_fwaste = cdm_kcal_copy.filter(
       {'Categories1': dm_waste_temp.col_labels['Categories1']})
     # Check Category order
-    dm_diet.sort('Categories1')
+    dm_diet_share.sort('Categories1')
     cdm_kcal_diet.sort('Categories1')
     # Unit conversion: [kt] => [kcal]
-    array_temp = 10 ** 3 * dm_diet[:, :, 'lfs_consumers-diet', :] \
+    array_temp = 10 ** 3 * dm_diet_share[:, :, 'lfs_consumers-diet', :] \
                  * cdm_kcal_diet[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
-    dm_diet[:, :, 'lfs_consumers-diet', :] = array_temp
+    dm_diet_share[:, :, 'lfs_consumers-diet', :] = array_temp
     # Unit conversion: [kcal] => [kcal/cap/day]
-    array_temp = dm_diet[:, :, 'lfs_consumers-diet', :] \
+    array_temp = dm_diet_share[:, :, 'lfs_consumers-diet', :] \
                  / dm_population[:, :, 'lfs_population_total',
                    np.newaxis] / 365.25
-    dm_diet[:, :, 'lfs_consumers-diet', :] = array_temp
+    dm_diet_share[:, :, 'lfs_consumers-diet', :] = array_temp
 
     # Create copy for updating kcal-req [-]
-    dm_diet_temp = dm_diet.copy()
+    dm_diet_share_temp = dm_diet_share.copy()
+
+    # Create copy  & format for diet-split-kcal [kcal/cap/day]
+    dm_diet_kcal = dm_diet_share.copy()
+    dm_diet_kcal.change_unit('lfs_consumers-diet', old_unit='-',
+                            new_unit='kcal/cap/day', factor=1)
 
     # Total diet [kcal/cap/day] = sum(diet consumer per category [kcal/cap/day]
-    dm_diet_temp.group_all(dim='Categories1', inplace=True)
+    dm_diet_share_temp.group_all(dim='Categories1', inplace=True)
 
     # Normalise to obtain a ratio sum = 1
-    dm_diet.normalise('Categories1', inplace=True)
-    dm_diet.change_unit('lfs_consumers-diet', old_unit='%',
+    dm_diet_share.normalise('Categories1', inplace=True)
+    dm_diet_share.change_unit('lfs_consumers-diet', old_unit='%',
                  new_unit='-', factor=1)
 
     # Diet demand [kcal/day] = Diet demand [kcal/cap/day] * Population [cap]
-    dm_diet_temp.append(dm_population, dim='Variables')
-    dm_diet_temp.operation('lfs_consumers-diet', '*', 'lfs_population_total',
+    dm_diet_share_temp.append(dm_population, dim='Variables')
+    dm_diet_share_temp.operation('lfs_consumers-diet', '*', 'lfs_population_total',
                       out_col='lfs_consumers-diet_tot', unit='kcal/day')
 
     # Normalise dm_kcal_req to obtain the share of kcal by age & gender categorie
@@ -295,14 +300,14 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
     dm_kcal_req.normalise('Categories1', keep_original=True)
 
     # Filter for same countries
-    dm_diet_temp.filter({'Country': dm_kcal_req.col_labels['Country']}, inplace=True)
+    dm_diet_share_temp.filter({'Country': dm_kcal_req.col_labels['Country']}, inplace=True)
 
     # Check country order
-    dm_diet_temp.sort('Country')
+    dm_diet_share_temp.sort('Country')
     dm_kcal_req.sort('Country')
 
     # Demand per age gender group [kcal/day]= share kcal per age gender group [%] * total food demand [kcal/day]
-    arr = dm_diet_temp[:, :, 'lfs_consumers-diet_tot', np.newaxis] * dm_kcal_req[:, :,'agr_kcal-req_req_share',:]
+    arr = dm_diet_share_temp[:, :, 'lfs_consumers-diet_tot', np.newaxis] * dm_kcal_req[:, :,'agr_kcal-req_req_share',:]
     dm_kcal_req.add(arr, dim='Variables', col_label='demand_per_group',
                unit='kcal/day')
 
@@ -314,7 +319,7 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
     dm_kcal_req.filter({'Variables':['agr_kcal-req_temp']}, inplace=True)
     dm_kcal_req.rename_col('agr_kcal-req_temp', 'agr_kcal-req', dim='Variables')
 
-    return dm_diet, dm_waste, dm_kcal_req
+    return dm_diet_share, dm_waste, dm_kcal_req, dm_diet_kcal
 
 # CalculationLeaf ENERGY REQUIREMENTS (OVERCONSUMPTION) -----------------------------------------------------------------------------------
 def energy_requirements_processing(country_list, years_ots):
@@ -530,7 +535,7 @@ def dietaryhabits_calibration(list_countries, cdm_kcal):
     # Drop the 'Item' column
     df_diet_calibration = df_diet_calibration.drop(columns=['Item'])
 
-    # Renaming existing columns (geoscale, timsecale, value)
+    # Renaming existing columns (geoscale, timescale, value)
     df_diet_calibration.rename(columns={'Area': 'Country', 'Year': 'Years', 'Food': 'value'}, inplace=True)
 
     # Change data type of timescale to int
@@ -667,11 +672,60 @@ def fts_processing(list_countries, years_ots, years_fts, cdm_kcal):
       dm[level] = DataMatrix.create_from_df(df_fts, num_cat=0)
     dm_fts[lever] = dm
 
-  # diet-split ---------------------------------------------------------------
+  # diet-split-kcal ---------------------------------------------------------------
+  # Read Excel
+  df_fts_diet_kcal = pd.read_excel(
+      'data/dietary-habits_fts.xlsx',
+    sheet_name='diet-split-kcal')
+  df_fts_diet_kcal = df_fts_diet_kcal[
+      ['variables', 'timescale', 'level_1', 'level_2', 'level_3', 'level_4']]
+
+  # Melt
+  df_fts_diet_kcal = df_fts_diet_kcal.melt(
+    id_vars=['variables', 'timescale'],
+    var_name='level_name',
+    value_name='value'
+  )
+
+  # Associate a level for each diet
+  # Mapping
+  level_map = {
+    'level_1': 1,
+    'level_2': 2,
+    'level_3': 3,
+    'level_4': 4,
+
+  }
+
+  # Map lever strings to numbers
+  df_fts_diet_kcal['level'] = df_fts_diet_kcal['level_name'].map(level_map)
+
+  # Format as dm
+  df_fts_diet_kcal['geoscale'] = 'Switzerland'
+  lever = 'diet-split-kcal'
+  df_fts_diet_kcal['lever'] = lever
+  dm = {}
+  dm_fts_cereal = {}
+
+  for level in df_fts_diet_kcal['level'].unique():
+
+    df_fts_filtered = df_fts_diet_kcal[df_fts_diet_kcal['level'] == level]
+    df_ots, df_fts = database_to_df(df_fts_filtered.copy(), lever, level='all')
+    df_fts = df_fts.drop(columns=[lever])  # Drop column with lever name
+    dm[level] = DataMatrix.create_from_df(df_fts, num_cat=0)
+    # Filter & deepen for diet-split-kcal
+    dm_kcal = dm.copy()
+    dm_kcal[level].filter_w_regex({'Variables': 'lfs_consumers-diet.*'}, inplace=True)
+    dm_kcal[level].deepen()
+    # Filter & deepen for share wholegrains & processed meat
+
+  dm_fts[lever] = dm_kcal
+
+  # diet-split-share ---------------------------------------------------------------
   # Read Excel
   df_fts_diet = pd.read_excel(
       'data/dietary-habits_fts.xlsx',
-    sheet_name='diet')
+    sheet_name='diet-split-share')
   df_fts_diet = df_fts_diet[
       ['variables', 'diet_eat-lancet-phd-2025', 'diet_eat-lancet-phd-2019', 'diet_sfp-2024']]
 
@@ -699,7 +753,7 @@ def fts_processing(list_countries, years_ots, years_fts, cdm_kcal):
   # Format as dm
   df_fts_diet['timescale'] = 2050
   df_fts_diet['geoscale'] = 'Switzerland'
-  lever = 'diet-split'
+  lever = 'diet-split-share'
   df_fts_diet['lever'] = lever
   dm = {}
   dm_fts_cereal = {}
@@ -734,14 +788,14 @@ def fts_processing(list_countries, years_ots, years_fts, cdm_kcal):
                                               'crop-sugarcrop',
                                               'liv-meat-meal',
                                               'stm'])
-  lever = 'diet-split'
+  lever = 'diet-split-share'
   for level in df_fts_diet['level'].unique():
-    dm_diet = dm_fts[lever][level].copy()
+    dm_diet_share = dm_fts[lever][level].copy()
     # Check Category order
-    dm_diet.sort('Categories1')
+    dm_diet_share.sort('Categories1')
     cdm_kcal_copy.sort('Categories1')
     # Unit conversion: [g/cap/day] => [kcal/cap/day]
-    array_temp = 10**(-6) * dm_diet[:, :,'lfs_consumers-diet', :] \
+    array_temp = 10**(-6) * dm_diet_share[:, :,'lfs_consumers-diet', :] \
                  * cdm_kcal_copy[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
     dm_fts[lever][level]['Switzerland', :, 'lfs_consumers-diet', :] = array_temp
     # Normalise to compute share
@@ -754,7 +808,7 @@ def fts_processing(list_countries, years_ots, years_fts, cdm_kcal):
 
 # CalculationLeaf PICKLE CREATION ------------------------------
 
-def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_diet, dm_diet, dm_adherence, cdm_kcal, cdm_lifestyle, dm_fts):
+def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_diet, dm_diet_share, dm_diet_kcal, dm_adherence, cdm_kcal, cdm_lifestyle, dm_fts):
 
   # Make list with all years
   years_all = years_ots + years_fts
@@ -770,8 +824,11 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_die
   # LeversToDatamatrix OTS -----------------------------------------------------
   dict_ots = {}
 
-  # Diet-split
-  dict_ots['diet-split'] = dm_diet
+  # Diet-split-share
+  dict_ots['diet-split-share'] = dm_diet_share
+
+  # Diet-split-kcal
+  dict_ots['diet-split-kcal'] = dm_diet_kcal
 
   # Food waste
   dict_ots['fwaste'] = dm_waste
@@ -790,7 +847,8 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_die
 
   # Adding a new lever with dummy values
   dict_temp = {}
-  dict_fts['diet-split'] = {'diet-split': dict()}
+  dict_fts['diet-split-share'] = {'diet-split-share': dict()}
+  dict_fts['diet-split-kcal'] = {'diet-split-kcal': dict()}
   dict_fts['fwaste'] = {'fwaste': dict()}
   dict_fts['kcal-req'] = {'kcal-req': dict()}
   dict_fts['diet-adherence'] = {'diet-adherence': dict()}
@@ -863,18 +921,25 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_die
     dm_fts['kcal-req'][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
   dict_fts['kcal-req'] = dm_fts['kcal-req']
 
-  # Lever - diet-split
+  # Lever - diet-split-share
   for level in range(2,5):
-    dm_fts['diet-split'][level].append(dict_ots['diet-split'], dim='Years')
-    linear_fitting(dm_fts['diet-split'][level], years_fts)
-    dm_fts['diet-split'][level].filter({'Years':years_fts}, inplace=True)
-  dict_fts['diet-split'] = dm_fts['diet-split']
+    dm_fts['diet-split-share'][level].append(dict_ots['diet-split-share'], dim='Years')
+    linear_fitting(dm_fts['diet-split-share'][level], years_fts)
+    dm_fts['diet-split-share'][level].filter({'Years':years_fts}, inplace=True)
+  dict_fts['diet-split-share'] = dm_fts['diet-split-share']
   # Compute BAU scenario level 1
   level = 1
-  dm_fts['diet-split'][level] = dict_ots['diet-split'].copy()
-  linear_fitting(dm_fts['diet-split'][level], years_fts)
-  dm_fts['diet-split'][level].filter({'Years': years_fts}, inplace=True)
-  dict_fts['diet-split'][level] = dm_fts['diet-split'][level]
+  dm_fts['diet-split-share'][level] = dict_ots['diet-split-share'].copy()
+  linear_fitting(dm_fts['diet-split-share'][level], years_fts)
+  dm_fts['diet-split-share'][level].filter({'Years': years_fts}, inplace=True)
+  dict_fts['diet-split-share'][level] = dm_fts['diet-split-share'][level]
+
+  # Lever - diet-split-kcal
+  for level in range(1,5):
+    dm_fts['diet-split-kcal'][level].append(dict_ots['diet-split-kcal'], dim='Years')
+    linear_fitting(dm_fts['diet-split-kcal'][level], years_fts)
+    dm_fts['diet-split-kcal'][level].filter({'Years':years_fts}, inplace=True)
+  dict_fts['diet-split-kcal'] = dm_fts['diet-split-kcal']
 
 
 
@@ -913,10 +978,10 @@ cdm_kcal, cdm_lifestyle = constant()
 dm_cal_diet = dietaryhabits_calibration(list_countries, cdm_kcal)
 dm_kcal_req_temp = energy_requirements_processing(list_countries, years_ots)
 file = 'data/faostat/diet.csv' # Create file for storing data
-dm_diet, dm_waste, dm_kcal_req = diet_processing(list_countries, file, cdm_kcal, dm_kcal_req_temp)
+dm_diet_share, dm_waste, dm_kcal_req, dm_diet_kcal = diet_processing(list_countries, file, cdm_kcal, dm_kcal_req_temp)
 dm_adherence = diet_adherence_processing(list_countries, years_ots)
 dm_fts = fts_processing(list_countries, years_ots, years_fts, cdm_kcal)
 
 
 # CalculationTree RUNNING PICKLE CREATION
-datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_diet, dm_diet, dm_adherence, cdm_kcal, cdm_lifestyle, dm_fts)
+datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_diet, dm_diet_share, dm_diet_kcal, dm_adherence, cdm_kcal, cdm_lifestyle, dm_fts)
