@@ -119,7 +119,7 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
 
         # Renaming the items for name matching
         df_diet_1990_2013.loc[
-            df_diet_1990_2013['Item'].str.contains('Rice \(Milled Equivalent\)', case=False,
+            df_diet_1990_2013['Item'].str.contains('Rice \\(Milled Equivalent\\)', case=False,
                                                    na=False), 'Item'] = 'Rice and products'
 
         # Concatenating all the years together
@@ -252,30 +252,12 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
     dm_waste_temp = dm_waste.copy()
 
     # for dm_diet: Change unit: [kt] => [kcal/cap/day]
-    # Rename categories
-    cat_diet_lifestyle = [
-      'afat', 'beer', 'bev-alc', 'bev-fer', 'bov', 'cereals', 'egg', 'fruits',
-      'milk', 'offal', 'oilcrops', 'oth-animals', 'pigs', 'poultry', 'pulses',
-      'sheep', 'starch', 'sugar', 'sweet', 'veg', 'voil', 'wine', 'sugarcrop'
-    ]
-    cat_diet_cdm = [
-      'pro-liv-abp-processed-afat', 'pro-bev-beer', 'pro-bev-bev-alc',
-      'pro-bev-bev-fer',
-      'pro-liv-meat-bovine', 'crop-cereal',
-      'pro-liv-abp-hens-egg', 'crop-fruit', 'pro-liv-abp-dairy-milk',
-      'pro-liv-abp-processed-offal', 'crop-oilcrop', 'pro-liv-meat-oth-animals',
-      'pro-liv-meat-pig', 'pro-liv-meat-poultry',
-      'crop-pulse', 'pro-liv-meat-sheep', 'crop-starch',
-      'pro-crop-processed-sugar', 'pro-crop-processed-sweet', 'crop-veg',
-      'pro-crop-processed-voil', 'pro-bev-wine', 'crop-sugarcrop',
-    ]
-    #cdm_kcal.rename_col(cat_diet_cdm, cat_diet_lifestyle, 'Categories1')
+    cdm_kcal_copy = cdm_kcal.copy()
     # Filter constants depending on dm
-    cdm_kcal_diet = cdm_kcal.copy()
-    cdm_kcal_diet = cdm_kcal_diet.filter(
+    cdm_kcal_diet = cdm_kcal_copy.filter(
       {'Categories1': dm_diet.col_labels['Categories1']})
     cdm_kcal_fwaste = cdm_kcal.copy()
-    cdm_kcal_fwaste = cdm_kcal_fwaste.filter(
+    cdm_kcal_fwaste = cdm_kcal_copy.filter(
       {'Categories1': dm_waste_temp.col_labels['Categories1']})
     # Check Category order
     dm_diet.sort('Categories1')
@@ -298,6 +280,8 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
 
     # Normalise to obtain a ratio sum = 1
     dm_diet.normalise('Categories1', inplace=True)
+    dm_diet.change_unit('lfs_consumers-diet', old_unit='%',
+                 new_unit='-', factor=1)
 
     # Diet demand [kcal/day] = Diet demand [kcal/cap/day] * Population [cap]
     dm_diet_temp.append(dm_population, dim='Variables')
@@ -510,7 +494,7 @@ def dietaryhabits_calibration(list_countries, cdm_kcal):
     df_diet_2010_2022 = faostat.get_data_df(code, pars=my_pars, strval=False)
 
     df_diet_1990_2013.loc[
-        df_diet_1990_2013['Item'].str.contains('Rice \(Milled Equivalent\)', case=False,
+        df_diet_1990_2013['Item'].str.contains('Rice \\(Milled Equivalent\\)', case=False,
                                                na=False), 'Item'] = 'Rice and products'
 
     # Filtering to keep wanted columns
@@ -557,43 +541,22 @@ def dietaryhabits_calibration(list_countries, cdm_kcal):
     dm_cal_diet = DataMatrix.create_from_df(df_pivot, num_cat=1)
 
     # Note : the goal here is to convert the diet calibration values from [kt] to [kcal/cap]
-    # Rename categories
-    cat_diet = [
-      'afat', 'beer', 'bev-alc', 'bev-fer', 'bov', 'cereals', 'cocoa', 'coffee',
-      'dfish', 'egg', 'ffish', 'fruits', 'milk', 'offal', 'oilcrops',
-      'oth-animals',
-      'oth-aq-animals', 'pfish', 'pigs', 'poultry', 'pulses', 'seafood',
-      'sheep', 'starch', 'sugar', 'sweet', 'tea', 'veg', 'voil', 'wine',
-      'sugarcrop', 'crop-rice'
-    ]
-    cat_cdm = [
-      'pro-liv-abp-processed-afat', 'pro-bev-beer', 'pro-bev-bev-alc',
-      'pro-bev-bev-fer',
-      'pro-liv-meat-bovine', 'crop-cereal', 'cocoa', 'coffee', 'dfish',
-      'pro-liv-abp-hens-egg', 'ffish', 'crop-fruit', 'pro-liv-abp-dairy-milk',
-      'pro-liv-abp-processed-offal', 'crop-oilcrop', 'pro-liv-meat-oth-animals',
-      'oth-aq-animals', 'pfish', 'pro-liv-meat-pig', 'pro-liv-meat-poultry',
-      'crop-pulse', 'seafood', 'pro-liv-meat-sheep', 'crop-starch',
-      'pro-crop-processed-sugar', 'pro-crop-processed-sweet', 'tea', 'crop-veg',
-      'pro-crop-processed-voil', 'pro-bev-wine', 'crop-sugarcrop', 'crop-rice'
-    ]
-    cdm_kcal.rename_col(cat_cdm, cat_diet, 'Categories1')
-
+    cdm_kcal_cal = cdm_kcal.copy()
     # Filter constants DROP
-    cdm_kcal.drop(dim='Categories1', col_label=['pro-crop-processed-molasse',
+    cdm_kcal_cal.drop(dim='Categories1', col_label=['pro-crop-processed-molasse',
                                                 'pro-crop-processed-cake',
-                                                'sugarcrop',
+                                                'crop-sugarcrop',
                                                 'liv-meat-meal',
                                                 'stm'])
 
     # Check Category order
     dm_cal_diet.sort('Categories1')
-    cdm_kcal.sort('Categories1')
+    cdm_kcal_cal.sort('Categories1')
 
     # Unit conversion: [kt] => [kcal]
     array_temp = 10 ** 3 * dm_cal_diet[:, :,
                            'cal_agr_diet', :] \
-                 * cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
+                 * cdm_kcal_cal[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
     dm_cal_diet['Switzerland', :, 'cal_agr_diet',:] = array_temp
 
     # Extrapolate
@@ -683,8 +646,9 @@ def constant():
   return cdm_kcal, cdm_lifestyle
 
 # CalculationLeaf FTS  ------------------------------
-def fts_processing(list_countries, years_ots, years_fts):
+def fts_processing(list_countries, years_ots, years_fts, cdm_kcal):
 
+  # fwaste, diet-adherence, kcal-req -------------------------------------------
   # Read Excel
   df_fts_data = pd.read_excel(
     'data/dietary-habits_fts.xlsx',
@@ -698,10 +662,93 @@ def fts_processing(list_countries, years_ots, years_fts):
     for level in df_fts_data['level'].unique():
       df_fts_filtered = df_fts_data[df_fts_data['level'] == level]
       df_fts_filtered = df_fts_filtered[df_fts_filtered['lever'] == lever]
-      df_ots, df_fts = database_to_df(df_fts_filtered, lever, level='all')
+      df_ots, df_fts = database_to_df(df_fts_filtered.copy(), lever, level='all')
       df_fts = df_fts.drop(columns=[lever])  # Drop column with lever name
       dm[level] = DataMatrix.create_from_df(df_fts, num_cat=0)
     dm_fts[lever] = dm
+
+  # diet-split ---------------------------------------------------------------
+  # Read Excel
+  df_fts_diet = pd.read_excel(
+      'data/dietary-habits_fts.xlsx',
+    sheet_name='diet')
+  df_fts_diet = df_fts_diet[
+      ['variables', 'diet_eat-lancet-phd-2025', 'diet_eat-lancet-phd-2019', 'diet_sfp-2024']]
+
+  # Fill nan with 0.0
+  df_fts_diet.fillna(0.0, inplace=True)
+
+  # Melt
+  df_fts_diet = df_fts_diet.melt(
+    id_vars='variables',
+    var_name='level_name',
+    value_name='value'
+  )
+
+  # Associate a level for each diet
+  # Mapping
+  level_map = {
+    'diet_eat-lancet-phd-2025': 2,
+    'diet_eat-lancet-phd-2019': 3,
+    'diet_sfp-2024': 4
+  }
+
+  # Map lever strings to numbers
+  df_fts_diet['level'] = df_fts_diet['level_name'].map(level_map)
+
+  # Format as dm
+  df_fts_diet['timescale'] = 2050
+  df_fts_diet['geoscale'] = 'Switzerland'
+  lever = 'diet-split'
+  df_fts_diet['lever'] = lever
+  dm = {}
+  dm_fts_cereal = {}
+
+  for level in df_fts_diet['level'].unique():
+
+    df_fts_filtered = df_fts_diet[df_fts_diet['level'] == level]
+    df_ots, df_fts = database_to_df(df_fts_filtered.copy(), lever, level='all')
+    df_fts = df_fts.drop(columns=[lever])  # Drop column with lever name
+    dm[level] = DataMatrix.create_from_df(df_fts, num_cat=1)
+    # Compute share of whole and refined grains cereals
+    dm_cereal = dm[level].filter({'Categories1':['crop-cereal-whole', 'crop-cereal-refined']}).copy()
+    dm_cereal_tot = dm_cereal.copy()
+    dm_cereal_tot.groupby({'crop-cereal': 'crop-cereal.*'}, regex=True, inplace=True, dim='Categories1')
+    dm_cereal.append(dm_cereal_tot,dim='Categories1')
+    dm_cereal = dm_cereal.flatten()
+    dm_cereal.operation('lfs_consumers-diet_crop-cereal-whole', '/', 'lfs_consumers-diet_crop-cereal',out_col='lfs_share_crop-cereal-whole', unit='-')
+    dm_fts_cereal[level] = dm_cereal
+    # cereals = cereals-whole + cereals-refined
+    dm[level].groupby({'crop-cereal': 'crop-cereal.*'}, regex=True, inplace=True, dim='Categories1')
+    # oilcrops = oilcrops + treenuts
+    dm[level].groupby({'crop-oilcrop': '.*oilcrop|.*treenut'}, regex=True, inplace=True, dim='Categories1')
+
+  dm_fts[lever] = dm
+  #dm_fts[] = dm_fts_cereal
+
+  # Convert in kcal
+  # Filter constants
+  cdm_kcal_copy = cdm_kcal.copy()
+  cdm_kcal_copy.drop(dim='Categories1', col_label=['pro-crop-processed-molasse',
+                                              'pro-crop-processed-cake',
+                                              'crop-sugarcrop',
+                                              'liv-meat-meal',
+                                              'stm'])
+  lever = 'diet-split'
+  for level in df_fts_diet['level'].unique():
+    dm_diet = dm_fts[lever][level].copy()
+    # Check Category order
+    dm_diet.sort('Categories1')
+    cdm_kcal_copy.sort('Categories1')
+    # Unit conversion: [g/cap/day] => [kcal/cap/day]
+    array_temp = 10**(-6) * dm_diet[:, :,'lfs_consumers-diet', :] \
+                 * cdm_kcal_copy[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
+    dm_fts[lever][level]['Switzerland', :, 'lfs_consumers-diet', :] = array_temp
+    # Normalise to compute share
+    dm_fts[lever][level].normalise(dim='Categories1', inplace=True)
+    # Change unit
+    dm_fts[lever][level].change_unit('lfs_consumers-diet', old_unit='%',
+                            new_unit='-', factor=1)
 
   return dm_fts
 
@@ -816,6 +863,20 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_die
     dm_fts['kcal-req'][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
   dict_fts['kcal-req'] = dm_fts['kcal-req']
 
+  # Lever - diet-split
+  for level in range(2,5):
+    dm_fts['diet-split'][level].append(dict_ots['diet-split'], dim='Years')
+    linear_fitting(dm_fts['diet-split'][level], years_fts)
+    dm_fts['diet-split'][level].filter({'Years':years_fts}, inplace=True)
+  dict_fts['diet-split'] = dm_fts['diet-split']
+  # Compute BAU scenario level 1
+  level = 1
+  dm_fts['diet-split'][level] = dict_ots['diet-split'].copy()
+  linear_fitting(dm_fts['diet-split'][level], years_fts)
+  dm_fts['diet-split'][level].filter({'Years': years_fts}, inplace=True)
+  dict_fts['diet-split'][level] = dm_fts['diet-split'][level]
+
+
 
   # ConstantsToDatamatrix ------------------------------------------------------
   dict_const = {}
@@ -854,7 +915,7 @@ dm_kcal_req_temp = energy_requirements_processing(list_countries, years_ots)
 file = 'data/faostat/diet.csv' # Create file for storing data
 dm_diet, dm_waste, dm_kcal_req = diet_processing(list_countries, file, cdm_kcal, dm_kcal_req_temp)
 dm_adherence = diet_adherence_processing(list_countries, years_ots)
-dm_fts = fts_processing(list_countries, years_ots, years_fts)
+dm_fts = fts_processing(list_countries, years_ots, years_fts, cdm_kcal)
 
 
 # CalculationTree RUNNING PICKLE CREATION

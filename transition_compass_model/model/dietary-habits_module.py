@@ -125,30 +125,9 @@ def diet_adherence_scenarios(DM_diet, DM_pop, CDM_const, bau):
                        unit='kcal/cap/day')
 
   # Unit conversion: [kcal/cap/day] => [g/cap/day]
-  # Format for same categories as rest Agriculture module
-  cat_lfs = ['afat', 'beer', 'bev-alc', 'bev-fer', 'bov', 'cereals', 'coffee',
-             'dfish', 'egg', 'ffish', 'fruits',
-             'milk', 'offal', 'oilcrops', 'oth-animals', 'oth-aq-animals',
-             'pfish', 'pigs', 'poultry', 'pulses',
-             'rice', 'seafood', 'sheep', 'starch', 'stm', 'sugar', 'sweet',
-             'veg', 'voil', 'wine']
-  cat_agr = ['pro-liv-abp-processed-afat', 'pro-bev-beer', 'pro-bev-bev-alc',
-             'pro-bev-bev-fer',
-             'pro-liv-meat-bovine',
-             'crop-cereal', 'coffee', 'dfish', 'pro-liv-abp-hens-egg', 'ffish',
-             'crop-fruit',
-             'pro-liv-abp-dairy-milk',
-             'pro-liv-abp-processed-offal', 'crop-oilcrop',
-             'pro-liv-meat-oth-animals', 'oth-aq-animals', 'pfish',
-             'pro-liv-meat-pig', 'pro-liv-meat-poultry', 'crop-pulse',
-             'crop-rice', 'seafood', 'pro-liv-meat-sheep',
-             'crop-starch', 'stm', 'pro-crop-processed-sugar',
-             'pro-crop-processed-sweet', 'crop-veg',
-             'pro-crop-processed-voil', 'pro-bev-wine']
-  dm_diet_consumed.rename_col(cat_lfs, cat_agr, 'Categories1')
   dm_diet_consumed.sort('Categories1')
   cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
-  cdm_kcal.drop(dim='Categories1', col_label='stm')
+  cdm_kcal.drop(dim='Categories1', col_label=['stm']) # to drop only stm and not stm-coffee etc
   cdm_kcal.drop(dim='Categories1', col_label='crop-sugarcrop')
   cdm_kcal.drop(dim='Categories1', col_label='pro-crop-processed-molasse')
   cdm_kcal.drop(dim='Categories1', col_label='pro-crop-processed-cake')
@@ -261,7 +240,7 @@ def lifestyle_workflow(DM_diet, DM_pop, CDM_const, years_setting):
                'crop-starch', 'stm', 'pro-crop-processed-sugar', 'pro-crop-processed-sweet', 'crop-veg',
                'pro-crop-processed-voil', 'pro-bev-wine']
 
-    dm_lfs.rename_col(cat_lfs, cat_agr, 'Categories1')
+    #dm_lfs.rename_col(cat_lfs, cat_agr, 'Categories1')
     dm_lfs.sort('Categories1')
 
     return dm_lfs, dm_diet_consumed, dm_diet_consumed_bau, dm_diet_consumed_scenario, dm_diet_food
@@ -280,7 +259,7 @@ def dietaryhabits_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_foo
     dm_supply = dm_lfs.filter({'Variables': ['agr_demand']})
     cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
     cdm_kcal.drop(dim='Categories1', col_label='crop-sugarcrop')
-    cdm_kcal.drop(dim='Categories1', col_label='stm')
+    cdm_kcal.drop(dim='Categories1', col_label=['stm']) # to drop only stm and not stm-coffee etc
     cdm_kcal.drop(dim='Categories1', col_label='pro-crop-processed-molasse')
     cdm_kcal.drop(dim='Categories1', col_label='pro-crop-processed-cake')
     cdm_kcal.drop(dim='Categories1', col_label='liv-meat-meal')
@@ -305,7 +284,7 @@ def dietaryhabits_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_foo
     dm_foodwaste = dm_diet_food.filter({'Variables': ['lfs_food-wastes']})
     cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
     cdm_kcal.drop(dim='Categories1', col_label='crop-sugarcrop')
-    cdm_kcal.drop(dim='Categories1', col_label='stm')
+    cdm_kcal.drop(dim='Categories1', col_label=['stm']) # to drop only stm and not stm-coffee etc
     cdm_kcal.drop(dim='Categories1', col_label='pro-crop-processed-molasse')
     cdm_kcal.drop(dim='Categories1', col_label='pro-crop-processed-cake')
     cdm_kcal.drop(dim='Categories1', col_label='liv-meat-meal')
