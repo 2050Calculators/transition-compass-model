@@ -32,16 +32,66 @@ def read_data(DM_diet_input, lever_setting):
     # Sub-matrix for DIETARY HABITS
     dm_diet_requirement = DM_ots_fts['kcal-req']
     dm_diet_split_share = DM_ots_fts['diet-split-share']
-    dm_diet_split_kcal = DM_ots_fts['diet-split-kcal']
     dm_diet_fwaste = DM_ots_fts['fwaste']
     dm_fxa_cal_diet = DM_diet_input['fxa']['cal_agr_diet']
     dm_diet_adherence = DM_ots_fts['diet-adherence']
+
+    # list of lever names
+    levers = [
+      "diet-split-kcal_crop-cereal",
+      "diet-split-kcal_crop-rice",
+      "diet-split-kcal_crop-fruit",
+      "diet-split-kcal_crop-oilcrop",
+      "diet-split-kcal_crop-pulse",
+      "diet-split-kcal_crop-starch",
+      "diet-split-kcal_crop-veg",
+      "diet-split-kcal_pro-bev-beer",
+      "diet-split-kcal_pro-bev-bev-alc",
+      "diet-split-kcal_pro-bev-bev-fer",
+      "diet-split-kcal_pro-bev-wine",
+      "diet-split-kcal_pro-crop-processed-sugar",
+      "diet-split-kcal_pro-crop-processed-sweet",
+      "diet-split-kcal_pro-crop-processed-voil",
+      "diet-split-kcal_pro-liv-abp-dairy-milk",
+      "diet-split-kcal_pro-liv-abp-hens-egg",
+      "diet-split-kcal_pro-liv-abp-processed-afat",
+      "diet-split-kcal_pro-liv-abp-processed-offal",
+      "diet-split-kcal_pro-liv-meat-bovine",
+      "diet-split-kcal_pro-liv-meat-oth-animal",
+      "diet-split-kcal_pro-liv-meat-pig",
+      "diet-split-kcal_pro-liv-meat-poultry",
+      "diet-split-kcal_pro-liv-meat-sheep",
+      "diet-split-kcal_seafood-dfish",
+      "diet-split-kcal_seafood-ffish",
+      "diet-split-kcal_seafood-oth-aq-animal",
+      "diet-split-kcal_seafood-pfish",
+      "diet-split-kcal_seafood-seafood",
+      "diet-split-kcal_stm-cocoa",
+      "diet-split-kcal_stm-coffee",
+      "diet-split-kcal_stm-tea"
+    ]
+
+    # Step 1: Create a dictionary of all DataMatrix objects
+    dm_diet_split_kcal = {lever: DM_ots_fts[lever] for lever in levers}
+
+    # Step 2: Merge them all into one DataMatrix along 'Variables'
+    dm_diet_split_kcal_merged = None
+
+    for lever_name, dm_split in dm_diet_split_kcal.items():
+      # ensure each variable label is unique
+      dm_split.col_labels['Variables'] = ['lfs_consumers-diet']
+      #dm_split.rename_col([lever_name], 'lfs_consumers-diet', 'Variables')
+
+      if dm_diet_split_kcal_merged is None:
+        dm_diet_split_kcal_merged = dm_split
+      else:
+        dm_diet_split_kcal_merged.append(dm_split, dim='Categories1')
 
     # Aggregate Data Matrix - DIETARY HABITS
     DM_diet = {
         'energy-requirement': dm_diet_requirement,
         'diet-split-share': dm_diet_split_share,
-        'diet-split-kcal': dm_diet_split_kcal,
+        'diet-split-kcal': dm_diet_split_kcal_merged,
         'diet-fwaste': dm_diet_fwaste,
         'cal_diet': dm_fxa_cal_diet,
         'diet-adherence': dm_diet_adherence
@@ -463,7 +513,7 @@ def dietaryhabits_local_run():
     country_list = ['Switzerland', 'Vaud']
     DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'dietary-habits')
     years_setting, lever_setting = init_years_lever()
-    dietaryhabits(lever_setting, years_setting, DM_input['dietary-habits'], tpe_scenario='diet-split-share')
+    dietaryhabits(lever_setting, years_setting, DM_input['dietary-habits'], tpe_scenario='diet-split-kcal')
 
 
 if __name__ == "__main__":
