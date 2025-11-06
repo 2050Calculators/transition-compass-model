@@ -22,7 +22,7 @@ def init_years_lever():
 
 
 # CalculationLeaf READ PICKLE
-def read_data(DM_diet_input, lever_setting):
+def read_data(DM_diet_input, lever_setting, tpe_scenario):
 
     # Read fts based on lever_setting
     # FIXME error it adds ots and fts
@@ -35,6 +35,16 @@ def read_data(DM_diet_input, lever_setting):
     dm_diet_fwaste = DM_ots_fts['fwaste']
     dm_fxa_cal_diet = DM_diet_input['fxa']['cal_agr_diet']
     dm_diet_adherence = DM_ots_fts['diet-adherence']
+    if tpe_scenario == 'diet-split-share':
+      dm_share_pro_food = DM_ots_fts['share-processed-food_crop-cereal-whole']
+      dm_share_pro_food_meat = DM_ots_fts[
+        'share-processed-food_unprocessed-meat']
+      dm_share_pro_food.append(dm_share_pro_food_meat, dim='Variables')
+    elif tpe_scenario == 'diet-split-kcal':
+      dm_share_pro_food = DM_ots_fts['share-kcal-processed-food_crop-cereal-whole']
+      dm_share_pro_food_meat = DM_ots_fts[
+        'share-kcal-processed-food_unprocessed-meat']
+      dm_share_pro_food.append(dm_share_pro_food_meat, dim='Variables')
 
     # list of lever names
     levers = [
@@ -94,7 +104,8 @@ def read_data(DM_diet_input, lever_setting):
         'diet-split-kcal': dm_diet_split_kcal_merged,
         'diet-fwaste': dm_diet_fwaste,
         'cal_diet': dm_fxa_cal_diet,
-        'diet-adherence': dm_diet_adherence
+        'diet-adherence': dm_diet_adherence,
+        'share-processed-food': dm_share_pro_food
     }
 
     CDM_const = DM_diet_input['constant']
@@ -468,7 +479,7 @@ def dietaryhabits_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario
 def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, interface=Interface()):
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    DM_ots_fts, DM_diet, CDM_const = read_data(DM_input, lever_setting)
+    DM_ots_fts, DM_diet, CDM_const = read_data(DM_input, lever_setting, tpe_scenario)
     country_list = ['Switzerland']
 
     # INTERFACES IN ---------------------------------------------------------------------------------------------------
