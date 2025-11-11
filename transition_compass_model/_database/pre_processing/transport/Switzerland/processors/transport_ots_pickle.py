@@ -1,8 +1,12 @@
+import copy
+
 from _database.pre_processing.transport.Switzerland.processors.passenger_efficiency_pipeline import compute_tech_share
 from model.common.auxiliary_functions import dm_add_missing_variables, my_pickle_dump, sort_pickle
 import os
 import pickle
 import numpy as np
+from _database.pre_processing.transport.Switzerland.get_data_functions import utils
+
 
 def run(DM_input, years_ots, years_fts):
 
@@ -15,6 +19,7 @@ def run(DM_input, years_ots, years_fts):
   dm_private_fleet = DM_input['passenger_private-fleet'].copy()
   dm_public_fleet = DM_input['passenger_public-fleet'].copy()
   dm_fleet_tech_share = compute_tech_share(dm_private_fleet, dm_public_fleet)
+  dm_fleet_tech_share.rename_col('tra_passenger_vehicle-fleet_share', 'tra_passenger_technology-share_fleet', dim='Variables')
 
   ##############################
   ####     WASTE FLEET     #####
@@ -67,13 +72,14 @@ def run(DM_input, years_ots, years_fts):
   #######################################
   ####    DEMAND PKM/CAP - AVIATION #####
   #######################################
-  dm_pkm_cap_aviation = DM_input['pkm_cap_aviation']
-  DM_transport_new['ots']['passenger_aviation-pkm'] = dm_pkm_cap_aviation
+  #dm_pkm_cap_aviation = DM_input['pkm_cap_aviation']
+  #DM_transport_new['ots']['passenger_aviation-pkm'] = dm_pkm_cap_aviation
 
   ###########################
   ####    MODAL SHARE   #####
   ###########################
   dm_modal_share = dm_pkm_cap.normalise(dim='Categories1', inplace=False)
+  dm_modal_share.rename_col('tra_pkm-cap_share', 'tra_passenger_modal-share', 'Variables')
   DM_transport_new['ots']['passenger_modal-share'] = dm_modal_share
 
   #############################################
@@ -121,11 +127,19 @@ def run(DM_input, years_ots, years_fts):
   DM_transport_new['constant'] = cdm_emissions_factors
 
   # Load existing DM_transport
-  #this_dir = os.path.dirname(os.path.abspath(__file__))
-  #pickle_file = os.path.join(this_dir, '../../../../data/datamatrix/transport.pickle')
-  #with open(pickle_file, 'rb') as handle:
-  #  DM_transport = pickle.load(handle)
+  this_dir = os.path.dirname(os.path.abspath(__file__))
+  pickle_file = os.path.join(this_dir, '../../../../data/datamatrix/transport.pickle')
+  with open(pickle_file, 'rb') as handle:
+    DM_transport = pickle.load(handle)
 
-  #my_pickle_dump(DM_new=DM_transport_new, local_pickle_file=pickle_file)
-  #sort_pickle(pickle_file)
-  return DM_transport_new
+  DM_transport_wo_aviation = copy.deepcopy(DM_transport_new)
+
+  # ! FIXME: you should re-implement here aviation data
+  # DM_transport_new is missing "aviation" so I cannot simply run my_pickle_dump()
+  # I need to copy DM_transport aviation
+  utils.add_aviation_data_to_DM(DM_transport_new, DM_transport)
+
+  my_pickle_dump(DM_new=DM_transport_new, local_pickle_file=pickle_file)
+  sort_pickle(pickle_file)
+
+  return DM_transport_wo_aviation

@@ -1,4 +1,4 @@
-from model.common.auxiliary_functions import linear_fitting
+from model.common.auxiliary_functions import linear_fitting, dm_add_missing_variables
 import pandas as pd
 from model.common.data_matrix_class import DataMatrix
 import numpy as np
@@ -65,3 +65,25 @@ def df_fso_excel_to_dm(df, header_row, names_dict, var_name, unit, num_cat,
 
   dm = DataMatrix.create_from_df(df_pivot, num_cat=num_cat)
   return dm
+
+
+def add_aviation_data_to_DM(DM_transport_new, DM_transport):
+  for key, DM_new in DM_transport_new.items():
+    if isinstance(DM_new, dict):
+      add_aviation_data_to_DM(DM_new, DM_transport[key])
+    else:
+      dm_new = DM_new
+      dm = DM_transport[key]
+      if 'Categories1' in dm.dim_labels:
+        if 'aviation' in dm.col_labels['Categories1']:
+          dm_aviation = dm.filter({'Categories1': ['aviation']})
+          if 'Categories2' in dm_aviation.dim_labels:
+            dm_add_missing_variables(dm_new, {
+              'Categories2': dm_aviation.col_labels['Categories2']})
+          try:
+            dm_new.append(dm_aviation.filter({'Country': dm_new.col_labels['Country']}), dim='Categories1')
+          except Exception as e:
+            raise RuntimeError(
+              f"Warning: Error occurred when trying to add 'aviation' to variable {dm_new.col_labels['Variables']}")
+
+  return

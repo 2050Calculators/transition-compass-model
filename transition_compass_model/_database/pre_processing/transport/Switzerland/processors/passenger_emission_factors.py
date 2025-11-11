@@ -38,13 +38,15 @@ def run():
   # Similar values can be found in the National Inventory Document of Switzerland 2024 (Table 3-13).
   #endregion
   # Emission factors in kg/TJ
-  emis = {'CO2': {'diesel': 74100, 'gas': 56100, 'gasoline': 69300, 'hydrogen': 0, 'kerosene': 71500, 'marinefueloil': 77400},
-          'CH4': {'diesel': 3.9, 'gas': 92, 'gasoline': 3.9, 'hydrogen': 0, 'kerosene': 0.5, 'marinefueloil': 7},
-          'N2O': {'diesel': 3.9, 'gas': 3, 'gasoline': 3.9, 'hydrogen': 0, 'kerosene': 2, 'marinefueloil': 2}}
+  emis = {'CO2': {'diesel': 74100, 'gas': 56100, 'gasoline': 69300, 'kerosene': 73.3*3*1000, 'marinefueloil': 77400, 'SAF': 73.3*2*1000, 'H2': 73.3*2*0.25*1000},
+          'CH4': {'diesel': 3.9, 'gas': 92, 'gasoline': 3.9, 'kerosene': 0.5, 'marinefueloil': 7, 'SAF': 0, 'H2':0},
+          'N2O': {'diesel': 3.9, 'gas': 3, 'gasoline': 3.9, 'kerosene': 2, 'marinefueloil': 2, 'SAF': 0, 'H2': 0}}
   mapping_cat = {'ICE-diesel': 'diesel', 'PHEV-diesel': 'diesel', 'ICE-gasoline': 'gasoline',
-                 'PHEV-gasoline': 'gasoline', 'ICE-gas': 'gas', 'kerosene': 'kerosene', 'marinefueloil': 'marinefueloil'}
+                 'PHEV-gasoline': 'gasoline', 'ICE-gas': 'gas', 'kerosene': 'kerosene',
+                 'marinefueloil': 'marinefueloil', 'SAF': 'SAF', 'H2': 'H2'}
 
   cdm_emissions_factors = create_emissions_factors_cdm(emis, mapping_cat)
+
 
   return cdm_emissions_factors
 
