@@ -9,6 +9,9 @@ from processors.passenger_energy_pipeline import run as passenger_energy_run
 from processors.transport_ots_pickle import run as ots_pickle_run
 from processors.passenger_lifetime_pipeline import run as passenger_lifetime_run
 from processors.electricity_emissions_pipeline import run as electricity_emission_run
+from scenarios.transport_fts_BAU_pickle import run as fts_bau_pickle_run
+from scenarios.transport_preprocessing_CH_fts import run as fts_PVC_DLS_pickle_run
+
 
 years_ots = create_years_list(1990, 2023, 1)
 years_fts = create_years_list(2025, 2050, 5)
@@ -54,16 +57,22 @@ dm_energy = passenger_energy_run(years_ots)
 print('Efficiency')
 dm_veh_eff = passenger_efficiency_run(dm_energy, dm_vkm, dm_private_fleet, dm_public_fleet, cdm_emissions_factors, years_ots)
 
-
+#####################
+###   AVIATION    ###
+#####################
 ##  Aviation part1
 print('Aviation - part1')
-dm_pkm_cap_aviation, dm_pkm_fleet_aviation = aviation_pt1_run(years_ots)
+dm_pkm_cap_aviation = aviation_pt1_run(years_ots)
 
-
-
+# Aviation: first pkm suisse, then occupancy suisse and monde to obtain weighted occupancy,
+# Vehicle efficiency new, technology share new, SKIP UTILISATION RATE for the moment
+# Emission factor, lifetime, veh-efficiency, technology-share-fleet,
+# Share of local emissions: based on skm_CH & skm_abroad. skm are computed from pkm and occupancy
+# vehicle-waste,
+# STOP Aat Vehicle-fleet-new
 
 ## Transport ots pickle
-print('Create transport pickle ots')
+print('Compile transport pickle ots')
 DM_input = {'pkm_demand': dm_pkm,
             'vkm_demand': dm_vkm,
             'pkm_cap': dm_pkm_cap,
@@ -74,7 +83,17 @@ DM_input = {'pkm_demand': dm_pkm,
             'emission_factors': cdm_emissions_factors}
 # DM.keys = ['passenger_private-fleet', 'passenger_public-fleet', 'passenger_renewal-rate', 'passenger_new-vehicles', 'passenger_waste-fleet']
 DM_input = DM_input | DM  # join
+# It uses transport.pickle to extract aviation data
+# !FIXME: I'm reading aviation and freight from pickle (implement both)
 DM_transport = ots_pickle_run(DM_input, years_ots, years_fts)
 
+# Transport fts pickle
+print('Compile pickle fts - all BAU')
+DM_transport = fts_bau_pickle_run(DM_transport, country_list, years_ots, years_fts)
+
+print('fts - PCV and DLS')
+fts_PVC_DLS_pickle_run(DM_transport)
+
+# !FIXME find missing lever 3
 
 print('Hello')

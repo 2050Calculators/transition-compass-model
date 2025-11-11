@@ -205,14 +205,7 @@ def passenger_fleet_energy(DM_passenger, dm_lfs, DM_other, cdm_const, years_sett
     idx_e = dm_energy_EV.idx
     arr = (
         dm_energy_EV.array[:, :, idx_e["tra_passenger_energy-demand"], :, :, np.newaxis]
-        * dm_fact.array[
-            :,
-            :,
-            idx_f["tra_emission-factor"],
-            np.newaxis,
-            np.newaxis,
-            :,
-            idx_f["electricity"],
+        * dm_fact.array[:, :, idx_f["tra_emission-factor"], np.newaxis, np.newaxis,:,idx_f["electricity"],
         ]
     )
     dm_emissions_elec = DataMatrix.based_on(
