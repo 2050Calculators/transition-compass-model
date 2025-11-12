@@ -23,8 +23,59 @@ import time
 # CalculationLeaf TCAF HEALTH DIET
 def TCAF_health_diet_preprocessing():
 
+  # ----------------------------------------------------------------------------
+  # DALYs
+  # ----------------------------------------------------------------------------
+
   # Data -----------------------------------------------------------------------
-  df_data = pd.read_excel('data/PAF_Idriss.xlsx',
+  df_dalys = pd.read_csv('data/health-diet/Disease_sex_DALYs_2023.csv')
+
+  # Preprocessing --------------------------------------------------------------
+
+  # Filter
+  df_dalys = df_dalys[['location', 'sex', 'cause', 'year', 'val']]
+
+  # Rename cols
+  df_dalys.rename(columns={'location':'Country', 'year':'Years', 'val':'value'}, inplace=True)
+
+  # Groupby gender (sum total DALYs)
+  df_dalys = df_dalys.groupby(['Country', 'Years', 'cause'], as_index=False)[
+    'value'].sum()
+
+  # Rename terms
+  cause_map = {
+    'Colon and rectum cancer': 'CRC',
+    'Diabetes mellitus type 2': 'DT2',
+    'Intracerebral hemorrhage': 'ICH',
+    'Ischemic heart disease': 'IHD',
+    'Ischemic stroke': 'IS',
+    'Subarachnoid hemorrhage': 'SH',
+    'Tracheal, bronchus, and lung cancer': 'TBLC',
+    'Esophageal cancer': 'EC',
+    'Combined': 'combined'
+  }
+  df_dalys['cause'] = df_dalys['cause'].replace(cause_map)
+
+  # Create variables name
+  df_dalys['variables'] = 'tcaf_health-diet_dalys_' + df_dalys['cause'] \
+                                      + '[DALYs/y]'
+
+  # Filter
+  df_dalys = df_dalys[['Country', 'Years', 'variables', 'value']]
+
+  # Format as dm  --------------------------------------------------------------
+
+  df_dalys_pivot = df_dalys.pivot_table(index=['Country', 'Years'],
+                                    columns='variables',
+                                    values='value').reset_index()
+  dm_health_dalys = DataMatrix.create_from_df(df_dalys_pivot, num_cat=1)
+
+  # ----------------------------------------------------------------------------
+  # PAF
+  # ----------------------------------------------------------------------------
+
+  # Data -----------------------------------------------------------------------
+  df_data = pd.read_excel('data/health-diet/PAF_Idriss.xlsx',
                             sheet_name='Sheet1')
 
   # Preprocessing --------------------------------------------------------------
@@ -72,17 +123,6 @@ def TCAF_health_diet_preprocessing():
   df_tcaf_health_diet['Risk_Factor'] = df_tcaf_health_diet['Risk_Factor'].replace(risk_factor_map)
 
   # Rename terms
-  cause_map = {
-    'Colon and rectum cancer': 'CRC',
-    'Diabetes mellitus type 2': 'DT2',
-    'Intracerebral hemorrhage': 'ICH',
-    'Ischemic heart disease': 'IHD',
-    'Ischemic stroke': 'IS',
-    'Subarachnoid hemorrhage': 'SH',
-    'Tracheal, bronchus, and lung cancer': 'TBLC',
-    'Esophageal cancer': 'EC',
-    'Combined': 'combined'
-  }
   df_tcaf_health_diet['cause'] = df_tcaf_health_diet['cause'].replace(cause_map)
 
   # Create variables name
@@ -94,20 +134,19 @@ def TCAF_health_diet_preprocessing():
   # Format as separate dm, according to the risk factor (or food categories)
   # Note : here, the intake is processed as the 'Years' dimensions, and renamed
   # afterwards. Therefore, this DM has not timescale
-
-  DM_TCAF_health_diet = {}
+  DM_TCAF_health_diet_paf = {}
 
   for rf in df_tcaf_health_diet["Risk_Factor"].unique():
     sub_df = df_tcaf_health_diet[df_tcaf_health_diet["Risk_Factor"] == rf].copy()
     sub_df_pivot = sub_df.pivot_table(index=['Country', 'Years'], columns='variables', values='value').reset_index()
     dm = DataMatrix.create_from_df(sub_df_pivot, num_cat=0)
     dm.dim_labels[1] = 'Intake [g/day/cap]'
-    DM_TCAF_health_diet[rf] = dm
+    DM_TCAF_health_diet_paf[rf] = dm
 
-  return DM_TCAF_health_diet
+  return DM_TCAF_health_diet_paf, dm_health_dalys
 
 # CalculationLeaf CREATE PICKLE
-def database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet):
+def database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet_paf, dm_health_dalys):
 
   # Make list with years from 2020 to 2050 (steps of 5 years)
   years_all = years_ots + years_fts
@@ -118,7 +157,8 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet):
   dict_fxa = {}
 
   # Add in fxa
-  dict_fxa['health-diet'] = DM_TCAF_health_diet
+  dict_fxa['health-diet_paf'] = DM_TCAF_health_diet_paf
+  dict_fxa['health-diet_dalys'] = dm_health_dalys
 
   # CalibrationDataToDatamatrix ------------------------------------------------
 
@@ -193,10 +233,10 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet):
 
 
 # CalculationTree RUNNING PREPROCESSING ----------------------------------------
-DM_TCAF_health_diet = TCAF_health_diet_preprocessing()
+DM_TCAF_health_diet, dm_health_dalys = TCAF_health_diet_preprocessing()
 
 # CalculationTree RUNNING PICKLE CREATION --------------------------------------
 years_ots = create_years_list(1990, 2023, 1)  # make list with years from 1990 to 2015
 years_fts = create_years_list(2025, 2050, 5)
 years_all = years_ots + years_fts
-database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet)
+database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet, dm_health_dalys)
