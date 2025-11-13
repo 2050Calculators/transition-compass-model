@@ -96,7 +96,7 @@ for i in range(0, len(lever_files)):
         DM = pickle.load(handle)
     DM_ots[lever_names[i]] = DM["ots"]
     DM_fts[lever_names[i]] = DM["fts"]
-    
+
 # drop fertilizer
 n = 'product-net-import'
 DM_ots_amm[n] = DM_ots[n].filter({"Categories1" : ["fertilizer"]})
@@ -196,9 +196,16 @@ for i in range(0, len(files_temp)):
         dm = pickle.load(handle)
     DM_cal[names_temp[i]] = dm
 
+# TODO: think about calibration of energy demand of ammonia manufacturing.
+# probably can be inferred from emissions and constants, though we would need the energy mix (probably we can use the one of chemicals in JRC)
+
 # drop ammonia
 DM_cal_amm["material-production"] = DM_cal["material-production"].filter({"Categories1" : ["ammonia"]})
 DM_cal["material-production"].drop("Categories1","ammonia")
+
+DM_cal_amm["emissions"] = DM_cal["emissions_ammonia"].copy()
+DM_cal.pop("emissions_ammonia")
+
 
 #####################
 ##### CONSTANTS #####
@@ -295,7 +302,9 @@ for key in DM_industry["fts"].keys():
         DM_industry["fts"][key][level].filter({"Country" : ["EU27"]},inplace=True)
 for key in DM_industry["fxa"].keys():
     DM_industry["fxa"][key].filter({"Country" : ["EU27"]},inplace=True)
-    
+for key in DM_industry["calibration"].keys():
+    DM_industry["calibration"][key].filter({"Country" : ["EU27"]},inplace=True)
+
 for key in DM_ammonia["ots"].keys():
     DM_ammonia["ots"][key].filter({"Country" : ["EU27"]},inplace=True)
 for key in DM_ammonia["fts"].keys():
@@ -303,43 +312,8 @@ for key in DM_ammonia["fts"].keys():
         DM_ammonia["fts"][key][level].filter({"Country" : ["EU27"]},inplace=True)
 for key in DM_ammonia["fxa"].keys():
     DM_ammonia["fxa"][key].filter({"Country" : ["EU27"]},inplace=True)
-
-
-#######################################
-###### GENERATE FAKE SWITZERLAND ######
-#######################################
-
-def make_fake_country(DM, country):
-
-    for key in ['fxa', 'ots', 'calibration']:
-        dm_names = list(DM[key])
-        for name in dm_names:
-            dm_temp = DM[key][name]
-            if country not in dm_temp.col_labels["Country"]:
-                idx = dm_temp.idx
-                arr_temp = dm_temp.array[idx["EU27"],...]
-                dm_temp.add(arr_temp[np.newaxis,...], "Country", country)
-                dm_temp.sort("Country")
-                
-    dm_names = list(DM["fts"])
-    for name in dm_names:
-        for i in range(1,4+1):
-            dm_temp = DM["fts"][name][i]
-            if country not in dm_temp.col_labels["Country"]:
-                idx = dm_temp.idx
-                arr_temp = dm_temp.array[idx["EU27"],...]
-                dm_temp.add(arr_temp[np.newaxis,...], "Country", country)
-                dm_temp.sort("Country")
-
-make_fake_country(DM_industry, "Switzerland")
-make_fake_country(DM_ammonia, "Switzerland")
-            
-################################
-###### GENERATE FAKE VAUD ######
-################################
-
-make_fake_country(DM_industry, "Vaud")
-make_fake_country(DM_ammonia, "Vaud")
+for key in DM_ammonia["calibration"].keys():
+    DM_ammonia["calibration"][key].filter({"Country" : ["EU27"]},inplace=True)
 
 ################
 ##### SAVE #####
@@ -356,6 +330,10 @@ my_pickle_dump(DM_ammonia, f)
 # f = os.path.join(current_file_directory, '../../../../data/datamatrix/industry.pickle')
 # with open(f, 'wb') as handle:
 #     pickle.dump(DM_industry, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
+# f = os.path.join(current_file_directory, '../../../../data/datamatrix/ammonia.pickle')
+# with open(f, 'wb') as handle:
+#     pickle.dump(DM_ammonia, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 # filepath = os.path.join(current_file_directory, '../../../../data/interface/industry_to_energy.pickle')
 # with open(filepath, 'rb') as handle:

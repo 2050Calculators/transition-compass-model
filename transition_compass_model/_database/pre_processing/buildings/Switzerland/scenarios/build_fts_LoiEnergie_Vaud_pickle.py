@@ -1,9 +1,9 @@
 import numpy as np
 import pickle
 
-from model.common.auxiliary_functions import my_pickle_dump, create_years_list, sort_pickle
+from model.common.auxiliary_functions import my_pickle_dump, create_years_list, sort_pickle, load_pop
 from _database.pre_processing.api_routines_CH import get_data_api_CH
-from _database.pre_processing.buildings.Switzerland.processors.floor_area_pipeline_CH import load_pop
+
 
 import os
 
@@ -127,15 +127,24 @@ def run(DM_buildings, dm_pop, global_var, country_list, lev=4):
   # Compute renovation rate loi energie
   dm_rr_fts_2 = compute_renovation_loi_energie(dm_stock_area, dm_num_bld, dm_stock_cat, env_cat_mfh, env_cat_sfh, DM_buildings)
   DM_buildings['fts']['building-renovation-rate']['bld_renovation-rate'][3] = dm_rr_fts_2
+  DM_buildings['fts']['building-renovation-rate']['bld_renovation-rate'][4] = dm_rr_fts_2
 
   # SECTION: Loi energy - Heating tech
   # Plus de gaz, mazout, charbon dans les prochain 15-20 ans. Pas de gaz, mazout, charbon dans les nouvelles constructions
   dm_heating_cat_fts_2 = DM_buildings['fts']['heating-technology-fuel']['bld_heating-technology'][1].copy()
+
   idx = dm_heating_cat_fts_2.idx
-  idx_fossil = [idx['coal'], idx['heating-oil'], idx['gas'], idx['electricity']]
+  # Electricity
+  idx_old_cat = [idx['E'], idx['F']]
+  idx_new_cat = [idx['B'], idx['C'], idx['D']]
+  dm_heating_cat_fts_2.array[idx['Vaud'], idx[2035]:, :, :, idx_old_cat, idx['electricity']] = 0
+  dm_heating_cat_fts_2.array[idx['Vaud'], idx[2040]:, :, :, idx_new_cat, idx['electricity']] = 0
+  # Fossil heating
+  idx_fossil = [idx['coal'], idx['heating-oil'], idx['gas']]
   dm_heating_cat_fts_2.array[idx['Vaud'], :, idx['bld_heating-mix'], :, idx['B'], idx_fossil] = 0
   dm_heating_cat_fts_2.array[idx['Vaud'], 1:idx[2045], idx['bld_heating-mix'], :, :, idx_fossil] = np.nan
   dm_heating_cat_fts_2.array[idx['Vaud'], idx[2045]:, idx['bld_heating-mix'], :, :, idx_fossil] = 0
+
   dm_heating_cat_fts_2.fill_nans('Years')
   dm_heating_cat_fts_2.normalise('Categories3')
   DM_buildings['fts']['heating-technology-fuel']['bld_heating-technology'][lev] = dm_heating_cat_fts_2
@@ -174,13 +183,10 @@ if __name__ == "__main__":
     'envelope construction sfh': construction_period_envelope_cat_sfh,
     'envelope construction mfh': construction_period_envelope_cat_mfh}
 
-  this_dir = os.path.dirname(os.path.abspath(__file__))
-  filepath = os.path.join(this_dir, "../../../../data/datamatrix/lifestyles.pickle")
-
   years_ots = create_years_list(1990, 2023, 1)
   country_list = ['Switzerland', 'Vaud']
 
-  dm_pop = load_pop(filepath, country_list, years_ots)
+  dm_pop = load_pop(country_list, years_ots)
 
   DM_buildings = run(DM_buildings, dm_pop, global_var, country_list, lev=4)
 

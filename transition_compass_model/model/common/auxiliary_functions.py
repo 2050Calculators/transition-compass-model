@@ -1181,25 +1181,141 @@ def get_lever_data_to_plot(lever_name, DM_input):
   # lever_name should be in chosen lever_position.json
   # DM_input can be obtained by running:
   # DM_input = filter_country_and_load_data_from_pickles(country_list, modules_list)
-
+  # !FIXME: multiply by 100 when %
+  # !FIXME: add switch-case when there are multiple sublever, return sublever if there is a single one
   DM_lever = return_lever_data(lever_name, DM_input)
   DM_clean = dict()
   if DM_lever is None:
     print(f'lever_name {lever_name} not found in input DM')
   else:
-    dm_ots = DM_lever['ots'].flattest()
+    dm_ots = DM_lever['ots']
     if not isinstance(dm_ots, dict):
-      for lev in range(4):
-        dm_fts = DM_lever['fts'][lev+1].flattest()
-        DM_clean[lev+1] = dm_ots.copy()
-        DM_clean[lev + 1].append(dm_fts, dim='Years')
+      match lever_name:
+        case 'lever_heatcool-behaviour':
+          dm_ots = dm_ots.filter({'Variables': ['bld_Tint-heating']})
+          dm_ots.group_all('Categories1', aggregation='mean', inplace=True)
+          dm_ots = dm_ots.flattest()
+          for lev in range(4):
+            dm_fts = DM_lever['fts'][lev+1].filter({'Variables': ['bld_Tint-heating']})
+            dm_fts.group_all('Categories1', aggregation='mean', inplace=True)
+            dm_fts = dm_fts.flattest()
+            DM_clean[lev+1] = dm_ots.copy()
+            DM_clean[lev + 1].append(dm_fts, dim='Years')
+        case 'lever_heating-efficiency':
+          dm_ots = dm_ots.filter({'Categories2': ['heat-pump']})
+          dm_ots = dm_ots.flattest()
+          for lev in range(4):
+            dm_fts = DM_lever['fts'][lev + 1].filter(
+              {'Categories2': ['heat-pump']})
+            dm_fts = dm_fts.flattest()
+            DM_clean[lev + 1] = dm_ots.copy()
+            DM_clean[lev + 1].append(dm_fts, dim='Years')
+        case 'lever_floor-intensity':
+          dm_ots = dm_ots.filter({'Variables': ['lfs_floor-intensity_space-cap']})
+          for lev in range(4):
+            dm_fts = DM_lever['fts'][lev + 1].filter(
+              {'Variables': ['lfs_floor-intensity_space-cap']})
+            DM_clean[lev + 1] = dm_ots.copy()
+            DM_clean[lev + 1].append(dm_fts, dim='Years')
+        case 'lever_passenger_modal-share':
+          dm_ots = dm_ots.flattest()
+          dm_ots.array = dm_ots.array*100
+          for lev in range(4):
+            dm_fts = DM_lever['fts'][lev + 1].flattest()
+            dm_fts.array = dm_fts.array*100
+            DM_clean[lev + 1] = dm_ots.copy()
+            DM_clean[lev + 1].append(dm_fts, dim='Years')
+        case 'lever_fuel-mix':
+          dm_ots.filter({'Categories2': ['aviation', 'road'], 'Categories1': ['biofuel']}, inplace=True)
+          dm_ots = dm_ots.flattest()
+          dm_ots.array = dm_ots.array*100
+          for lev in range(4):
+            dm_fts = DM_lever['fts'][lev + 1]
+            dm_fts.filter({'Categories2': ['aviation', 'road'], 'Categories1': ['biofuel']}, inplace=True)
+            dm_fts = dm_fts.flattest()
+            dm_fts.array = dm_fts.array*100
+            DM_clean[lev + 1] = dm_ots.copy()
+            DM_clean[lev + 1].append(dm_fts, dim='Years')
+        case 'lever_passenger_technology-share_new':
+          dm_ots_LDV = dm_ots.filter({'Categories1': ['LDV'], 'Categories2': ['BEV']})
+          dm_ots_aviation = dm_ots.filter({'Categories1': ['aviation'], 'Categories2': ['BEV', 'H2', 'FCEV']})
+          dm_ots_LDV = dm_ots_LDV.flattest()
+          dm_ots_aviation = dm_ots_aviation.flattest()
+          dm_ots_LDV.append(dm_ots_aviation, dim='Variables')
+          dm_ots = dm_ots_LDV
+          dm_ots.array = dm_ots.array*100
+          for lev in range(4):
+            dm_fts = DM_lever['fts'][lev + 1]
+            dm_fts_LDV = dm_fts.filter({'Categories1': ['LDV'], 'Categories2': ['BEV']})
+            dm_fts_aviation = dm_fts.filter({'Categories1': ['aviation'], 'Categories2': ['BEV', 'H2', 'FCEV']})
+            dm_fts_LDV = dm_fts_LDV.flattest()
+            dm_fts_aviation = dm_fts_aviation.flattest()
+            dm_fts_LDV.append(dm_fts_aviation, dim='Variables')
+            dm_fts = dm_fts_LDV
+            dm_fts.array = dm_fts.array*100
+            DM_clean[lev + 1] = dm_ots.copy()
+            DM_clean[lev + 1].append(dm_fts, dim='Years')
+        case 'lever_passenger_veh-efficiency_new':
+          dm_ots.filter({'Categories1': ['LDV'], 'Categories2': ['BEV', 'FCEV', 'ICE-diesel', 'ICE-gas', 'ICE-gasoline', 'PHEV-diesel', 'PHEV-gasoline']},
+            inplace=True)
+          dm_ots = dm_ots.flattest()
+          dm_ots.array = dm_ots.array * 100
+          for lev in range(4):
+            dm_fts = DM_lever['fts'][lev + 1]
+            dm_fts.filter({'Categories1': ['LDV'], 'Categories2': ['BEV', 'FCEV', 'ICE-diesel', 'ICE-gas', 'ICE-gasoline', 'PHEV-diesel', 'PHEV-gasoline']},
+            inplace=True)
+            dm_fts = dm_fts.flattest()
+            dm_fts.array = dm_fts.array * 100
+            DM_clean[lev + 1] = dm_ots.copy()
+            DM_clean[lev + 1].append(dm_fts, dim='Years')
+        case _:
+          dm_ots = dm_ots.flattest()
+          for lev in range(4):
+            dm_fts = DM_lever['fts'][lev+1].flattest()
+            DM_clean[lev+1] = dm_ots.copy()
+            DM_clean[lev + 1].append(dm_fts, dim='Years')
     else:
-      print(f'The lever {lever_name} controls more than one variable and cannot be plotted')
+      # If there is only one sublever - return it
+      if len(dm_ots) == 1:
+        match lever_name:
+          case 'lever_heating-technology-fuel':
+            key = next(iter(dm_ots))
+            dm_ots = dm_ots[key]
+            dm_ots.filter({'Categories2': ['B', 'F'], 'Categories3': ['district-heating', 'gas', 'heating-oil',  'wood', 'heat-pump'] }, inplace=True)
+            dm_ots = dm_ots.flattest()
+            dm_ots.array = dm_ots.array *100
+            for lev in range(4):
+              dm_fts = DM_lever['fts'][key][lev + 1]
+              dm_fts.filter({'Categories2': ['B', 'F'], 'Categories3': ['district-heating', 'gas', 'heating-oil', 'wood', 'heat-pump'] }, inplace=True)
+              dm_fts = dm_fts.flattest()
+              dm_fts.array = dm_fts.array*100
+              DM_clean[lev + 1] = dm_ots.copy()
+              DM_clean[lev + 1].append(dm_fts, dim='Years')
+          case _:
+            key = next(iter(dm_ots))
+            dm_ots = dm_ots[key].flattest()
+            for lev in range(4):
+              dm_fts = DM_lever['fts'][key][lev + 1].flattest()
+              DM_clean[lev + 1] = dm_ots.copy()
+              DM_clean[lev + 1].append(dm_fts, dim='Years')
+      else:
+        match lever_name:
+          case 'lever_building-renovation-rate':
+            key = 'bld_renovation-rate'
+            dm_ots = dm_ots[key].flattest()
+            dm_ots.array = dm_ots.array*100
+            for lev in range(4):
+              dm_fts = DM_lever['fts'][key][lev + 1].flattest()
+              dm_fts.array = dm_fts.array*100
+              DM_clean[lev + 1] = dm_ots.copy()
+              DM_clean[lev + 1].append(dm_fts, dim='Years')
+          case _:
+            print(f'The lever {lever_name} controls more than one variable and cannot be plotted')
 
   return DM_clean
 
 
-def load_pop(country_list, years_list):
+def load_pop(country_list, years_list, lev=1):
 
   this_dir = os.path.dirname(os.path.abspath(__file__))
   filepath = os.path.join(this_dir, '../../_database/data/datamatrix/lifestyles.pickle')
@@ -1207,7 +1323,7 @@ def load_pop(country_list, years_list):
   with open(filepath, 'rb') as handle:
     DM_lfs = pickle.load(handle)
   dm_pop = DM_lfs["ots"]["pop"]["lfs_population_"].copy()
-  dm_pop.append(DM_lfs["fts"]["pop"]["lfs_population_"][1], "Years")
+  dm_pop.append(DM_lfs["fts"]["pop"]["lfs_population_"][lev], "Years")
   dm_pop = dm_pop.filter({"Country": country_list})
   dm_pop.sort("Years")
   dm_pop.filter({"Years": years_list}, inplace=True)
@@ -1303,3 +1419,38 @@ def df_excel_to_dm(df, names_dict, var_name, unit, num_cat, keep_first=False,
 
   dm = DataMatrix.create_from_df(df_pivot, num_cat=num_cat)
   return dm
+
+
+def extrapolate_missing_years_based_on_per_capita(dm, dm_pop, years_ots, var_name):
+  assert dm_pop.col_labels['Country'] == dm.col_labels['Country']
+  dm_add_missing_variables(dm, {'Years': years_ots}, fill_nans=False)
+  a = dm[:, :, var_name, ...]
+  # Reshape pop array
+  b = dm_pop[:, :, 'lfs_population_total']
+  ndim_diff = a.ndim - b.ndim
+  if ndim_diff > 0:
+    b = b.reshape(b.shape + (1,) * ndim_diff)
+  arr =  a/b
+  dm.add(arr, dim='Variables', col_label=var_name + '_cap', unit='unit/cap')
+  linear_fitting(dm, years_ots)
+  dm[:, :, var_name, :] = dm[:, :, var_name + '_cap', ... ] * b
+  dm.drop(dim='Variables', col_label=var_name+ '_cap')
+
+  return dm
+
+
+
+def rename_cantons(dm):
+  dm.sort('Country')
+  dm.rename_col_regex(" /.*", "", dim='Country')
+  dm.rename_col_regex("-", " ", dim='Country')
+  cantons_fr = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Genève', 'Glarus', 'Graubünden', 'Jura', 'Luzern', 'Neuchâtel', 'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn', 'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud', 'Zug', 'Zürich']
+  if "Canton d'Argovie" in dm.col_labels['Country']:
+    cantons_fr = ["Canton d'Argovie", "Canton d'Appenzell Rh. E.", "Canton d'Appenzell Rh. I.",  "Canton de Bâle Campagne", "Canton de Bâle Ville", "Canton de Berne","Canton de Fribourg", "Canton de Genève", "Canton de Glaris", "Canton des Grisons", "Canton du Jura", "Canton de Lucerne", "Canton de Neuchâtel", "Canton de Nidwald", "Canton d'Obwald", "Canton de Schaffhouse",  "Canton de Schwytz", "Canton de Soleure", "Canton de Saint Gall",  "Canton de Thurgovie", "Canton du Tessin", "Canton d'Uri", "Canton du Valais", "Canton de Vaud", "Canton de Zoug", "Canton de Zurich"]
+  if "Canton d'Argau" in dm.col_labels['Country']:
+    cantons_fr = ["Canton d'Argau",  "Canton d'Appenzell Rh. E.", "Canton d'Appenzell Rh. I.", "Canton de Baselland", "Canton de Basel Stadt", "Canton de Bern", "Canton de Fribourg", "Canton de Genève", "Canton de Glarus", "Canton Graubünden", "Canton du Jura", "Canton de Luzern", "Canton de Neuchâtel", "Canton de Nidwalden", "Canton d'Obwalden", "Canton de Schaffhausen",  "Canton de Schwyz", "Canton de Solothurn", "Canton de St. Gallen",  "Canton de Thurgau", "Canton du Tessin", "Canton d'Uri",  "Canton du Valais", "Canton de Vaud", "Canton de Zug", "Canton de Zürich"]
+
+  cantons_en = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Geneva', 'Glarus', 'Graubünden', 'Jura', 'Lucerne', 'Neuchâtel', 'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn', 'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud', 'Zug', 'Zurich']
+  dm.rename_col(cantons_fr, cantons_en, dim='Country')
+
+  return

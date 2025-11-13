@@ -272,10 +272,10 @@ def compute_new_veh_max(dm_max):
 def compute_share_emissions(dm_skm_CH, dm_skm_abroad):
     # Emissions = skm x MJ/skm x CO2/MJ
     # Emissions_CH = skm_CH x (MJ/skm x CO2/MJ)_CH
-    # Emissions_abroad = skm_abroud x (MJ/skm x CO2/MJ)_abroad
+    # Emissions_abroad = skm_abroad x (MJ/skm x CO2/MJ)_abroad
     # Emission_CH / Emissions_abroad = skm_CH / skm_abroad ----> seats_CH / seats_abroad
-    # Multiply by 2 the Swiss seats to obtain emissions according to sold quantity principle
-    dm_skm_CH[:, :, 'tra_passenger-demand-skm_CH', ...] = 2 * dm_skm_CH[:, :, 'tra_passenger-demand-skm_CH', ...]
+    ## Multiply by 2 the Swiss seats to obtain emissions according to sold quantity principle
+    #dm_skm_CH[:, :, 'tra_passenger-demand-skm_CH', ...] = 2 * dm_skm_CH[:, :, 'tra_passenger-demand-skm_CH', ...]
     dm_skm_CH.append(dm_skm_abroad, dim='Variables')
     dm_skm_CH.operation('tra_passenger-demand-skm_CH', '/', 'tra_passenger-demand-skm',
                         out_col='tra_share-emissions-local', unit='%')
@@ -827,7 +827,7 @@ for lev in range(4):
 # Create less ambitious scenarios
 DM[1].array[...] = 0
 DM[2].array[...] = 1/2*DM[1].array[...] + 1/2*DM[3].array[...]
-DM[4].array[...] = 1
+DM[4].array[...] = DM[3].array[...]
 
 for lev in range(4):
     dm_fuel_mix_orig = DM_transport['fts']['fuel-mix'][lev+1]

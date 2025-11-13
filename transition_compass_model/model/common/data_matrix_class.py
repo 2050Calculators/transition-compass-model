@@ -669,7 +669,10 @@ class DataMatrix:
         for i in range(len(col_in)):
             if col_in[i] != col_out[i]:
                 # Rename column labels
-                ci = self.idx[col_in[i]]
+                try:
+                  ci = self.idx[col_in[i]]
+                except KeyError:
+                  continue
                 self.col_labels[dim][ci] = col_out[i]
                 # Rename key for units
                 if dim == "Variables":

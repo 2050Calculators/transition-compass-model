@@ -6,7 +6,8 @@ from model.common.auxiliary_functions import linear_fitting, create_years_list, 
 
 
 def calculate_heating_eff_fts(dm_heating_eff, years_fts, maximum_eff, fuel_cat='Categories2'):
-
+  # Linear fitting of all efficiencies except based on the 2015-2023 period
+  # For all efficiencies except heat-pump, the efficiency is capped at 98%
   dm_heat_pump = dm_heating_eff.filter({fuel_cat: ['heat-pump']})
   dm_heating_eff.drop(dim=fuel_cat, col_label='heat-pump')
   linear_fitting(dm_heating_eff, years_fts, based_on=list(range(2015, 2023)))
@@ -16,6 +17,19 @@ def calculate_heating_eff_fts(dm_heating_eff, years_fts, maximum_eff, fuel_cat='
   dm_heating_eff_fts = dm_heating_eff.filter({'Years': years_fts})
 
   return dm_heating_eff_fts
+
+def adjust_COP_based_on_envelope_cat(dm):
+  # This is taken from https://www.flumroc.ch/fileadmin/Dateiliste/flumroc/Bilder/400_steinwolle/Stromsparen-HSLU/d_250716_Kurzbericht_Studie_Flumroc_final.pdf
+  # Which is originally taken from  Döring & Richter, 2024
+  # And the information of the average energy demand per building category (SFH) from the archetype paper
+  # Pongelli, A.; Priore, Y.D.; Bacher, J.-P.; Jusselme, T. Definition of Building Archetypes Based on the Swiss Energy Performance Certificates Database. Buildings 2023, 13, 40. https://doi.org/10.3390/buildings13010040
+  avg_2023_COP = {'F': 2.3, 'E': 2.5, 'D': 3, 'C': 3.3, 'B': 3.6 }
+  for cat in dm.col_labels['Categories1']:
+    #corr_fact = avg_2023_COP[cat]/dm[:, 2023, np.newaxis, :, cat, 'heat-pump']
+    #dm[:, :, :, cat, 'heat-pump'] =  corr_fact * dm[:, :, :, cat, 'heat-pump']
+    dm[:, :, :, cat, 'heat-pump'] =  np.minimum(avg_2023_COP[cat] , dm[:, :, :, cat, 'heat-pump'])
+
+  return dm
 
 
 def run(DM_buildings, country_list, years_fts):
@@ -75,7 +89,8 @@ def run(DM_buildings, country_list, years_fts):
     lev = lev + 1
     DM_buildings['fts']['building-renovation-rate']['bld_renovation-rate'][
       lev] = dm_rr.filter({'Years': years_fts})
-
+  # Build a level 1 scenario with no renovation
+  DM_buildings['fts']['building-renovation-rate']['bld_renovation-rate'][1][...] = 0
 
   ###########################################
   #####    RENOVATION-REDISTRIBUTION    #####
@@ -118,6 +133,14 @@ def run(DM_buildings, country_list, years_fts):
   ###########################################
   dm_heating_cat = DM_buildings['ots']['heating-technology-fuel']['bld_heating-technology'].copy()
   dm_heating_cat.add(np.nan, dim='Years', dummy=True, col_label=years_fts)
+  # Obligation à enlever les chauffages electriques d'ici 2033-2038
+  # https://publication.vd.ch/publications/dgaic/aide-memoire/domaines-batiments/assainissement-des-chauffages-et-chauffe-eau-electriques
+  idx = dm_heating_cat.idx
+  dm_heating_cat['Vaud', idx[2035]:, :, :, 'E', 'electricity'] = 0
+  dm_heating_cat['Vaud', idx[2035]:, :, :, 'F', 'electricity'] = 0
+  dm_heating_cat['Vaud', idx[2040]:, :, :, 'B', 'electricity'] = 0
+  dm_heating_cat['Vaud', idx[2040]:, :, :, 'C', 'electricity'] = 0
+  dm_heating_cat['Vaud', idx[2040]:, :, :, 'D', 'electricity'] = 0
   dm_heating_cat.fill_nans('Years')
   DM_buildings['fts']['heating-technology-fuel'] = dict()
   DM_buildings['fts']['heating-technology-fuel'][
@@ -133,6 +156,7 @@ def run(DM_buildings, country_list, years_fts):
   dm_heating_eff = DM_buildings['ots']['heating-efficiency'].copy()
   dm_heating_eff_fts = calculate_heating_eff_fts(dm_heating_eff.copy(),
                                                  years_fts, maximum_eff=0.98)
+  dm_heating_eff_fts = adjust_COP_based_on_envelope_cat(dm_heating_eff_fts)
   dm_heating_eff_fts[:, :, 'bld_heating-efficiency', :, 'electricity'] = 1
   DM_buildings['fts']['heating-efficiency'] = dict()
   for lev in range(4):

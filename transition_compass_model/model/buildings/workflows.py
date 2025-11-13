@@ -250,6 +250,9 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots,
                                      'bld_floor-area_renovated-cumulated'],
                        'Years': years_ots + years_fts},
                       inplace=True)
+  dm_cumulated.deepen(based_on='Variables')
+  dm_cumulated.change_unit('bld_floor-area', old_unit='m2', new_unit='Mm2', factor=1e-6)
+  dm_cumulated = dm_cumulated.flatten()
 
   dm_bld_tot.filter({'Years': years_ots + years_fts}, inplace=True)
 
@@ -381,10 +384,10 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
                 unit='TWh')
 
   # SECTION Calibrate heating energy demand
-  dm_calib = DM_energy['heating-calibration']
-  dm_calib.sort('Categories1')
-  dm_energy.array[...] = dm_energy.array[...] * dm_calib.array[:, :, :,
-                                                np.newaxis, np.newaxis, :]
+  #dm_calib = DM_energy['heating-calibration']
+  #dm_calib.sort('Categories1')
+  #dm_energy.array[...] = dm_energy.array[...] * dm_calib.array[:, :, :,
+  #                                              np.newaxis, np.newaxis, :]
 
   # write datamatrix to pickle
   # current_file_directory = os.path.dirname(os.path.abspath(__file__))
@@ -412,6 +415,7 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
   # Energy demand
   # cooling demand x tech x efficiency (we assume the technology is the heat-pump)
   idx = dm_floor_area.idx
+  # ! FIXME add efficiency specific for cooling
   arr = dm_floor_area.array[:, :, idx['bld_cooling'], :, :] \
         / dm_eff.array[:, :, idx_e['bld_heating-efficiency'], np.newaxis, :,
           idx_e['heat-pump']]
@@ -558,10 +562,22 @@ def bld_appliances_workflow(DM_appliances, dm_pop):
   dm_appliance.filter({'Years': dm_pop.col_labels['Years']}, inplace=True)
   dm_appliance.change_unit('bld_appliances_tot-elec-demand', old_unit='kWh', new_unit='TWh', factor=1e-9 )
 
-  DM_appliance_out = {
-    'power': dm_appliance.filter(
+  # Compute other electricity demand
+  dm_other_elec_demand = DM_appliances['other-electricity-demand'].flatten()
+  dm_other_elec_demand.append(dm_pop, dim='Variables')
+  dm_other_elec_demand.operation('bld_energy-demand_other_electricity', '*', 'lfs_population_total', out_col='bld_electricity-demand-other', unit='kWh')
+  dm_other_elec_demand.change_unit('bld_electricity-demand-other', old_unit='kWh', new_unit='TWh', factor=1e-9 )
+
+  # Group all electricity demand, including other-electricity demand
+  dm_elec_tot = dm_appliance.filter(
       {'Variables': ['bld_appliances_tot-elec-demand']}).group_all(
-      'Categories1', inplace=False),
+      'Categories1', inplace=False)
+  dm_elec_tot.append(dm_other_elec_demand.filter({'Variables': ['bld_electricity-demand-other']}), dim='Variables')
+  dm_elec_tot.groupby({'bld_appliances_tot-elec-demand_tmp': '.*'}, dim='Variables', regex=True, inplace=True)
+  dm_elec_tot.rename_col('bld_appliances_tot-elec-demand_tmp', 'bld_appliances_tot-elec-demand', 'Variables')
+
+  DM_appliance_out = {
+    'power': dm_elec_tot,
     'industry': dm_appliance.filter(
       {'Variables': ['bld_appliances_new', 'bld_appliances_waste']})
   }
@@ -1083,6 +1099,8 @@ def compute_eff_fts_based_on_heat_eff(dm_heating, dm_hw_eff,  years_ots, years_f
   dm_heat_eff.append(dm_heat_eff_std, dim='Categories1')
 
   dm_heat_eff.sort('Categories1')
+
+  dm_heat_eff.fill_nans('Years')
 
   return dm_heat_eff
 

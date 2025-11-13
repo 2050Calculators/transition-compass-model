@@ -969,6 +969,9 @@ def land_use_local_run():
     land_use(lever_setting, years_setting)
     return
 
+if __name__ == "__main__":
+  land_use_local_run()
+
 
 # # run local
 #__file__ = "/Users/crosnier/DocumentsPathwayCalc/model/landuse_module.py"

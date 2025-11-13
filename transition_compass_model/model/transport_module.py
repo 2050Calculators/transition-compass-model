@@ -115,7 +115,7 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
         DM_freight, DM_other, cdm_const_freight, years_setting
     )
 
-    DM_power = inter.tra_energy_interface(DM_passenger_out['power'], DM_freight_out['power'], write_pickle=True)
+    DM_power = inter.tra_energy_interface(DM_passenger_out['power'], DM_freight_out['power'])
     interface.add_link(from_sector='transport', to_sector='energy', dm=DM_power)
     # df = dm_power.write_df()
     # df.to_excel('transport-to-power.xlsx', index=False)
@@ -161,6 +161,7 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     # !FIXME: add km infrastructure data, using compute_stock with tot_km and renovation rate as input.
     #  data for ch ok, data for eu, backcalculation? dummy based on swiss pop?
     interface.add_link(from_sector="transport", to_sector="industry", dm=DM_industry)
+    interface.add_link(from_sector="transport", to_sector="lca", dm=DM_industry)
     # interface.add_link(from_sector='transport', to_sector='minerals', dm=DM_minerals)
 
     # Emissions
@@ -184,8 +185,8 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     )
     dm_emissions.group_all("Categories2")
 
-    results_run = inter.prepare_TPE_output(DM_passenger_out, DM_freight_out)
-    return results_run
+    results_run, KPI = inter.prepare_TPE_output(DM_passenger_out, DM_freight_out)
+    return results_run, KPI
 
 
 def local_transport_run():

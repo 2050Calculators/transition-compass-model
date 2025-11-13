@@ -208,8 +208,72 @@ def appliances_fill_missing_years(dm_appliances, dm_households, years_ots, years
   dm_appliances.array[:, idx[2022]:, :, idx['monitor']] = np.nan
   dm_appliances.fill_nans('Years')
   dm_appliances.array = dm_appliances.array * dm_households_only.array[..., np.newaxis]
-  dm_eff =tailored_fitting(dm_eff)
+  # According to EP2050+
+  # EP2050+_Detailergebnisse 2020-2060_Private Haushalte_alle Szenarien_2022-05-17
+  # Sheet 04 Elektrogeräte
+  # The unitary energy demand in kWh/unit of appliances in 2050 will reduce to 60%-90% of the 2010 value in 2050, in BAU scenario
+  # The average is 73%. We use 70% for simplicity
+  #dm_eff =tailored_fitting(dm_eff)
+  dm_eff[:, 2050, 'bld_appliances_electricity-demand', :] = 0.7*dm_eff[:, 2010, 'bld_appliances_electricity-demand', :]
+  dm_eff[:, 2050, 'bld_appliances_electricity-demand', 'tumble-dryer'] \
+    = 0.35*dm_eff[:, 2010, 'bld_appliances_electricity-demand', 'tumble-dryer']
+  dm_eff[:, 2050, 'bld_appliances_electricity-demand', 'washing-machine'] \
+    = 0.55*dm_eff[:, 2010, 'bld_appliances_electricity-demand', 'washing-machine']
+  linear_fitting(dm_eff, years_ots=years_ots+years_fts)
   dm_appliances.append(dm_eff, dim='Variables')
 
   return dm_appliances
 
+
+def extract_EP2050_cooking_energy_consumption(file_raw):
+
+  df = pd.read_excel(file_raw, 'Tabelle17')
+
+  df = df[list(df.columns)[1:-1]]
+  df.columns = df.iloc[3]
+  df = df.iloc[4:14]
+  df.set_index(['Verwendungszweck'], inplace=True)
+  df.columns = df.columns.astype(int)
+
+  df = df.loc[['Gas (-Herd)', 'Holz (-Herd)', 'Elektrizität']]
+  df.reset_index(inplace=True)
+  df = df.T
+  df.reset_index(inplace=True)
+  df.columns = df.iloc[0]
+  df = df.iloc[1:-1]
+  root = 'bld_energy-demand_cooking_'
+  unit = '[PJ]'
+  df.rename(columns={'Verwendungszweck': 'Years',
+                     'Gas (-Herd)': root + 'gas' + unit,
+                     'Holz (-Herd)': root + 'heating-oil' + unit,
+                     'Elektrizität': root + 'electricity' + unit}, inplace=True)
+  df['Country'] = 'Switzerland'
+
+  dm = DataMatrix.create_from_df(df, num_cat=1)
+
+  dm.change_unit('bld_energy-demand_cooking', old_unit='PJ', new_unit='kWh', factor=3.6*1e-9, operator='/')
+
+  return dm
+
+
+def extract_EP2050_other_elec_demand(file_raw):
+
+  df = pd.read_excel(file_raw, 'Tabelle1')
+
+  df = df[list(df.columns)[1:-1]]
+  df.columns = df.iloc[3]
+  df = df.iloc[4:14]
+  df.set_index(['Verwendungszweck'], inplace=True)
+  df.columns = df.columns.astype(int)
+
+  df = df.loc['sonstige Elektrogeräte'].to_frame()
+  df.reset_index(inplace=True)
+
+  df.rename(columns={3: 'Years', 'sonstige Elektrogeräte': 'bld_energy-demand-total_other_electricity[PJ]'}, inplace=True)
+  df['Country'] = 'Switzerland'
+
+  dm = DataMatrix.create_from_df(df, num_cat=0)
+
+  dm.change_unit('bld_energy-demand-total_other_electricity', old_unit='PJ', new_unit='TWh', factor=3.6, operator='/')
+
+  return dm
