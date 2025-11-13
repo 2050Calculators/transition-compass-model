@@ -11,7 +11,7 @@ from model.common.constant_data_matrix_class import ConstantDataMatrix
 from model.common.io_database import read_database, read_database_fxa, edit_database, database_to_df, dm_to_database, database_to_dm
 from model.common.io_database import read_database_to_ots_fts_dict, read_database_to_ots_fts_dict_w_groups, read_database_to_dm
 from model.common.interface_class import Interface
-from model.common.auxiliary_functions import compute_stock,  filter_geoscale, calibration_rates, filter_DM, add_dummy_country_to_DM
+from model.common.auxiliary_functions import compute_stock,  filter_geoscale, calibration_rates, filter_DM, add_dummy_country_to_DM, my_pickle_dump
 from model.common.auxiliary_functions import read_level_data, simulate_input
 from scipy.optimize import linprog
 import pickle

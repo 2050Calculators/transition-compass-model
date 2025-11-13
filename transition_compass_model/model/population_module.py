@@ -46,8 +46,15 @@ def population(lever_setting, years_setting, DM_input, interface=Interface(), wr
 
     # send population to Dietary Habits
     if write_pickle is True:
-        f = os.path.join(current_file_directory, '../_database/data/interface/population_to_dietary-habits.pickle')
-        my_pickle_dump(DM_new=DM_pop['pop'], local_pickle_file=f)
+      if write_pickle is True:
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(current_file_directory,
+                         '../_database/data/interface/population_to_dietary-habits.pickle')
+        with open(f, 'wb') as handle:
+          pickle.dump(DM_pop['pop'], handle,
+                      protocol=pickle.HIGHEST_PROTOCOL)
+        #f = os.path.join(current_file_directory, '../_database/data/interface/population_to_dietary-habits.pickle')
+        #my_pickle_dump(DM_new=DM_pop['pop'], local_pickle_file=f)
     interface.add_link(from_sector='population', to_sector='dietary-habits', dm=DM_pop['pop'])
     
     # send population to transport
@@ -77,8 +84,8 @@ def local_population_run(write_pickle=False):
     years_setting, lever_setting = init_years_lever()
 
     country_list = ['EU27', 'Switzerland', 'Vaud']
-    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'lifestyles')
-    population(lever_setting, years_setting, DM_input['lifestyles'], write_pickle=write_pickle)
+    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'population')
+    population(lever_setting, years_setting, DM_input['population'], write_pickle=write_pickle)
     return
 
 # Update/Create the Pickle

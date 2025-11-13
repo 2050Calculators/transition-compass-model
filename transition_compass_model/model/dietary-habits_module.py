@@ -5,7 +5,7 @@ from model.common.constant_data_matrix_class import ConstantDataMatrix
 from model.common.io_database import dm_to_database
 from model.common.interface_class import Interface
 from model.common.auxiliary_functions import  calibration_rates, create_years_list, linear_forecast_BAU
-from model.common.auxiliary_functions import read_level_data, filter_country_and_load_data_from_pickles
+from model.common.auxiliary_functions import read_level_data, filter_country_and_load_data_from_pickles, my_pickle_dump
 import pickle
 import json
 import os
@@ -237,6 +237,18 @@ def diet_adherence_scenarios(DM_diet, DM_pop, CDM_const, bau, tpe_scenario):
   dm_diet_consumed.change_unit('lfs_consumers-diet', factor=1e6,
                                old_unit='t/cap/day',
                                new_unit='g/cap/day')
+
+  # Compute share of processed meat
+  dm_share_pro = DM_diet['share-processed-food']
+  dm_meat_tot = dm_diet_consumed.groupby({'meat-total': '.*meat.*'}, regex=True, inplace=False, dim='Categories1')
+  array_temp = dm_meat_tot[:,:,'lfs_consumers-diet','meat-total'] * \
+               ( 1.0 - dm_share_pro[:,:,'lfs_share_unprocessed-meat'])
+  dm_diet_consumed.add(array_temp[:,:,np.newaxis, np.newaxis], dummy=False, col_label='pro-liv-meat-processed', dim='Categories1', unit='g/cap/day')
+
+  # Compute share of crop-cereal-whole
+  array_temp = dm_diet_consumed[:,:,'lfs_consumers-diet','crop-cereal'] * \
+               dm_share_pro[:,:,'lfs_share_crop-cereal-whole']
+  dm_diet_consumed.add(array_temp[:,:,np.newaxis, np.newaxis], dummy=False, col_label='crop-cereal-whole', dim='Categories1', unit='g/cap/day')
 
   """ # Note: for diet preprocessing
   # Filter years ots
@@ -476,7 +488,7 @@ def dietaryhabits_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario
   return DM_TCAF_health_diet
 
 
-def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, interface=Interface()):
+def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, write_pickle, interface=Interface()):
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     DM_ots_fts, DM_diet, CDM_const = read_data(DM_input, lever_setting, tpe_scenario)
@@ -508,9 +520,19 @@ def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, interfac
 
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 
-    # Dietary Habits to TCAF_health-diet
+    # Dietary Habits to TCAF
     DM_TCAF_health_diet = dietaryhabits_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario)
-    interface.add_link(from_sector='dietary-habits', to_sector='TCAF_health-diet', dm=DM_TCAF_health_diet)
+    if write_pickle is True:
+      current_file_directory = os.path.dirname(os.path.abspath(__file__))
+      f = os.path.join(current_file_directory,
+                       '../_database/data/interface/dietary-habits_to_TCAF.pickle')
+      with open(f, 'wb') as handle:
+        pickle.dump(DM_TCAF_health_diet, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+        # pour update un pickle qui existe déjà, par exemple pour gagner du temps au pre-processing,
+        # Pour remplacer des valeurs dans la même structure. Accepete un pays différent
+        #my_pickle_dump(DM_new=DM_TCAF_health_diet, local_pickle_file=f)
+    interface.add_link(from_sector='dietary-habits', to_sector='TCAF', dm=DM_TCAF_health_diet)
 
     # Dietary Habits to Production
 
@@ -524,7 +546,7 @@ def dietaryhabits_local_run():
     country_list = ['Switzerland', 'Vaud']
     DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'dietary-habits')
     years_setting, lever_setting = init_years_lever()
-    dietaryhabits(lever_setting, years_setting, DM_input['dietary-habits'], tpe_scenario='diet-split-kcal')
+    dietaryhabits(lever_setting, years_setting, DM_input['dietary-habits'], tpe_scenario='diet-split-kcal', write_pickle=True)
 
 
 if __name__ == "__main__":

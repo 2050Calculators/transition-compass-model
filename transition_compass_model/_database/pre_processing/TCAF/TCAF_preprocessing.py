@@ -20,6 +20,18 @@ import os
 import numpy as np
 import time
 
+# CalculationLeaf TCAF MONETIZATION FACTORS
+def TCAF_MF_preprocessing():
+
+  # Data -----------------------------------------------------------------------
+  df_data = pd.read_excel('data/monetization-factors/TCAF_monetization-factors.xlsx',
+                          sheet_name='MFs')
+  df_data = df_data[['name', 'value']]
+
+  # Format as constant datamatrix
+  CDM_MF = ConstantDataMatrix.create_from_constant(df_data, num_cat=0)
+  return CDM_MF
+
 # CalculationLeaf TCAF HEALTH DIET
 def TCAF_health_diet_preprocessing():
 
@@ -70,6 +82,14 @@ def TCAF_health_diet_preprocessing():
                                     values='value').reset_index()
   dm_health_dalys = DataMatrix.create_from_df(df_dalys_pivot, num_cat=1)
 
+  # Compute total DALYs
+  dm_temp = dm_health_dalys.groupby({'combined': '.*'}, dim='Categories1', regex=True, inplace=False)
+  dm_health_dalys.append(dm_temp, dim='Categories1')
+
+  # Linear fitting to expand the constant value
+  linear_fitting(dm_health_dalys, years_all)
+
+
   # ----------------------------------------------------------------------------
   # PAF
   # ----------------------------------------------------------------------------
@@ -110,13 +130,13 @@ def TCAF_health_diet_preprocessing():
     'Whole_Grains': 'crop-cereal-whole',
     'Calcium': 'calcium',
     'Fiber': 'fiber',
-    'Legumes': 'crop-pulses',
+    'Legumes': 'crop-pulse',
     'Milk': 'pro-liv-abp-dairy-milk',
-    'Nuts': 'crop-nuts-seeds',
+    'Nuts': 'crop-oilcrop',
     'Omega_3': 'omega',
     'PUFA': 'pufa',
     'Processed_Meat': 'pro-liv-meat-processed',
-    'Red_meat': 'pro-liv-meat-red',
+    'Red_Meat': 'pro-liv-meat-red',
     'SSB': 'pro-bev-ssb',
     'Vegetables': 'crop-veg'
   }
@@ -127,17 +147,44 @@ def TCAF_health_diet_preprocessing():
 
   # Create variables name
   df_tcaf_health_diet['variables'] = 'tcaf_health-diet_paf_' + \
-                                      df_tcaf_health_diet['Risk_Factor'] \
-                                      + '_' + df_tcaf_health_diet['cause'] \
+                                     df_tcaf_health_diet['cause'] \
                                       + '[-]'
+
+  list_variables = [
+    'tcaf_health-diet_paf_CRC[-]','tcaf_health-diet_paf_DT2[-]',
+    'tcaf_health-diet_paf_ICH[-]', 'tcaf_health-diet_paf_IHD[-]',
+    'tcaf_health-diet_paf_IS[-]', 'tcaf_health-diet_paf_SH[-]',
+    'tcaf_health-diet_paf_EC[-]', 'tcaf_health-diet_paf_TBLC[-]',
+    'tcaf_health-diet_paf_combined[-]'
+  ]
+
+  # Get unique combinations of Risk_Factor × Years × Country × cause
+  unique_combinations = df_tcaf_health_diet[
+    ['Risk_Factor', 'Years', 'Country', 'cause']].drop_duplicates()
+
+  # Create all combinations with list_variables
+  all_combinations = unique_combinations.assign(key=1).merge(
+    pd.DataFrame({'variables': list_variables, 'key': 1}), on='key'
+  ).drop('key', axis=1)
+
+  # Merge with original df on just the relevant columns
+  df_tcaf_health_diet_full = all_combinations.merge(
+    df_tcaf_health_diet,
+    on=['Risk_Factor', 'variables', 'Years', 'Country', 'cause'],
+    how='left'
+  )
+
+  # Fill missing values with 0
+  df_tcaf_health_diet_full['value'] = df_tcaf_health_diet_full['value'].fillna(0)
 
   # Format as separate dm, according to the risk factor (or food categories)
   # Note : here, the intake is processed as the 'Years' dimensions, and renamed
   # afterwards. Therefore, this DM has not timescale
   DM_TCAF_health_diet_paf = {}
 
+
   for rf in df_tcaf_health_diet["Risk_Factor"].unique():
-    sub_df = df_tcaf_health_diet[df_tcaf_health_diet["Risk_Factor"] == rf].copy()
+    sub_df = df_tcaf_health_diet_full[df_tcaf_health_diet_full["Risk_Factor"] == rf].copy()
     sub_df_pivot = sub_df.pivot_table(index=['Country', 'Years'], columns='variables', values='value').reset_index()
     dm = DataMatrix.create_from_df(sub_df_pivot, num_cat=0)
     dm.dim_labels[1] = 'Intake [g/day/cap]'
@@ -146,7 +193,7 @@ def TCAF_health_diet_preprocessing():
   return DM_TCAF_health_diet_paf, dm_health_dalys
 
 # CalculationLeaf CREATE PICKLE
-def database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet_paf, dm_health_dalys):
+def database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet_paf, dm_health_dalys, CDM_MF):
 
   # Make list with years from 2020 to 2050 (steps of 5 years)
   years_all = years_ots + years_fts
@@ -215,6 +262,7 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet_pa
 
   # ConstantsToDatamatrix ------------------------------------------------------
   dict_const = {}
+  dict_const = CDM_MF
 
   # Group all datamatrix in a single structure ---------------------------------
   DM_TCAF = {
@@ -233,10 +281,12 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet_pa
 
 
 # CalculationTree RUNNING PREPROCESSING ----------------------------------------
-DM_TCAF_health_diet, dm_health_dalys = TCAF_health_diet_preprocessing()
-
-# CalculationTree RUNNING PICKLE CREATION --------------------------------------
 years_ots = create_years_list(1990, 2023, 1)  # make list with years from 1990 to 2015
 years_fts = create_years_list(2025, 2050, 5)
 years_all = years_ots + years_fts
-database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet, dm_health_dalys)
+DM_TCAF_health_diet, dm_health_dalys = TCAF_health_diet_preprocessing()
+CDM_MF = TCAF_MF_preprocessing()
+
+
+# CalculationTree RUNNING PICKLE CREATION --------------------------------------
+database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet, dm_health_dalys, CDM_MF)
