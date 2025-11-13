@@ -9,6 +9,7 @@ from processors.buildings_interfaces_CH import run as load_interface_run
 from processors.appliances_pipeline_CH import run as appliances_run
 from processors.lighting_pipeline_CH import run as lighting_run
 from processors.services_pipeline_CH import run as services_run
+from processors.calibration_pipeline_CH import run as calibration_run
 from scenarios.build_fts_BAU_pickle import run as fts_bau_pickle_run
 from scenarios.build_fts_LoiEnergie_Vaud_pickle import run as fts_loi_energie_vaud_run
 from scenarios.buildings_fts_EP2050_pickle import run as fts_Vaud_EP2050_run
@@ -60,6 +61,9 @@ dm_light = lighting_run(country_list, years_ots)
 
 print('Running services / non-residential pipeline')
 DM_services = services_run(country_list, years_ots)
+
+print('Extract Buildings energy demand for Calibration')
+dm_energy_cal = calibration_run(country_list, years_ots)
 
 DM_all = {
   'floor_renov': DM_renov,

@@ -155,6 +155,7 @@ def run(dm_pop, DM_all, years_ots, years_fts):
 
   # SECTION: fxa - appliances
   DM_buildings['fxa']['appliances'] = DM_appliances['fxa']['appliances'].copy()
+  DM_buildings['fxa']['other-electricity-demand'] = DM_appliances['fxa']['other-electricity-demand'].copy()
 
   # SECTION: fxa - hot water demand
   # Determine fts years for hot water variables
@@ -263,7 +264,7 @@ def run(dm_pop, DM_all, years_ots, years_fts):
   sort_pickle(file)
 
   #add_dummy_country_to_DM(DM_buildings, new_country='EU27', ref_country='Switzerland')
-  #DM_bld['fxa']['services'] = DM_buildings['fxa']['services']
+  #DM_bld['fxa']['other-electricity-demand'] = DM_buildings['fxa']['other-electricity-demand']
   #DM_bld['fxa']['lighting'] = DM_buildings['fxa']['lighting']
 
   #with open(file, 'wb') as handle:
