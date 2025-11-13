@@ -562,10 +562,22 @@ def bld_appliances_workflow(DM_appliances, dm_pop):
   dm_appliance.filter({'Years': dm_pop.col_labels['Years']}, inplace=True)
   dm_appliance.change_unit('bld_appliances_tot-elec-demand', old_unit='kWh', new_unit='TWh', factor=1e-9 )
 
-  DM_appliance_out = {
-    'power': dm_appliance.filter(
+  # Compute other electricity demand
+  dm_other_elec_demand = DM_appliances['other-electricity-demand'].flatten()
+  dm_other_elec_demand.append(dm_pop, dim='Variables')
+  dm_other_elec_demand.operation('bld_energy-demand_other_electricity', '*', 'lfs_population_total', out_col='bld_electricity-demand-other', unit='kWh')
+  dm_other_elec_demand.change_unit('bld_electricity-demand-other', old_unit='kWh', new_unit='TWh', factor=1e-9 )
+
+  # Group all electricity demand, including other-electricity demand
+  dm_elec_tot = dm_appliance.filter(
       {'Variables': ['bld_appliances_tot-elec-demand']}).group_all(
-      'Categories1', inplace=False),
+      'Categories1', inplace=False)
+  dm_elec_tot.append(dm_other_elec_demand.filter({'Variables': ['bld_electricity-demand-other']}), dim='Variables')
+  dm_elec_tot.groupby({'bld_appliances_tot-elec-demand_tmp': '.*'}, dim='Variables', regex=True, inplace=True)
+  dm_elec_tot.rename_col('bld_appliances_tot-elec-demand_tmp', 'bld_appliances_tot-elec-demand', 'Variables')
+
+  DM_appliance_out = {
+    'power': dm_elec_tot,
     'industry': dm_appliance.filter(
       {'Variables': ['bld_appliances_new', 'bld_appliances_waste']})
   }
