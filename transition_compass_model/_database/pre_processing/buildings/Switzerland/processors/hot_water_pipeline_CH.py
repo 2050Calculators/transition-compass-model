@@ -101,6 +101,19 @@ def extrapolate_missing_years_based_on_tech_mix(dm_water_CH_consumption, dm_pop,
 
   return dm_water_CH_consumption
 
+def adjust_heat_pumps_hot_water_COP(dm_efficiencies, COP_HP_HW):
+  dm = dm_efficiencies.copy()
+  COP_HP_HW = {2015: 2.8,  2030: 3.0,	2040: 3.2, 2050: 3.5, 2060:3.6}
+  dm.add(np.nan, dim='Categories1', col_label='heat-pump-adj', dummy=True)
+  for yr, val in COP_HP_HW.items():
+    dm['Switzerland', yr, 'bld_heating_efficiency', 'heat-pump-adj'] = val
+  dm.operation('heat-pump-adj', '/', 'heat-pump', out_col='ratio', dim='Categories1')
+  dm.drop(dim='Categories1', col_label='heat-pump-adj')
+  linear_fitting(dm, years_ots=dm.col_labels['Years'])
+  dm.operation('heat-pump', '*', 'ratio', out_col='heat-pump-adj', dim='Categories1')
+  dm.drop(dim='Categories1', col_label=['heat-pump', 'ratio'])
+  dm.rename_col('heat-pump-adj', 'heat-pump', 'Categories1')
+  return dm
 
 def run(country_list, years_ots):
 
@@ -163,8 +176,15 @@ def run(country_list, years_ots):
   dm_efficiencies = hw.extract_heating_efficiencies_EP2050(file_url, zip_name, file_pickle)
   dm_efficiencies.add(1, dim='Categories1', col_label=['electricity'], dummy=True)
   dm_efficiencies.add(0.6, dim='Categories1', col_label=['solar'], dummy=True)
-  dm_efficiencies.sort('Categories1')
   linear_fitting(dm_efficiencies, years_ots, based_on=[2000, 2010])
+  # For heat-pump, according to EP2050+
+  # source: EP2050+_TechnsicherBericht_DatenAbbildungen_Kap 1-7_2022-04-12, Abb. 17
+  # Wärmenutzungsgrad von Wärmepumpen für Warmwasser
+  # The efficiency for Heat-pumps (air to water) for hot water is
+  COP_HP_HW = {2015: 2.8,  2030: 3.0,	2040: 3.2, 2050: 3.5, 2060:3.6}
+  dm_efficiencies = adjust_heat_pumps_hot_water_COP(dm_efficiencies, COP_HP_HW)
+  dm_efficiencies.sort('Categories1')
+
 
   ############################################
   ####      ENERGY CONSUMPTION - CH      #####
