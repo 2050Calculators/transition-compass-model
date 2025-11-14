@@ -88,14 +88,14 @@ def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
                 'pro-liv-meat-red',
                 'crop-veg',
                 'crop-cereal-whole']
-  cat_temp = ['tcaf_health_diet_paf_crop-fruit',
-                'tcaf_health_diet_paf_crop-pulse',
-                'tcaf_health_diet_paf_pro-liv-abp-dairy-milk',
-                'tcaf_health_diet_paf_crop-oilcrop',
-                'tcaf_health_diet_paf_pro-liv-meat-processed',
-                'tcaf_health_diet_paf_pro-liv-meat-red',
-                'tcaf_health_diet_paf_crop-veg',
-                'tcaf_health_diet_paf_crop-cereal-whole']
+  cat_temp = ['tcaf_health-diet_paf_crop-fruit',
+                'tcaf_health-diet_paf_crop-pulse',
+                'tcaf_health-diet_paf_pro-liv-abp-dairy-milk',
+                'tcaf_health-diet_paf_crop-oilcrop',
+                'tcaf_health-diet_paf_pro-liv-meat-processed',
+                'tcaf_health-diet_paf_pro-liv-meat-red',
+                'tcaf_health-diet_paf_crop-veg',
+                'tcaf_health-diet_paf_crop-cereal-whole']
 
   # Filter diet according to health categories
   dm_diet_bau.filter({'Categories1':cat_health}, inplace=True)
@@ -120,7 +120,7 @@ def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
       print(f"Warning: {cat} not in dm_data_paf")
 
   for cat in cat_health:
-    variable_name = 'tcaf_health_diet_paf_' + cat
+    variable_name = 'tcaf_health-diet_paf_' + cat
     for year in dm_diet_bau.col_labels['Years']:
       # 0: initialize arrays
       arr_diet_intake = dm_diet_bau[:, year, 'lfs_consumers-diet', cat]
@@ -159,20 +159,32 @@ def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
   dm_paf.add(array_temp[:,:,np.newaxis,:,:], dummy=True, col_label='tcaf_health-diet_dalys', dim='Variables', unit='DALYs')
 
   # Step 3 - Total DALYs = sum(DALYs i) ----------------------------------------
-  dm_paf_disease = dm_paf.copy()
-  dm_paf_disease.drop(dim='Categories2', col_label='combined')
-  dm_paf_disease.groupby({'total': '.*'}, dim='Categories2',inplace=True, regex=True)
-  dm_paf_disease.switch_categories_order(cat1='Categories2',cat2='Categories1')
-  dm_paf_disease = dm_paf_disease.flatten()
+  dm_dalys_tot = dm_paf.copy()
+  dm_dalys_tot.drop(dim='Categories2', col_label='combined')
+  dm_dalys_tot.groupby({'total': '.*'}, dim='Categories2',inplace=True, regex=True)
+  dm_dalys_tot.switch_categories_order(cat1='Categories2',cat2='Categories1')
+  dm_dalys_tot = dm_dalys_tot.flatten()
 
   # Step 4 - Calibration: normalise according to the total DALYs ---------------
 
 
 
-  dm = DM_diet
 
-  return dm
+  return dm_paf, dm_dalys_tot
 
+# CalculationLeaf TPE INTERFACE
+def TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot):
+
+  # health-diet detailed
+  dm_health_diet_detailed.filter({'Variables':['tcaf_health-diet_dalys']}, inplace=True)
+  dm_tpe = dm_health_diet_detailed.flattest()
+
+  # health-diet total
+  dm_health_diet_tot.filter({'Variables': ['tcaf_health-diet_dalys']},
+                                 inplace=True)
+  dm_tpe.append(dm_health_diet_tot.flattest(), dim='Variables')
+
+  return dm_tpe
 
 def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
 
@@ -195,8 +207,9 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
 
 
     # CalculationTree ---------------------------------------------------------------------------------------------------
-    dm = TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF)
-    results_run = DM_diet.copy()
+    dm_health_diet_detailed, dm_health_diet_tot = TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF)
+    # CalculationTree TPE OUTPUT -------------------------------------------------------------------------------------------------------
+    results_run = TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot)
 
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 
@@ -204,9 +217,6 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
     #DM_lus = agriculture_landuse_interface(DM_bioenergy, dm_lgn, dm_land_use)
     #interface.add_link(from_sector='agriculture', to_sector='land-use',
     #                   dm=DM_lus)
-
-    # TPE OUTPUT -------------------------------------------------------------------------------------------------------
-    #results_run = agriculture_TPE_interface()
 
     return results_run
 
