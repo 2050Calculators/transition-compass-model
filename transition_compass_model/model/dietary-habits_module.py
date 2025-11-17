@@ -150,7 +150,7 @@ def diet_adherence_scenarios(DM_diet, DM_pop, CDM_const, bau, tpe_scenario):
     dm_diet_requirement.filter({'Variables': ['lfs_kcal-req_req']},
                                inplace=True)
 
-    #  Intake of food categories i [kcal/cap/cay] = kcal-req [kcal/cap/day] * share of i [%]
+    #  Intake of food categories i [kcal/cap/day] = kcal-req [kcal/cap/day] * share of i [%]
     dm_diet_split = DM_diet['diet-split-share'].copy()
     ay_total_diet = dm_diet_requirement[:, :, 'lfs_kcal-req_req', np.newaxis] * \
                     dm_diet_split[:, :, var_consumers_diet, :]
@@ -521,7 +521,7 @@ def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, write_pi
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 
     # Dietary Habits to TCAF
-    DM_TCAF_health_diet = dietaryhabits_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario)
+    DM_TCAF_health_diet = dietaryhabits_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario,)
     if write_pickle is True:
       current_file_directory = os.path.dirname(os.path.abspath(__file__))
       f = os.path.join(current_file_directory,

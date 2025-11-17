@@ -63,8 +63,7 @@ def TCAF_health_diet_preprocessing():
     'Ischemic stroke': 'IS',
     'Subarachnoid hemorrhage': 'SH',
     'Tracheal, bronchus, and lung cancer': 'TBLC',
-    'Esophageal cancer': 'EC',
-    'Combined': 'combined'
+    'Esophageal cancer': 'EC'
   }
   df_dalys['cause'] = df_dalys['cause'].replace(cause_map)
 
@@ -82,9 +81,9 @@ def TCAF_health_diet_preprocessing():
                                     values='value').reset_index()
   dm_health_dalys = DataMatrix.create_from_df(df_dalys_pivot, num_cat=1)
 
-  # Compute total DALYs
+  """# Compute total DALYs
   dm_temp = dm_health_dalys.groupby({'combined': '.*'}, dim='Categories1', regex=True, inplace=False)
-  dm_health_dalys.append(dm_temp, dim='Categories1')
+  dm_health_dalys.append(dm_temp, dim='Categories1')"""
 
   # Linear fitting to expand the constant value
   linear_fitting(dm_health_dalys, years_all)
@@ -103,7 +102,9 @@ def TCAF_health_diet_preprocessing():
   # Average PAF per risk factor, cause, grams
   df_data_grouped = df_data.groupby(['Risk_Factor','cause','grams'])['paf'].mean().reset_index()
 
-  # Combined PAF = 1 - PROD(1-PAFi)
+  # Add gender
+
+  """# Combined PAF = 1 - PROD(1-PAFi)
   df_paf_comb = df_data_grouped.copy()
   df_paf_comb = (
     df_paf_comb
@@ -111,10 +112,11 @@ def TCAF_health_diet_preprocessing():
     .apply(lambda x: 1 - np.prod(1 - x))
     .reset_index()
   )
-  df_paf_comb['cause'] = 'Combined'
+  df_paf_comb['cause'] = 'Combined'"""
 
   # Concat dfs
-  df_tcaf_health_diet = pd.concat([df_data_grouped, df_paf_comb])
+  df_tcaf_health_diet = df_data_grouped
+  #df_tcaf_health_diet = pd.concat([df_data_grouped, df_paf_comb])
 
   # Formatting -----------------------------------------------------------------
 
@@ -150,44 +152,28 @@ def TCAF_health_diet_preprocessing():
                                      df_tcaf_health_diet['cause'] \
                                       + '[-]'
 
-  list_variables = [
-    'tcaf_health-diet_paf_CRC[-]','tcaf_health-diet_paf_DT2[-]',
-    'tcaf_health-diet_paf_ICH[-]', 'tcaf_health-diet_paf_IHD[-]',
-    'tcaf_health-diet_paf_IS[-]', 'tcaf_health-diet_paf_SH[-]',
-    'tcaf_health-diet_paf_EC[-]', 'tcaf_health-diet_paf_TBLC[-]',
-    'tcaf_health-diet_paf_combined[-]'
-  ]
-
-  # Get unique combinations of Risk_Factor × Years × Country × cause
-  unique_combinations = df_tcaf_health_diet[
-    ['Risk_Factor', 'Years', 'Country', 'cause']].drop_duplicates()
-
-  # Create all combinations with list_variables
-  all_combinations = unique_combinations.assign(key=1).merge(
-    pd.DataFrame({'variables': list_variables, 'key': 1}), on='key'
-  ).drop('key', axis=1)
-
-  # Merge with original df on just the relevant columns
-  df_tcaf_health_diet_full = all_combinations.merge(
-    df_tcaf_health_diet,
-    on=['Risk_Factor', 'variables', 'Years', 'Country', 'cause'],
-    how='left'
-  )
-
-  # Fill missing values with 0
-  df_tcaf_health_diet_full['value'] = df_tcaf_health_diet_full['value'].fillna(0)
-
   # Format as separate dm, according to the risk factor (or food categories)
   # Note : here, the intake is processed as the 'Years' dimensions, and renamed
   # afterwards. Therefore, this DM has not timescale
   DM_TCAF_health_diet_paf = {}
 
+  var_total = [
+    'tcaf_health-diet_paf_CRC','tcaf_health-diet_paf_DT2',
+    'tcaf_health-diet_paf_ICH', 'tcaf_health-diet_paf_IHD',
+    'tcaf_health-diet_paf_IS', 'tcaf_health-diet_paf_SH',
+    'tcaf_health-diet_paf_EC', 'tcaf_health-diet_paf_TBLC'
+  ]
 
   for rf in df_tcaf_health_diet["Risk_Factor"].unique():
-    sub_df = df_tcaf_health_diet_full[df_tcaf_health_diet_full["Risk_Factor"] == rf].copy()
+    sub_df = df_tcaf_health_diet[df_tcaf_health_diet["Risk_Factor"] == rf].copy()
     sub_df_pivot = sub_df.pivot_table(index=['Country', 'Years'], columns='variables', values='value').reset_index()
     dm = DataMatrix.create_from_df(sub_df_pivot, num_cat=0)
     dm.dim_labels[1] = 'Intake [g/day/cap]'
+    # Add dummies
+    var_rf = dm.col_labels['Variables']
+    var_missing = set(var_total) - set(var_rf)
+    for var in var_missing:
+      dm.add(0.0, dummy=True, col_label=var,dim='Variables', unit='-')
     DM_TCAF_health_diet_paf[rf] = dm
 
   return DM_TCAF_health_diet_paf, dm_health_dalys

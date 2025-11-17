@@ -63,6 +63,8 @@ def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
   dm_data_paf = DM_TCAF_health_diet['health-diet_paf']
   dm_data_dalys = DM_TCAF_health_diet['health-diet_dalys']
 
+  # pondération genre PAF
+
   # Step 0 - Groupby categories relevant for health ----------------------------
   # Red meat
   pattern = 'pro-liv-meat-bovine|pro-liv-meat-pig|pro-liv-meat-sheep|pro-liv-meat-oth-animal'
@@ -149,7 +151,7 @@ def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
     dm_paf.append(dm_paf_year.filter({'Variables':[variable_name]},inplace=False), dim='Variables')
 
 
-  # Step 2 - Associated DALYs per disease i = PAF i * DALYs i ------------------
+  # Step 2 - Associated DALYs per disease d for total country = PAF d,r * DALYs d ------------------
   dm_data_dalys = dm_data_dalys.flatten()
   dm_data_dalys.rename_col_regex(str1="tcaf_health-diet_dalys", str2="", dim="Variables")
   array_temp = dm_paf[:,:,:,:] * dm_data_dalys[:,:,np.newaxis,:]
@@ -158,14 +160,15 @@ def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
                                          cat2='Categories1')  # Switch categories
   dm_paf.add(array_temp[:,:,np.newaxis,:,:], dummy=True, col_label='tcaf_health-diet_dalys', dim='Variables', unit='DALYs')
 
-  # Step 3 - Total DALYs = sum(DALYs i) ----------------------------------------
+  # Step 3 - Total DALYs = sum(DALYs d) ----------------------------------------
   dm_dalys_tot = dm_paf.copy()
-  dm_dalys_tot.drop(dim='Categories2', col_label='combined')
+  #dm_dalys_tot.drop(dim='Categories2', col_label='combined')
   dm_dalys_tot.groupby({'total': '.*'}, dim='Categories2',inplace=True, regex=True)
   dm_dalys_tot.switch_categories_order(cat1='Categories2',cat2='Categories1')
   dm_dalys_tot = dm_dalys_tot.flatten()
 
   # Step 4 - Calibration: normalise according to the total DALYs ---------------
+  # Use combined PAF
 
 
 
