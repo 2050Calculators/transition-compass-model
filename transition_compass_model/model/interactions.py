@@ -70,7 +70,7 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
 
 
     start_time = time.time()
-    TPE['energy'] = energy(lever_setting, years_setting, country_list, interface=Interface())
+    TPE['energy'] = energy(lever_setting, years_setting, country_list, interface)
     logger.info('Execution time Ammonia: {0:.3g} s'.format(time.time() - start_time))
     #start_time = time.time()
     #TPE['agriculture'] = agriculture(lever_setting, years_setting, interface)
