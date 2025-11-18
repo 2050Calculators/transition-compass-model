@@ -114,8 +114,8 @@ def compute_vehicle_efficiency_from_energy_demand(dm_energy, dm_vkm, dm_private_
                                          'Categories2': dm_pass_energy.col_labels['Categories2'],
                                          'Country': dm_pass_energy.col_labels['Country']})
 
-  dm_demand_tech.drop(col_label='LDV', dim='Categories1')
-  dm_pass_energy.drop(col_label='LDV', dim='Categories1')
+  #dm_demand_tech.drop(col_label='LDV', dim='Categories1')
+  #dm_pass_energy.drop(col_label='LDV', dim='Categories1')
   dm_demand_tech.append(dm_pass_energy, dim='Variables')
   dm_demand_tech.change_unit('tra_energy_demand', old_unit='TWh', new_unit='MJ', factor=3.6*1e9)
   dm_demand_tech.operation('tra_energy_demand', '/', 'tra_passenger_demand-vkm', out_col='tra_passenger_veh-efficiency_fleet', unit='MJ/km')
@@ -177,6 +177,20 @@ def run(dm_energy, dm_vkm, dm_private_fleet, dm_public_fleet, cdm_emissions_fact
 
   # Efficiency = MJ/vkm = Energy(MJ)/Demand(vkm)
   dm_veh_eff = compute_vehicle_efficiency_from_energy_demand(dm_energy, dm_vkm, dm_private_fleet, dm_public_fleet)
+  # Fix LDV BEV and FCEV
+  mask = (dm_veh_eff[...] == 0)
+  dm_veh_eff.array[mask] = np.nan
+  # Remove odd years
+  dm_veh_eff[:, 2011, 'tra_passenger_veh-efficiency_fleet', 'LDV', 'BEV'] =np.nan
+  dm_veh_eff[:, 2012, 'tra_passenger_veh-efficiency_fleet', 'LDV', 'BEV'] =np.nan
+
+  dm_veh_eff[:, :, 'tra_passenger_veh-efficiency_fleet', 'LDV', 'BEV'] \
+    = np.nanmean(dm_veh_eff[:, :, 'tra_passenger_veh-efficiency_fleet', 'LDV', 'BEV'], axis=1, keepdims=True)
+  dm_veh_eff[:, :, 'tra_passenger_veh-efficiency_fleet', 'LDV', 'FCEV'] \
+    = np.nanmean(dm_veh_eff[:, :, 'tra_passenger_veh-efficiency_fleet', 'LDV', 'FCEV'], axis=1, keepdims=True)
+  dm_veh_eff[:, :, 'tra_passenger_veh-efficiency_fleet', '2W', 'BEV'] \
+    = np.nanmean(dm_veh_eff[:, :, 'tra_passenger_veh-efficiency_fleet', '2W', 'BEV'], axis=1, keepdims=True)
+
   # Add metrotram efficiency from JRC
   dm_veh_eff = add_metrotram_efficiency_from_JRC(dm_veh_eff)
 
@@ -195,6 +209,11 @@ def run(dm_energy, dm_vkm, dm_private_fleet, dm_public_fleet, cdm_emissions_fact
   # Join LDV and other modes
   all_tech = set(dm_veh_eff_LDV.col_labels['Categories2']).union(set(dm_veh_eff.col_labels['Categories2']))
   dm_veh_eff_LDV.append(dm_veh_new_eff_LDV, dim='Variables')
+  dm_veh_eff_LDV.filter({'Years':years_ots}, inplace=True)
+  dm_LDV_BEV_FCEV = dm_veh_eff.filter({'Categories1': ['LDV'], 'Categories2': ['BEV', 'FCEV']})
+  dm_veh_eff.drop('Categories1', 'LDV')
+  dm_veh_eff_LDV.append(dm_LDV_BEV_FCEV, dim='Categories2')
+
   dm_add_missing_variables(dm_veh_eff_LDV,{'Categories2': all_tech})
   dm_add_missing_variables(dm_veh_eff,{'Categories2': all_tech})
   dm_veh_eff.append(dm_veh_eff_LDV.filter({'Years': years_ots}), dim='Categories1')

@@ -327,7 +327,7 @@ def passenger_fleet_energy(DM_passenger, dm_lfs, DM_other, cdm_const, years_sett
     dm_tech.add(arr_pkm, dim='Variables', col_label='tra_passenger_transport-demand', unit='pkm')
     dm_tech.operation('tra_passenger_energy-demand', '/', 'tra_passenger_transport-demand',
                       out_col='tra_passenger_energy-intensity', unit='MJ/pkm')
-    dm_tech.change_unit('tra_passenger_energy-intensity', factor=2.77778e-1, old_unit='MJ/pkm', new_unit='kWh/pkm')
+    dm_tech.change_unit('tra_passenger_energy-intensity', factor=3.6, old_unit='MJ/pkm', new_unit='kWh/pkm', operator='/')
     dm_energyscope = dm_tech.filter({'Variables':  ['tra_passenger_transport-demand','tra_passenger_energy-intensity']})
 
     DM_passenger_out = {
