@@ -134,7 +134,7 @@ def extract_sankey_energy_flow(DM):
                                   units={'pow_production': 'TWh'})
   # Energy production
   # Use the fact that the values are positive or negative to split
-  cat1, cat2 = np.where(dm_energy_full.array[0, 0, 0, :, :]>0)
+  cat1, cat2 = np.where(dm_energy_full.array[0, 0, 0, :, :]>10)
   new_arr = np.zeros((1, 1, 1, len(cat1)))
   new_arr[0, 0, 0, :] = dm_energy_full.array[0, 0, 0, cat1, cat2]
   new_categories = [dm_energy_full.col_labels['Categories1'][c1] + '-' +
@@ -289,13 +289,9 @@ def extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy):
                              inplace=True)
 
   # Rename installed N
-  DM['installed_N'].filter(
-    {'Categories1': power_categories + cogen_categories}, inplace=True)
-  DM['installed_N'].groupby({'CHP': '.*COGEN.*'}, regex=True,
-                            dim='Categories1', inplace=True)
-  DM['installed_N'] = DM['installed_N'].groupby(reversed_mapping,
-                                                dim='Categories1',
-                                                inplace=False)
+  DM['installed_N'].filter({'Categories1': power_categories + cogen_categories}, inplace=True)
+  DM['installed_N'].groupby({'CHP': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
+  DM['installed_N'] = DM['installed_N'].groupby(reversed_mapping, dim='Categories1', inplace=False)
 
 
   # Rename fuel-supply
@@ -423,23 +419,30 @@ def downscale_country_to_canton(dm_prod_cap_cntr, dm_cal_capacity, country_dem, 
     return dm_prod_cap_cntr
 
 
-def balance_demand_prod_with_net_import(dm_prod_cap_cntr, dm_demand_trend, share_of_pop):
+def balance_demand_prod_with_net_import(dm_prod_cap_cntr, dm_losses, dm_net_import, dm_demand_trend, share_of_pop):
 
   dm_prod = dm_prod_cap_cntr.filter({'Variables': ['pow_production']})
-  dm_prod.drop('Categories1', ['Net-import', 'Waste'])
+  #dm_prod.drop('Categories1', ['Net-import', 'Waste'])
   dm_prod.group_all('Categories1', inplace=True)
+  # Compute demand by country
   dm_demand_trend.drop('Categories1', 'district-heating')
   dm_demand_trend.group_all('Categories1', inplace=True)
   dm_demand_trend.array = dm_demand_trend.array / share_of_pop
-  arr_net_import = dm_demand_trend.array - dm_prod.array
+  # demand = prod - losses + net_import
+  # net_import = demand - (prod - losses) (NOTE: losses is already negative!)
 
-  idx = dm_prod_cap_cntr.idx
-  dm_prod_cap_cntr[:, :, 'pow_production', 'Net-import'] = arr_net_import[:, :, 0]
+  arr_net_import = dm_demand_trend.array - (dm_prod.array + dm_losses[:, :, :, 'Losses'])
+  #dm_net_import.add(arr_net_import, dim='Categories1', col_label='Net-import-computed')
+  idx = dm_net_import.idx
+  dm_net_import[:, idx[2023]:, 'pow_production', 'Net-import'] = arr_net_import[:, idx[2023]:, 0]
+  dm_losses.append(dm_net_import, dim='Categories1')
+  dm_losses.add(np.nan, dim='Variables', col_label=['pow_capacity', 'pow_cap-fact'], dummy=True, unit=['GW', '%'])
+  dm_prod_cap_cntr.append(dm_losses, dim='Categories1')
 
   return dm_prod_cap_cntr
 
 
-def energyscope_pyomo(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, country_list):
+def energyscope_pyomo(data_path, DM_tra, DM_bld, DM_ind, DM_agr, years_ots, years_fts, country_list):
   with open(data_path, 'rb') as handle:
     DM_energy = pickle.load(handle)
 
@@ -451,7 +454,8 @@ def energyscope_pyomo(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, c
               'hist-fuels-supply': dm_fuels_supply,
               'demand-bld': DM_bld,
               'demand-tra': DM_tra,
-              'demand-ind': DM_ind}
+              'demand-ind': DM_ind,
+              'demand-agr': DM_agr}
 
   this_dir =  os.path.dirname(os.path.abspath(__file__))
   data_file_path = os.path.join(this_dir, 'energy/energyscopepyomo/ses_main.json')
@@ -461,7 +465,10 @@ def energyscope_pyomo(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, c
   #opt = make_highs()
   #attach(opt, m)
 
-  # YOUR OVERWRITING FUNCTION HERE
+  dm_tra_demand_trend = inter.extract_transport_demand(DM_tra)
+  dm_bld_demand_trend = inter.extract_buildings_demand(DM_bld, DM_ind)
+  dm_ind_demand_trend = inter.extract_industry_demand(DM_ind)
+  dm_agr_demand_trend = inter.extract_agriculture_demand(DM_agr)
 
   #res = solve(opt, m, warmstart=True)
 
@@ -480,25 +487,28 @@ def energyscope_pyomo(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, c
     if country_prod in country_list:
       share_of_pop = 1
     else:
-      # FIXME: This needs to be given as input from lifestyles and it depends on the canton
       country_dem = country_list[0]
       # You should also check that you are not running with more than a canton at the time if Switzerland
       # is not in the mix
-      share_of_pop = 0.095
+      dm_tmp = dm_production.copy()
+      dm_tmp.drop('Categories1', 'Pump-Open')
+      country_demand = dm_tmp[0, years_ots[-1], 'pow_production', :].sum(axis=-1)
+      canton_demand = (dm_tra_demand_trend[country_dem, years_ots[-1], 'tra_energy-consumption', 'electricity']
+                       + dm_bld_demand_trend[country_dem, years_ots[-1], 'bld_energy-consumption', 'electricity']
+                       + dm_bld_demand_trend[country_dem, years_ots[-1], 'bld_energy-consumption', 'heat-pump']
+                       + dm_ind_demand_trend[country_dem, years_ots[-1], 'ind_energy-end-use', 'electricity']
+                       + dm_ind_demand_trend[country_dem, years_ots[-1], 'ind_energy-end-use', 'heat-pump']
+                       + dm_agr_demand_trend[country_dem, years_ots[-1], 'agr_energy-consumption', 'electricity']
+                       + dm_agr_demand_trend[country_dem, years_ots[-1], 'agr_energy-consumption', 'heat-pump'])
+
+      share_of_pop = 0.07885490043172043  # canton_demand/country_demand #
 
 
   dm_tra_demand_trend = inter.impose_transport_demand_pyomo(m, endyr, share_of_pop, DM_tra, country_dem)
   dm_bld_demand_trend = inter.impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind,country_dem)
-  dm_ind_demand_trend = inter.impose_industry_demand_pyomo(m, endyr, share_of_pop, DM_ind, country_dem)
+  dm_ind_demand_trend, dm_agr_demand_trend = inter.impose_industry_demand_pyomo(m, endyr, share_of_pop, DM_ind, DM_agr, country_dem)
 
-  # Group all the demand fts trends
-  dm_demand_trend = dm_bld_demand_trend
-  dm_demand_trend.append(dm_ind_demand_trend, dim='Variables')
-  dm_add_missing_variables(dm_tra_demand_trend, {
-    'Categories1': dm_demand_trend.col_labels['Categories1']}, fill_nans=False)
-  dm_demand_trend.append(dm_tra_demand_trend, dim='Variables')
-  dm_demand_trend.groupby({'total-energy-consumption': '.*'}, dim='Variables',
-                          regex=True, inplace=True)
+  # Avail is in GWh
   # No nuclear
   m.avail['URANIUM'] = 0
   # ampl.getParameter('avail').setValues({'WOOD': 1.5*12279})
@@ -506,11 +516,14 @@ def energyscope_pyomo(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, c
   m.f_min['CCGT'] = 0
   # ampl.getParameter('avail').setValues({'NG_CCS': 0})
   m.avail['COAL_CCS'] = 0
+  m.avail['ELECTRICITY'] = 5000  # Import capped to 5 TWh
 
   set_constraints(m, objective = "cost")
-  opt = make_highs()
+  # Put show_log to True to see the results of the optimisation
+  opt = make_highs(show_log=False)
   attach(opt, m)
   res = solve(opt, m, warmstart=True)
+
 
   DM_2050 = extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy)
 
@@ -518,9 +531,18 @@ def energyscope_pyomo(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, c
   dm_prod_cap_cntr, dm_losses, dm_net_import \
     = create_future_country_production_trend(DM_2050, DM_input, years_ots, years_fts)
 
-  # !FIXME: you are here
+
   # Compare Demand = prod - losses + net_import  with the Calculator demand
   #dm_balance = dm_prod_cap_cntr.filter({'Variables': ['pow_production']})
+
+  #dm_tmp = dm_production.copy()
+  #dm_tmp.drop('Categories1', ['Losses', 'Net-import'])
+  #dm_tmp.rename_col('pow_production', 'pow_production_original', dim='Variables')
+  #dm_add_missing_variables(dm_tmp, {'Categories1': dm_balance.col_labels['Categories1']})
+  #dm_add_missing_variables(dm_balance, {'Categories1': dm_tmp.col_labels['Categories1']})
+
+  #dm_tmp.append(dm_balance.filter({'Years': years_ots}), dim='Variables')
+
   #dm_balance.append(dm_losses, dim='Categories1')
   #dm_balance.append(dm_net_import, dim='Categories1')
   #dm_balance.group_all('Categories1')
@@ -529,12 +551,24 @@ def energyscope_pyomo(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, c
   #dm_demand_trend.group_all('Categories1')
   #dm_balance.append(dm_demand_trend, dim='Variables')
 
+  # Group all the demand fts trends
+  dm_demand_trend = dm_bld_demand_trend
+  dm_demand_trend.append(dm_ind_demand_trend, dim='Variables')
+  dm_add_missing_variables(dm_tra_demand_trend, {'Categories1': dm_demand_trend.col_labels['Categories1']}, fill_nans=False)
+  dm_demand_trend.append(dm_tra_demand_trend, dim='Variables')
+  dm_demand_trend.append(dm_agr_demand_trend, dim='Variables')
+  dm_demand_trend_by_sector = dm_demand_trend.group_all('Categories1', inplace=False)
+  dm_demand_trend_by_sector.rename_col('ind_energy-end-use', 'ind_energy-consumption', dim='Variables')
+  dm_demand_trend.groupby({'total-energy-consumption': '.*'}, dim='Variables', regex=True, inplace=True)
+
   # Add demand - production balancing through net import & losses
   dm_prod_cap_cntr = balance_demand_prod_with_net_import(dm_prod_cap_cntr,
+                                                         dm_losses,
+                                                         dm_net_import,
                                                          dm_demand_trend,
                                                          share_of_pop)
 
-  results_run = inter.prepare_TPE_output(dm_prod_cap_cntr)
+  results_run = inter.prepare_TPE_output(dm_prod_cap_cntr, dm_demand_trend_by_sector)
 
   return results_run
 
@@ -556,6 +590,8 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
           DM_transport = pickle.load(handle)
       for key in DM_transport.keys():
           DM_transport[key].filter({'Country': country_list}, inplace=True)
+  # !FIXME: I'm dropping aviation
+  DM_transport['passenger'].drop('Categories1', 'aviation')
 
   # Check country selection for energy module run
   if 'EU27' in country_list:
@@ -587,9 +623,20 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
         DM_industry = pickle.load(handle)
     filter_DM(DM_industry, {'Country': country_list})
 
+  if interface.has_link(from_sector='agriculture', to_sector='energy'):
+    DM_agriculture = interface.get_link(from_sector='agriculture', to_sector='energy')
+  else:
+    if len(interface.list_link()) != 0:
+        print("You are missing " + 'agriculture' + " to " + 'energy' + " interface")
+    agr_file = os.path.join(current_file_directory, '../_database/data/interface/agriculture_to_energy.pickle')
+    with open(agr_file, 'rb') as handle:
+        DM_agriculture = pickle.load(handle)
+    filter_DM(DM_agriculture, {'Country': country_list})
+
+
   current_file_directory = os.path.dirname(os.path.abspath(__file__))
   data_filepath = os.path.join(current_file_directory, '../_database/data/datamatrix/energy.pickle')
-  results_run = energyscope_pyomo(data_filepath, DM_transport, DM_buildings, DM_industry, years_ots, years_fts, country_list)
+  results_run = energyscope_pyomo(data_filepath, DM_transport, DM_buildings, DM_industry, DM_agriculture, years_ots, years_fts, country_list)
 
   return results_run
 
@@ -603,7 +650,7 @@ def local_energy_run():
     # Function to run only transport module without converter and tpe
 
     # get geoscale
-    country_list = ['Switzerland']
+    country_list = ['Vaud']
 
     results_run = energy(lever_setting, years_setting, country_list)
 
