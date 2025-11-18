@@ -178,8 +178,8 @@ def get_passenger_stock_fleet_by_tech_raw(table_id, file):
   return dm_fleet
 
 def get_excel_file_sheets(file_url, local_filename):
-  response = requests.get(file_url, stream=True)
   if not os.path.exists(local_filename):
+    response = requests.get(file_url, stream=True)
     # Check if the request was successful
     if response.status_code == 200:
       with open(local_filename, 'wb') as f:
