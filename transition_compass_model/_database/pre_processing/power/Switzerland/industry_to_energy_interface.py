@@ -645,189 +645,191 @@ def adjust_based_on_FSO_energy_consumption(dm_fuels_cantons, dm_services_fuels_e
     return dm_eud_shares
 
 
-#---------------------------------------------------------------------------------
-years_ots = create_years_list(1990, 2023, 1)
-years_fts = create_years_list(2025, 2050, 5)
+def run():
+  #---------------------------------------------------------------------------------
+  years_ots = create_years_list(1990, 2023, 1)
+  years_fts = create_years_list(2025, 2050, 5)
 
-######################################
-##   INDUSTRY TO ENERGY INTERFACE   ##
-######################################
+  ######################################
+  ##   INDUSTRY TO ENERGY INTERFACE   ##
+  ######################################
 
-# Extract energy demand by sector at national level by fuel
-table_id = 'px-x-0204000000_106'
-local_filename = 'data/energy_accounts_economy_households.pickle'
-# Industry sectors linked to energy, like energy production and waste management, have been removed or edited
-# Remove gasoline and diesel which are for transport / machinery
-dm_energy = extract_national_energy_demand(table_id, local_filename)
-
-
-# Industry energy demand by end-use (lighting, electricity, space-heating, process-heat, hot-water)
-# Energy Perspective 2050 data
-file_url = 'https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA0NDE=.html'
-zip_name = 'data/EP2050_sectors_test.zip'
-dm_industry_energy_end_use = extract_EP2050_industry_data(file_url, zip_name, years_ots+years_fts)
-dm_industry_energy_end_use.change_unit('ind_energy-end-use', old_unit='PJ', new_unit='TWh', factor=3.6, operator='/')
-dm_industry_energy_end_use_fts = dm_industry_energy_end_use.filter({'Years': years_fts})
-dm_industry_energy_end_use.filter({'Years': years_ots}, inplace=True)
-
-# Extract number of employees per industry and service sector by canton
-# This is in order to map the national energy demand to cantons
-table_id = 'px-x-0602010000_101'
-local_filename = 'data/employees_per_sector_canton.pickle'
-dm_employees = extract_employees_per_sector_canton(table_id, local_filename)
-
-# Group employees by sector and canton (dm_employees_mapped)
-dm_fuels_cantons, dm_employees_mapped = map_national_energy_demand_by_sector_to_cantons(dm_energy, dm_employees)
-
-# Distribute energy by end-use by canton based on number of employees (except for process-heat)
-dm_industry_eud_canton = map_eud_by_canton(dm_employees_mapped, dm_industry_energy_end_use)
-
-# Get Hot water and Space heating fuel split at household level per canton
-# !FIXME extract also 1990 and 2000
-table_id = 'px-x-0902010000_102'
-file_sh = 'data/bld_heating_technology_2021-2023.pickle'
-dm_space_heat = extract_heating_technologies(table_id, file_sh)
-# Add missing years
-dm_space_heat.add(np.nan, dummy=True, dim='Years', col_label=list(set(years_ots)-set(dm_space_heat.col_labels['Years'])))
-dm_space_heat.sort('Years')
-dm_space_heat.fill_nans('Years')
+  # Extract energy demand by sector at national level by fuel
+  table_id = 'px-x-0204000000_106'
+  local_filename = 'data/energy_accounts_economy_households.pickle'
+  # Industry sectors linked to energy, like energy production and waste management, have been removed or edited
+  # Remove gasoline and diesel which are for transport / machinery
+  dm_energy = extract_national_energy_demand(table_id, local_filename)
 
 
-file_hw = 'data/bld_hotwater_technology_2021-2023.pickle'
-dm_water = extract_hotwater_technologies(table_id, file_hw)
-# Add missing years
-dm_water.add(np.nan, dummy=True, dim='Years', col_label=list(set(years_ots)-set(dm_water.col_labels['Years'])))
-dm_water.sort('Years')
-dm_water.fill_nans('Years')
+  # Industry energy demand by end-use (lighting, electricity, space-heating, process-heat, hot-water)
+  # Energy Perspective 2050 data
+  file_url = 'https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA0NDE=.html'
+  zip_name = 'data/EP2050_sectors_test.zip'
+  dm_industry_energy_end_use = extract_EP2050_industry_data(file_url, zip_name, years_ots+years_fts)
+  dm_industry_energy_end_use.change_unit('ind_energy-end-use', old_unit='PJ', new_unit='TWh', factor=3.6, operator='/')
+  dm_industry_energy_end_use_fts = dm_industry_energy_end_use.filter({'Years': years_fts})
+  dm_industry_energy_end_use.filter({'Years': years_ots}, inplace=True)
 
-# Add efficiencies
-#data_file = "../../../data/datamatrix/buildings.pickle"
-#with open(data_file, 'rb') as handle:
-#    DM_bld = pickle.load(handle)
+  # Extract number of employees per industry and service sector by canton
+  # This is in order to map the national energy demand to cantons
+  table_id = 'px-x-0602010000_101'
+  local_filename = 'data/employees_per_sector_canton.pickle'
+  dm_employees = extract_employees_per_sector_canton(table_id, local_filename)
 
-# Add efficiencies
-data_file = "../../../data/interface/buildings_to_energy.pickle"
-with open(data_file, 'rb') as handle:
-    dm_eff = pickle.load(handle)
-dm_eff.filter({'Country': ['Switzerland']}, inplace=True)
-dm_eff.operation('bld_heating', '/', 'bld_energy-demand_heating', out_col='bld_efficiency', unit='%')
-dm_eff.filter({'Variables': ['bld_efficiency']}, inplace=True)
-dm_eff.fill_nans('Years')
-dm_eff[:, :, 'bld_efficiency', 'electricity'] = 1.0
+  # Group employees by sector and canton (dm_employees_mapped)
+  dm_fuels_cantons, dm_employees_mapped = map_national_energy_demand_by_sector_to_cantons(dm_energy, dm_employees)
 
-# It helps going from number of buildings to an estimate of the demand by fuel
-dm_space_heat = adjust_based_on_efficiency(dm_space_heat, dm_eff, years_ots)
-dm_water = adjust_based_on_efficiency(dm_water, dm_eff, years_ots)
+  # Distribute energy by end-use by canton based on number of employees (except for process-heat)
+  dm_industry_eud_canton = map_eud_by_canton(dm_employees_mapped, dm_industry_energy_end_use)
 
-dm_water.deepen(based_on='Variables')
-dm_water.switch_categories_order()
-dm_space_heat.deepen(based_on='Variables')
-dm_space_heat.switch_categories_order()
-
-# Filter for CH
-dm_water_CH = dm_water.filter({'Country': ['Switzerland']})
-dm_space_heat_CH = dm_space_heat.filter({'Country': ['Switzerland']})
-
-dm_fuels_eud_cantons = split_fuel_demand_by_eud(dm_water, dm_space_heat, dm_industry_eud_canton)
-
-# !FIXME heat-pump and electricity are off, use COP to normalise - Also compute Switzerland
-dm_fuels_eud_cantons = add_process_heat_demand(dm_fuels_eud_cantons, dm_fuels_cantons)
-
-dm_fuels_eud_cantons = fix_negative_values(dm_fuels_eud_cantons)
-
-## Compute for all of CH
-dm_fuels_eud_CH = compute_ind_energy_eud_fuels(dm_energy, dm_industry_energy_end_use, dm_water_CH, dm_space_heat_CH)
+  # Get Hot water and Space heating fuel split at household level per canton
+  # !FIXME extract also 1990 and 2000
+  table_id = 'px-x-0902010000_102'
+  file_sh = 'data/bld_heating_technology_2021-2023.pickle'
+  dm_space_heat = extract_heating_technologies(table_id, file_sh)
+  # Add missing years
+  dm_space_heat.add(np.nan, dummy=True, dim='Years', col_label=list(set(years_ots)-set(dm_space_heat.col_labels['Years'])))
+  dm_space_heat.sort('Years')
+  dm_space_heat.fill_nans('Years')
 
 
-dm_fuels_eud_cantons.append(dm_fuels_eud_CH, dim='Country')
+  file_hw = 'data/bld_hotwater_technology_2021-2023.pickle'
+  dm_water = extract_hotwater_technologies(table_id, file_hw)
+  # Add missing years
+  dm_water.add(np.nan, dummy=True, dim='Years', col_label=list(set(years_ots)-set(dm_water.col_labels['Years'])))
+  dm_water.sort('Years')
+  dm_water.fill_nans('Years')
 
-#####################################
-##   SERVICES TO ENERGY INTERFACE  ##
-#####################################
+  # Add efficiencies
+  #data_file = "../../../data/datamatrix/buildings.pickle"
+  #with open(data_file, 'rb') as handle:
+  #    DM_bld = pickle.load(handle)
 
-# Infras, TEP, Prognos, 2021. Analyse des schweizerischen Energieverbrauchs 2000–2020 - Auswertung nach Verwendungszwecken.
-# Table 26 - Endenergieverbrauch im Dienstleistungssektor nach Verwendungszwecken Entwicklung von 2000 bis 2020, in PJ, inkl. Landwirtschaft
-# Final energy consumption in the service sector by purpose Development from 2000 to 2020, in PJ, incl. agriculture
-# https://www.bfe.admin.ch/bfe/de/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA2OTM%3D.html&ved=2ahUKEwiC4OjJvpGOAxWexgIHHdyFGVMQFnoECB0QAQ&usg=AOvVaw1a9deGMbwSdNvV0aVLEBPj
-services_agri_split = {
-    "space-heating": {2000: 82.1, 2014: 67.1, 2015: 73.2, 2016: 77.3, 2017: 75.0, 2018: 67.0, 2019: 69.7, 2020: 65.9},
-    "hot-water": {2000: 12.7, 2014: 12.1, 2015: 12.1, 2016: 12.0, 2017: 12.0, 2018: 12.0, 2019: 11.9, 2020: 11.9},
-    "process-heat": {2000: 2.3, 2014: 2.5, 2015: 2.5, 2016: 2.5, 2017: 2.5, 2018: 2.6, 2019: 2.7, 2020: 2.2},
-    "lighting": {2000: 16.8, 2014: 17.0, 2015: 17.0, 2016: 17.0, 2017: 17.0, 2018: 16.9, 2019: 16.8, 2020: 15.9},
-    "HVAC and building tech": {2000: 11.2, 2014: 13.8, 2015: 15.0, 2016: 15.1, 2017: 15.5, 2018: 15.5, 2019: 15.8, 2020: 15.0},
-    "ICT and entertainment media": {2000: 6.1, 2014: 6.9, 2015: 6.9, 2016: 6.9, 2017: 6.9, 2018: 7.0, 2019: 7.0, 2020: 6.8},
-    "Drives and processes": {2000: 14.4, 2014: 16.1, 2015: 16.0, 2016: 16.0, 2017: 15.9, 2018: 16.1, 2019: 16.2, 2020: 15.7},
-    "Other": {2000: 4.0, 2014: 4.3, 2015: 4.4, 2016: 4.4, 2017: 4.3, 2018: 4.4, 2019: 4.3, 2020: 4.1},
-    "Total": {2000: 149.7, 2014: 139.7, 2015: 147.2, 2016: 151.2, 2017: 149.2, 2018: 141.5, 2019: 144.4, 2020: 137.5}
-}
+  # Add efficiencies
+  data_file = "../../../data/interface/buildings_to_energy.pickle"
+  with open(data_file, 'rb') as handle:
+      dm_eff = pickle.load(handle)
+  dm_eff.filter({'Country': ['Switzerland']}, inplace=True)
+  dm_eff.operation('bld_heating', '/', 'bld_energy-demand_heating', out_col='bld_efficiency', unit='%')
+  dm_eff.filter({'Variables': ['bld_efficiency']}, inplace=True)
+  dm_eff.fill_nans('Years')
+  dm_eff[:, :, 'bld_efficiency', 'electricity'] = 1.0
 
-dm_services_eud = load_services_energy_demand_eud(services_agri_split, years_ots)
+  # It helps going from number of buildings to an estimate of the demand by fuel
+  dm_space_heat = adjust_based_on_efficiency(dm_space_heat, dm_eff, years_ots)
+  dm_water = adjust_based_on_efficiency(dm_water, dm_eff, years_ots)
 
+  dm_water.deepen(based_on='Variables')
+  dm_water.switch_categories_order()
+  dm_space_heat.deepen(based_on='Variables')
+  dm_space_heat.switch_categories_order()
 
-# Agiculture demand is << than services, I will not split it here. I do have agriculture data by fuel
-# !FIXME: Consider assigning Drives and processes here and in Industry to not only electricity but also diesel and gasoline.
-# Basically remove from Drives and processes the diesel and gasoline demand. and the remainder is electricity.
-# Also HVAC could be heat pumps and not electricity
-dm_services_eud_cantons = map_services_eud_by_canton(dm_employees_mapped, dm_services_eud)
+  # Filter for CH
+  dm_water_CH = dm_water.filter({'Country': ['Switzerland']})
+  dm_space_heat_CH = dm_space_heat.filter({'Country': ['Switzerland']})
 
-dm_services_fuels_eud_cantons = split_fuel_demand_by_eud(dm_water, dm_space_heat, dm_services_eud_cantons)
+  dm_fuels_eud_cantons = split_fuel_demand_by_eud(dm_water, dm_space_heat, dm_industry_eud_canton)
 
-# I use the OFS data on fuels consumption by service and by canton to adjust the results.
-# Concretely, for each fuel, I compute the share by end-use and then I multiply by the fuel OFS consumption
-dm_services_fuels_eud_cantons_FSO = adjust_based_on_FSO_energy_consumption(dm_fuels_cantons, dm_services_fuels_eud_cantons)
+  # !FIXME heat-pump and electricity are off, use COP to normalise - Also compute Switzerland
+  dm_fuels_eud_cantons = add_process_heat_demand(dm_fuels_eud_cantons, dm_fuels_cantons)
 
-# Add Switzerland
-dm_services_fuels_eud_cantons_CH = dm_services_fuels_eud_cantons_FSO.groupby({'Switzerland': '.*'}, dim='Country', regex=True, inplace=False)
-dm_services_fuels_eud_cantons_FSO.append(dm_services_fuels_eud_cantons_CH, dim='Country')
+  dm_fuels_eud_cantons = fix_negative_values(dm_fuels_eud_cantons)
 
-# Replace 1990-2000 flat extrapolation with linear fitting
-idx = dm_services_fuels_eud_cantons_FSO.idx
-dm_services_fuels_eud_cantons_FSO.array[:, idx[1990]: idx[2000], ...] = np.nan
-linear_fitting(dm_services_fuels_eud_cantons_FSO, years_ots, based_on=create_years_list(2000, 2010, 1))
-dm_services_fuels_eud_cantons_FSO.array[...] = np.maximum(0, dm_services_fuels_eud_cantons_FSO.array[...])
-
-# Join services and industry
-dm_services_fuels_eud_cantons_FSO.add(0, dummy=True, dim='Categories1', col_label='process-heat')
-dm_fuels_eud_cantons.append(dm_services_fuels_eud_cantons_FSO, dim='Variables')
+  ## Compute for all of CH
+  dm_fuels_eud_CH = compute_ind_energy_eud_fuels(dm_energy, dm_industry_energy_end_use, dm_water_CH, dm_space_heat_CH)
 
 
+  dm_fuels_eud_cantons.append(dm_fuels_eud_CH, dim='Country')
 
-# Add FTS forecasting
-file_lfs = '../../../data/datamatrix/lifestyles.pickle'
-with open(file_lfs, 'rb') as handle:
-    dm_lfs = pickle.load(handle)
+  #####################################
+  ##   SERVICES TO ENERGY INTERFACE  ##
+  #####################################
 
-dm_fuels_eud_cantons.sort('Country')
-dm_fuels_eud_cantons.rename_col_regex(" /.*", "", dim='Country')
-dm_fuels_eud_cantons.rename_col_regex("-", " ", dim='Country')
-cantons_en = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Geneva', 'Glarus', 'Graubünden', 'Jura', 'Lucerne', 'Neuchâtel', 'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn', 'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud', 'Zug', 'Zurich']
-cantons_fr = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Genève', 'Glarus', 'Graubünden', 'Jura', 'Luzern', 'Neuchâtel', 'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn', 'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud', 'Zug', 'Zürich']
-dm_fuels_eud_cantons.rename_col(cantons_fr, cantons_en, dim='Country')
-dm_fuels_eud_cantons.add(np.nan, dummy=True, dim='Years', col_label=years_fts)
+  # Infras, TEP, Prognos, 2021. Analyse des schweizerischen Energieverbrauchs 2000–2020 - Auswertung nach Verwendungszwecken.
+  # Table 26 - Endenergieverbrauch im Dienstleistungssektor nach Verwendungszwecken Entwicklung von 2000 bis 2020, in PJ, inkl. Landwirtschaft
+  # Final energy consumption in the service sector by purpose Development from 2000 to 2020, in PJ, incl. agriculture
+  # https://www.bfe.admin.ch/bfe/de/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA2OTM%3D.html&ved=2ahUKEwiC4OjJvpGOAxWexgIHHdyFGVMQFnoECB0QAQ&usg=AOvVaw1a9deGMbwSdNvV0aVLEBPj
+  services_agri_split = {
+      "space-heating": {2000: 82.1, 2014: 67.1, 2015: 73.2, 2016: 77.3, 2017: 75.0, 2018: 67.0, 2019: 69.7, 2020: 65.9},
+      "hot-water": {2000: 12.7, 2014: 12.1, 2015: 12.1, 2016: 12.0, 2017: 12.0, 2018: 12.0, 2019: 11.9, 2020: 11.9},
+      "process-heat": {2000: 2.3, 2014: 2.5, 2015: 2.5, 2016: 2.5, 2017: 2.5, 2018: 2.6, 2019: 2.7, 2020: 2.2},
+      "lighting": {2000: 16.8, 2014: 17.0, 2015: 17.0, 2016: 17.0, 2017: 17.0, 2018: 16.9, 2019: 16.8, 2020: 15.9},
+      "HVAC and building tech": {2000: 11.2, 2014: 13.8, 2015: 15.0, 2016: 15.1, 2017: 15.5, 2018: 15.5, 2019: 15.8, 2020: 15.0},
+      "ICT and entertainment media": {2000: 6.1, 2014: 6.9, 2015: 6.9, 2016: 6.9, 2017: 6.9, 2018: 7.0, 2019: 7.0, 2020: 6.8},
+      "Drives and processes": {2000: 14.4, 2014: 16.1, 2015: 16.0, 2016: 16.0, 2017: 15.9, 2018: 16.1, 2019: 16.2, 2020: 15.7},
+      "Other": {2000: 4.0, 2014: 4.3, 2015: 4.4, 2016: 4.4, 2017: 4.3, 2018: 4.4, 2019: 4.3, 2020: 4.1},
+      "Total": {2000: 149.7, 2014: 139.7, 2015: 147.2, 2016: 151.2, 2017: 149.2, 2018: 141.5, 2019: 144.4, 2020: 137.5}
+  }
 
-dm_pop = dm_lfs['ots']['pop']['lfs_population_']
-dm_pop.append(dm_lfs['fts']['pop']['lfs_population_'][1], dim='Years')
-dm_pop.filter({'Country': dm_fuels_eud_cantons.col_labels['Country']}, inplace=True)
-# Forecast based on linear extrapolation of TWh/cap x population
-arr = dm_fuels_eud_cantons[:, :, :, :, :] / dm_pop[:, :, 0, np.newaxis, np.newaxis, np.newaxis]
-dm_tmp = DataMatrix.based_on(arr, format=dm_fuels_eud_cantons, change= {'Variables': ['ind_cap', 'srv_cap']},
-                             units={'ind_cap': 'TWh/cap', 'srv_cap': 'TWh/cap'})
-#dm_tmp.fill_nans('Years')
-linear_fitting(dm_tmp, years_fts, based_on=create_years_list(2010, 2023, 1))
-dm_tmp.array = np.maximum(0, dm_tmp.array)
+  dm_services_eud = load_services_energy_demand_eud(services_agri_split, years_ots)
 
-dm_fuels_eud_cantons[...] = dm_tmp[...] * dm_pop[:, :, 0, np.newaxis, np.newaxis, np.newaxis]
 
-#dm_fuels_eud_cantons.flattest().datamatrix_plot({'Country': ['Switzerland']})
-DM = {'ind-serv-energy-demand': dm_fuels_eud_cantons}
+  # Agiculture demand is << than services, I will not split it here. I do have agriculture data by fuel
+  # !FIXME: Consider assigning Drives and processes here and in Industry to not only electricity but also diesel and gasoline.
+  # Basically remove from Drives and processes the diesel and gasoline demand. and the remainder is electricity.
+  # Also HVAC could be heat pumps and not electricity
+  dm_services_eud_cantons = map_services_eud_by_canton(dm_employees_mapped, dm_services_eud)
 
-file_industry = '../../../data/interface/industry_to_energy.pickle'
-with open(file_industry, 'wb') as handle:
-    pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
+  dm_services_fuels_eud_cantons = split_fuel_demand_by_eud(dm_water, dm_space_heat, dm_services_eud_cantons)
 
-#my_pickle_dump(dm_fuels_eud_cantons, file_industry)
-sort_pickle(file_industry)
+  # I use the OFS data on fuels consumption by service and by canton to adjust the results.
+  # Concretely, for each fuel, I compute the share by end-use and then I multiply by the fuel OFS consumption
+  dm_services_fuels_eud_cantons_FSO = adjust_based_on_FSO_energy_consumption(dm_fuels_cantons, dm_services_fuels_eud_cantons)
+
+  # Add Switzerland
+  dm_services_fuels_eud_cantons_CH = dm_services_fuels_eud_cantons_FSO.groupby({'Switzerland': '.*'}, dim='Country', regex=True, inplace=False)
+  dm_services_fuels_eud_cantons_FSO.append(dm_services_fuels_eud_cantons_CH, dim='Country')
+
+  # Replace 1990-2000 flat extrapolation with linear fitting
+  idx = dm_services_fuels_eud_cantons_FSO.idx
+  dm_services_fuels_eud_cantons_FSO.array[:, idx[1990]: idx[2000], ...] = np.nan
+  linear_fitting(dm_services_fuels_eud_cantons_FSO, years_ots, based_on=create_years_list(2000, 2010, 1))
+  dm_services_fuels_eud_cantons_FSO.array[...] = np.maximum(0, dm_services_fuels_eud_cantons_FSO.array[...])
+
+  # Join services and industry
+  dm_services_fuels_eud_cantons_FSO.add(0, dummy=True, dim='Categories1', col_label='process-heat')
+  dm_fuels_eud_cantons.append(dm_services_fuels_eud_cantons_FSO, dim='Variables')
 
 
 
-print('Hello')
+  # Add FTS forecasting
+  file_lfs = '../../../data/datamatrix/lifestyles.pickle'
+  with open(file_lfs, 'rb') as handle:
+      dm_lfs = pickle.load(handle)
+
+  dm_fuels_eud_cantons.sort('Country')
+  dm_fuels_eud_cantons.rename_col_regex(" /.*", "", dim='Country')
+  dm_fuels_eud_cantons.rename_col_regex("-", " ", dim='Country')
+  cantons_en = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Geneva', 'Glarus', 'Graubünden', 'Jura', 'Lucerne', 'Neuchâtel', 'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn', 'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud', 'Zug', 'Zurich']
+  cantons_fr = ['Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Basel Landschaft', 'Basel Stadt', 'Bern', 'Fribourg', 'Genève', 'Glarus', 'Graubünden', 'Jura', 'Luzern', 'Neuchâtel', 'Nidwalden', 'Obwalden', 'Schaffhausen', 'Schwyz', 'Solothurn', 'St. Gallen', 'Thurgau', 'Ticino', 'Uri', 'Valais', 'Vaud', 'Zug', 'Zürich']
+  dm_fuels_eud_cantons.rename_col(cantons_fr, cantons_en, dim='Country')
+  dm_fuels_eud_cantons.add(np.nan, dummy=True, dim='Years', col_label=years_fts)
+
+  dm_pop = dm_lfs['ots']['pop']['lfs_population_']
+  dm_pop.append(dm_lfs['fts']['pop']['lfs_population_'][1], dim='Years')
+  dm_pop.filter({'Country': dm_fuels_eud_cantons.col_labels['Country']}, inplace=True)
+  # Forecast based on linear extrapolation of TWh/cap x population
+  arr = dm_fuels_eud_cantons[:, :, :, :, :] / dm_pop[:, :, 0, np.newaxis, np.newaxis, np.newaxis]
+  dm_tmp = DataMatrix.based_on(arr, format=dm_fuels_eud_cantons, change= {'Variables': ['ind_cap', 'srv_cap']},
+                               units={'ind_cap': 'TWh/cap', 'srv_cap': 'TWh/cap'})
+  #dm_tmp.fill_nans('Years')
+  linear_fitting(dm_tmp, years_fts, based_on=create_years_list(2010, 2023, 1))
+  dm_tmp.array = np.maximum(0, dm_tmp.array)
+
+  dm_fuels_eud_cantons[...] = dm_tmp[...] * dm_pop[:, :, 0, np.newaxis, np.newaxis, np.newaxis]
+
+  #dm_fuels_eud_cantons.flattest().datamatrix_plot({'Country': ['Switzerland']})
+  DM = {'ind-serv-energy-demand': dm_fuels_eud_cantons}
+
+  file_industry = '../../../data/interface/industry_to_energy.pickle'
+  with open(file_industry, 'wb') as handle:
+      pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+  #my_pickle_dump(dm_fuels_eud_cantons, file_industry)
+  sort_pickle(file_industry)
+
+  return
+
+if __name__ == "__main__":
+  run()
