@@ -473,7 +473,7 @@ def dietaryhabits_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_foo
     return dm_tpe
 
 
-# CalculationLeaf INTERFACE OUT  --------------------------------------------------------------
+# CalculationLeaf INTERFACE OUT TCAF  --------------------------------------------------------------
 def dietaryhabits_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario):
 
   # Filter
@@ -528,13 +528,21 @@ def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, write_pi
                        '../_database/data/interface/dietary-habits_to_TCAF.pickle')
       with open(f, 'wb') as handle:
         pickle.dump(DM_TCAF_health_diet, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
+    interface.add_link(from_sector='dietary-habits', to_sector='TCAF', dm=DM_TCAF_health_diet)
         # pour update un pickle qui existe déjà, par exemple pour gagner du temps au pre-processing,
         # Pour remplacer des valeurs dans la même structure. Accepete un pays différent
         #my_pickle_dump(DM_new=DM_TCAF_health_diet, local_pickle_file=f)
-    interface.add_link(from_sector='dietary-habits', to_sector='TCAF', dm=DM_TCAF_health_diet)
 
-    # Dietary Habits to Production
+
+    # Dietary Habits to Livestock
+    dm_demand = dm_lfs.filter({'Variables':['agr_demand']}, inplace=False)
+    if write_pickle is True:
+      current_file_directory = os.path.dirname(os.path.abspath(__file__))
+      f = os.path.join(current_file_directory,
+                       '../_database/data/interface/dietary-habits_to_livestock.pickle')
+      with open(f, 'wb') as handle:
+        pickle.dump(dm_demand, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    interface.add_link(from_sector='dietary-habits', to_sector='livestock', dm=dm_demand)
 
     # TPE OUTPUT -------------------------------------------------------------------------------------------------------
     results_run = dietaryhabits_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_food)
