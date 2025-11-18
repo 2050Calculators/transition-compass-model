@@ -10,7 +10,7 @@ from model.common.data_matrix_class import DataMatrix
 from model.common.auxiliary_functions import create_years_list, my_pickle_dump
 import numpy as np
 from openpyxl import load_workbook
-from openpyxl.cell.cell import MergedCell
+
 
 # Initialize the Deepl Translator
 deepl_api_key = '9ecffb3f-5386-4254-a099-8bfc47167661:fx'
@@ -1026,6 +1026,7 @@ dm_fuels_demand = extract_energy_statistics_data(file_url, local_filename, sheet
 
 
 ##### Supply
+# SECTION - Energy supply
 parameters = dict()
 mapping = {'hydro-power': '.*hydraulique.*', 'wood': '.*bois.*', 'waste': '.*déchets.*', 'coal': '.*charbon.*',
            'oil': '.*Pétrole brut et produits pétroliers.*', 'gas': '.*Gaz.*', 'nuclear': '.*nucléaires.*',
@@ -1041,6 +1042,7 @@ dm_fuels_supply = extract_energy_statistics_data(file_url, local_filename, sheet
 
 
 ##### Losses
+# SECTION - Losses of electricity
 parameters = dict()
 mapping = {'Losses': '.*Centrales électriques.*'}
 parameters['mapping'] = mapping  # dictionary,  to rename column headers
@@ -1052,6 +1054,8 @@ parameters['unit'] = 'TJ'
 
 dm_losses = extract_energy_statistics_data(file_url, local_filename, sheet_name='T13', parameters=parameters)
 dm_losses.change_unit('pow_production', factor=3600, old_unit='TJ', new_unit='TWh', operator='/')
+# Remove Pump-Open losses from total losses to avoid double counting
+dm_losses['Switzerland', :, 'pow_production', 'Losses'] = dm_losses['Switzerland', :, 'pow_production', 'Losses'] - dm_production['Switzerland', :, 'pow_production', 'Pump-Open']
 dm_losses.array = -dm_losses.array
 dm_production.append(dm_losses, dim='Categories1')
 
