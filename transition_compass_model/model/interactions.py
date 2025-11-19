@@ -45,7 +45,7 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
       logger.info("Execution time Lifestyles: {0:.3g} s".format(time.time() - start_time))
     if 'transport' in sectors:
       start_time = time.time()
-      TPE["transport"] = transport(lever_setting, years_setting,DM_input['transport'], interface)
+      TPE["transport"], KPI['transport'] = transport(lever_setting, years_setting,DM_input['transport'], interface)
       logger.info("Execution time Transport: {0:.3g} s".format(time.time() - start_time))
     if 'buildings' in sectors:
       start_time = time.time()
@@ -68,10 +68,10 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
         TPE['ammonia'] = ammonia(lever_setting, years_setting, DM_input['ammonia'], interface)
         logger.info('Execution time Ammonia: {0:.3g} s'.format(time.time() - start_time))
 
-
-    start_time = time.time()
-    TPE['energy'] = energy(lever_setting, years_setting, country_list, interface)
-    logger.info('Execution time Energy: {0:.3g} s'.format(time.time() - start_time))
+    if 'energy' in sectors:
+        start_time = time.time()
+        TPE['energy'] = energy(lever_setting, years_setting, country_list, interface)
+        logger.info('Execution time Energy: {0:.3g} s'.format(time.time() - start_time))
     #start_time = time.time()
     #TPE['agriculture'] = agriculture(lever_setting, years_setting, interface)
     #logger.info('Execution time Agriculture: {0:.3g} s'.format(time.time() - start_time))
