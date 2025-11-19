@@ -134,7 +134,7 @@ def extract_sankey_energy_flow(DM):
                                   units={'pow_production': 'TWh'})
   # Energy production
   # Use the fact that the values are positive or negative to split
-  cat1, cat2 = np.where(dm_energy_full.array[0, 0, 0, :, :]>10)
+  cat1, cat2 = np.where(dm_energy_full.array[0, 0, 0, :, :]> 0.01)
   new_arr = np.zeros((1, 1, 1, len(cat1)))
   new_arr[0, 0, 0, :] = dm_energy_full.array[0, 0, 0, cat1, cat2]
   new_categories = [dm_energy_full.col_labels['Categories1'][c1] + '-' +
@@ -307,6 +307,8 @@ def create_future_country_production_trend(DM_2050, DM_input, years_ots, years_f
     # Capacity trend - Country level
     dm_cap_2050 = DM_2050['installed_GW'].copy()
     dm_cap = DM_input['cal-capacity'].copy()
+    # Fill Nans with 0
+    np.nan_to_num(x=dm_cap.array, copy=False, nan=0)
     dm_cap_sto = dm_cap.filter({'Categories1': ['Battery-TSO', 'DAC', 'Pump-Open']})
     dm_cap.drop('Categories1', ['Battery-TSO', 'DAC', 'Pump-Open'])
     missing_cat = list(set(dm_cap.col_labels['Categories1']) - set(dm_cap_2050.col_labels['Categories1']))
@@ -338,8 +340,8 @@ def create_future_country_production_trend(DM_2050, DM_input, years_ots, years_f
     dm_cap.fill_nans('Years')
     # The capacity installed cannot be higher than Pmax
     # The capacity in 2050 should already be below the max
-    dm_cap.array[0, idx_fts, idx['pow_capacity'], -1] = np.minimum(dm_cap.array[0, idx_fts, idx['pow_capacity'], -1] ,
-                                                                  dm_cap.array[0, idx_fts, idx['pow_capacity-Pmax'], -1] )
+    dm_cap.array[0, :, idx['pow_capacity'], 0:-1] = np.minimum(dm_cap.array[0, :, idx['pow_capacity'], 0:-1] ,
+                                                              dm_cap.array[0, :, idx['pow_capacity-Pmax'], 0:-1] )
     #dm_cap_hist.append(, dim='Years')
 
     # Production trend - Country level
@@ -461,16 +463,11 @@ def energyscope_pyomo(data_path, DM_tra, DM_bld, DM_ind, DM_agr, years_ots, year
   data_file_path = os.path.join(this_dir, 'energy/energyscopepyomo/ses_main.json')
   data = load_data(data_file_path)
   m = build_model_structure(data)
-  #set_constraints(m, objective = "cost")
-  #opt = make_highs()
-  #attach(opt, m)
 
   dm_tra_demand_trend = inter.extract_transport_demand(DM_tra)
   dm_bld_demand_trend = inter.extract_buildings_demand(DM_bld, DM_ind)
   dm_ind_demand_trend = inter.extract_industry_demand(DM_ind)
   dm_agr_demand_trend = inter.extract_agriculture_demand(DM_agr)
-
-  #res = solve(opt, m, warmstart=True)
 
   endyr = years_fts[-1]
   if ['EU27'] == country_list:  # If you are running for EU27
