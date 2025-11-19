@@ -620,7 +620,8 @@ def prepare_TPE_output(dm_prod_cap_cntr, dm_demand):
 
   dm_out = dm_prod_cap_cntr.filter({'Variables': ['pow_production', 'pow_capacity']})
   dm_out.groupby({'Gas': ['GasCC', 'GasCC-Syn', 'GasSC']}, dim='Categories1')
-  dm_out.rename_col('Switzerland', 'Vaud', dim='Country')
+  if 'Vaud' in dm_demand.col_labels['Country']:
+    dm_out.rename_col('Switzerland', 'Vaud', dim='Country')
   dm_out = dm_out.flattest()
 
   # Energy demand by sector
