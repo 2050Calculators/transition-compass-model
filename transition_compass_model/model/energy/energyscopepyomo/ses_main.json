@@ -2995,17 +2995,17 @@
       "COAL_IGCC_CCS": 0.5,
       "COAL_US": 0.5,
       "COAL_US_CCS": 0.5,
-      "DEC_ADVCOGEN_GAS": 1e-05,
-      "DEC_ADVCOGEN_H2": 1e-05,
-      "DEC_BOILER_GAS": 1e-05,
-      "DEC_BOILER_OIL": 1e-05,
-      "DEC_BOILER_WOOD": 1e-05,
-      "DEC_COGEN_GAS": 5e-06,
-      "DEC_COGEN_OIL": 1e-05,
-      "DEC_DIRECT_ELEC": 1e-05,
-      "DEC_HP_ELEC": 1e-05,
-      "DEC_SOLAR": 1e-05,
-      "DEC_THHP_GAS": 1e-05,
+      "DEC_ADVCOGEN_GAS": 1e-5,
+      "DEC_ADVCOGEN_H2": 1e-5,
+      "DEC_BOILER_GAS": 1e-5,
+      "DEC_BOILER_OIL": 1e-5,
+      "DEC_BOILER_WOOD": 1e-5,
+      "DEC_COGEN_GAS": 5e-6,
+      "DEC_COGEN_OIL": 1e-5,
+      "DEC_DIRECT_ELEC": 1e-5,
+      "DEC_HP_ELEC": 1e-5,
+      "DEC_SOLAR": 1e-5,
+      "DEC_THHP_GAS": 1e-5,
       "DHN": 0.0,
       "DHN_BOILER_GAS": 0.01,
       "DHN_BOILER_OIL": 0.01,
@@ -3041,7 +3041,7 @@
       "POWER2GAS_2": 0.001,
       "POWER2GAS_3": 0.001,
       "PUMPED_HYDRO": 0.001,
-      "PV": 3e-06,
+      "PV": 3e-6,
       "PYROLYSIS": 0.0,
       "TRAIN_FREIGHT": 0.001,
       "TRAIN_PUB": 0.001,
@@ -3155,11 +3155,7 @@
     }
   },
   "SETS": {
-    "BIOFUELS": [
-      "BIODIESEL",
-      "BIOETHANOL",
-      "SNG"
-    ],
+    "BIOFUELS": ["BIODIESEL", "BIOETHANOL", "SNG"],
     "BOILERS": [
       "DEC_BOILER_GAS",
       "DEC_BOILER_OIL",
@@ -3202,28 +3198,13 @@
       "MOBILITY_PASSENGER"
     ],
     "END_USES_TYPES_OF_CATEGORY": {
-      "ELECTRICITY": [
-        "ELECTRICITY"
-      ],
-      "HEAT_HIGH_T": [
-        "HEAT_HIGH_T"
-      ],
-      "HEAT_LOW_T": [
-        "HEAT_LOW_T_DHN",
-        "HEAT_LOW_T_DECEN"
-      ],
-      "MOBILITY_FREIGHT": [
-        "MOB_FREIGHT_RAIL",
-        "MOB_FREIGHT_ROAD"
-      ],
-      "MOBILITY_PASSENGER": [
-        "MOB_PUBLIC",
-        "MOB_PRIVATE"
-      ]
+      "ELECTRICITY": ["ELECTRICITY"],
+      "HEAT_HIGH_T": ["HEAT_HIGH_T"],
+      "HEAT_LOW_T": ["HEAT_LOW_T_DHN", "HEAT_LOW_T_DECEN"],
+      "MOBILITY_FREIGHT": ["MOB_FREIGHT_RAIL", "MOB_FREIGHT_ROAD"],
+      "MOBILITY_PASSENGER": ["MOB_PUBLIC", "MOB_PRIVATE"]
     },
-    "EXPORT": [
-      "ELEC_EXPORT"
-    ],
+    "EXPORT": ["ELEC_EXPORT"],
     "INFRASTRUCTURE": [
       "DHN",
       "EFFICIENCY",
@@ -3237,20 +3218,7 @@
       "POWER2GAS_3",
       "PYROLYSIS"
     ],
-    "PERIODS": [
-      1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      12
-    ],
+    "PERIODS": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
     "RESOURCES": [
       "BIODIESEL",
       "BIOETHANOL",
@@ -3270,16 +3238,8 @@
       "WASTE",
       "WOOD"
     ],
-    "SECTORS": [
-      "HOUSEHOLDS",
-      "INDUSTRY",
-      "SERVICES",
-      "TRANSPORTATION"
-    ],
-    "STORAGE_TECH": [
-      "POWER2GAS",
-      "PUMPED_HYDRO"
-    ],
+    "SECTORS": ["HOUSEHOLDS", "INDUSTRY", "SERVICES", "TRANSPORTATION"],
+    "STORAGE_TECH": ["POWER2GAS", "PUMPED_HYDRO"],
     "TECHNOLOGIES_OF_END_USES_TYPE": {
       "ELECTRICITY": [
         "NUCLEAR",
@@ -3331,12 +3291,8 @@
         "DHN_BOILER_OIL",
         "DHN_DEEP_GEO"
       ],
-      "MOB_FREIGHT_RAIL": [
-        "TRAIN_FREIGHT"
-      ],
-      "MOB_FREIGHT_ROAD": [
-        "TRUCK"
-      ],
+      "MOB_FREIGHT_RAIL": ["TRAIN_FREIGHT"],
+      "MOB_FREIGHT_ROAD": ["TRUCK"],
       "MOB_PRIVATE": [
         "CAR_GASOLINE",
         "CAR_DIESEL",
