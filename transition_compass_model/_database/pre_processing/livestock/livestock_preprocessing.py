@@ -43,7 +43,7 @@ def ensure_structure(df):
 
     return df
 
-# CalculationLeaf SELF-SUFFICIENCY LIVESTOCK PROD & FEED ------------------------------------------------------------------------------
+# CalculationLeaf SSR LIVESTOCK PROD & FEED ------------------------------------------------------------------------------
 def self_sufficiency_processing(years_ots, list_countries, file_dict):
     # Read data ------------------------------------------------------------------------------------------------------------
     try:
@@ -229,7 +229,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
 
     # Compute Self-Sufficiency Ratio (SSR) ---------------------------------------------------------------------------------
     # SSR [%] = (100*Production) / (Production + Imports - Exports)
-    # Step 1: Pivot the DataFrame to get 'Production', 'Import Quantity', and 'Export Quantity' in separate columns
+    # 1: Pivot the DataFrame to get 'Production', 'Import Quantity', and 'Export Quantity' in separate columns
     pivot_df = df_ssr.pivot_table(index=['Area', 'Year', 'Item'], columns='Element', values='Value').reset_index()
     pivot_df_feed = df_ssr_feed.pivot_table(index=['Area', 'Year', 'Item'],
                                   columns='Element',
@@ -257,7 +257,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
     # Create a copy for milk feed food ratio (fxa)
     pivot_df_milk = pivot_df[pivot_df['Item'] =='Milk - Excluding Butter'].copy()
 
-    # Step 2: Compute the SSR [%]
+    # 2: Compute the SSR [%]
     # (previously with special condition for milk because we
     # don't account for it as feed & processed. but now fixed with and fxa_ratio)
     pivot_df['SSR[%]'] = pivot_df['Production'] / (pivot_df['Food'] + pivot_df['Feed'] + pivot_df['Processing'])
@@ -339,6 +339,29 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
 # CalculationLeaf TRADE ORIGIN
 def trade_origin_processing(years_ots, list_countries, file_dict):
   # Read data ------------------------------------------------------------------------------------------------------------
+  list_partnerregions = ['-- Australia and New Zealand > (List)',
+                         '-- Caribbean > (List)',
+                         '-- Central America > (List)',
+                         '-- Central Asia > (List)',
+                         '-- Eastern Africa > (List)',
+                         '-- Eastern Asia > (List)',
+                         '-- Eastern Europe > (List)',
+                         '-- Melanesia > (List)',
+                         '-- Micronesia > (List)',
+                         '-- Middle Africa > (List)',
+                         '-- Northern Africa > (List)',
+                         '-- Northern America > (List)',
+                         '-- Northern Europe > (List)',
+                         '-- Polynesia > (List)',
+                         '-- South America > (List)',
+                         '-- South-eastern Asia > (List)',
+                         '-- Southern Africa > (List)',
+                         '-- Southern Asia > (List)',
+                         '-- Southern Europe > (List)',
+                         '-- Western Africa > (List)',
+                         '-- Western Asia > (List)',
+                         '-- Western Europe > (List)']
+
   try:
     df_trade = pd.read_csv(file_dict['trade'])
   except OSError:
@@ -352,42 +375,28 @@ def trade_origin_processing(years_ots, list_countries, file_dict):
                   'Poultry Meat', 'Mutton & Goat Meat']
     list_items = ['Raw milk of cattle',
                   'Meat of cattle boneless, fresh or chilled',
+                  'Meat of cattle with the bone, fresh or chilled',
+                  'Meat of asses, fresh or chilled',
+                  'Meat of buffalo, fresh or chilled',
+                  'Meat of camels, fresh or chilled',
+                  'Meat of pig boneless, fresh or chilled',
+                  'Meat of pig with the bone, fresh or chilled',
                   'Meat of chickens, fresh or chilled',
                   'Meat of turkeys, fresh or chilled',
-                  'Eggs, liquid']
-
-    list_partners = ['-- Australia and New Zealand > (List)',
-                      '-- Caribbean > (List)',
-                      '-- Central America + (Total)',
-                      '-- Central Asia > (List)',
-                      '-- Eastern Africa > (List)',
-                      '-- Eastern Asia > (List)',
-                      '-- Eastern Europe > (List)',
-                      '-- Melanesia > (List)',
-                      '-- Micronesia > (List)',
-                      '-- Middle Africa > (List)',
-                      '-- Northern Africa > (List)',
-                      '-- Northern America > (List)',
-                      '-- Northern Europe > (List)',
-                      '-- Polynesia > (List)',
-                      '-- South America > (List)',
-                      '-- South-eastern Asia > (List)',
-                      '-- Southern Africa > (List)',
-                      '-- Southern Asia > (List)',
-                      '-- Southern Europe > (List)',
-                      '-- Western Africa > (List)',
-                      '-- Western Asia > (List)',
-                      '-- Western Europe > (List)']
-
-    list_partners = ['-- Central America > (List)']
+                  'Meat of ducks, fresh or chilled',
+                  'Meat of geese, fresh or chilled',
+                  'Meat of rabbits and hares, fresh or chilled',
+                  'Meat of goat, fresh or chilled',
+                  'Meat of sheep, fresh or chilled',
+                  'Hen eggs in shell, fresh']
 
     # 1990 - 2023
     ld = faostat.list_datasets()
     code = 'TM'
     pars = faostat.list_pars(code)
     my_reporter_countries = [faostat.get_par(code, 'reporterarea')[c] for c in list_countries]
-    my_partner_countries = [faostat.get_par(code, 'partnerarea')[p] for p in
-                             list_partners]
+    my_partner_regions = [faostat.get_par(code, 'partnerregions')[p] for p in
+                             list_partnerregions]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996',
@@ -399,7 +408,7 @@ def trade_origin_processing(years_ots, list_countries, file_dict):
 
     my_pars = {
       'reporterarea': my_reporter_countries,
-      'partnerarea': my_partner_countries,
+      'partnerregions': my_partner_regions,
       'element': my_elements,
       'item': my_items,
       'year': my_years
@@ -407,7 +416,97 @@ def trade_origin_processing(years_ots, list_countries, file_dict):
     df_trade = faostat.get_data_df(code, pars=my_pars, strval=False)
     df_trade.to_csv(file_dict['trade'], index=False)
 
-  dm_liv_trade_origin = df_trade
+  # Filter
+  df_trade = df_trade[
+    ['Reporter Countries', 'Partner Countries', 'Item', 'Year', 'Value']]
+
+  # Aggregate by item ----------------------------------------------------------
+  mapping = {
+    'Pig': 'Pig',
+    'milk': 'Milk',
+    'cattle': 'Cattle',
+    'Buffalo': 'Cattle',
+    'Chicken': 'Chicken',
+    'Duck': 'Duck',
+    'Turkeys': 'Turkey',
+    'Geese': 'Goose',
+    'Pigeon': 'Pigeon',
+    'Horse': 'Horse',
+    'Rabbits and hares': 'Rabbit',
+    'Sheep': 'Sheep',
+    'Goat': 'Goat',
+    'Asse': 'Asse',
+    'Camel': 'Other non-specified',
+    'Rodent': 'Other non-specified',
+    'Other': 'Other non-specified',
+    'Game': 'Game',
+    'Mule': 'Mule',
+    'Hen eggs in shell, fresh': 'Eggs'
+  }
+
+  for key, value in mapping.items():
+    mask = df_trade['Item'].str.contains(key, case=False,
+                                                         na=False)
+    df_trade.loc[mask, 'Item'] = value
+
+    # Reading excel lsu equivalent
+  df_lsu = pd.read_excel(
+        'dictionaries/lsu_equivalent.xlsx',
+        sheet_name='lsu_equivalent')
+  # Merging
+  df_trade_agg = pd.merge(df_trade, df_lsu, on='Item')
+
+  # Aggregating
+  df_trade_agg['Value'].fillna(0.0)
+  df_trade_agg = df_trade_agg.groupby(['variables', 'Partner Countries', 'Reporter Countries', 'Year'], as_index=False)['Value'].sum()
+
+  # Aggregate by countries -----------------------------------------------------
+
+  # Read csv
+  df_countries = pd.read_csv('data/faostat/FAOSTAT_data_partner-countries-regions.csv')
+
+  # Filter the regions
+  clean_regions = [x.replace('-- ', '').replace(' > (List)', '') for x in list_partnerregions]
+  mask = df_countries['Partner Country Group'].str.contains('|'.join(clean_regions),
+                                                  case=False, na=False)
+  df_countries = df_countries[mask].copy()
+  df_countries = df_countries[['Partner Country Group', 'Partner Countries']]
+
+  # Merge
+  df_trade_agg = pd.merge(df_trade_agg, df_countries, on='Partner Countries')
+
+  # Aggregating
+  df_trade_agg = df_trade_agg.groupby(['variables', 'Partner Country Group', 'Year'], as_index=False)['Value'].sum()
+
+  df_trade_agg.rename(columns={'Partner Country Group': 'geoscale',
+                               'Year': 'timescale', 'Value':'value'}, inplace=True)
+
+  # Extrapolation for missing data
+  lever = 'dummy'
+  df_trade_agg['lever'] = lever
+  df_trade_agg['module'] = lever
+  df_trade_agg['level'] = 0.0
+  df_trade_agg = ensure_structure(df_trade_agg)
+  df_trade_agg = linear_fitting_ots_db(df_trade_agg, years_ots, countries='all')
+
+  # Replace negative values by 0.0
+  df_trade_agg['value'] = df_trade_agg['value'].clip(lower=0.0)
+  #df_trade_agg.loc[df_trade_agg['value'] < 0, 'col'] = 0.0
+
+  # Normalise across countries to compute share of imports
+  df_trade_agg['value_norm'] = (
+    df_trade_agg['value'] /
+    df_trade_agg.groupby(['variables', 'timescale'])[
+      'value'].transform('sum')
+  )
+  df_trade_agg = df_trade_agg[['variables','geoscale', 'timescale', 'value_norm', 'level', 'lever']]
+  df_trade_agg.rename(columns={'value_norm': 'value'}, inplace=True)
+
+  # Format as datamatrix
+  df_ots, df_fts = database_to_df(df_trade_agg, lever, level='all')
+  df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+  dm_liv_trade_origin = DataMatrix.create_from_df(df_ots, num_cat=1)
+
   return dm_liv_trade_origin
 
 # CalculationLeaf CALIBRATION FORMATTING
@@ -2370,16 +2469,16 @@ def fts_processing(list_countries, years_ots, years_fts, cdm_kcal):
 
 # CalculationLeaf PICKLE CREATION ------------------------------
 
-def datamatrix_to_pickle(years_ots, years_fts, dm_ssr_liv, dm_ssr_feed, dm_cal_dom_prod, dm_cal_liv_pop, dm_manure, dm_losses, dm_feed_ration, dm_liv_yield, dm_slaughter_rates, dm_cal_liv_emissions, dm_feed_calibration):
+def datamatrix_to_pickle(years_ots, years_fts, dm_liv_trade_origin, dm_ssr_liv, dm_ssr_feed, dm_cal_dom_prod, dm_cal_liv_pop, dm_manure, dm_losses, dm_feed_ration, dm_liv_yield, dm_slaughter_rates, dm_cal_liv_emissions, dm_feed_calibration):
 
   # Make list with all years
   years_all = years_ots + years_fts
 
 
-
-
   # FixedAssumptionsToDatamatrix -----------------------------------------------
   dict_fxa = {}
+
+  dict_fxa['trade-origin'] = dm_liv_trade_origin
 
   #dict_fxa['ef_liv_N2O-emission']
   #dict_fxa['ef_liv_CH4-emission_treated']
@@ -2403,7 +2502,7 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_ssr_liv, dm_ssr_feed, dm_cal_d
 
   # ssr-feed
   dict_ots['ssr-feed'] = dm_ssr_feed
-  
+
   # Sub-matrix for LIVESTOCK
   dm_livestock_losses = DM_ots_fts['climate-smart-livestock'][
     'climate-smart-livestock_losses']
@@ -2609,7 +2708,7 @@ file_dict = {'ssr': 'data/faostat/ssr.csv', 'cake': 'data/faostat/ssr_cake.csv',
              'molasse': 'data/faostat/ssr_2010_2021_molasse_cake.csv',
              'trade': 'data/faostat/trade.csv'}
 dm_ssr_liv, dm_ssr_feed = self_sufficiency_processing(years_ots, list_countries, file_dict)
-#dm_liv_trade_origin = trade_origin_processing(years_ots, list_countries, file_dict)
+dm_liv_trade_origin = trade_origin_processing(years_ots, list_countries, file_dict)
 dm_cal_dom_prod, dm_cal_liv_pop, df_liv_pop = livestock_calibration(list_countries)
 dm_density = livestock_density(df_liv_pop)
 dm_manure = livestock_emissions()
@@ -2624,7 +2723,7 @@ dm_cal_liv_emissions, df_liv_emissions = manure_calibration(list_countries)
 
 
 # CalculationTree RUNNING PICKLE CREATION
-datamatrix_to_pickle(years_ots, years_fts, dm_ssr_liv, dm_ssr_feed, dm_cal_dom_prod, dm_cal_liv_pop, dm_manure, dm_losses, dm_feed_ration, dm_liv_yield, dm_slaughter_rates, dm_cal_liv_emissions, dm_feed_calibration)
+datamatrix_to_pickle(years_ots, years_fts,dm_liv_trade_origin, dm_ssr_liv, dm_ssr_feed, dm_cal_dom_prod, dm_cal_liv_pop, dm_manure, dm_losses, dm_feed_ration, dm_liv_yield, dm_slaughter_rates, dm_cal_liv_emissions, dm_feed_calibration)
 
 
 # CalculationLeaf CALIBRATION DOMESTIC PROD WITH LOSSES ----------------------------------------------------------------------------------------
