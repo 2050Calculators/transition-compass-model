@@ -1145,7 +1145,13 @@ def filter_country_and_load_data_from_pickles(country_list, modules_list):
   DM_input = dict()
   for module in modules_list:
     DM_input[module] = load_module_input_from_pickle(module)
-    filter_DM(DM_input[module], {'Country': country_list})
+    # Only filter by country if the module has country data
+    try:
+      filter_DM(DM_input[module], {'Country': country_list})
+    except ValueError as e:
+      # If filtering returns empty datamatrix, module doesn't have country dimension
+      # or doesn't have data for the specified countries - skip filtering
+      pass
 
   return DM_input
 
