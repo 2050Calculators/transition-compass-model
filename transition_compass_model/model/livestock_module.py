@@ -29,88 +29,64 @@ def read_data(DM_diet_input, lever_setting):
     # DM_check = check_ots_fts_match(DM_agriculture, lever_setting)
     DM_ots_fts = read_level_data(DM_diet_input, lever_setting)
 
-    # Sub-matrix for DIETARY HABITS
-    dm_diet_requirement = DM_ots_fts['kcal-req']
-    dm_diet_split_share = DM_ots_fts['diet-split-share']
-    dm_diet_fwaste = DM_ots_fts['fwaste']
-    dm_fxa_cal_diet = DM_diet_input['fxa']['cal_agr_diet']
-    dm_diet_adherence = DM_ots_fts['diet-adherence']
-    if tpe_scenario == 'diet-split-share':
-      dm_share_pro_food = DM_ots_fts['share-processed-food_crop-cereal-whole']
-      dm_share_pro_food_meat = DM_ots_fts[
-        'share-processed-food_unprocessed-meat']
-      dm_share_pro_food.append(dm_share_pro_food_meat, dim='Variables')
-    elif tpe_scenario == 'diet-split-kcal':
-      dm_share_pro_food = DM_ots_fts['share-kcal-processed-food_crop-cereal-whole']
-      dm_share_pro_food_meat = DM_ots_fts[
-        'share-kcal-processed-food_unprocessed-meat']
-      dm_share_pro_food.append(dm_share_pro_food_meat, dim='Variables')
+    # Sub-matrix for LIVESTOCK
+    dm_livestock_losses = DM_ots_fts['livestock-losses']
+    dm_livestock_yield = DM_ots_fts['livestock-yield']
+    dm_livestock_slaughtered = DM_ots_fts['slaughter-rates']
+    dm_livestock_density = DM_ots_fts['livestock-density']
+    dm_livestock_enteric_emissions = DM_ots_fts['livestock-enteric']
+    dm_livestock_manure = DM_ots_fts['livestock-manure']
+    dm_ration = DM_ots_fts['feed-ration']
+    dm_alt_protein = DM_ots_fts['alt-protein']
+    dm_ruminant_feed = DM_ots_fts['ruminant-feed']
+    dm_fxa_ratio_milk = DM_agriculture['fxa']['ratio_milk']
+    dm_fxa_cal_liv_prod = DM_agriculture['fxa']['cal_agr_domestic-production-liv']
+    dm_fxa_cal_liv_pop = DM_agriculture['fxa']['cal_agr_liv-population']
+    dm_fxa_cal_liv_CH4 = DM_agriculture['fxa']['cal_agr_liv_CH4-emission']
+    dm_fxa_cal_liv_N2O = DM_agriculture['fxa']['cal_agr_liv_N2O-emission']
+    dm_fxa_cal_demand_feed = DM_agriculture['fxa']['cal_agr_demand_feed']
+    # dm_fxa_cal_land = DM_agriculture['fxa']['cal_agr_lus_land']
+    dm_fxa_ef_liv_N2O = DM_agriculture['fxa']['ef_liv_N2O-emission']
+    dm_fxa_ef_liv_CH4_treated = DM_agriculture['fxa']['ef_liv_CH4-emission_treated']
+    dm_fxa_liv_nstock = DM_agriculture['fxa']['liv_manure_n-stock']
+    dm_trade_origin = DM_agriculture['fxa']['trade-origin']
 
-    # list of lever names
-    levers = [
-      "diet-split-kcal_crop-cereal",
-      "diet-split-kcal_crop-rice",
-      "diet-split-kcal_crop-fruit",
-      "diet-split-kcal_crop-oilcrop",
-      "diet-split-kcal_crop-pulse",
-      "diet-split-kcal_crop-starch",
-      "diet-split-kcal_crop-veg",
-      "diet-split-kcal_pro-bev-beer",
-      "diet-split-kcal_pro-bev-bev-alc",
-      "diet-split-kcal_pro-bev-bev-fer",
-      "diet-split-kcal_pro-bev-wine",
-      "diet-split-kcal_pro-crop-processed-sugar",
-      "diet-split-kcal_pro-crop-processed-sweet",
-      "diet-split-kcal_pro-crop-processed-voil",
-      "diet-split-kcal_pro-liv-abp-dairy-milk",
-      "diet-split-kcal_pro-liv-abp-hens-egg",
-      "diet-split-kcal_pro-liv-abp-processed-afat",
-      "diet-split-kcal_pro-liv-abp-processed-offal",
-      "diet-split-kcal_pro-liv-meat-bovine",
-      "diet-split-kcal_pro-liv-meat-oth-animal",
-      "diet-split-kcal_pro-liv-meat-pig",
-      "diet-split-kcal_pro-liv-meat-poultry",
-      "diet-split-kcal_pro-liv-meat-sheep",
-      "diet-split-kcal_seafood-dfish",
-      "diet-split-kcal_seafood-ffish",
-      "diet-split-kcal_seafood-oth-aq-animal",
-      "diet-split-kcal_seafood-pfish",
-      "diet-split-kcal_seafood-seafood",
-      "diet-split-kcal_stm-cocoa",
-      "diet-split-kcal_stm-coffee",
-      "diet-split-kcal_stm-tea"
-    ]
 
-    # Step 1: Create a dictionary of all DataMatrix objects
-    dm_diet_split_kcal = {lever: DM_ots_fts[lever] for lever in levers}
-
-    # Step 2: Merge them all into one DataMatrix along 'Variables'
-    dm_diet_split_kcal_merged = None
-
-    for lever_name, dm_split in dm_diet_split_kcal.items():
-      # ensure each variable label is unique
-      dm_split.col_labels['Variables'] = ['lfs_consumers-diet']
-      #dm_split.rename_col([lever_name], 'lfs_consumers-diet', 'Variables')
-
-      if dm_diet_split_kcal_merged is None:
-        dm_diet_split_kcal_merged = dm_split
-      else:
-        dm_diet_split_kcal_merged.append(dm_split, dim='Categories1')
-
-    # Aggregate Data Matrix - DIETARY HABITS
-    DM_diet = {
-        'energy-requirement': dm_diet_requirement,
-        'diet-split-share': dm_diet_split_share,
-        'diet-split-kcal': dm_diet_split_kcal_merged,
-        'diet-fwaste': dm_diet_fwaste,
-        'cal_diet': dm_fxa_cal_diet,
-        'diet-adherence': dm_diet_adherence,
-        'share-processed-food': dm_share_pro_food
+    # Aggregate Data Matrix - LIVESTOCK PROD & POP
+    DM_livestock = {
+        'losses': dm_livestock_losses,
+        'yield': dm_livestock_yield,
+        'trade-origin': dm_trade_origin,
+        'liv_slaughtered_rate': dm_livestock_slaughtered,
+        'cal_liv_prod': dm_fxa_cal_liv_prod,
+        'cal_liv_population': dm_fxa_cal_liv_pop,
+        'ruminant_density': dm_livestock_density,
+        'ratio_milk': dm_fxa_ratio_milk
     }
+
+    # Aggregated Data Matrix - LIVESTOCK MANURE MANAGEMENT & GHG EMISSIONS
+    DM_manure = {
+        'enteric_emission': dm_livestock_enteric_emissions,
+        'manure': dm_livestock_manure,
+        'cal_liv_CH4': dm_fxa_cal_liv_CH4,
+        'cal_liv_N2O': dm_fxa_cal_liv_N2O,
+        'ef_liv_N2O': dm_fxa_ef_liv_N2O,
+        'ef_liv_CH4_treated': dm_fxa_ef_liv_CH4_treated,
+        'liv_n-stock': dm_fxa_liv_nstock
+    }
+
+    # Aggregated Data Matrix - FEED
+    DM_feed = {
+        'ration': dm_ration,
+        'alt-protein': dm_alt_protein,
+        'cal_agr_demand_feed': dm_fxa_cal_demand_feed,
+        'ruminant-feed': dm_ruminant_feed
+    }
+
 
     CDM_const = DM_diet_input['constant']
 
-    return DM_ots_fts, DM_diet, CDM_const
+    return DM_ots_fts, DM_livestock, CDM_const
 
 
 # SimulateInteractions

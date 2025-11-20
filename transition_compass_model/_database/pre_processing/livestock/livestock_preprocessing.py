@@ -44,7 +44,7 @@ def ensure_structure(df):
     return df
 
 # CalculationLeaf SSR LIVESTOCK PROD & FEED ------------------------------------------------------------------------------
-def self_sufficiency_processing(years_ots, list_countries, file_dict):
+def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     # Read data ------------------------------------------------------------------------------------------------------------
     try:
         df_ssr = pd.read_csv(file_dict['ssr'])
@@ -62,7 +62,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
         ld = faostat.list_datasets()
         code = 'FBSH'
         pars = faostat.list_pars(code)
-        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
         my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
         my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
         list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
@@ -92,10 +92,10 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
                       'Bovine Meat', 'Meat, Other', 'Pigmeat',
                       'Poultry Meat', 'Mutton & Goat Meat']
         code = 'FBS'
-        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
         my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
         my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
-        list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021']
+        list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023']
         my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
         my_pars = {
@@ -132,7 +132,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
         list_items = ['Copra Cake', 'Cottonseed Cake', 'Groundnut Cake', 'Oilseed Cakes, Other', 'Palmkernel Cake',
                       'Rape and Mustard Cake', 'Sesameseed Cake', 'Soyabean Cake', 'Sunflowerseed Cake']
         code = 'CBH'
-        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
         my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
         my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
         list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
@@ -164,7 +164,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
                       'Cake of palm kernel', 'Cake of rapeseed', 'Cake of rice bran', 'Cake of safflowerseed',
                       'Cake of sesame seed', 'Cake of sunflower seed', 'Cake, oilseeds nes', 'Cake, poppy seed']
         code = 'SCL'
-        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
         my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
         my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
         list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021']
@@ -334,10 +334,10 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_ssr_feed = DataMatrix.create_from_df(df_ots, num_cat=1)
 
-    return dm_ssr_liv, dm_ssr_feed
+    return dm_ssr_liv, dm_ssr_feed, df_csl_feed
 
 # CalculationLeaf TRADE ORIGIN
-def trade_origin_processing(years_ots, list_countries, file_dict):
+def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   # Read data ------------------------------------------------------------------------------------------------------------
   list_partnerregions = ['-- Australia and New Zealand > (List)',
                          '-- Caribbean > (List)',
@@ -394,7 +394,7 @@ def trade_origin_processing(years_ots, list_countries, file_dict):
     ld = faostat.list_datasets()
     code = 'TM'
     pars = faostat.list_pars(code)
-    my_reporter_countries = [faostat.get_par(code, 'reporterarea')[c] for c in list_countries]
+    my_reporter_countries = [faostat.get_par(code, 'reporterarea')[c] for c in list_countries_calc]
     my_partner_regions = [faostat.get_par(code, 'partnerregions')[p] for p in
                              list_partnerregions]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
@@ -565,7 +565,7 @@ def livestock_density(df_liv_pop):
   ld = faostat.list_datasets()
   code = 'RL'
   pars = faostat.list_pars(code)
-  my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+  my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
   my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
   my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
   list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997',
@@ -685,7 +685,7 @@ def livestock_emissions():
 
   # 1990 - 2021
   code = 'GLE'
-  my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+  my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
   my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
   my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
   my_sources = [faostat.get_par(code, 'sources')[i] for i in list_sources]
@@ -694,7 +694,7 @@ def livestock_emissions():
                 '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009',
                 '2010', '2011', '2012', '2013',
                 '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021',
-                '2022']
+                '2022', '2023']
   my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
   my_pars = {
@@ -831,6 +831,15 @@ def livestock_emissions():
   df_enteric_pathwaycalc['geoscale'] = df_enteric_pathwaycalc[
     'geoscale'].replace('Czechia', 'Czech Republic')
 
+  # Format as datamatrix
+  lever = 'dummy'
+  df_enteric_pathwaycalc['lever'] = lever
+  df_enteric_pathwaycalc['level'] = 0.0
+  df_ots, df_fts = database_to_df(df_enteric_pathwaycalc, lever,
+                                  level='all')
+  df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+  dm_enteric = DataMatrix.create_from_df(df_ots, num_cat=2)
+
   # ----------------------------------------------------------------------------------------------------------------------
   # MANURE EMISSIONS (APPLIED, PASTURE & TREATED) ------------------------------------------------------------------------
   # ----------------------------------------------------------------------------------------------------------------------
@@ -843,7 +852,7 @@ def livestock_emissions():
 
   # 1990 - 2022
   code = 'EMN'
-  my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+  my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
   my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
   my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
   list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997',
@@ -1027,7 +1036,7 @@ def livestock_emissions():
     'Czechia', 'Czech Republic')
 
   # Filter for fxa
-  df_csl_fxa = df_manure_pathwaycalc[
+  df_fxa_manure_yield = df_manure_pathwaycalc[
     df_manure_pathwaycalc['variables'].str.contains('fxa', case=False,
                                                     na=False)]
 
@@ -1045,7 +1054,16 @@ def livestock_emissions():
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
   dm_manure = DataMatrix.create_from_df(df_ots, num_cat=2)
 
-  return dm_manure
+  # Format as datamatrix
+  lever = 'dummy'
+  df_fxa_manure_yield['lever'] = lever
+  df_fxa_manure_yield['level'] = 0.0
+  df_ots, df_fts = database_to_df(df_fxa_manure_yield, lever,
+                                  level='all')
+  df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+  dm_fxa_manure_yield = DataMatrix.create_from_df(df_ots, num_cat=1)
+
+  return dm_manure, dm_enteric, dm_fxa_manure_yield, df_manure_ch4_fxa, df_manure_n_fxa
 
 # CalculationLeaf LOSSES ------------------------------------------------------------------------------
 
@@ -1062,7 +1080,7 @@ def livestock_losses():
 
   # 1990 - 2013
   code = 'FBSH'
-  my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+  my_countries = [faostat.get_par(code, 'area')[c] for c in list_partnerregions_trade]
   my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
   my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
   list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997',
@@ -1089,11 +1107,11 @@ def livestock_losses():
   # Different list because different in item nomination such as rice
   list_elements = ['Losses', 'Production Quantity']
   code = 'FBS'
-  my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+  my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
   my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
   my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
   list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017',
-                '2018', '2019', '2020', '2021']
+                '2018', '2019', '2020', '2021', '2022', '2023']
   my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
   my_pars = {
@@ -1160,7 +1178,9 @@ def livestock_losses():
   # Format as datamatrix
   lever = 'dummy'
   df_losses_csl_pathwaycalc['lever'] = lever
+  df_losses_csl_pathwaycalc['module'] = lever
   df_losses_csl_pathwaycalc['level'] = 0.0
+  df_losses_csl_pathwaycalc = ensure_structure(df_losses_csl_pathwaycalc)
   df_ots, df_fts = database_to_df(df_losses_csl_pathwaycalc, lever,
                                   level='all')
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
@@ -1171,9 +1191,9 @@ def livestock_losses():
 
 # CalculationLeaf FEED RATION ------------------------------------------------------------------------------
 
-def feed_ration(df_feed_ration):
+def feed_ration(df_feed_ration, cdm_efficiency, cdm_kcal):
   # ----------------------------------------------------------------------------------------------------------------------
-  # FEED RATION ----------------------------------------------------------------------------------------------------------
+  # step FEED RATION ----------------------------------------------------------------------------------------------------------
   # ---------------------------------------------------------------------------------------------------------------------
 
   # Fill nan with zeros
@@ -1263,10 +1283,75 @@ def feed_ration(df_feed_ration):
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
   dm_feed_ration = DataMatrix.create_from_df(df_ots, num_cat=1)
 
-  return dm_feed_ration
+  # Step SHARE GRASS -----------------------------------------------------------
+
+  # Load
+  dm_dom_prod_liv = dm_cal_dom_prod.filter({'Country':list_countries_calc}, inplace=False).copy()
+  cdm_cp_efficiency = cdm_efficiency.copy()
+  cdm_kcal_temp = cdm_kcal.copy()
+  dm_feed_cal = dm_cal_feed.copy()
+
+  # ASF domestic prod with losses => Unit conversion: [kcal] to [t]
+  cdm_kcal_temp.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
+  cdm_kcal_temp = cdm_kcal_temp.filter({'Categories1': ['abp-dairy-milk', 'abp-hens-egg',
+                                              'meat-bovine', 'meat-oth-animals',
+                                              'meat-pig', 'meat-poultry',
+                                              'meat-sheep']})
+  dm_dom_prod_liv.sort('Categories1')
+  cdm_kcal_temp.sort('Categories1')
+  array_temp = dm_dom_prod_liv[:, :, 'cal_agr_domestic-production-liv', :] \
+               / cdm_kcal_temp[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
+  dm_dom_prod_liv.add(array_temp, dim='Variables',
+                      col_label='agr_domestic_production_liv_afw_t',
+                      unit='t')
+
+  # Feed req with grass per type [t] =  ASF domestic prod with losses [kt] * FCR [%]
+  dm_dom_prod_liv.sort('Categories1')
+  cdm_cp_efficiency.sort('Categories1')
+  dm_temp = dm_dom_prod_liv[:, :, 'agr_domestic_production_liv_afw_t', :] \
+            * cdm_cp_efficiency[np.newaxis, np.newaxis, 'cp_efficiency_liv', :]
+  dm_dom_prod_liv.add(dm_temp, dim='Variables',
+                      col_label='agr_feed-requirement',
+                      unit='t')
+
+  # Feed req total with grass [t] =  sum per type (Feed req with grass per type [t])
+  dm_dom_prod_liv = dm_dom_prod_liv.filter(
+    {'Variables': ['agr_feed-requirement']})
+  dm_ruminant = dm_dom_prod_liv.filter(
+    {'Categories1': ['abp-dairy-milk', 'meat-bovine',
+                     'meat-sheep']})  # Create copy for ruminants
+  dm_dom_prod_liv.groupby({'total': '.*'}, dim='Categories1', regex=True,
+                          inplace=True)
+  dm_dom_prod_liv = dm_dom_prod_liv.flatten()
+
+  # Feed req total without grass FAO [t] = sum (feed FBS + SQL)
+  dm_feed_cal = dm_feed_cal.filter(
+    {'Variables': ['cal_agr_demand_feed']})
+  dm_feed_cal.groupby({'total': '.*'}, dim='Categories1', regex=True,
+                      inplace=True)
+  dm_feed_cal = dm_feed_cal.flatten()
+
+  # Grass feed [t] = Feed req total with grass [t] - Feed req total without grass FAO [t]
+  dm_dom_prod_liv.append(dm_feed_cal, dim='Variables')
+  dm_dom_prod_liv.operation('agr_feed-requirement_total', '-',
+                            'cal_agr_demand_feed_total',
+                            out_col='grass_feed', unit='t')
+
+  # Feed ruminant with grass [t] = sum (feed ruminant [t])
+  dm_ruminant.groupby({'ruminant': '.*'}, dim='Categories1', regex=True,
+                      inplace=True)
+  dm_ruminant = dm_ruminant.flatten()
+
+  # Share grass feed ruminant [%] = Grass feed [t] / Feed ruminant with grass [t]
+  dm_dom_prod_liv.append(dm_ruminant, dim='Variables')
+  dm_dom_prod_liv.operation('grass_feed', '/', 'agr_feed-requirement_ruminant',
+                            out_col='agr_ruminant-feed_share-grass', unit='-')
+  dm_grass = dm_dom_prod_liv.filter({'Variables':['agr_ruminant-feed_share-grass']}, inplace=False)
+
+  return dm_feed_ration, dm_grass
 
 # CalculationLeaf YIELD & SLAUGHTER RATE ------------------------------------------------------------------------------
-def yield_slaughter_rate(df_liv_pop, list_countries):
+def yield_slaughter_rate(df_liv_pop, list_countries_calc):
 
     # ----------------------------------------------------------------------------------------------------------------------
     # YIELD (DAIRY & EGGS) -------------------------------------------------------------------------------------------------
@@ -1278,7 +1363,7 @@ def yield_slaughter_rate(df_liv_pop, list_countries):
 
     # 1990 - 2022
     code = 'QCL'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_partnerregions_trade]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
@@ -1366,9 +1451,9 @@ def yield_slaughter_rate(df_liv_pop, list_countries):
 
     list_items = ['Meat, Total > (List)']
 
-    # 1990 - 2022 HERE
+    # 1990 - 2022
     code = 'QCL'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_partnerregions_trade]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
@@ -1561,16 +1646,31 @@ def yield_slaughter_rate(df_liv_pop, list_countries):
     # Format as datamatrix - Yields
     lever = 'dummy'
     df_yield_liv_pathwaycalc['lever'] = lever
+    df_yield_liv_pathwaycalc['module'] = lever
     df_yield_liv_pathwaycalc['level'] = 0.0
+    df_yield_liv_pathwaycalc = ensure_structure(df_yield_liv_pathwaycalc)
     df_ots, df_fts = database_to_df(df_yield_liv_pathwaycalc, lever,
                                     level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_liv_yield = DataMatrix.create_from_df(df_ots, num_cat=1)
 
+    # Yield [kcal/lsu] = Domestic prod with losses [kcal] / producing-slaugthered animals [lsu]
+    dm_liv_yield.rename_col('agr_climate-smart-livestock_yield',
+                        'agr_climate-smart-livestock_yield_raw',
+                        dim='Variables')
+    dm_liv_yield.append(dm_cal_dom_prod, dim='Variables')
+    dm_liv_yield.operation('cal_agr_domestic-production-liv', '/',
+                              'agr_climate-smart-livestock_yield_raw',
+                              out_col='agr_climate-smart-livestock_yield',
+                              unit='kcal/lsu')
+    dm_liv_yield.filter({'Variables':['agr_climate-smart-livestock_yield']}, inplace=True)
+
     # Format as datamatrix - Slaughter rates
     lever = 'dummy'
     df_slau_liv_pathwaycalc['lever'] = lever
+    df_slau_liv_pathwaycalc['module'] = lever
     df_slau_liv_pathwaycalc['level'] = 0.0
+    df_slau_liv_pathwaycalc = ensure_structure(df_slau_liv_pathwaycalc)
     df_ots, df_fts = database_to_df(df_slau_liv_pathwaycalc, lever,
                                     level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
@@ -1578,7 +1678,7 @@ def yield_slaughter_rate(df_liv_pop, list_countries):
 
     return dm_liv_yield, dm_slaughter_rates
 
-# CalculationLeaf LIVESTOCK PROTEIN MEALS ------------------------------------------------------------------------------------
+# CalculationLeaf LIVESTOCK ALT PROTEIN MEALS ------------------------------------------------------------------------------------
 def livestock_protein_meals_processing(df_csl_feed):
 
     # Using and formatting df_csl_feed as a structural basis for constant ots values across all countries
@@ -1636,10 +1736,19 @@ def livestock_protein_meals_processing(df_csl_feed):
     df_protein_meals_pathwaycalc = linear_fitting_ots_db(df_protein_meals_pathwaycalc, years_ots,
                                                                  countries='all')
 
-    return df_protein_meals_pathwaycalc
+    # Format as datamatrix
+    lever = 'dummy'
+    df_protein_meals_pathwaycalc['lever'] = lever
+    df_protein_meals_pathwaycalc['level'] = 0.0
+    df_ots, df_fts = database_to_df(df_protein_meals_pathwaycalc, lever,
+                                    level='all')
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm_feed_alt_protein = DataMatrix.create_from_df(df_ots, num_cat=2)
+
+    return dm_feed_alt_protein
 
 # CalculationLeaf CAL - POP & DOM PROD -----------------------------------------------------------------------------------
-def livestock_calibration(list_countries):
+def livestock_calibration(list_countries_calc, dm_losses):
     # ----------------------------------------------------------------------------------------------------------------------
     # Step POPULATION ----------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -1660,13 +1769,13 @@ def livestock_calibration(list_countries):
     ld = faostat.list_datasets()
     code = 'GLE'
     pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_partnerregions_trade]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     my_sources = [faostat.get_par(code, 'sources')[i] for i in list_sources]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
                   '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013',
-                  '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022']
+                  '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023']
     my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
     my_pars = {
@@ -1774,7 +1883,9 @@ def livestock_calibration(list_countries):
     # Format as datamatrix
     lever = 'dummy'
     df_liv_population_calibration['lever'] = lever
+    df_liv_population_calibration['module'] = lever
     df_liv_population_calibration['level'] = 0.0
+    df_liv_population_calibration = ensure_structure(df_liv_population_calibration)
     df_ots, df_fts = database_to_df(df_liv_population_calibration, lever, level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_cal_liv_pop = DataMatrix.create_from_df(df_ots, num_cat=1)
@@ -1799,12 +1910,11 @@ def livestock_calibration(list_countries):
     ld = faostat.list_datasets()
     code = 'FBSH'
     pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_partnerregions_trade]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
-                  '2002',
-                  '2003', '2004', '2005', '2006', '2007', '2008', '2009']
+                  '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009']
     my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
     my_pars = {
@@ -1820,11 +1930,11 @@ def livestock_calibration(list_countries):
                   'Bovine Meat', 'Meat, Other', 'Pigmeat',
                   'Poultry Meat', 'Mutton & Goat Meat']
     code = 'FBS'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021',
-                  '2022']
+                  '2022', '2023']
     my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
     my_pars = {
@@ -1895,11 +2005,26 @@ def livestock_calibration(list_countries):
     # Format as datamatrix
     lever = 'dummy'
     df_domestic_supply_calibration['lever'] = lever
+    df_domestic_supply_calibration['module'] = lever
     df_domestic_supply_calibration['level'] = 0.0
-    dm_cal_liv_pop = df_liv_population_calibration
+    df_domestic_supply_calibration = ensure_structure(df_domestic_supply_calibration)
     df_ots, df_fts = database_to_df(df_domestic_supply_calibration, lever, level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_cal_dom_prod = DataMatrix.create_from_df(df_ots, num_cat=1)
+
+    # Livestock domestic prod with losses [kcal] = livestock domestic prod [kcal] * Production losses livestock [%]
+    dm_losses_liv = dm_losses.copy()
+    dm_losses_liv.drop(dim='Categories1',
+                       col_label=['abp-processed-afat', 'abp-processed-offal'])
+    dm_cal_dom_prod.rename_col('cal_agr_domestic-production-liv',
+                               'cal_agr_domestic-production-liv_raw',
+                               dim='Variables')
+    dm_cal_dom_prod.append(dm_losses_liv, dim='Variables')
+    dm_cal_dom_prod.operation('agr_climate-smart-livestock_losses', '*',
+                              'cal_agr_domestic-production-liv_raw',
+                              out_col='cal_agr_domestic-production-liv',
+                              unit='kcal')
+    dm_cal_dom_prod.filter({'Variables':['cal_agr_domestic-production-liv']}, inplace=True)
 
     return dm_cal_dom_prod, dm_cal_liv_pop, df_liv_pop
 
@@ -1907,7 +2032,7 @@ def livestock_calibration(list_countries):
 
 # CalculationLeaf CAL - LIVESTOCK MANURE -----------------------------------------------------------------------------------
 
-def manure_calibration(list_countries):
+def manure_calibration(list_countries_calc):
     # ----------------------------------------------------------------------------------------------------------------------
     # MANURE EMISSIONS ---------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -1932,13 +2057,13 @@ def manure_calibration(list_countries):
     ld = faostat.list_datasets()
     code = 'GLE'
     pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     my_sources = [faostat.get_par(code, 'sources')[i] for i in list_sources]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
                   '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013',
-                  '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022']
+                  '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023']
     my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
     my_pars = {
@@ -2048,10 +2173,132 @@ def manure_calibration(list_countries):
 
     return dm_cal_liv_emissions, df_liv_emissions
 
+# CalculationLeaf FXA - MANURE EMISSION FACTORS ------------------------------
+
+def manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa):
+
+   # N2O EMISSIONS -------------------------------------------------------------
+   # Filter & Rename
+   df_manure_n_fxa = df_manure_n_fxa[['Area', 'Year', 'Aggregation','Manure left on pasture (N content)',
+                     'Manure applied to soils (N content)', 'Losses from manure treated (N content)']]
+   df_manure_n_fxa.rename(columns={'Manure left on pasture (N content)':'N2O Pasture',
+                                   'Manure applied to soils (N content)':'N2O Applied',
+                                   'Losses from manure treated (N content)':'N2O Treated'},
+                          inplace=True)
+
+   # Melt df
+   df_melted = pd.melt(df_manure_n_fxa, id_vars=['Area', 'Year', 'Aggregation'],
+                       value_vars=['N2O Pasture', 'N2O Applied',
+                                   'N2O Treated'],
+                       var_name='Item', value_name='value N')
+
+   # Concatenate the aggregation column with the manure column names
+   df_melted['Item'] = df_melted['Aggregation'] + ' ' + df_melted['Item']
+
+   # Rename cols
+   # Rename for merge (df_liv_pop => pivot_df_slau (meat) or df_slau_eggs_milk (eggs,dairy))
+   terms = {
+     'Cattle, dairy': 'Dairy-milk',
+     'Cattle, non-dairy': 'Bovine',
+     'Chickens, layers': 'Hens-egg',
+     'Sheep and Goats': 'Sheep',
+     'Swine': 'Pig',
+     'Others': 'Other animal',
+     'Poultry Stocks': 'Poultry',
+     'Manure management (Emissions N2O)': 'N2O Treated',
+     'Manure left on pasture (Emissions N2O)': 'N2O Pasture',
+     'Emissions (N2O) (Manure applied)': 'N2O Applied'
+   }
+   def replace_partial(text):
+     for key, value in terms.items():
+       if key in text:
+         text = text.replace(key, value)
+     return text
+   df_liv_emissions['Item'] = df_liv_emissions['Item'].apply(replace_partial)
+
+   # Merge with NO2 emission df_liv_emissions_calibration
+   df_manure_fxa = df_melted.merge(df_liv_emissions, on=['Area', 'Year', 'Item'], how='inner')
+
+   # Compute emission factor per practice : EF = Emissions NO2 [kt] / Manure applied-treated-pasture [kg N]
+   df_manure_fxa['value'] = df_manure_fxa['Value'] * 10**6 / df_manure_fxa['value N']
+   df_manure_fxa = df_manure_fxa[['Area', 'Year', 'Item', 'value']]
+
+   # Fill na with 0
+   df_manure_fxa['value'].fillna(0.0, inplace=True)
+
+   # CH4 EMISSIONS -------------------------------------------------------------
+   # Format
+   df_manure_ch4_fxa.rename(
+     columns={'Manure emissions CH4 [t/lsu]': 'value',
+              'Aggregation': 'Item'},
+     inplace=True)
+   df_manure_ch4_fxa['Item'] = df_manure_ch4_fxa['Item'].apply(lambda x: f"CH4 Treated {x}")
+
+   # Concat
+   df_manure_fxa = pd.concat([df_manure_fxa, df_manure_ch4_fxa],
+                              axis=0)
+
+   # PathwayCalc formatting ------------------------------------------------------------------
+   # Food item name matching with dictionary
+   # Read excel file
+   df_dict_csl = pd.read_excel(
+     'dictionaries/dictionnary_agriculture_landuse.xlsx',
+     sheet_name='climate-smart-livestock')
+
+   # Merge based on 'Item'
+   df_manure_fxa = pd.merge(df_dict_csl, df_manure_fxa, on='Item')
+
+   # Drop the 'Item' column
+   df_manure_fxa = df_manure_fxa.drop(columns=['Item'])
+
+   # Renaming existing columns (geoscale, timsecale, value)
+   df_manure_fxa.rename(columns={'Area': 'geoscale', 'Year': 'timescale'},
+                              inplace=True)
+
+   # Adding the columns module, lever, level and string-pivot at the correct places
+   df_manure_fxa['module'] = 'agriculture'
+   lever = 'dummy'
+   df_manure_fxa['lever'] = lever
+   df_manure_fxa['level'] = 0
+   cols = df_manure_fxa.columns.tolist()
+   cols.insert(cols.index('value'), cols.pop(cols.index('module')))
+   cols.insert(cols.index('value'), cols.pop(cols.index('lever')))
+   cols.insert(cols.index('value'), cols.pop(cols.index('level')))
+   df_manure_fxa = df_manure_fxa[cols]
+
+   # Rename countries to Pathaywcalc name
+   df_manure_fxa['geoscale'] = df_manure_fxa['geoscale'].replace(
+     'United Kingdom of Great Britain and Northern Ireland', 'United Kingdom')
+   df_manure_fxa['geoscale'] = df_manure_fxa['geoscale'].replace(
+     'Netherlands (Kingdom of the)',
+     'Netherlands')
+   df_manure_fxa['geoscale'] = df_manure_fxa['geoscale'].replace(
+     'Czechia', 'Czech Republic')
+
+   # Extrapolating
+   df_manure_fxa = ensure_structure(df_manure_fxa)
+   df_manure_fxa = linear_fitting_ots_db(df_manure_fxa, years_all,
+                                               countries='all')
+
+   # Format as datamatrix
+   df_ots, df_fts = database_to_df(df_manure_fxa, lever,
+                                   level='all')
+   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+   dm_manure_fxa = DataMatrix.create_from_df(df_ots, num_cat=0)
+
+  # Create separate dm
+   dm_fxa_N2O = dm_manure_fxa.filter_w_regex(
+     {'Variables': 'fxa_ef_liv_N2O-emission.*'})
+   dm_fxa_N2O.deepen_twice()
+   dm_fxa_CH4 = dm_manure_fxa.filter_w_regex(
+     {'Variables': 'fxa_ef_liv_CH4-emission.*'})
+   dm_fxa_CH4.deepen_twice()
+
+   return dm_fxa_CH4, dm_fxa_N2O
 
 # CalculationLeaf CAL - FEED DEMAND ----------------------------------------------------------------------------------
 
-def feed_calibration(list_countries):
+def feed_calibration(list_countries_calc):
     # ----------------------------------------------------------------------------------------------------------------------
     # HERE! FEED DEMAND PART I --------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -2072,7 +2319,7 @@ def feed_calibration(list_countries):
     ld = faostat.list_datasets()
     code = 'FBSH'
     pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
@@ -2095,11 +2342,11 @@ def feed_calibration(list_countries):
                   'Fish, Seafood + (Total)', 'Animal Products + (Total)', 'Vegetable Oils + (Total)',
                   'Sugar & Sweeteners + (Total)']
     code = 'FBS'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021',
-                  '2022']
+                  '2022', '2023']
     my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
     my_pars = {
@@ -2130,7 +2377,7 @@ def feed_calibration(list_countries):
     list_items = ['Copra Cake', 'Cottonseed Cake', 'Groundnut Cake', 'Oilseed Cakes, Other', 'Palmkernel Cake',
                   'Rape and Mustard Cake', 'Sesameseed Cake', 'Soyabean Cake', 'Sunflowerseed Cake']
     code = 'CBH'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
@@ -2154,7 +2401,7 @@ def feed_calibration(list_countries):
                   'Cake of palm kernel', 'Cake of rapeseed', 'Cake of rice bran', 'Cake of safflowerseed',
                   'Cake of sesame seed', 'Cake of sunflower seed', 'Cake, oilseeds nes', 'Cake, poppy seed']
     code = 'SCL'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021']
@@ -2244,13 +2491,36 @@ def feed_calibration(list_countries):
     df_feed_calibration['level'] = 0.0
     df_ots, df_fts = database_to_df(df_feed_calibration, lever, level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
-    dm_feed_calibration = DataMatrix.create_from_df(df_ots, num_cat=1)
+    dm_cal_feed = DataMatrix.create_from_df(df_ots, num_cat=1)
 
-    return dm_feed_calibration, df_feed_ration
+    return dm_cal_feed, df_feed_ration
 
 # CalculationLeaf CONSTANTS  ------------------------------
 
 def constant():
+  # FEED - ENERGY CONVERSION EFFICIENCY  ----------------------------------------------------------------------------------------
+
+  # Read excel
+  df_feed_conv = pd.read_excel('dictionaries/constants_livestock.xlsx',
+                            sheet_name='cp_feed_efficiency')
+
+  # Filter columns
+  df_feed_conv = df_feed_conv[['variables', 'value']].copy()
+
+  # Turn the df in a dict
+  dict_feed = dict(zip(df_feed_conv['variables'], df_feed_conv['value']))
+  categories1 = df_feed_conv['variables'].tolist()
+
+  # Format as a cdm
+  cdm_efficiency = ConstantDataMatrix(col_labels={'Variables': ['cp_efficiency_liv'],
+                                            'Categories1': categories1})
+  arr = np.zeros((len(cdm_efficiency.col_labels['Variables']),
+                  len(cdm_efficiency.col_labels['Categories1'])))
+  cdm_efficiency.array = arr
+  idx = cdm_efficiency.idx
+  for cat, val in dict_feed.items():
+    cdm_efficiency.array[idx['cp_efficiency_liv'], idx[cat]] = val
+  cdm_efficiency.units["cp_efficiency_liv"] = "kg DM feed/kg EW"
 
   # KCAL TO T ----------------------------------------------------------------------------------------
 
@@ -2276,20 +2546,10 @@ def constant():
     cdm_kcal.array[idx['cp_kcal-per-t'], idx[cat]] = val
   cdm_kcal.units["cp_kcal-per-t"] = "kcal/t"
 
-  # TIME PER YEAR ----------------------------------------------------------------------------------------
-
-  # Format as a cdm
-  cdm_lifestyle = ConstantDataMatrix(col_labels={'Variables': ['cp_time_days-per-year']})
-  arr = np.zeros((len(cdm_kcal.col_labels['Variables'])))
-  cdm_lifestyle.array = arr
-  idx = cdm_lifestyle.idx
-  cdm_lifestyle.array[idx['cp_time_days-per-year']] = 365.0
-  cdm_lifestyle.units["cp_time_days-per-year"] = "days/year"
-
-  return cdm_kcal, cdm_lifestyle
+  return cdm_efficiency, cdm_kcal
 
 # CalculationLeaf FTS  ------------------------------
-def fts_processing(list_countries, years_ots, years_fts, cdm_kcal):
+def fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal):
 
   # fwaste, diet-adherence, kcal-req -------------------------------------------
   # Read Excel
@@ -2469,7 +2729,7 @@ def fts_processing(list_countries, years_ots, years_fts, cdm_kcal):
 
 # CalculationLeaf PICKLE CREATION ------------------------------
 
-def datamatrix_to_pickle(years_ots, years_fts, dm_liv_trade_origin, dm_ssr_liv, dm_ssr_feed, dm_cal_dom_prod, dm_cal_liv_pop, dm_manure, dm_losses, dm_feed_ration, dm_liv_yield, dm_slaughter_rates, dm_cal_liv_emissions, dm_feed_calibration):
+def datamatrix_to_pickle():
 
   # Make list with all years
   years_all = years_ots + years_fts
@@ -2479,11 +2739,10 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_liv_trade_origin, dm_ssr_liv, 
   dict_fxa = {}
 
   dict_fxa['trade-origin'] = dm_liv_trade_origin
-
-  #dict_fxa['ef_liv_N2O-emission']
-  #dict_fxa['ef_liv_CH4-emission_treated']
-  #dict_fxa['liv_manure_n-stock']
-  #dm_fxa_ratio_milk = DM_agriculture['fxa']['ratio_milk']
+  dict_fxa['ef_liv_N2O-emission'] = dm_fxa_N2O
+  dict_fxa['ef_liv_CH4-emission_treated'] = dm_fxa_CH4
+  dict_fxa['liv_manure_n-stock'] = dm_fxa_manure_yield
+  #dict_fxa['fxa']['ratio_milk']
 
   # CalibrationDataToDatamatrix ------------------------------------------------
 
@@ -2491,40 +2750,34 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_liv_trade_origin, dm_ssr_liv, 
   dict_fxa['cal_agr_domestic-production-liv'] = dm_cal_dom_prod
   dict_fxa['cal_agr_liv_CH4-emission'] = dm_cal_liv_emissions.filter({'Variables':['cal_agr_liv_CH4-emission']}, inplace=False)
   dict_fxa['cal_agr_liv_N2O-emission'] = dm_cal_liv_emissions.filter({'Variables':['cal_agr_liv_N2O-emission']}, inplace=False)
-  dict_fxa['cal_agr_demand_feed'] = dm_feed_calibration
+  dict_fxa['cal_agr_demand_feed'] = dm_cal_feed
 
 
   # LeversToDatamatrix OTS -----------------------------------------------------
   dict_ots = {}
 
   # ssr-liv
-  dict_ots['ssr-liv'] = dm_ssr_liv, dm_ssr_feed
-
+  dict_ots['ssr-liv'] = dm_ssr_liv
   # ssr-feed
   dict_ots['ssr-feed'] = dm_ssr_feed
-
-  # Sub-matrix for LIVESTOCK
-  dm_livestock_losses = DM_ots_fts['climate-smart-livestock'][
-    'climate-smart-livestock_losses']
-  dm_livestock_yield = DM_ots_fts['climate-smart-livestock'][
-    'climate-smart-livestock_yield']
-  dm_livestock_slaughtered = DM_ots_fts['climate-smart-livestock'][
-    'climate-smart-livestock_slaughtered']
-  dm_livestock_density = DM_ots_fts['climate-smart-livestock'][
-    'climate-smart-livestock_density']
-
-
-  # Sub-matrix for LIVESTOCK MANURE MANGEMENT & GHG EMISSIONS
-  dm_livestock_enteric_emissions = DM_ots_fts['climate-smart-livestock'][
-    'climate-smart-livestock_enteric']
-  dm_livestock_manure = DM_ots_fts['climate-smart-livestock'][
-    'climate-smart-livestock_manure']
-
-  # Sub-matrix for FEED
-  dm_ration = DM_ots_fts['climate-smart-livestock'][
-    'climate-smart-livestock_ration']
-  dm_alt_protein = DM_ots_fts['alt-protein']
-  dm_ruminant_feed = DM_ots_fts['ruminant-feed']
+  # livestock-losses
+  dict_ots['livestock-losses'] = dm_losses
+  # livestock-yield
+  dict_ots['livestock-yield'] = dm_liv_yield
+  # 'slaughter-rates'
+  dict_ots['slaughter-rates'] = dm_slaughter_rates
+  # livestock-density
+  dict_ots['livestock-density'] = dm_liv_yield
+  # livestock-enteric
+  dict_ots['livestock-enteric'] = dm_enteric
+  # livestock-manure
+  dict_ots['livestock-manure'] = dm_manure
+  # feed-ration
+  dict_ots['feed-ration'] = dm_feed_ration
+  # alt-protein
+  dict_ots['alt-protein'] = dm_feed_alt_protein
+  # ruminant-feed
+  dict_ots['ruminant-feed'] = dm_grass
 
 
   # LeversToDatamatrix FTS -----------------------------------------------------
@@ -2537,6 +2790,16 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_liv_trade_origin, dm_ssr_liv, 
   dict_temp = {}
   dict_fts['ssr-liv'] = {'ssr-liv': dict()}
   dict_fts['ssr-feed'] = {'ssr-feed': dict()}
+  dict_fts['livestock-losses'] = {'livestock-losses': dict()}
+  dict_fts['livestock-yield'] = {'livestock-yield': dict()}
+  dict_fts['slaughter-rates'] = {'slaughter-rates': dict()}
+  dict_fts['livestock-density'] = {'livestock-density': dict()}
+  dict_fts['livestock-enteric'] = {'livestock-enteric': dict()}
+  dict_fts['livestock-manure'] = {'livestock-manure': dict()}
+  dict_fts['livestock-manure'] = {'livestock-manure': dict()}
+  dict_fts['feed-ration'] = {'feed-ration': dict()}
+  dict_fts['alt-protein'] = {'alt-protein': dict()}
+  dict_fts['ruminant-feed'] = {'ruminant-feed': dict()}
 
   # Levers to be normalised
   list_norm = ['climate-smart-livestock_ration']
@@ -2679,7 +2942,7 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_liv_trade_origin, dm_ssr_liv, 
   #dict_const['cdm_lifestyle'] = cdm_lifestyle
 
   # Group all datamatrix in a single structure ---------------------------------
-  DM_diet = {
+  DM_livestock = {
     'fxa': dict_fxa,
     'constant': dict_const,
     'fts': dict_fts,
@@ -2687,9 +2950,9 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_liv_trade_origin, dm_ssr_liv, 
   }
 
   # Write datamatrix to pickle -------------------------------------------------
-  f = '../../data/datamatrix/trade.pickle'
+  f = '../../data/datamatrix/livestock.pickle'
   with open(f, 'wb') as handle:
-    pickle.dump(DM_diet, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    pickle.dump(DM_livestock, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
   return
 
@@ -2702,135 +2965,54 @@ years_all = years_ots + years_fts
 if not os.path.exists('data/faostat'):
     os.makedirs('data/faostat')
 
-list_countries = ['Switzerland']
+list_countries_calc = ['Switzerland']
+list_partnerregions_trade = ['Switzerland',
+                         '-- Australia and New Zealand + (Total)',
+                         '-- Caribbean + (Total)',
+                         '-- Central America + (Total)',
+                         '-- Central Asia + (Total)',
+                         '-- Eastern Africa + (Total)',
+                         '-- Eastern Asia + (Total)',
+                         '-- Eastern Europe + (Total)',
+                         '-- Melanesia + (Total)',
+                         '-- Micronesia + (Total)',
+                         '-- Middle Africa + (Total)',
+                         '-- Northern Africa + (Total)',
+                         '-- Northern America + (Total)',
+                         '-- Northern Europe + (Total)',
+                         '-- Polynesia + (Total)',
+                         '-- South America + (Total)',
+                         '-- South-eastern Asia + (Total)',
+                         '-- Southern Africa + (Total)',
+                         '-- Southern Asia + (Total)',
+                         '-- Southern Europe + (Total)',
+                         '-- Western Africa + (Total)',
+                         '-- Western Asia + (Total)',
+                         '-- Western Europe + (Total)']
 
 file_dict = {'ssr': 'data/faostat/ssr.csv', 'cake': 'data/faostat/ssr_cake.csv',
              'molasse': 'data/faostat/ssr_2010_2021_molasse_cake.csv',
              'trade': 'data/faostat/trade.csv'}
-dm_ssr_liv, dm_ssr_feed = self_sufficiency_processing(years_ots, list_countries, file_dict)
-dm_liv_trade_origin = trade_origin_processing(years_ots, list_countries, file_dict)
-dm_cal_dom_prod, dm_cal_liv_pop, df_liv_pop = livestock_calibration(list_countries)
-dm_density = livestock_density(df_liv_pop)
-dm_manure = livestock_emissions()
+
+cdm_efficiency, cdm_kcal = constant()
+dm_ssr_liv, dm_ssr_feed, df_csl_feed = self_sufficiency_processing(years_ots, list_countries_calc, file_dict)
+dm_liv_trade_origin = trade_origin_processing(years_ots, list_countries_calc, file_dict)
 dm_losses = livestock_losses()
-dm_feed_calibration, df_feed_ration = feed_calibration(list_countries)
-dm_feed_ration = feed_ration(df_feed_ration)
-dm_liv_yield, dm_slaughter_rates = yield_slaughter_rate(df_liv_pop, list_countries)
-dm_cal_liv_emissions, df_liv_emissions = manure_calibration(list_countries)
+dm_cal_dom_prod, dm_cal_liv_pop, df_liv_pop = livestock_calibration(list_countries_calc, dm_losses)
+dm_density = livestock_density(df_liv_pop)
+dm_manure, dm_enteric, dm_fxa_manure_yield, df_manure_ch4_fxa, df_manure_n_fxa = livestock_emissions()
+dm_cal_feed, df_feed_ration = feed_calibration(list_countries_calc)
+dm_feed_ration, dm_grass = feed_ration(df_feed_ration, cdm_efficiency, cdm_kcal)
+dm_liv_yield, dm_slaughter_rates = yield_slaughter_rate(df_liv_pop, list_countries_calc)
+dm_cal_liv_emissions, df_liv_emissions = manure_calibration(list_countries_calc)
+dm_fxa_CH4, dm_fxa_N2O = manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa)
+dm_feed_alt_protein = livestock_protein_meals_processing(df_csl_feed)
 
 #dm_fts = fts_processing(list_countries, years_ots, years_fts, cdm_kcal)
 
 
 
 # CalculationTree RUNNING PICKLE CREATION
-datamatrix_to_pickle(years_ots, years_fts,dm_liv_trade_origin, dm_ssr_liv, dm_ssr_feed, dm_cal_dom_prod, dm_cal_liv_pop, dm_manure, dm_losses, dm_feed_ration, dm_liv_yield, dm_slaughter_rates, dm_cal_liv_emissions, dm_feed_calibration)
+datamatrix_to_pickle()
 
 
-# CalculationLeaf CALIBRATION DOMESTIC PROD WITH LOSSES ----------------------------------------------------------------------------------------
-
-# Load data
-dm_dom_prod_liv = DM_agriculture['fxa']['cal_agr_domestic-production-liv'].copy()
-dm_losses_liv = DM_agriculture['ots']['climate-smart-livestock']['climate-smart-livestock_losses'].copy()
-dm_dom_prod_crop = DM_agriculture['fxa']['cal_agr_domestic-production_food'].copy()
-dm_losses_crop = DM_agriculture['ots']['climate-smart-crop']['climate-smart-crop_losses'].copy()
-
-
-# Livestock domestic prod with losses [kcal] = livestock domestic prod [kcal] * Production losses livestock [%]
-dm_losses_liv.drop(dim='Categories1', col_label=['abp-processed-afat', 'abp-processed-offal'])
-dm_dom_prod_liv.rename_col('cal_agr_domestic-production-liv', 'cal_agr_domestic-production-liv_raw', dim='Variables')
-dm_dom_prod_liv.append(dm_losses_liv, dim='Variables')
-dm_dom_prod_liv.operation('agr_climate-smart-livestock_losses', '*', 'cal_agr_domestic-production-liv_raw',
-                                 out_col='cal_agr_domestic-production-liv', unit='kcal')
-
-# Crop domestic prod with losses [kcal] = crop domestic prod [kcal] * Production losses crop [%]
-dm_dom_prod_crop.rename_col('cal_agr_domestic-production_food', 'cal_agr_domestic-production_food_raw', dim='Variables')
-dm_dom_prod_crop.append(dm_losses_crop, dim='Variables')
-dm_dom_prod_crop.operation('agr_climate-smart-crop_losses', '*', 'cal_agr_domestic-production_food_raw',
-                                 out_col='cal_agr_domestic-production_food', unit='kcal')
-
-# Overwrite
-DM_agriculture['fxa']['cal_agr_domestic-production-liv']['Switzerland', :,'cal_agr_domestic-production-liv',:] \
-    = dm_dom_prod_liv['Switzerland', :,'cal_agr_domestic-production-liv',:]
-DM_agriculture['fxa']['cal_agr_domestic-production_food']['Switzerland', :,'cal_agr_domestic-production_food',:] \
-    = dm_dom_prod_crop['Switzerland', :,'cal_agr_domestic-production_food',:]
-
-# CalculationLeaf LIVESTOCK YIELD USING CALIBRATION DOMESTIC PROD WITH LOSSES ----------------------------------------------------------------------------------------
-
-# Load data
-dm_dom_prod_liv = DM_agriculture['fxa']['cal_agr_domestic-production-liv'].copy()
-dm_yield = DM_agriculture['ots']['climate-smart-livestock']['climate-smart-livestock_yield'].copy()
-
-# Yield [kcal/lsu] = Domestic prod with losses [kcal] / producing-slaugthered animals [lsu]
-dm_yield.rename_col('agr_climate-smart-livestock_yield', 'agr_climate-smart-livestock_yield_raw', dim='Variables')
-dm_dom_prod_liv.append(dm_yield, dim='Variables')
-dm_dom_prod_liv.operation('cal_agr_domestic-production-liv', '/', 'agr_climate-smart-livestock_yield_raw',
-                                 out_col='agr_climate-smart-livestock_yield', unit='kcal/lsu')
-
-# Overwrite
-DM_agriculture['ots']['climate-smart-livestock']['climate-smart-livestock_yield']['Switzerland', :,'agr_climate-smart-livestock_yield',:] \
-    = dm_dom_prod_liv['Switzerland', :,'agr_climate-smart-livestock_yield',:]
-
-
-# CalculationLeaf FEED - SHARE GRASS OTS ----------------------------------------------------------------------------------------
-
-# Load
-dm_dom_prod_liv = DM_agriculture['fxa']['cal_agr_domestic-production-liv'].copy()
-cdm_cp_efficiency = CDM_const['cdm_cp_efficiency']
-cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
-dm_feed_cal = DM_agriculture['fxa']['cal_agr_demand_feed'].copy()
-
-# ASF domestic prod with losses => Unit conversion: [kcal] to [t]
-cdm_kcal.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
-cdm_kcal = cdm_kcal.filter({'Categories1': ['abp-dairy-milk', 'abp-hens-egg',
-                                            'meat-bovine', 'meat-oth-animals',
-                                            'meat-pig', 'meat-poultry',
-                                            'meat-sheep']})
-dm_dom_prod_liv.sort('Categories1')
-cdm_kcal.sort('Categories1')
-array_temp = dm_dom_prod_liv[:, :, 'cal_agr_domestic-production-liv', :] \
-             / cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
-dm_dom_prod_liv.add(array_temp, dim='Variables',
-                col_label='agr_domestic_production_liv_afw_t',
-                unit='t')
-
-# Feed req with grass per type [t] =  ASF domestic prod with losses [kt] * FCR [%]
-dm_dom_prod_liv.sort('Categories1')
-cdm_cp_efficiency.sort('Categories1')
-dm_temp = dm_dom_prod_liv[:, :, 'agr_domestic_production_liv_afw_t', :] \
-          * cdm_cp_efficiency[np.newaxis, np.newaxis, 'cp_efficiency_liv', :]
-dm_dom_prod_liv.add(dm_temp, dim='Variables', col_label='agr_feed-requirement',
-                unit='t')
-
-# Feed req total with grass [t] =  sum per type (Feed req with grass per type [t])
-dm_dom_prod_liv = dm_dom_prod_liv.filter(
-  {'Variables': ['agr_feed-requirement']})
-dm_ruminant = dm_dom_prod_liv.filter(
-  {'Categories1': ['abp-dairy-milk', 'meat-bovine', 'meat-sheep']}) # Create copy for ruminants
-dm_dom_prod_liv.groupby({'total': '.*'}, dim='Categories1', regex=True,
-                          inplace=True)
-dm_dom_prod_liv = dm_dom_prod_liv.flatten()
-
-# Feed req total without grass FAO [t] = sum (feed FBS + SQL)
-dm_feed_cal = dm_feed_cal.filter(
-  {'Variables': ['cal_agr_demand_feed']})
-dm_feed_cal.groupby({'total': '.*'}, dim='Categories1', regex=True,
-                          inplace=True)
-dm_feed_cal = dm_feed_cal.flatten()
-
-# Grass feed [t] = Feed req total with grass [t] - Feed req total without grass FAO [t]
-dm_dom_prod_liv.append(dm_feed_cal, dim='Variables')
-dm_dom_prod_liv.operation('agr_feed-requirement_total', '-', 'cal_agr_demand_feed_total',
-                                 out_col='grass_feed', unit='t')
-
-# Feed ruminant with grass [t] = sum (feed ruminant [t])
-dm_ruminant.groupby({'ruminant': '.*'}, dim='Categories1', regex=True,
-                          inplace=True)
-dm_ruminant = dm_ruminant.flatten()
-
-# Share grass feed ruminant [%] = Grass feed [t] / Feed ruminant with grass [t]
-dm_dom_prod_liv.append(dm_ruminant, dim='Variables')
-dm_dom_prod_liv.operation('grass_feed', '/', 'agr_feed-requirement_ruminant',
-                                 out_col='agr_ruminant-feed_share-grass', unit='%')
-
-# Overwrite in pickle
-DM_agriculture['ots']['ruminant-feed']['ruminant-feed']['Switzerland',:,'agr_ruminant-feed_share-grass'] = dm_dom_prod_liv['Switzerland',:,'agr_ruminant-feed_share-grass']
