@@ -51,18 +51,12 @@ def get_interface(current_file_directory, interface, from_sector, to_sector, cou
 
 def get_footprint_by_group(DM_footprint):
     
-    # dm_matfoot_veh, dm_energy-demand-elec_veh, ...
     
-    def reshape_and_store(DM_footprint, keyword, rename = True):
+    def reshape_and_store(DM_footprint, keyword):
     
         DM = {}
+        dm = DM_footprint[keyword].copy()
         
-        dm = DM_footprint.filter_w_regex({"Variables" : f".*{keyword}.*"})
-        dm.deepen()
-        if rename is True:
-            dm.rename_col_regex(f"{keyword}-","","Categories1")
-        
-        # vehicles
         dm_veh = dm.filter_w_regex(({"Variables" : 'HDV_.*|LDV_.*|bus_.*|planes_.*|ships_.*|trains_.*'}))
         for v in dm_veh.col_labels["Variables"]:
             dm_veh.rename_col(v, f"{keyword}_" + v, "Variables")
@@ -86,7 +80,7 @@ def get_footprint_by_group(DM_footprint):
             
             if len(dm.dim_labels) == 5:
                 dm.switch_categories_order("Categories1","Categories2")
-        
+                
         # transport infrastructure
         dm_temp = dm.filter({"Variables" : ['rail','road','trolley-cables']})
         deepen_else(dm_temp)
@@ -103,16 +97,10 @@ def get_footprint_by_group(DM_footprint):
         DM["electronics"] = dm_temp.copy()
         
         return DM
-    
+        
     DM_footprint_split = {}
-    DM_footprint_split["material-footprint"] = reshape_and_store(DM_footprint, "material-footprint")
-    DM_footprint_split["energy-demand-elec"] = reshape_and_store(DM_footprint, "energy-demand-elec")
-    DM_footprint_split["energy-demand-ff"] = reshape_and_store(DM_footprint, "energy-demand-ff")
-    DM_footprint_split["ecological"] = reshape_and_store(DM_footprint, "ecological")
-    DM_footprint_split["gwp"] = reshape_and_store(DM_footprint, "gwp")
-    DM_footprint_split["water"] = reshape_and_store(DM_footprint, "water")
-    DM_footprint_split["air-pollutant"] = reshape_and_store(DM_footprint, "air-pollutant")
-    DM_footprint_split["heavy-metals-to-soil"] = reshape_and_store(DM_footprint, "heavy-metals-to-soil")
+    for keyword in DM_footprint.keys():
+        DM_footprint_split[keyword] = reshape_and_store(DM_footprint, keyword)
     
     return DM_footprint_split
 
@@ -160,16 +148,16 @@ def get_footprint(footprint, DM_demand, DM_footprint):
 
 def variables_for_tpe(DM_footprint_agg):
     
-    dm_tpe = DM_footprint_agg["material-footprint"].flatten()
+    dm_tpe = DM_footprint_agg["materials"].flatten()
     dm_tpe.append(DM_footprint_agg['ecological'], "Variables")
-    dm_tpe.append(DM_footprint_agg['gwp'], "Variables")
+    dm_tpe.append(DM_footprint_agg['global-warming-potential'], "Variables")
     dm_tpe.append(DM_footprint_agg['water'], "Variables")
-    dm_tpe.append(DM_footprint_agg['air-pollutant'].flatten(), "Variables")
-    dm_tpe.append(DM_footprint_agg['heavy-metals-to-soil'].flatten(), "Variables")
+    dm_tpe.append(DM_footprint_agg['air-pollution'].flatten(), "Variables")
+    dm_tpe.append(DM_footprint_agg['heavy-metals-in-soil'].flatten(), "Variables")
     dm_tpe.append(DM_footprint_agg['energy-demand'], "Variables")
     
     # # checks
-    # DM_footprint_agg["material-footprint"].datamatrix_plot(stacked=True)
+    # DM_footprint_agg["materials"].datamatrix_plot(stacked=True)
     # DM_footprint_agg['ecological'].datamatrix_plot()
     # DM_footprint_agg['gwp'].datamatrix_plot()
     # DM_footprint_agg['water'].datamatrix_plot()
@@ -187,7 +175,7 @@ def lca(lever_setting, years_setting, DM_input, interface = Interface(), calibra
     DM_ots_fts = read_data(DM_input, lever_setting)
 
     # get interfaces
-    cntr_list = DM_ots_fts["footprint"].col_labels['Country']
+    cntr_list = DM_ots_fts["footprint"]["materials"].col_labels['Country']
     DM_transport = get_interface(current_file_directory, interface, "transport", "lca", cntr_list)
     DM_buildings = get_interface(current_file_directory, interface, "buildings", "lca", cntr_list)
     DM_industry = get_interface(current_file_directory, interface, "industry", "lca", cntr_list)
@@ -209,10 +197,10 @@ def lca(lever_setting, years_setting, DM_input, interface = Interface(), calibra
     DM_footprint_agg = {}
     for key in DM_footprint.keys():
         DM_footprint_agg[key] = get_footprint(key, DM_demand, DM_footprint[key])
-    DM_footprint_agg["energy-demand"] = DM_footprint_agg['energy-demand-elec'].copy()
-    DM_footprint_agg["energy-demand"].append(DM_footprint_agg["energy-demand-ff"], "Variables")
-    del DM_footprint_agg['energy-demand-elec']
-    del DM_footprint_agg['energy-demand-ff']
+    DM_footprint_agg["energy-demand"] = DM_footprint_agg['ene-demand-elec'].copy()
+    DM_footprint_agg["energy-demand"].append(DM_footprint_agg["ene-demand-ff"], "Variables")
+    del DM_footprint_agg['ene-demand-elec']
+    del DM_footprint_agg['ene-demand-ff']
     
     # pass to TPE
     results_run = variables_for_tpe(DM_footprint_agg)
@@ -227,7 +215,7 @@ def local_lca_run():
     lever_setting = json.load(f)[0]
     years_setting = [1990, 2023, 2025, 2050, 5]
 
-    country_list = ["Vaud"]
+    country_list = ["EU27"]
 
     sectors = ['lca']
     
