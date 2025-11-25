@@ -96,6 +96,17 @@
     "lever_eol-waste-management": 1,
     "lever_eol-material-recovery": 1,
     "lever_harvest-rate": 2,
-    "lever_footprint" : 1
+    "lever_footprint" : 1,
+    "lever_ssr-liv": 1,
+    "lever_ssr-feed": 1,
+    "lever_livestock-losses": 1,
+    "lever_livestock-yield": 1,
+    "lever_slaughter-rates": 1,
+    "lever_livestock-density": 1,
+    "lever_livestock-enteric": 1,
+    "lever_livestock-manure": 1,
+    "lever_feed-ration": 1,
+    "lever_alt-protein": 1,
+    "lever_ruminant-feed": 1
   }
 ]

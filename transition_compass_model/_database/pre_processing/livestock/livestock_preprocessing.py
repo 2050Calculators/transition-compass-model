@@ -116,9 +116,10 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
         df_ssr = pd.concat([df_ssr_1990_2013, df_ssr_2010_2021])
 
         # Renaming the items for name matching
+
         df_ssr.loc[
-            df_ssr['Item'].str.contains('Rice \(Milled Equivalent\)', case=False,
-                                                   na=False), 'Item'] = 'Rice and products'
+          df_ssr['Item'].str.contains('Rice (Milled Equivalent)', case=False,
+                                      na=False, regex=False),'Item'] = 'Rice and products'
 
         df_ssr.to_csv(file_dict['ssr'], index=False)
 
@@ -236,18 +237,19 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
                                   values='Value').reset_index()
 
     # Fill na with 0
-    pivot_df['Production'].fillna(0.0, inplace=True)
-    pivot_df['Import'].fillna(0.0, inplace=True)
-    pivot_df['Export'].fillna(0.0, inplace=True)
-    pivot_df['Feed'].fillna(0.0, inplace=True)
-    pivot_df['Food'].fillna(0.0, inplace=True)
-    pivot_df['Residuals'].fillna(0.0, inplace=True)
-    pivot_df['Processing'].fillna(0.0, inplace=True)
-    pivot_df['Other uses (non-food)'].fillna(0.0, inplace=True)
-    pivot_df['Stock Variation'].fillna(0.0, inplace=True)
-    pivot_df_feed['Production'].fillna(0.0, inplace=True)
-    pivot_df_feed['Import'].fillna(0.0, inplace=True)
-    pivot_df_feed['Export'].fillna(0.0, inplace=True)
+    cols = [
+      'Production', 'Import', 'Export', 'Feed', 'Food',
+      'Residuals', 'Processing', 'Other uses (non-food)', 'Stock Variation'
+    ]
+
+    for c in cols:
+      pivot_df[c] = pivot_df[c].fillna(0.0)
+
+    # For pivot_df_feed (only 3 columns)
+    cols_feed = ['Production', 'Import', 'Export']
+
+    for c in cols_feed:
+      pivot_df_feed[c] = pivot_df_feed[c].fillna(0.0)
 
     # Create a copy for feed pre-processing and drop irrelevant columns
     df_csl_feed = pd.concat([pivot_df, pivot_df_feed])
@@ -255,7 +257,8 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     df_csl_feed = df_csl_feed[columns_to_filter].copy()
 
     # Create a copy for milk feed food ratio (fxa)
-    pivot_df_milk = pivot_df[pivot_df['Item'] =='Milk - Excluding Butter'].copy()
+    df_ffr_milk = pivot_df[pivot_df['Item'] =='Milk - Excluding Butter']
+    df_ffr_milk = df_ffr_milk.copy()
 
     # 2: Compute the SSR [%]
     # (previously with special condition for milk because we
@@ -334,7 +337,7 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_ssr_feed = DataMatrix.create_from_df(df_ots, num_cat=1)
 
-    return dm_ssr_liv, dm_ssr_feed, df_csl_feed
+    return dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk
 
 # CalculationLeaf TRADE ORIGIN
 def trade_origin_processing(years_ots, list_countries_calc, file_dict):
@@ -457,7 +460,7 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   df_trade_agg = pd.merge(df_trade, df_lsu, on='Item')
 
   # Aggregating
-  df_trade_agg['Value'].fillna(0.0)
+  df_trade_agg['Value'] = df_trade_agg['Value'].fillna(0.0)
   df_trade_agg = df_trade_agg.groupby(['variables', 'Partner Countries', 'Reporter Countries', 'Year'], as_index=False)['Value'].sum()
 
   # Aggregate by countries -----------------------------------------------------
@@ -506,6 +509,9 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   df_ots, df_fts = database_to_df(df_trade_agg, lever, level='all')
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
   dm_liv_trade_origin = DataMatrix.create_from_df(df_ots, num_cat=1)
+
+  # Add Switzerland as dummy
+  dm_liv_trade_origin.add(0.0, dummy=True, col_label=['Switzerland'], dim='Country')
 
   return dm_liv_trade_origin
 
@@ -1140,7 +1146,7 @@ def livestock_losses():
                                        values='Value').reset_index()
 
   # Replace NaN with 0
-  pivot_df['Losses'].fillna(0.0, inplace=True)
+  pivot_df['Losses'] = pivot_df['Losses'].fillna(0.0)
 
   # 2: Compute the Losses [%] (really it's unit less)
   pivot_df['Losses[%]'] = 1 + (pivot_df['Losses'] / pivot_df['Production'])
@@ -1197,7 +1203,7 @@ def feed_ration(df_feed_ration, cdm_efficiency, cdm_kcal):
   # ---------------------------------------------------------------------------------------------------------------------
 
   # Fill nan with zeros
-  df_feed_ration['Feed'].fillna(0, inplace=True)
+  df_feed_ration['Feed'] = df_feed_ration['Feed'].fillna(0.0)
 
   # Add a column with the total feed (per country and year)
   df_feed_ration['Total feed'] = df_feed_ration.groupby(['Area', 'Year'])[
@@ -1426,8 +1432,8 @@ def yield_slaughter_rate(df_liv_pop, list_countries_calc):
 
     # "Merging" the columns 'Laying' and 'Milk Animals' into 'Producing Animals'
     # Replace NaN with 0
-    pivot_df['Laying'].fillna(0, inplace=True)
-    pivot_df['Milk Animals'].fillna(0, inplace=True)
+    pivot_df['Laying'] = pivot_df['Laying'].fillna(0.0)
+    pivot_df['Milk Animals'] = pivot_df['Milk Animals'].fillna(0.0)
 
     # Sum the columns to create the 'Producing Animals' column
     pivot_df['Producing Animals'] = pivot_df['Laying'] + pivot_df['Milk Animals']
@@ -1537,8 +1543,8 @@ def yield_slaughter_rate(df_liv_pop, list_countries_calc):
                                            values='Value').reset_index()
 
     # Replace NaN with 0
-    pivot_df_slau['Producing Animals/Slaughtered'].fillna(0, inplace=True)
-    pivot_df_slau['Production'].fillna(0, inplace=True)
+    pivot_df_slau['Producing Animals/Slaughtered'] = pivot_df_slau['Producing Animals/Slaughtered'].fillna(0.0)
+    pivot_df_slau['Production'] = pivot_df_slau['Production'].fillna(0.0)
 
     # Create a copy for slau rate
     df_slau_meat = pivot_df_slau.copy()
@@ -1551,7 +1557,7 @@ def yield_slaughter_rate(df_liv_pop, list_countries_calc):
     pivot_df_slau = pivot_df_slau.drop(columns=['Producing Animals/Slaughtered', 'Production'])
 
     # Replace NaN with 0
-    pivot_df_slau['Yield [t/lsu]'].fillna(0, inplace=True)
+    pivot_df_slau['Yield [t/lsu]'] = pivot_df_slau['Yield [t/lsu]'].fillna(0.0)
 
     # ----------------------------------------------------------------------------------------------------------------------
     # SLAUGHTERED RATE (MEAT, EGGS & MILK) --------------------------------------------------------------------------------
@@ -1584,7 +1590,7 @@ def yield_slaughter_rate(df_liv_pop, list_countries_calc):
 
     # Slaughtered animals [%] = 'Producing Animals/Slaughtered' / 'Value' (value = stocks [lsu])
     df_slau['Slaughtered animals [%]'] = df_slau['Producing Animals']/df_slau['Value']
-    df_slau['Slaughtered animals [%]'].fillna(0, inplace=True)
+    df_slau['Slaughtered animals [%]'] = df_slau['Slaughtered animals [%]'].fillna(0.0)
 
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
 
@@ -1947,8 +1953,9 @@ def livestock_calibration(list_countries_calc, dm_losses):
 
     # Renaming the items for name matching
     df_domestic_supply_1990_2013.loc[
-        df_domestic_supply_1990_2013['Item'].str.contains('Rice \(Milled Equivalent\)', case=False,
-                                               na=False), 'Item'] = 'Rice and products'
+      df_domestic_supply_1990_2013['Item'].str.contains(
+        'Rice (Milled Equivalent)', case=False, regex=False
+      ), 'Item'] = 'Rice and products'
 
     # Concatenating all the years together
     df_domestic_supply = pd.concat([df_domestic_supply_1990_2013, df_domestic_supply_2010_2022])
@@ -2173,6 +2180,56 @@ def manure_calibration(list_countries_calc):
 
     return dm_cal_liv_emissions, df_liv_emissions
 
+# CalculationLeaf FXA - MILK FEED FOOD RATIO---------------------------------------------------------------------------------------------
+def fxa_ffr_milk(df_ffr_milk):
+
+  # ffr ratio [-] = (Feed + Food + Processing) / Food
+  df_ffr_milk['value'] = (df_ffr_milk['Feed'] + df_ffr_milk['Food'] + df_ffr_milk['Processing']) / df_ffr_milk['Food']
+  df_ffr_milk = df_ffr_milk[['Area', 'Year', 'Item', 'value']]
+
+  # Calc Formatting ------------------------------------------------------------
+
+  # Food item name matching with dictionary
+  # Read excel file
+  df_dict = pd.read_excel(
+    'dictionaries/dictionnary_agriculture_landuse.xlsx',
+    sheet_name='fxa')
+
+  # Renaming existing columns (geoscale, timsecale, value)
+  df_ffr_milk = df_ffr_milk.rename(columns={'Area': 'geoscale', 'Year': 'timescale'})
+
+  # Merge based on 'Item'
+  df_ffr_milk = pd.merge(df_dict, df_ffr_milk, on='Item')
+
+  # Drop the 'Item' column
+  df_ffr_milk = df_ffr_milk.drop(columns=['Item'])
+
+  # Adding the columns module, lever, level and string-pivot at the correct places
+  lever = 'dummy'
+  df_ffr_milk['module'] = lever
+  df_ffr_milk['lever'] = lever
+  df_ffr_milk['level'] = 0
+
+  # Rename countries to Pathaywcalc name
+  df_ffr_milk['geoscale'] = df_ffr_milk['geoscale'].replace(
+    'United Kingdom of Great Britain and Northern Ireland', 'United Kingdom')
+  df_ffr_milk['geoscale'] = df_ffr_milk['geoscale'].replace(
+    'Netherlands (Kingdom of the)',
+    'Netherlands')
+  df_ffr_milk['geoscale'] = df_ffr_milk['geoscale'].replace(
+    'Czechia', 'Czech Republic')
+
+  # Extrapolation
+  df_ffr_milk = linear_fitting_ots_db(df_ffr_milk, years_ots,
+                                             countries='all')
+
+  # Format as dm
+  df_ots, df_fts = database_to_df(df_ffr_milk, lever, level='all')
+  df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+  dm_fxa_ffr_milk = DataMatrix.create_from_df(df_ots, num_cat=1)
+
+  return dm_fxa_ffr_milk
+
 # CalculationLeaf FXA - MANURE EMISSION FACTORS ------------------------------
 
 def manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa):
@@ -2181,10 +2238,9 @@ def manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure
    # Filter & Rename
    df_manure_n_fxa = df_manure_n_fxa[['Area', 'Year', 'Aggregation','Manure left on pasture (N content)',
                      'Manure applied to soils (N content)', 'Losses from manure treated (N content)']]
-   df_manure_n_fxa.rename(columns={'Manure left on pasture (N content)':'N2O Pasture',
+   df_manure_n_fxa = df_manure_n_fxa.rename(columns={'Manure left on pasture (N content)':'N2O Pasture',
                                    'Manure applied to soils (N content)':'N2O Applied',
-                                   'Losses from manure treated (N content)':'N2O Treated'},
-                          inplace=True)
+                                   'Losses from manure treated (N content)':'N2O Treated'})
 
    # Melt df
    df_melted = pd.melt(df_manure_n_fxa, id_vars=['Area', 'Year', 'Aggregation'],
@@ -2224,7 +2280,7 @@ def manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure
    df_manure_fxa = df_manure_fxa[['Area', 'Year', 'Item', 'value']]
 
    # Fill na with 0
-   df_manure_fxa['value'].fillna(0.0, inplace=True)
+   df_manure_fxa['value'] = df_manure_fxa['value'].fillna(0.0)
 
    # CH4 EMISSIONS -------------------------------------------------------------
    # Format
@@ -2359,8 +2415,9 @@ def feed_calibration(list_countries_calc):
 
     # Renaming the items for name matching
     df_feed_1990_2013.loc[
-        df_feed_1990_2013['Item'].str.contains('Rice \(Milled Equivalent\)', case=False,
-                                                          na=False), 'Item'] = 'Rice and products'
+      df_feed_1990_2013['Item'].str.contains(
+        'Rice (Milled Equivalent)', case=False, regex=False
+      ), 'Item'] = 'Rice and products'
 
     # Concatenating all the years together
     df_feed = pd.concat([df_feed_1990_2013, df_feed_2010_2022])
@@ -2638,7 +2695,7 @@ def fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal):
       ['variables', 'diet_eat-lancet-phd-2025', 'diet_eat-lancet-phd-2019', 'diet_sfp-2024']]
 
   # Fill nan with 0.0
-  df_fts_diet.fillna(0.0, inplace=True)
+  df_fts_diet = df_fts_diet.fillna(0.0)
 
   # Melt
   df_fts_diet = df_fts_diet.melt(
@@ -2742,7 +2799,8 @@ def datamatrix_to_pickle():
   dict_fxa['ef_liv_N2O-emission'] = dm_fxa_N2O
   dict_fxa['ef_liv_CH4-emission_treated'] = dm_fxa_CH4
   dict_fxa['liv_manure_n-stock'] = dm_fxa_manure_yield
-  #dict_fxa['fxa']['ratio_milk']
+  dict_fxa['ratio_milk'] = dm_fxa_ffr_milk
+
 
   # CalibrationDataToDatamatrix ------------------------------------------------
 
@@ -2767,7 +2825,7 @@ def datamatrix_to_pickle():
   # 'slaughter-rates'
   dict_ots['slaughter-rates'] = dm_slaughter_rates
   # livestock-density
-  dict_ots['livestock-density'] = dm_liv_yield
+  dict_ots['livestock-density'] = dm_density
   # livestock-enteric
   dict_ots['livestock-enteric'] = dm_enteric
   # livestock-manure
@@ -2995,7 +3053,8 @@ file_dict = {'ssr': 'data/faostat/ssr.csv', 'cake': 'data/faostat/ssr_cake.csv',
              'trade': 'data/faostat/trade.csv'}
 
 cdm_efficiency, cdm_kcal = constant()
-dm_ssr_liv, dm_ssr_feed, df_csl_feed = self_sufficiency_processing(years_ots, list_countries_calc, file_dict)
+dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk = self_sufficiency_processing(years_ots, list_countries_calc, file_dict)
+dm_fxa_ffr_milk = fxa_ffr_milk(df_ffr_milk)
 dm_liv_trade_origin = trade_origin_processing(years_ots, list_countries_calc, file_dict)
 dm_losses = livestock_losses()
 dm_cal_dom_prod, dm_cal_liv_pop, df_liv_pop = livestock_calibration(list_countries_calc, dm_losses)

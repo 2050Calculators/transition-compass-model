@@ -551,8 +551,8 @@ def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, write_pi
 
 
 def dietaryhabits_local_run():
-    country_list = ['Switzerland', 'Vaud']
-    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'dietary-habits')
+    country_list = ['Switzerland']
+    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'dietary-habits', filter_country=True)
     years_setting, lever_setting = init_years_lever()
     dietaryhabits(lever_setting, years_setting, DM_input['dietary-habits'], tpe_scenario='diet-split-kcal', write_pickle=True)
 
