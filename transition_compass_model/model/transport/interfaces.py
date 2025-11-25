@@ -49,7 +49,6 @@ def tra_industry_interface(
       dm_fre.col_labels["Categories2"])
   )
   dm_veh.add(0, dummy=True, dim="Categories2", col_label=["ICE"])
-  dm_fre.add(0, dummy=True, dim="Categories2", col_label=["H2", "kerosene"])
   dm_veh.append(dm_fre, "Categories1")
   # Rename kerosene and H2 as ICE
   dm_veh.rename_col('ICE', 'ICE_old', 'Categories2')
