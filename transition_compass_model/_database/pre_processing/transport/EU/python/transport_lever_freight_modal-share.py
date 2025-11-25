@@ -57,11 +57,25 @@ dict_extract = {"database" : "Transport",
                                     "Heavy goods vehicles"],
                 "calc_names" : ["HDVL","HDVH"]}
 dm_hdvl = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+# df_check = dm_hdvl.write_df()
 
-# make hdvm as average between hdvh and hdvl (as it's tkm, the medium ones should carry around the average)
-dm_temp = dm_hdvl.groupby({"HDVM" : ["HDVL","HDVH"]}, 
-                          dim='Variables', aggregation = "mean", regex=False, inplace=False)
-dm_hdvl.append(dm_temp, "Variables")
+# # make hdvm as average between hdvh and hdvl (as it's tkm, the medium ones should carry around the average)
+# dm_temp = dm_hdvl.groupby({"HDVM" : ["HDVL","HDVH"]}, 
+#                           dim='Variables', aggregation = "mean", regex=False, inplace=False)
+# dm_hdvl.append(dm_temp, "Variables")
+# dm_hdvl.sort("Variables")
+
+# It seems that in JRC HDVL are all rigid trucks (majority), while HDVH are the articulated trucks (small percentage)
+# I will assume that 60% of rigid trucks are medium weight (medium and heavy rigid below)
+# | EU mass class           | GVW       | Fraction of rigids |
+# | ----------------------- | --------- | ------------------ |
+# | **HDVL** (light)        | 3.5–7.5 t | ~40%               |
+# | **HDVM** (medium)       | 7.5–16 t  | ~45%               |
+# | **HDVH* (heavy rigid)** | >16 t     | ~15%               |
+arr_medium = dm_hdvl[:,:,"HDVL"] * 0.6
+arr_light = dm_hdvl[:,:,"HDVL"] * 0.4
+dm_hdvl[:,:,"HDVL"] = arr_light
+dm_hdvl.add(arr_medium, "Variables", "HDVM", "vehicles")
 dm_hdvl.sort("Variables")
 
 ###############
@@ -80,25 +94,46 @@ dm_hdvl.sort("Variables")
 # note: I get it from eurostat as jrc does not have data on fleet iww, so I will
 # get both fleet and tkm from eurostat
 
-# get data on tkm from eurostat
-code = "iww_go_atyve"
-eurostat.get_pars(code)
-filter = {'geo\\TIME_PERIOD': list(dict_iso2.keys()),
-          'tra_cov' : "TOTAL",
-          'vessel': ['BAR_SP'],
-          'unit' : ['MIO_TKM']}
-mapping_dim = {'Country': 'geo\\TIME_PERIOD',
-                'Variables': 'vessel'}
-dm_iww = get_data_api_eurostat(code, filter, mapping_dim, 'mio tkm')
-dm_iww = dm_iww.filter({"Years" : list(range(2000,2021+1,1))})
-dm_iww = dm_iww.groupby({"IWW" : ['BAR_SP']}, "Variables")
-# df = dm_iww_tkm.write_df()
+# # get data on tkm from eurostat
+# code = "iww_go_atyve"
+# eurostat.get_pars(code)
+# filter = {'geo\\TIME_PERIOD': list(dict_iso2.keys()),
+#           'tra_cov' : "TOTAL",
+#           'vessel': ['BAR_SP'],
+#           'unit' : ['MIO_TKM']}
+# mapping_dim = {'Country': 'geo\\TIME_PERIOD',
+#                 'Variables': 'vessel'}
+# dm_iww = get_data_api_eurostat(code, filter, mapping_dim, 'mio tkm')
+# dm_iww = dm_iww.filter({"Years" : list(range(2000,2021+1,1))})
+# dm_iww = dm_iww.groupby({"IWW" : ['BAR_SP']}, "Variables")
+# # df = dm_iww_tkm.write_df()
 
-# add other countries as missing
-all_countries = np.array(dm_hdvl.col_labels["Country"])
-missing_countries = all_countries[[c not in dm_iww.col_labels["Country"] for c in all_countries]]
-dm_iww.add(np.nan, "Country", missing_countries, dummy=True)
-dm_iww.sort("Country")
+# get data on vkm from jrc
+def get_specific_jrc_data(country_code, country_name, row_start, row_end, unit, variable = "aviation_kerosene", 
+                          database = "JRC-IDEES-2021_x1990_Aviation_EU"):
+    
+    filepath_jrc = os.path.join(current_file_directory, f"../../../industry/eu/data/JRC-IDEES-2021/EU27/{database}.xlsx")
+    df_temp = pd.read_excel(filepath_jrc, sheet_name=country_code)
+    df_temp = df_temp.iloc[row_start:row_end,:]
+    indexes = df_temp.columns[0]
+    df_temp = pd.melt(df_temp, id_vars = indexes, var_name='year')
+    df_temp.columns = ["Country","Years",f"{variable}[{unit}]"]
+    df_temp["Country"] = country_name
+    
+    return df_temp
+country_codes = list(dict_iso2_jrc.keys())
+country_names = list(dict_iso2_jrc.values())
+df_iww = pd.concat(
+    [get_specific_jrc_data(code, name, 3, 4, "mio tkm", "IWW", "JRC-IDEES-2021_x1990_Navigation_Domestic") 
+     for code,name in zip(country_codes, country_names)],
+    ignore_index=True)
+dm_iww = DataMatrix.create_from_df(df_iww, 0)
+
+# # add other countries as missing
+# all_countries = np.array(dm_hdvl.col_labels["Country"])
+# missing_countries = all_countries[[c not in dm_iww.col_labels["Country"] for c in all_countries]]
+# dm_iww.add(np.nan, "Country", missing_countries, dummy=True)
+# dm_iww.sort("Country")
 
 # substitute 0 with na
 dm_iww.array[dm_iww.array == 0] = np.nan
@@ -109,15 +144,22 @@ dm_iww.array[dm_iww.array == 0] = np.nan
 ##### aviation #####
 ####################
 
-# get data
-dict_extract = {"database" : "Transport",
-                "sheet" : "TrAvia_act",
-                "variable" : "Freight transport (mio tkm)",
-                "sheet_last_row" : "Freight transport (mio tkm)",
-                "sub_variables" : ["Freight transport (mio tkm)"],
-                "calc_names" : ["aviation"]}
-dm_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
-dm_avi.sort("Country")
+# # get data
+# dict_extract = {"database" : "Transport",
+#                 "sheet" : "TrAvia_act",
+#                 "variable" : "Freight transport (mio tkm)",
+#                 "sheet_last_row" : "Freight transport (mio tkm)",
+#                 "sub_variables" : ["Freight transport (mio tkm)"],
+#                 "calc_names" : ["aviation"]}
+# dm_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+# dm_avi.sort("Country")
+
+# get data from jrc
+df_avi = pd.concat(
+    [get_specific_jrc_data(code, name, 6, 7, "mio tkm", "aviation", "JRC-IDEES-2021_x1990_Aviation_EU") 
+     for code,name in zip(country_codes, country_names)],
+    ignore_index=True)
+dm_avi = DataMatrix.create_from_df(df_avi, 0)
 
 ####################
 ##### maritime #####
@@ -132,29 +174,37 @@ dm_avi.sort("Country")
 #                 "calc_names" : ["marine"]}
 # dm_mar = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 
-# get data
-df = pd.read_csv("../data/unctad/US_SeaborneTrade.csv")
-df["Economy Label"].unique()
-countries = dm_avi.col_labels["Country"]
-missing_countries = np.array(countries)[[c not in df["Economy Label"].unique() for c in countries]]
-countries = countries + ['European Union (2020 …)','Czechia','Netherlands (Kingdom of the)']
-df = df.loc[df["Economy Label"].isin(countries),:]
-df = df.loc[df["CargoType Label"] == 'Total goods loaded',:]
-old_names = ['European Union (2020 …)','Czechia','Netherlands (Kingdom of the)']
-new_names = ["EU27", "Czech Republic", "Netherlands"]
-for o,n in zip(old_names, new_names):
-    df.loc[df["Economy Label"] == o,"Economy Label"] = n
+# # get data
+# df = pd.read_csv("../data/unctad/US_SeaborneTrade.csv")
+# df["Economy Label"].unique()
+# countries = dm_avi.col_labels["Country"]
+# missing_countries = np.array(countries)[[c not in df["Economy Label"].unique() for c in countries]]
+# countries = countries + ['European Union (2020 …)','Czechia','Netherlands (Kingdom of the)']
+# df = df.loc[df["Economy Label"].isin(countries),:]
+# df = df.loc[df["CargoType Label"] == 'Total goods loaded',:]
+# old_names = ['European Union (2020 …)','Czechia','Netherlands (Kingdom of the)']
+# new_names = ["EU27", "Czech Republic", "Netherlands"]
+# for o,n in zip(old_names, new_names):
+#     df.loc[df["Economy Label"] == o,"Economy Label"] = n
 
-# make dm
-df.columns
-df = df.loc[:,["Year","Economy Label","Metric tons in thousands"]]
-df.rename(columns={"Economy Label":"Country","Year" : "Years","Metric tons in thousands":"marine[tmt]"},inplace=True)
-dm_mar = DataMatrix.create_from_df(df, 0)
-dm_mar.change_unit("marine", 1000, "tmt", "t") # Convert metric tons (thousands) to tonnes
-dm_mar.array = dm_mar.array*3000 # assume an average haul distance (e.g., 3000 km for Europe seaborne trade)
-dm_mar.units["marine"] = "tkm"
-dm_mar.drop("Years",[2022,2023])
-dm_mar.change_unit("marine", 1e-6, "tkm", "mio tkm") # Convert metric tons (thousands) to tonnes
+# # make dm
+# df.columns
+# df = df.loc[:,["Year","Economy Label","Metric tons in thousands"]]
+# df.rename(columns={"Economy Label":"Country","Year" : "Years","Metric tons in thousands":"marine[tmt]"},inplace=True)
+# dm_mar = DataMatrix.create_from_df(df, 0)
+# dm_mar.change_unit("marine", 1000, "tmt", "t") # Convert metric tons (thousands) to tonnes
+# dm_mar.array = dm_mar.array*3000 # assume an average haul distance (e.g., 3000 km for Europe seaborne trade)
+# dm_mar.units["marine"] = "tkm"
+# dm_mar.drop("Years",[2022,2023])
+# dm_mar.change_unit("marine", 1e-6, "tkm", "mio tkm") # Convert metric tons (thousands) to tonnes
+
+# get data from jrc
+df_mar = pd.concat(
+    [get_specific_jrc_data(code, name, 1, 2, "mio tkm", "marine", "JRC-IDEES-2021_x1990_Navigation_International_EU") 
+     for code,name in zip(country_codes, country_names)],
+    ignore_index=True)
+dm_mar = DataMatrix.create_from_df(df_mar, 0)
+
 
 ################
 ##### RAIL #####
@@ -174,12 +224,16 @@ dm_tkm_rail = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 ########################
 
 dm_tkm = dm_hdvl.copy()
+dm_tkm.add(np.nan, "Years", list(range(1990,1999+1)), "number", True)
+dm_tkm.sort("Years")
 dm_tkm.append(dm_iww,"Variables")
 dm_tkm.append(dm_avi,"Variables")
 dm_tkm.append(dm_mar,"Variables")
+dm_tkm_rail.add(np.nan, "Years", list(range(1990,1999+1)), "number", True)
 dm_tkm.append(dm_tkm_rail,"Variables")
 dm_tkm.sort("Variables")
 dm_tkm.sort("Country")
+dm_tkm.sort("Years")
 
 # check
 # dm_tkm.filter({"Country" : ["EU27"]}).datamatrix_plot()
@@ -264,7 +318,7 @@ dm_tkm_pc = dm_tkm.normalise("Categories1", inplace=False, keep_original=False)
 dm_tkm_pc.rename_col("tra_freight_modal-share_share","tra_freight_modal-share","Variables")
 
 # check
-# dm_tkm.filter({"Country" : ["EU27"]}).datamatrix_plot()
+# dm_tkm_pc.filter({"Country" : ["EU27"]}).datamatrix_plot(stacked=True)
 # df = dm_tkm_pc.group_all("Categories1", inplace=False).write_df()
 
 ################
