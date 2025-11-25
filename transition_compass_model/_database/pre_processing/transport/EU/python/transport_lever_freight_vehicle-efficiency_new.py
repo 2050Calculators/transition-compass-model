@@ -2,10 +2,11 @@
 # packages
 from model.common.auxiliary_functions import linear_fitting
 from _database.pre_processing.routine_JRC import get_jrc_data
-from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
+from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict, DataMatrix
 import pickle
 import os
 import numpy as np
+import pandas as pd
 import warnings
 warnings.simplefilter("ignore")
 
@@ -135,21 +136,44 @@ dm_eneff_new.sort("Years")
 ##### IWW #####
 ###############
 
-# assumption: energy efficiency of new is the same of energy efficiency of stock
+def get_specific_jrc_data(country_code, country_name, row_start, row_end, unit, variable = "aviation_kerosene", 
+                          database = "JRC-IDEES-2021_x1990_Aviation_EU"):
+    
+    filepath_jrc = os.path.join(current_file_directory, f"../../../industry/eu/data/JRC-IDEES-2021/EU27/{database}.xlsx")
+    df_temp = pd.read_excel(filepath_jrc, sheet_name=country_code)
+    df_temp = df_temp.iloc[row_start:row_end,:]
+    indexes = df_temp.columns[0]
+    df_temp = pd.melt(df_temp, id_vars = indexes, var_name='year')
+    df_temp.columns = ["Country","Years",f"{variable}[{unit}]"]
+    df_temp["Country"] = country_name
+    
+    return df_temp
 
-dict_extract = {"database" : "Transport",
-                "sheet" : "TrNavi_ene",
-                "variable" : "Vehicle-efficiency (kgoe/100 km)",
-                "sheet_last_row" : "Inland waterways",
-                "sub_variables" : ["Inland waterways"],
-                "calc_names" : ["IWW"]}
-dm_iww = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+country_codes = list(dict_iso2_jrc.keys())
+country_names = list(dict_iso2_jrc.values())
+
+# get data from jrc
+df_iww = pd.concat(
+    [get_specific_jrc_data(code, name, 46, 47, "kgoe/100 km", "IWW_ICE", "JRC-IDEES-2021_x1990_Navigation_Domestic") 
+     for code,name in zip(country_codes, country_names)],
+    ignore_index=True)
+dm_iww = DataMatrix.create_from_df(df_iww, 0)
+
+# # assumption: energy efficiency of new is the same of energy efficiency of stock
+
+# dict_extract = {"database" : "Transport",
+#                 "sheet" : "TrNavi_ene",
+#                 "variable" : "Vehicle-efficiency (kgoe/100 km)",
+#                 "sheet_last_row" : "Inland waterways",
+#                 "sub_variables" : ["Inland waterways"],
+#                 "calc_names" : ["IWW"]}
+# dm_iww = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 
 # substitute 0 with nans (to avoid that zeroes get in the averages)
 dm_iww.array[dm_iww.array==0] = np.nan
 
-# assuming most of it is ICE
-dm_iww.rename_col("IWW","IWW_ICE","Variables")
+# # assuming most of it is ICE
+# dm_iww.rename_col("IWW","IWW_ICE","Variables")
 
 # make other variables as missing
 dm_iww.deepen()
@@ -162,24 +186,27 @@ dm_iww.sort("Categories1")
 ##### aviation #####
 ####################
 
-# assumption: energy efficiency of new is theoretical energy efficiency of stock (which is without the adjustment to match energy balances)
-# in theory it's not, but this one is lower than the effective, and the assumption is that this difference
-# is the same there would be between stock efficiency and new efficiency
+df_avi = pd.concat([get_specific_jrc_data(code, name, 138, 139, "kgoe/100 km") for code,name in zip(country_codes, country_names)],ignore_index=True)
+dm_avi = DataMatrix.create_from_df(df_avi, 0)
 
-# get data
-dict_extract = {"database" : "Transport",
-                "sheet" : "TrAvia_ene",
-                "variable" : "Vehicle-efficiency - theoretical (kgoe/100 km)*",
-                "sheet_last_row" : "Freight transport",
-                "sub_variables" : ["Freight transport"],
-                "calc_names" : ["aviation"]}
-dm_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+# # assumption: energy efficiency of new is theoretical energy efficiency of stock (which is without the adjustment to match energy balances)
+# # in theory it's not, but this one is lower than the effective, and the assumption is that this difference
+# # is the same there would be between stock efficiency and new efficiency
 
-# assuming most planes are gasoline
-dm_avi.rename_col("aviation","aviation_ICE","Variables")
+# # get data
+# dict_extract = {"database" : "Transport",
+#                 "sheet" : "TrAvia_ene",
+#                 "variable" : "Vehicle-efficiency - theoretical (kgoe/100 km)*",
+#                 "sheet_last_row" : "Freight transport",
+#                 "sub_variables" : ["Freight transport"],
+#                 "calc_names" : ["aviation"]}
+# dm_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+
+# # assuming most planes are gasoline
+# dm_avi.rename_col("aviation","aviation_ICE","Variables")
 dm_avi.deepen()
 
-# assuming that all else is nan (there should be kerosene but we do not have it in the model)
+# assuming that all else is nan
 categories2_missing = categories2_all.copy()
 for cat in dm_avi.col_labels["Categories1"]: categories2_missing.remove(cat)
 dm_avi.add(np.nan, col_label=categories2_missing, dummy=True, dim="Categories1")
@@ -189,22 +216,31 @@ dm_avi.sort("Categories1")
 ##### maritime #####
 ####################
 
-# assumption: energy efficiency of new is the same of energy efficiency of stock
+# get data from jrc
+# note: I assume that inside international EU file, the voice "intra-EU27" includes also the 
+# voice "coastal shipping" mentioned in the domestic EU file
+df_mar = pd.concat(
+    [get_specific_jrc_data(code, name, 46, 47, "kgoe/100 km", "marine_ICE", "JRC-IDEES-2021_x1990_Navigation_International_EU") 
+     for code,name in zip(country_codes, country_names)],
+    ignore_index=True)
+dm_mar = DataMatrix.create_from_df(df_mar, 0)
 
-# get data on energy efficiency
-dict_extract = {"database" : "Transport",
-                "sheet" : "MBunk_ene",
-                "variable" : "Vehicle-efficiency (kgoe/100 km)",
-                "sheet_last_row" : "Intra-EEA",
-                "sub_variables" : ["Intra-EEA"],
-                "calc_names" : ["marine"]}
-dm_mar = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+# # assumption: energy efficiency of new is the same of energy efficiency of stock
+
+# # get data on energy efficiency
+# dict_extract = {"database" : "Transport",
+#                 "sheet" : "MBunk_ene",
+#                 "variable" : "Vehicle-efficiency (kgoe/100 km)",
+#                 "sheet_last_row" : "Intra-EEA",
+#                 "sub_variables" : ["Intra-EEA"],
+#                 "calc_names" : ["marine"]}
+# dm_mar = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 
 # substitute 0 with nans (to avoid that zeroes get in the averages)
 dm_mar.array[dm_mar.array==0] = np.nan
 
-# assuming they are all diesel
-dm_mar.rename_col("marine","marine_ICE","Variables")
+# # assuming they are all diesel
+# dm_mar.rename_col("marine","marine_ICE","Variables")
 
 # make other variables
 dm_mar.deepen()
@@ -259,9 +295,13 @@ dm_eneff_new_rail.sort("Categories1")
 ##### PUT TOGETHER #####
 ########################
 
+dm_eneff_new.add(np.nan, "Years", list(range(1990,1999+1)), dummy=True)
+dm_eneff_new.sort("Years")
 dm_eneff_new.append(dm_iww,"Variables")
 dm_eneff_new.append(dm_avi,"Variables")
 dm_eneff_new.append(dm_mar,"Variables")
+dm_eneff_new_rail.add(np.nan, "Years", list(range(1990,1999+1)), dummy=True)
+dm_eneff_new_rail.sort("Years")
 dm_eneff_new.append(dm_eneff_new_rail,"Variables")
 dm_eneff_new.sort("Variables")
 dm_eneff_new.sort("Country")
@@ -314,7 +354,7 @@ dict_call = {"HDVH_BEV" : {"n_adj" : 2, "year_end_first_adj" : 2010, "year_start
              "HDVM_ICE-gas" : {"n_adj" : 1},
              "HDVM_ICE-gasoline" : {"n_adj" : 1},
              "IWW_ICE" : {"n_adj" : 1},
-             "aviation_ICE" : {"n_adj" : 1},
+             "aviation_kerosene" : {"n_adj" : 1},
              "marine_ICE" : {"n_adj" : 1},
              "rail_CEV" : {"n_adj" : 1},
              "rail_ICE-diesel" : {"n_adj" : 1}}
@@ -410,12 +450,20 @@ dm_eneff_new.change_unit("tra_freight_vehicle-efficiency_new", 1e-2, "MJ/100 km"
 
 # insert missing categories
 categories2_missing = categories2_all.copy()
-for cat in dm_eneff_new.col_labels["Categories2"]: categories2_missing.remove(cat)
+for cat in dm_eneff_new.col_labels["Categories2"]: 
+    if cat in categories2_missing: categories2_missing.remove(cat)
 dm_eneff_new.add(np.nan, col_label=categories2_missing, dummy=True, dim="Categories2")
 dm_eneff_new.sort("Categories2")
 
 # check
 # dm_eneff_new.flatten().flatten().filter({"Country" : ["EU27"]}).datamatrix_plot()
+
+# # for now freight does not have the category kerosene, so move it back to ICE
+# dm_eneff_new[...,"aviation","ICE"] = dm_eneff_new[...,"aviation","kerosene"]
+# dm_eneff_new.drop("Categories2","kerosene")
+
+# drop start year
+dm_eneff_new.drop("Years",startyear)
 
 ################
 ##### SAVE #####
@@ -423,8 +471,7 @@ dm_eneff_new.sort("Categories2")
 
 # split between ots and fts
 DM_ene = {"ots": {"freight_vehicle-efficiency_new" : []}, "fts": {"freight_vehicle-efficiency_new" : dict()}}
-DM_ene["ots"]["freight_vehicle-efficiency_new"] = dm_eneff_new.filter({"Years" : years_ots})
-DM_ene["ots"]["freight_vehicle-efficiency_new"].drop("Years",startyear)
+DM_ene["ots"]["freight_vehicle-efficiency_new"] = dm_eneff_new.filter({"Years" : list(range(1990,2023+1))})
 for i in range(1,4+1):
     DM_ene["fts"]["freight_vehicle-efficiency_new"][i] = dm_eneff_new.filter({"Years" : years_fts})
 
