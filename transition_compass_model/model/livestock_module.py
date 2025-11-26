@@ -90,7 +90,7 @@ def read_data(DM_livestock, lever_setting):
 # SimulateInteractions
 def simulate_dietaryhabits_to_livestock_input():
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    f = os.path.join(current_file_directory, "../_database/data/interface/dietary-habits_to_trade.pickle")
+    f = os.path.join(current_file_directory, "../_database/data/interface/dietary-habits_to_livestock.pickle")
     with open(f, 'rb') as handle:
         dm_demand = pickle.load(handle)
 
@@ -124,18 +124,18 @@ def trade_livestock_workflow(DM_food_demand, dm_demand):
     return dm_demand, dm_demand_pro
 
 # CalculationLeaf ANIMAL SOURCED FOOD DEMAND TO LIVESTOCK POPULATION AND LIVESTOCK PRODUCTS ----------------------------
-def livestock_production_workflow(DM_liv_prod, CDM_const, dm_lfs_pro, years_setting):
-    # Filter dm_lfs_pro to only have livestock products
-    dm_lfs_pro_liv = dm_lfs_pro.filter_w_regex({'Categories1': 'pro-liv.*', 'Variables': 'agr_domestic_production'})
+def livestock_production_workflow(DM_liv_prod, CDM_const, dm_demand_pro, years_setting):
+    # Filter dm_demand_pro to only have livestock products
+    dm_demand_pro_liv = dm_demand_pro.filter_w_regex({'Categories1': 'pro-liv.*', 'Variables': 'agr_domestic_production'})
     # Drop the pro- prefix of the categories
-    dm_lfs_pro_liv.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
+    dm_demand_pro_liv.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
     # Sort the dms
-    dm_lfs_pro_liv.sort(dim='Categories1')
+    dm_demand_pro_liv.sort(dim='Categories1')
     DM_liv_prod['losses'].sort(dim='Categories1')
     DM_liv_prod['yield'].sort(dim='Categories1')
 
-    # Append dm_lfs_pro_liv to DM_liv_prod['losses']
-    DM_liv_prod['losses'].append(dm_lfs_pro_liv, dim='Variables')
+    # Append dm_demand_pro_liv to DM_liv_prod['losses']
+    DM_liv_prod['losses'].append(dm_demand_pro_liv, dim='Variables')
 
     # Account for milk as Feed and Processed
     # Milk Food & Feed [kcal] = Milk Food [kcal] * fxa_milk_feed_food_ratio [%]
@@ -349,7 +349,7 @@ def manure_workflow(DM_manure, dm_liv_pop, years_setting):
                      unit='t')
     df_cal_rates_liv_CH4 = dm_to_database(dm_cal_rates_liv_CH4, 'none', 'agriculture', level=0)
 
-    return dm_liv_N2O, dm_CH4, df_cal_rates_liv_N2O, df_cal_rates_liv_CH4, DM_manure
+    return dm_liv_N2O, dm_CH4, DM_manure
 
 # CalculationLeaf FEED -------------------------------------------------------------------------------------------------
 def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years_setting):
@@ -511,7 +511,7 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     return DM_feed, dm_aps_ibp, dm_feed_req, dm_aps, dm_feed_demand
 
 # CalculationLeaf INTERFACE TO TPE  --------------------------------------------------------------
-def livestock_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_food):
+def livestock_TPE_interface():
 
     # DIET (CONSUMED, WITHOUT FOOD WASTES) -------------------------------------
 
@@ -597,26 +597,32 @@ def livestock(lever_setting, years_setting, DM_input, write_pickle, interface=In
 
     # Link interface or Simulate data from other modules
     if interface.has_link(from_sector='dietary-habits', to_sector='livestock'):
-        dm_demand = interface.get_link(from_sector='dietary-habits', to_sector='livestock')
+        DM_diet_livestock = interface.get_link(from_sector='dietary-habits', to_sector='livestock')
+        dm_demand = DM_diet_livestock['demand']
+        dm_bev_ibp_cereal_feed = DM_diet_livestock['bev_feed']
     else:
         if len(interface.list_link()) != 0:
             print('You are missing dietary-habits to livestock interface')
-        dm_demand = simulate_dietaryhabits_to_livestock_input()
-        for key in dm_demand.keys():
-            dm_demand[key].filter({'Country': country_list}, inplace=True)
+        DM_diet_livestock = simulate_dietaryhabits_to_livestock_input()
+        for key in DM_diet_livestock.keys():
+            DM_diet_livestock[key].filter({'Country': country_list}, inplace=True)
+        dm_demand = DM_diet_livestock['demand']
+        dm_bev_ibp_cereal_feed = DM_diet_livestock['bev_feed']
 
-    # CalculationTree LIVESTOCK TRADE & PRODUCTION
+    # CalculationTree LIVESTOCK MODULE
 
-    dm_diet_consumed_bau = {}
-    dm_diet_consumed_scenario = {}
-    dm_demand, dm_demand_pro = trade_livestock_workflow(DM_food_demand, dm_demand)
-    DM_livestock, dm_liv_ibp, dm_liv_ibp, dm_liv_prod, dm_liv_pop = livestock_production_workflow(DM_liv_prod, CDM_const, dm_lfs_pro, years_setting)
+
+    dm_demand, dm_demand_pro = trade_livestock_workflow(DM_liv_prod, dm_demand)
+    DM_liv_prod, dm_liv_ibp, dm_liv_ibp, dm_liv_prod, dm_liv_pop = livestock_production_workflow(DM_liv_prod, CDM_const, dm_demand_pro, years_setting)
+    dm_liv_N2O, dm_CH4, DM_manure = manure_workflow(DM_manure, dm_liv_pop, years_setting)
+    DM_feed, dm_aps_ibp, dm_feed_req, dm_aps, dm_feed_demand = feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const,
+                  years_setting)
 
 
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 
     # Livestock to TCAF
-    DM_TCAF_health_diet = livestock_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario,)
+    DM_TCAF_health_diet = livestock_TCAF_interface()
     if write_pickle is True:
       current_file_directory = os.path.dirname(os.path.abspath(__file__))
       f = os.path.join(current_file_directory,
@@ -628,6 +634,8 @@ def livestock(lever_setting, years_setting, DM_input, write_pickle, interface=In
         # pour update un pickle qui existe déjà, par exemple pour gagner du temps au pre-processing,
         # Pour remplacer des valeurs dans la même structure. Accepete un pays différent
         #my_pickle_dump(DM_new=DM_TCAF_health_diet, local_pickle_file=f)
+
+    # Livestock to Crop module
 
 
     # TPE OUTPUT -------------------------------------------------------------------------------------------------------

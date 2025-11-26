@@ -1,6 +1,8 @@
 [
   {
     "lever_diet-adherence": 1,
+    "lever_diet": 1,
+    "lever_ssr-bev": 1,
     "lever_kcal-req": 1,
     "lever_diet-split-share": 1,
     "lever_fwaste": 1,

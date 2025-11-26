@@ -45,14 +45,14 @@ def ensure_structure(df):
 
 
 # CalculationLeaf DIET ------------------------------------------------------------------------------------
-def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
+def diet_processing(list_countries, cdm_kcal, dm_kcal_req):
     # ----------------------------------------------------------------------------------------------------------------------
     # FOOD SUPPLY Part 1 - including food waste
     # ----------------------------------------------------------------------------------------------------------------------
 
     # Read data ------------------------------------------------------------------------------------------------------------
     try:
-        df_diet = pd.read_csv(file)
+        df_diet = pd.read_csv(file_dict['diet'])
     except OSError:
 
         # FOOD BALANCE SHEETS (FBS) - -------------------------------------------------
@@ -141,7 +141,7 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
 
     # Food item name matching with dictionary
     # Read excel file
-    df_dict_waste = pd.read_excel('dictionaries/dictionnary_agriculture_landuse.xlsx', sheet_name='food-waste_lifestyle')
+    df_dict_waste = pd.read_excel('dictionaries/dictionnary_dietary-habits.xlsx', sheet_name='food-waste_lifestyle')
 
     # Merge based on 'Item'
     pivot_df_consumers_diet = pd.merge(df_dict_waste, pivot_df_consumers_diet, on='Item')
@@ -159,7 +159,7 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
     # Food item name matching with dictionary
     # Read excel file
-    df_dict_diet = pd.read_excel('dictionaries/dictionnary_agriculture_landuse.xlsx',
+    df_dict_diet = pd.read_excel('dictionaries/dictionnary_dietary-habits.xlsx',
         sheet_name='diet_lifestyle')
 
     # Merge based on 'Item'
@@ -209,7 +209,7 @@ def diet_processing(list_countries, file, cdm_kcal, dm_kcal_req):
 
     # Food item name matching with dictionary
     # Read excel file
-    df_dict_waste = pd.read_excel('dictionaries/dictionnary_agriculture_landuse.xlsx',
+    df_dict_waste = pd.read_excel('dictionaries/dictionnary_dietary-habits.xlsx',
         sheet_name='food-waste_lifestyle')
 
     # Merge based on 'Item'
@@ -404,7 +404,7 @@ def energy_requirements_processing(country_list, years_ots):
     # Create a new column combining age and sex and merging it with the variable names
     df_kcal_req['sex_age'] = df_kcal_req['sex'] + '_' + df_kcal_req['age']
     df_kcal_req = df_kcal_req[['geoscale', 'sex_age', 'Calorie requirement per demography [kcal/person/day]']]
-    df_dict_kcal = pd.read_excel('dictionaries/dictionnary_agriculture_landuse.xlsx',
+    df_dict_kcal = pd.read_excel('dictionaries/dictionnary_dietary-habits.xlsx',
         sheet_name='energy-req_lifestyle')
     df_kcal_req = pd.merge(df_dict_kcal, df_kcal_req, on='sex_age')
     df_kcal_req = df_kcal_req.drop(columns=['sex_age'])
@@ -555,7 +555,7 @@ def dietaryhabits_calibration(list_countries, cdm_kcal):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        'dictionaries/dictionnary_agriculture_landuse.xlsx',
+        'dictionaries/dictionnary_dietary-habits.xlsx',
         sheet_name='calibration')
 
     # Prepend "Diet" to each value in the 'Item' column
@@ -708,6 +708,589 @@ def calibration_formatting(df_diet_calibration):
 
     return df_calibration_ext_agr
 
+# CalculationLeaf SSR ALCOHOLIC BEVERAGES---------------------------------------------------------------------------------------------
+def ssr_beverages_processing():
+  # Read data ------------------------------------------------------------------------------------------------------------
+  try:
+    df_ssr = pd.read_csv(file_dict['ssr_bev'])
+  except OSError:
+
+    # FOOD BALANCE SHEETS (FBS) - For everything except molasses and cakes -------------------------------------------------
+    # List of elements
+    list_elements = ['Production Quantity', 'Import Quantity',
+                     'Export Quantity', 'Feed', 'Processed', 'Stock Variation',
+                     'Food', 'Other uses (non-food)', 'Residuals']
+
+    list_items = ['Beer',
+                  'Beverages, Alcoholic',
+                  'Beverages, Fermented',
+                  'Wine']
+
+    # 1990 - 2013
+    ld = faostat.list_datasets()
+    code = 'FBSH'
+    pars = faostat.list_pars(code)
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+    my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+    list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996',
+                  '1997', '1998', '1999', '2000', '2001',
+                  '2002',
+                  '2003', '2004', '2005', '2006', '2007', '2008', '2009']
+    my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+    my_pars = {
+      'area': my_countries,
+      'element': my_elements,
+      'item': my_items,
+      'year': my_years
+    }
+    df_ssr_1990_2013 = faostat.get_data_df(code, pars=my_pars, strval=False)
+    # Renaming the elements
+    df_ssr_1990_2013.loc[
+      df_ssr_1990_2013['Element'].str.contains('Production Quantity',
+                                               case=False,
+                                               na=False), 'Element'] = 'Production'
+    df_ssr_1990_2013.loc[
+      df_ssr_1990_2013['Element'].str.contains('Import Quantity', case=False,
+                                               na=False), 'Element'] = 'Import'
+    df_ssr_1990_2013.loc[
+      df_ssr_1990_2013['Element'].str.contains('Export Quantity', case=False,
+                                               na=False), 'Element'] = 'Export'
+
+    # 2010 - 2022
+
+    list_elements = ['Production Quantity', 'Import quantity',
+                     'Export quantity', 'Feed', 'Processed', 'Stock Variation',
+                     'Food', 'Other uses (non-food)', 'Residuals']
+    code = 'FBS'
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+    my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+    list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016',
+                  '2017', '2018', '2019', '2020', '2021', '2022', '2023']
+    my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+    my_pars = {
+      'area': my_countries,
+      'element': my_elements,
+      'item': my_items,
+      'year': my_years
+    }
+    df_ssr_2010_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
+
+    # Renaming the elements
+    df_ssr_2010_2021.loc[
+      df_ssr_2010_2021['Element'].str.contains('Production Quantity',
+                                               case=False,
+                                               na=False), 'Element'] = 'Production'
+    df_ssr_2010_2021.loc[
+      df_ssr_2010_2021['Element'].str.contains('Import quantity', case=False,
+                                               na=False), 'Element'] = 'Import'
+    df_ssr_2010_2021.loc[
+      df_ssr_2010_2021['Element'].str.contains('Export quantity', case=False,
+                                               na=False), 'Element'] = 'Export'
+    df_ssr = pd.concat([df_ssr_1990_2013, df_ssr_2010_2021])
+
+    # Renaming the items for name matching
+    df_ssr.loc[
+      df_ssr['Item'].str.contains('Rice (Milled Equivalent)', case=False,
+                                      na=False, regex=False), 'Item'] = 'Rice and products'
+
+    df_ssr.to_csv(file_dict['ssr_bev'], index=False)
+
+  # Compute Self-Sufficiency Ratio (SSR) ---------------------------------------------------------------------------------
+  # SSR [%] = (100*Production) / (Production + Imports - Exports)
+  # 1: Pivot the DataFrame to get 'Production', 'Import Quantity', and 'Export Quantity' in separate columns
+  df_ssr_bev = df_ssr.pivot_table(index=['Area', 'Year', 'Item'],
+                                columns='Element', values='Value').reset_index()
+
+  # Fill na with 0
+  cols = [
+    'Production', 'Import', 'Export', 'Food',
+    'Residuals', 'Other uses (non-food)', 'Stock Variation'
+  ]
+
+  for c in cols:
+    df_ssr_bev[c] = df_ssr_bev[c].fillna(0.0)
+
+  # 2: Compute the SSR [%]
+  df_ssr_bev['value'] = df_ssr_bev['Production'] / df_ssr_bev['Food']
+
+  # Filter columns
+  columns_to_filter = ['Area', 'Year', 'Item', 'value']
+  df_ssr_bev = df_ssr_bev[columns_to_filter]
+
+  # Calc Formatting ------------------------------------------------------------
+
+  # Food item name matching with dictionary
+  # Read excel file
+  df_dict = pd.read_excel(
+    'dictionaries/dictionnary_dietary-habits.xlsx',
+    sheet_name='self-sufficiency')
+
+  # Prepend 'SSR'
+  df_ssr_bev['Item'] = df_ssr_bev['Item'].apply(lambda x: f"SSR {x}")
+
+  # Renaming existing columns (geoscale, timsecale, value)
+  df_ssr_bev.rename(
+    columns={'Area': 'geoscale', 'Year': 'timescale'},
+    inplace=True)
+
+  # Merge based on 'Item'
+  df_ssr_bev = pd.merge(df_dict, df_ssr_bev, on='Item')
+
+  # Drop the 'Item' column
+  df_ssr_bev = df_ssr_bev.drop(columns=['Item'])
+
+  # Adding the columns module, lever, level and string-pivot at the correct places
+  lever = 'dummy'
+  df_ssr_bev['module'] = lever
+  df_ssr_bev['lever'] = lever
+  df_ssr_bev['level'] = 0
+
+  # Rename countries to Pathaywcalc name
+  df_ssr_bev['geoscale'] = df_ssr_bev['geoscale'].replace(
+    'United Kingdom of Great Britain and Northern Ireland', 'United Kingdom')
+  df_ssr_bev['geoscale'] = df_ssr_bev['geoscale'].replace(
+    'Netherlands (Kingdom of the)',
+    'Netherlands')
+  df_ssr_bev['geoscale'] = df_ssr_bev['geoscale'].replace(
+    'Czechia', 'Czech Republic')
+
+  # Extrapolation
+  df_ssr_bev = ensure_structure(df_ssr_bev)
+  df_ssr_bev = linear_fitting_ots_db(df_ssr_bev, years_ots,
+                                             countries='all')
+
+  # Format as datamatrix
+  df_ots, df_fts = database_to_df(df_ssr_bev, lever, level='all')
+  df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+  dm_ssr_bev = DataMatrix.create_from_df(df_ots, num_cat=1)
+
+  return dm_ssr_bev
+
+
+# CalculationLeaf FXA PROCESSING YIELD---------------------------------------------------------------------------------------------
+def fxa_processing_yield():
+  # Read data ------------------------------------------------------------------------------------------------------------
+  try:
+    df_ssr = pd.read_csv(file_dict['ssr'])
+  except OSError:
+
+    # FOOD BALANCE SHEETS (FBS) - For everything except molasses and cakes -------------------------------------------------
+    # List of elements
+    list_elements = ['Production Quantity', 'Import Quantity',
+                     'Export Quantity', 'Feed', 'Processed', 'Stock Variation',
+                     'Food', 'Other uses (non-food)', 'Residuals']
+
+    list_items = ['Cereals - Excluding Beer + (Total)',
+                  'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
+                  'Pulses + (Total)', 'Rice (Milled Equivalent)',
+                  'Starchy Roots + (Total)', 'Stimulants > (List)',
+                  'Sugar Crops + (Total)', 'Vegetables + (Total)',
+                  'Demersal Fish', 'Freshwater Fish',
+                  'Aquatic Animals, Others', 'Pelagic Fish', 'Beer',
+                  'Beverages, Alcoholic', 'Beverages, Fermented',
+                  'Wine', 'Sugar (Raw Equivalent)', 'Sweeteners, Other',
+                  'Vegetable Oils + (Total)',
+                  'Milk - Excluding Butter + (Total)', 'Eggs + (Total)',
+                  'Animal fats + (Total)', 'Offals + (Total)',
+                  'Bovine Meat', 'Meat, Other', 'Pigmeat',
+                  'Poultry Meat', 'Mutton & Goat Meat',
+                  'Fish, Seafood + (Total)', 'Sugar & Sweeteners + (Total)',
+                  'Grapes and products (excl wine)']
+
+    # 1990 - 2013
+    ld = faostat.list_datasets()
+    code = 'FBSH'
+    pars = faostat.list_pars(code)
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+    my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+    list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996',
+                  '1997', '1998', '1999', '2000', '2001',
+                  '2002',
+                  '2003', '2004', '2005', '2006', '2007', '2008', '2009']
+    my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+    my_pars = {
+      'area': my_countries,
+      'element': my_elements,
+      'item': my_items,
+      'year': my_years
+    }
+    df_ssr_1990_2013 = faostat.get_data_df(code, pars=my_pars, strval=False)
+    # Renaming the elements
+    df_ssr_1990_2013.loc[
+      df_ssr_1990_2013['Element'].str.contains('Production Quantity',
+                                               case=False,
+                                               na=False), 'Element'] = 'Production'
+    df_ssr_1990_2013.loc[
+      df_ssr_1990_2013['Element'].str.contains('Import Quantity', case=False,
+                                               na=False), 'Element'] = 'Import'
+    df_ssr_1990_2013.loc[
+      df_ssr_1990_2013['Element'].str.contains('Export Quantity', case=False,
+                                               na=False), 'Element'] = 'Export'
+
+    # 2010 - 2022
+
+    list_elements = ['Production Quantity', 'Import quantity',
+                     'Export quantity', 'Feed', 'Processed', 'Stock Variation',
+                     'Food', 'Other uses (non-food)', 'Residuals']
+    # Different list becuse different in item nomination such as rice
+    list_items = ['Cereals - Excluding Beer + (Total)',
+                  'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
+                  'Pulses + (Total)', 'Rice and products',
+                  'Starchy Roots + (Total)', 'Stimulants > (List)',
+                  'Sugar Crops + (Total)', 'Vegetables + (Total)',
+                  'Demersal Fish', 'Freshwater Fish',
+                  'Aquatic Animals, Others', 'Pelagic Fish', 'Beer',
+                  'Beverages, Alcoholic', 'Beverages, Fermented',
+                  'Wine', 'Sugar (Raw Equivalent)', 'Sweeteners, Other',
+                  'Vegetable Oils + (Total)',
+                  'Milk - Excluding Butter + (Total)', 'Eggs + (Total)',
+                  'Animal fats + (Total)', 'Offals + (Total)',
+                  'Bovine Meat', 'Meat, Other', 'Pigmeat',
+                  'Poultry Meat', 'Mutton & Goat Meat',
+                  'Fish, Seafood + (Total)', 'Sugar & Sweeteners + (Total)',
+                  'Grapes and products (excl wine)']
+    code = 'FBS'
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+    my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+    list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016',
+                  '2017', '2018', '2019', '2020', '2021']
+    my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+    my_pars = {
+      'area': my_countries,
+      'element': my_elements,
+      'item': my_items,
+      'year': my_years
+    }
+    df_ssr_2010_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
+
+    # Renaming the elements
+    df_ssr_2010_2021.loc[
+      df_ssr_2010_2021['Element'].str.contains('Production Quantity',
+                                               case=False,
+                                               na=False), 'Element'] = 'Production'
+    df_ssr_2010_2021.loc[
+      df_ssr_2010_2021['Element'].str.contains('Import quantity', case=False,
+                                               na=False), 'Element'] = 'Import'
+    df_ssr_2010_2021.loc[
+      df_ssr_2010_2021['Element'].str.contains('Export quantity', case=False,
+                                               na=False), 'Element'] = 'Export'
+    df_ssr = pd.concat([df_ssr_1990_2013, df_ssr_2010_2021])
+
+    # Renaming the items for name matching
+    df_ssr.loc[
+      df_ssr['Item'].str.contains('Rice (Milled Equivalent)', case=False,
+                                      na=False, regex=False), 'Item'] = 'Rice and products'
+
+    df_ssr.to_csv(file_dict['ssr'], index=False)
+
+  # COMMODITY BALANCES (NON-FOOD) (OLD METHODOLOGY) - For molasse and cakes ----------------------------------------------
+  try:
+    df_ssr_cake = pd.read_csv(file_dict['cake'])
+    df_ssr_2010_2021_molasse_cake = pd.read_csv(file_dict['molasse'])
+  except OSError:
+    # 1990 - 2013
+    list_elements = ['Production Quantity', 'Import quantity',
+                     'Export quantity', 'Feed', 'Food']
+    list_items = ['Copra Cake', 'Cottonseed Cake', 'Groundnut Cake',
+                  'Oilseed Cakes, Other', 'Palmkernel Cake',
+                  'Rape and Mustard Cake', 'Sesameseed Cake', 'Soyabean Cake',
+                  'Sunflowerseed Cake']
+    code = 'CBH'
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+    my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+    list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996',
+                  '1997', '1998', '1999', '2000', '2001',
+                  '2002',
+                  '2003', '2004', '2005', '2006', '2007', '2008', '2009']
+    my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+    my_pars = {
+      'area': my_countries,
+      'element': my_elements,
+      'item': my_items,
+      'year': my_years
+    }
+    df_ssr_1990_2013_cake = faostat.get_data_df(code, pars=my_pars,
+                                                strval=False)
+    # Renaming the elements
+    df_ssr_1990_2013_cake.loc[
+      df_ssr_1990_2013_cake['Element'].str.contains('Production Quantity',
+                                                    case=False,
+                                                    na=False), 'Element'] = 'Production'
+    df_ssr_1990_2013_cake.loc[
+      df_ssr_1990_2013_cake['Element'].str.contains('Import quantity',
+                                                    case=False,
+                                                    na=False), 'Element'] = 'Import'
+    df_ssr_1990_2013_cake.loc[
+      df_ssr_1990_2013_cake['Element'].str.contains('Export Quantity',
+                                                    case=False,
+                                                    na=False), 'Element'] = 'Export'
+
+    # SUPPLY UTILIZATION ACCOUNTS (SCl) - For molasse and cakes ----------------------------------------------------------
+    # 2010 - 2022
+    list_elements = ['Production Quantity', 'Import quantity',
+                     'Export quantity', 'Feed']
+    list_items = ['Molasses', 'Cake of  linseed', 'Cake of  soya beans',
+                  'Cake of copra', 'Cake of cottonseed',
+                  'Cake of groundnuts', 'Cake of hempseed', 'Cake of kapok',
+                  'Cake of maize', 'Cake of mustard seed',
+                  'Cake of palm kernel', 'Cake of rapeseed',
+                  'Cake of rice bran', 'Cake of safflowerseed',
+                  'Cake of sesame seed', 'Cake of sunflower seed',
+                  'Cake, oilseeds nes', 'Cake, poppy seed']
+    code = 'SCL'
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+    my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+    list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016',
+                  '2017', '2018', '2019', '2020', '2021']
+    my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+    my_pars = {
+      'area': my_countries,
+      'element': my_elements,
+      'item': my_items,
+      'year': my_years
+    }
+    df_ssr_2010_2021_molasse_cake = faostat.get_data_df(code, pars=my_pars,
+                                                        strval=False)
+
+    # Renaming the elements
+    df_ssr_2010_2021_molasse_cake.loc[
+      df_ssr_2010_2021_molasse_cake['Element'].str.contains(
+        'Production Quantity', case=False, na=False, regex=False), 'Element'] = 'Production'
+    df_ssr_2010_2021_molasse_cake.loc[
+      df_ssr_2010_2021_molasse_cake['Element'].str.contains('Import quantity',
+                                                            case=False,
+                                                            na=False, regex=False), 'Element'] = 'Import'
+    df_ssr_2010_2021_molasse_cake.loc[
+      df_ssr_2010_2021_molasse_cake['Element'].str.contains('Export quantity',
+                                                            case=False,
+                                                            na=False, regex=False), 'Element'] = 'Export'
+    df_ssr_2010_2021_molasse_cake.loc[
+      df_ssr_2010_2021_molasse_cake['Element'].str.contains(
+        'Food supply quantity (tonnes)', case=False, na=False, regex=False
+      ),
+      'Element'
+    ] = 'Food'
+
+    df_ssr_1990_2013_cake.loc[
+      df_ssr_1990_2013_cake['Element'].str.contains(
+        'Food supply quantity (tonnes)', case=False, na=False, regex=False
+      ),
+      'Element'
+    ] = 'Food'
+
+    # Aggregating cakes
+    df_ssr_cake = pd.concat(
+      [df_ssr_1990_2013_cake, df_ssr_2010_2021_molasse_cake])
+
+    df_ssr_cake.to_csv(file_dict['cake'], index=False)
+    df_ssr_2010_2021_molasse_cake.to_csv(file_dict['molasse'], index=False)
+
+  # Filtering
+  filtered_df = df_ssr_cake[
+    df_ssr_cake['Item'].str.contains('cake', case=False)]
+  # Groupby Area, Year and Element and sum the Value
+  grouped_df = filtered_df.groupby(['Area', 'Element', 'Year'])[
+    'Value'].sum().reset_index()
+  # Adding a column 'Item' containing 'Cakes' for all row, before the 'Value' column
+  grouped_df['Item'] = 'Cakes'
+  cols = grouped_df.columns.tolist()
+  cols.insert(cols.index('Value'), cols.pop(cols.index('Item')))
+  df_ssr_cake = grouped_df[cols]
+
+  # Filtering for molasse
+  df_ssr_molasses = df_ssr_2010_2021_molasse_cake[
+    df_ssr_2010_2021_molasse_cake['Item'].str.contains('Molasses', case=False)]
+
+  # Concatenating for feed
+  # df_ssr = pd.concat([df_ssr, df_ssr_molasses])
+  # df_ssr = pd.concat([df_ssr, df_ssr_cake])
+  df_ssr_feed = pd.concat([df_ssr_molasses, df_ssr_cake])
+
+  # Change unit from [t] => [kt]
+  df_ssr_feed['Value'] = df_ssr_feed['Value'] * 10 ** (-3)
+
+  # Filtering to keep wanted columns
+  columns_to_filter = ['Area', 'Element', 'Item', 'Year', 'Value']
+  df_ssr = df_ssr[columns_to_filter]
+  df_ssr_feed = df_ssr_feed[columns_to_filter]
+
+  # Concat and create copy for processing yield
+  df_processing_yield_fxa = pd.concat([df_ssr, df_ssr_feed])
+
+  # PROCESSING YIELD
+  # Pivot df
+  pivot_df = df_processing_yield_fxa.pivot_table(index=['Area', 'Year', 'Item'],
+                                columns='Element', values='Value').reset_index()
+
+  # Filter columns
+  list_cols = ['Area', 'Year', 'Item', 'Production', 'Processing']
+  pivot_df = pivot_df[list_cols]
+
+  # Filter rows where 'Item' contains any of these terms (case-insensitive)
+  list_items = ['Beer', 'Bev', 'Cereal', 'Fruit', 'Wine', 'Cake', 'Oil',
+                'Molasse', 'Sugar']
+  pattern = '|'.join(list_items)
+  pivot_df = pivot_df[pivot_df['Item'].str.contains(pattern, case=False, na=False)]
+
+  # Wine--------------------------------------------------------------------
+  list_items = ['wine', 'grape']
+  pattern = '|'.join(list_items)
+  df_wine = pivot_df[pivot_df['Item'].str.contains(pattern, case=False, na=False)]
+
+  # Extract the processing value for Oilcrops per Area & Year
+  wine_proc = (
+    df_wine[df_wine["Item"] == "Grapes and products (excl wine)"]
+    .loc[:, ["Area", "Year", "Processing"]]
+    .rename(columns={"Processing": "grapes_processing"})
+  )
+
+  # Merge it back into the original dataframe
+  df_wine = df_wine.merge(wine_proc, on=["Area", "Year"], how="left")
+
+  # Replace Processing for Wine with Oilcrops_processing
+  df_wine.loc[
+    df_wine["Item"].isin(["Wine"]),
+    "Processing"
+  ] = df_wine["grapes_processing"]
+
+  # Drop the helper column
+  df_wine = df_wine.drop(columns=["grapes_processing"])
+
+  # Processing yields [input/output] = Processing / Production
+  df_wine['value'] = df_wine['Processing'] / df_wine['Production']
+
+  # Filter
+  df_wine = df_wine[['Area', 'Year', 'Item', 'value']]
+
+
+  # Sugar --------------------------------------------------------------------
+  list_items = ['Sugar & Sweeteners', 'Molasse', 'Sugar Crops']
+  pattern = '|'.join(list_items)
+  df_sugar = pivot_df[pivot_df['Item'].str.contains(pattern, case=False, na=False)]
+
+  # Extract the processing value for Oilcrops per Area & Year
+  sugar_proc = (
+    df_sugar[df_sugar["Item"] == "Sugar Crops"]
+    .loc[:, ["Area", "Year", "Processing"]]
+    .rename(columns={"Processing": "Sugarcrops_processing"})
+  )
+
+  # Merge it back into the original dataframe
+  df_sugar = df_sugar.merge(sugar_proc, on=["Area", "Year"], how="left")
+
+  # Replace Processing for Molasses & Sugar (Raw Equivalent) with Oilcrops_processing
+  df_sugar.loc[
+    df_sugar["Item"].isin(["Molasses", "Sugar & Sweeteners"]),
+    "Processing"
+  ] = df_sugar["Sugarcrops_processing"]
+
+  # Drop the helper column
+  df_sugar = df_sugar.drop(columns=["Sugarcrops_processing"])
+
+  # Processing yields [input/output] = Processing / Production
+  df_sugar['value'] = df_sugar['Processing'] / df_sugar['Production']
+
+  # Filter
+  df_sugar = df_sugar[['Area', 'Year', 'Item', 'value']]
+
+  # Oilcrops --------------------------------------------------------------------
+  list_items = ['Cake', 'Oil']
+  pattern = '|'.join(list_items)
+  df_oil = pivot_df[pivot_df['Item'].str.contains(pattern, case=False, na=False)]
+
+  # Extract the processing value for Oilcrops per Area & Year
+  oilcrops_proc = (
+    df_oil[df_oil["Item"] == "Oilcrops"]
+    .loc[:, ["Area", "Year", "Processing"]]
+    .rename(columns={"Processing": "Oilcrops_processing"})
+  )
+
+  # Merge it back into the original dataframe
+  df_oil = df_oil.merge(oilcrops_proc, on=["Area", "Year"], how="left")
+
+  # Replace Processing for Vegetable Oils & Cakes with Oilcrops_processing
+  df_oil.loc[
+    df_oil["Item"].isin(["Vegetable Oils", "Cakes"]),
+    "Processing"
+  ] = df_oil["Oilcrops_processing"]
+
+  # Drop the helper column
+  df_oil = df_oil.drop(columns=["Oilcrops_processing"])
+
+  # Processing yields [t input/ t output] = Processing / Production
+  df_oil['value'] = df_oil['Processing'] / df_oil['Production']
+
+  # Filter
+  df_oil = df_oil[['Area', 'Year', 'Item', 'value']]
+
+  # Calc Formatting ------------------------------------------------------------
+
+  # Concat dfs
+  df_calc_processing_yield = pd.concat([df_oil, df_sugar])
+  df_calc_processing_yield = pd.concat(
+    [df_calc_processing_yield, df_wine])
+
+  # Food item name matching with dictionary
+  # Read excel file
+  df_dict = pd.read_excel(
+    'dictionaries/dictionnary_dietary-habits.xlsx',
+    sheet_name='fxa')
+
+  # Renaming existing columns (geoscale, timsecale, value)
+  df_calc_processing_yield.rename(
+    columns={'Area': 'geoscale', 'Year': 'timescale'},
+    inplace=True)
+
+  # Merge based on 'Item'
+  df_calc_processing_yield = pd.merge(df_dict, df_calc_processing_yield, on='Item')
+
+  # Drop the 'Item' column
+  df_calc_processing_yield = df_calc_processing_yield.drop(columns=['Item'])
+
+  # Adding the columns module, lever, level and string-pivot at the correct places
+  lever = 'dummy'
+  df_calc_processing_yield['module'] = lever
+  df_calc_processing_yield['lever'] = lever
+  df_calc_processing_yield['level'] = 0
+  cols = df_calc_processing_yield.columns.tolist()
+  cols.insert(cols.index('value'), cols.pop(cols.index('module')))
+  cols.insert(cols.index('value'), cols.pop(cols.index('lever')))
+  cols.insert(cols.index('value'), cols.pop(cols.index('level')))
+  df_calc_processing_yield = df_calc_processing_yield[cols]
+  df_calc_processing_yield = df_calc_processing_yield.drop_duplicates()
+
+  # Rename countries to Pathaywcalc name
+  df_calc_processing_yield['geoscale'] = df_calc_processing_yield['geoscale'].replace(
+    'United Kingdom of Great Britain and Northern Ireland', 'United Kingdom')
+  df_calc_processing_yield['geoscale'] = df_calc_processing_yield['geoscale'].replace(
+    'Netherlands (Kingdom of the)',
+    'Netherlands')
+  df_calc_processing_yield['geoscale'] = df_calc_processing_yield['geoscale'].replace(
+    'Czechia', 'Czech Republic')
+
+  # Extrapolation
+  df_calc_processing_yield = linear_fitting_ots_db(df_calc_processing_yield, years_all,
+                                             countries='all')
+
+  # Format as datamatrix
+  df_ots, df_fts = database_to_df(df_calc_processing_yield , lever, level='all')
+  df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+  dm_fxa_pro_yield = DataMatrix.create_from_df(df_ots, num_cat=1)
+
+  return dm_fxa_pro_yield
+
 # CalculationLeaf CONSTANTS  ------------------------------
 
 def constant():
@@ -715,7 +1298,7 @@ def constant():
   # KCAL TO T ----------------------------------------------------------------------------------------
 
   # Read excel
-  df_kcal_t = pd.read_excel('dictionaries/kcal_to_t.xlsx',
+  df_kcal_t = pd.read_excel('data/dietary-habits_constants.xlsx',
                             sheet_name='cp_kcal_t')
 
   # Filter columns
@@ -736,6 +1319,29 @@ def constant():
     cdm_kcal.array[idx['cp_kcal-per-t'], idx[cat]] = val
   cdm_kcal.units["cp_kcal-per-t"] = "kcal/t"
 
+  # Beverages byproducts ----------------------------------------------------------------------------------------
+
+  # Read excel
+  df_cp_bev = pd.read_excel('data/dietary-habits_constants.xlsx',
+                            sheet_name='cp_ibp_bev')
+
+  # Filter columns
+  df_cp_bev = df_cp_bev[['variables', 'value']].copy()
+
+  # Turn the df in a dict
+  dict_cp_bev = dict(zip(df_cp_bev['variables'], df_cp_bev['value']))
+  variables = df_cp_bev['variables'].tolist()
+
+  # Format as a cdm
+  cdm_bev = ConstantDataMatrix(col_labels={'Variables': variables})
+  arr = np.zeros((len(cdm_bev.col_labels['Variables'])))
+  cdm_bev.array = arr
+  idx = cdm_bev.idx
+  for var, val in dict_cp_bev.items():
+    cdm_bev.array[idx[var]] = val
+    cdm_bev.units[var] = "-"
+
+
   # TIME PER YEAR ----------------------------------------------------------------------------------------
 
   # Format as a cdm
@@ -746,12 +1352,12 @@ def constant():
   cdm_lifestyle.array[idx['cp_time_days-per-year']] = 365.0
   cdm_lifestyle.units["cp_time_days-per-year"] = "days/year"
 
-  return cdm_kcal, cdm_lifestyle
+  return cdm_kcal, cdm_lifestyle, cdm_bev
 
 # CalculationLeaf FTS  ------------------------------
 def fts_processing(list_countries, years_ots, years_fts, cdm_kcal):
 
-  # fwaste, diet-adherence, kcal-req -------------------------------------------
+  # fwaste, diet-adherence, kcal-req, ssr-bev -------------------------------------------
   # Read Excel
   df_fts_data = pd.read_excel(
     'data/dietary-habits_fts.xlsx',
@@ -929,7 +1535,7 @@ def fts_processing(list_countries, years_ots, years_fts, cdm_kcal):
 
 # CalculationLeaf PICKLE CREATION ------------------------------
 
-def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_diet, dm_diet_share, dm_diet_kcal, dm_adherence, dm_food_health, cdm_kcal, cdm_lifestyle, dm_fts):
+def datamatrix_to_pickle(dm_fts, cdm_bev):
 
   # Make list with all years
   years_all = years_ots + years_fts
@@ -937,10 +1543,14 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_die
   # FixedAssumptionsToDatamatrix -----------------------------------------------
   dict_fxa = {}
 
+  # Processing yields
+  dict_fxa['processing-yield'] = dm_fxa_pro_yield
+
   # CalibrationDataToDatamatrix ------------------------------------------------
 
   # Diet
   dict_fxa['cal_agr_diet'] = dm_cal_diet
+
 
   # LeversToDatamatrix OTS -----------------------------------------------------
   dict_ots = {}
@@ -969,7 +1579,8 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_die
   # Share diet adherence
   dict_ots['diet-adherence'] = dm_adherence
 
-
+  # ssr (for alcoholic beverages)
+  dict_ots['ssr-bev'] = dm_ssr_bev
 
   # LeversToDatamatrix FTS -----------------------------------------------------
   dict_fts = {}
@@ -978,12 +1589,9 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_die
   DM_ots = dict_ots.copy()
 
   # Adding a new lever with dummy values
-  """dict_temp = {}
+  dict_temp = {}
   dict_fts['diet-split-share'] = {'diet-split-share': dict()}
-  dict_fts['diet-split-kcal'] = {'diet-split-kcal': dict()}
-  dict_fts['fwaste'] = {'fwaste': dict()}
-  dict_fts['kcal-req'] = {'kcal-req': dict()}
-  dict_fts['diet-adherence'] = {'diet-adherence': dict()}"""
+
 
   # Levers to be normalised
   list_norm = ['climate-smart-livestock_ration']
@@ -1120,10 +1728,34 @@ def datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_die
     dm_fts[lever][level].filter({'Years':years_fts}, inplace=True)
   dict_fts[lever] = dm_fts[lever]
 
+  # Lever - ssr-bev fixme dummy values
+  lever = 'ssr-bev'
+  for level in range(1,5):
+    # Compute the reduction objective in 2050 compared to the last ots value,
+    # for each food category
+    dm_ots = dict_ots[lever].copy()
+    array_temp =  1 - ( 1 - dm_ots[:,years_ots[-1],'agr_ssr',:]) \
+                  * dm_fts[lever][level][:,years_fts[-1],'ssr-bev', np.newaxis]
+    # Append with ots
+    dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
+    # Linear fit
+    linear_fitting(dm_ots, years_fts)
+    dm_fts[lever][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
+  dict_fts[lever] = dm_fts[lever]
+
   # ConstantsToDatamatrix ------------------------------------------------------
   dict_const = {}
   dict_const['cdm_kcal-per-t'] = cdm_kcal
   dict_const['cdm_lifestyle'] = cdm_lifestyle
+
+  # Alcoholic beverages byproduct
+  dict_const['cdm_cp_ibp_bev_beer'] = cdm_bev.filter_w_regex({'Variables': '.*beer.*'})
+  dict_const['cdm_cp_ibp_bev_wine'] = cdm_bev.filter_w_regex(
+    {'Variables': '.*wine.*'})
+  dict_const['cdm_cp_ibp_bev_bev-fer'] = cdm_bev.filter_w_regex(
+    {'Variables': '.*bev-fer.*'})
+  dict_const['cdm_cp_ibp_bev_bev-alc'] = cdm_bev.filter_w_regex(
+    {'Variables': '.*bev-alc.*'})
 
   # Group all datamatrix in a single structure ---------------------------------
   DM_diet = {
@@ -1151,15 +1783,23 @@ if not os.path.exists('data/faostat'):
 
 list_countries = ['Switzerland']
 
-cdm_kcal, cdm_lifestyle = constant()
+# Create files for storing data
+file_dict = {'ssr': 'data/faostat/ssr.csv',
+             'ssr_bev': 'data/faostat/ssr_bev.csv',
+             'cake': 'data/faostat/ssr_cake.csv',
+             'molasse': 'data/faostat/ssr_2010_2021_molasse_cake.csv',
+             'diet': 'data/faostat/diet.csv'}
+
+cdm_kcal, cdm_lifestyle, cdm_bev = constant()
 dm_cal_diet = dietaryhabits_calibration(list_countries, cdm_kcal)
 dm_kcal_req_temp = energy_requirements_processing(list_countries, years_ots)
-file = 'data/faostat/diet.csv' # Create file for storing data
-dm_diet_share, dm_waste, dm_kcal_req, dm_diet_kcal = diet_processing(list_countries, file, cdm_kcal, dm_kcal_req_temp)
+dm_diet_share, dm_waste, dm_kcal_req, dm_diet_kcal = diet_processing(list_countries, cdm_kcal, dm_kcal_req_temp)
 dm_adherence = diet_adherence_processing(list_countries, years_ots)
 dm_fts = fts_processing(list_countries, years_ots, years_fts, cdm_kcal)
 dm_food_health = health_processing()
+dm_fxa_pro_yield = fxa_processing_yield()
+dm_ssr_bev = ssr_beverages_processing()
 
 
 # CalculationTree RUNNING PICKLE CREATION
-datamatrix_to_pickle(years_ots, years_fts, dm_waste, dm_kcal_req, dm_cal_diet, dm_diet_share, dm_diet_kcal, dm_adherence, dm_food_health, cdm_kcal, cdm_lifestyle, dm_fts)
+datamatrix_to_pickle(dm_fts, cdm_bev)

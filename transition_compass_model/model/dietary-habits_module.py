@@ -81,10 +81,10 @@ def read_data(DM_diet_input, lever_setting, tpe_scenario):
       "diet-split-kcal_stm-tea"
     ]
 
-    # Step 1: Create a dictionary of all DataMatrix objects
+    # 1: Create a dictionary of all DataMatrix objects
     dm_diet_split_kcal = {lever: DM_ots_fts[lever] for lever in levers}
 
-    # Step 2: Merge them all into one DataMatrix along 'Variables'
+    # 2: Merge them all into one DataMatrix along 'Variables'
     dm_diet_split_kcal_merged = None
 
     for lever_name, dm_split in dm_diet_split_kcal.items():
@@ -97,6 +97,12 @@ def read_data(DM_diet_input, lever_setting, tpe_scenario):
       else:
         dm_diet_split_kcal_merged.append(dm_split, dim='Categories1')
 
+
+    # Sub-matrix for ALCOHOLIC BEVERAGES
+    #dm_alc_bev = DM_ots_fts['biomass-hierarchy']['biomass-hierarchy-bev-ibp-use-oth']
+    dm_processing_yield = DM_diet_input['fxa']['processing-yield']
+    dm_bev_ssr = DM_ots_fts['ssr-bev']
+
     # Aggregate Data Matrix - DIETARY HABITS
     DM_diet = {
         'energy-requirement': dm_diet_requirement,
@@ -108,9 +114,17 @@ def read_data(DM_diet_input, lever_setting, tpe_scenario):
         'share-processed-food': dm_share_pro_food
     }
 
+    # Aggregated Data Matrix - ALCOHOLIC BEVERAGES
+    DM_alc_bev = {
+        #'biomass_hierarchy': dm_alc_bev,
+        'processing-yields': dm_processing_yield,
+        'ssr-bev': dm_bev_ssr
+    }
+
+
     CDM_const = DM_diet_input['constant']
 
-    return DM_ots_fts, DM_diet, CDM_const
+    return DM_ots_fts, DM_diet, DM_alc_bev, CDM_const
 
 
 # SimulateInteractions
@@ -410,6 +424,174 @@ def lifestyle_kcal_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scena
 
     return dm_lfs, dm_diet_consumed, dm_diet_consumed_bau, dm_diet_consumed_scenario, dm_diet_food
 
+# CalculationLeaf ALCOHOLIC BEVERAGES INDUSTRY -------------------------------------------------------------------------
+def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs):
+    # Filtering dms to only keep pro
+    dm_demand_bev = dm_lfs.filter_w_regex({'Categories1': 'pro-bev.*', 'Variables': 'agr_demand'})
+
+    # Domestic production = demand * ssr [-]
+    # Filtering dms to only keep pro
+    food_net_import_pro = DM_alc_bev['ssr-bev'].filter_w_regex(
+        {'Categories1': 'pro-bev.*', 'Variables': 'agr_ssr'})
+    # Sorting the dms alphabetically
+    food_net_import_pro.sort(dim='Categories1')
+    dm_demand_bev.sort(dim='Categories1')
+    # Domestic production processed food [kcal] = agr_demand_pro_(.*) [kcal] * net-imports_pro_(.*) [-]
+    array_agr_domestic_production = dm_demand_bev[:, :, 'agr_demand', :] \
+                              * food_net_import_pro[:, :, 'agr_ssr']
+    # Adding agr_domestic_production to dm_lfs_pro
+    dm_demand_bev.add(array_agr_domestic_production, dim='Variables', col_label='agr_domestic_production', unit='kcal')
+
+    # Filter domestic production bev and rename
+    # Beer
+    dm_bev_beer = dm_demand_bev.filter_w_regex({'Categories1': 'pro-bev-beer.*', 'Variables': 'agr_domestic_production'})
+    dm_bev_beer.rename_col_regex(str1="pro-bev-", str2="", dim="Categories1")
+    dm_bev_beer = dm_bev_beer.flatten()
+    # Bev-alc
+    dm_bev_alc = dm_demand_bev.filter_w_regex({'Categories1': 'pro-bev-bev-alc.*', 'Variables': 'agr_domestic_production'})
+    dm_bev_alc.rename_col_regex(str1="pro-bev-", str2="", dim="Categories1")
+    dm_bev_alc = dm_bev_alc.flatten()
+    # Bev-fer
+    dm_bev_fer = dm_demand_bev.filter_w_regex({'Categories1': 'pro-bev-bev-fer.*', 'Variables': 'agr_domestic_production'})
+    dm_bev_fer.rename_col_regex(str1="pro-bev-", str2="", dim="Categories1")
+    dm_bev_fer = dm_bev_fer.flatten()
+    # Wine
+    dm_bev_wine = dm_demand_bev.filter_w_regex({'Categories1': 'pro-bev-wine.*', 'Variables': 'agr_domestic_production'})
+    dm_bev_wine.rename_col_regex(str1="pro-bev-", str2="", dim="Categories1")
+    dm_bev_wine = dm_bev_wine.flatten()
+
+    # Constants and sorting according to bev type (beer, wine, bev-alc, bev-fer)
+    cdm_cp_ibp_bev_beer = CDM_const['cdm_cp_ibp_bev_beer']
+    cdm_cp_ibp_bev_wine = CDM_const['cdm_cp_ibp_bev_wine']
+    cdm_cp_ibp_bev_alc = CDM_const['cdm_cp_ibp_bev_bev-alc']
+    cdm_cp_ibp_bev_fer = CDM_const['cdm_cp_ibp_bev_bev-fer']
+
+    # FRUIT & CEREAL DEMAND FOR BEVERAGES ------------------------------------------------------------------------------
+
+    # Beer - Crop Cereal
+    idx_dm_bev_beer = dm_bev_beer.idx
+    idx_cdm_ibp_beer = cdm_cp_ibp_bev_beer.idx
+    agr_ibp_bev_beer_crop_cereal = dm_bev_beer.array[:, :, idx_dm_bev_beer['agr_domestic_production_beer']] \
+                                   * cdm_cp_ibp_bev_beer.array[idx_cdm_ibp_beer['cp_ibp_bev_beer_brf_crop_cereal']]
+    dm_bev_beer.add(agr_ibp_bev_beer_crop_cereal, dim='Variables', col_label='agr_ibp_bev_beer_crop_cereal',
+                    unit='kcal')
+
+    # Bev-fer - Crop cereal
+    idx_dm_bev_fer = dm_bev_fer.idx
+    idx_cdm_ibp_fer = cdm_cp_ibp_bev_fer.idx
+    agr_ibp_bev_fer_crop_cereal = dm_bev_fer.array[:, :, idx_dm_bev_fer['agr_domestic_production_bev-fer']] \
+                                  * cdm_cp_ibp_bev_fer.array[idx_cdm_ibp_fer['cp_ibp_bev_bev-fer_brf_crop_cereal']]
+    dm_bev_fer.add(agr_ibp_bev_fer_crop_cereal, dim='Variables', col_label='agr_ibp_bev_bev-fer_crop_cereal',
+                   unit='kcal')
+
+    # Bev-alc - Crop fruit
+    idx_dm_bev_alc = dm_bev_alc.idx
+    idx_cdm_ibp_alc = cdm_cp_ibp_bev_alc.idx
+    agr_ibp_bev_alc_crop_fruit = dm_bev_alc.array[:, :, idx_dm_bev_alc['agr_domestic_production_bev-alc']] \
+                                 * cdm_cp_ibp_bev_alc.array[idx_cdm_ibp_alc['cp_ibp_bev_bev-alc_brf_crop_fruit']]
+    dm_bev_alc.add(agr_ibp_bev_alc_crop_fruit, dim='Variables', col_label='agr_ibp_bev_bev-alc_crop_fruit',
+                   unit='kcal')
+
+    # Wine - Crop Grape (fruit)
+    array_temp = dm_bev_wine[:, :, 'agr_domestic_production_wine'] \
+                                  * DM_alc_bev['processing-yields'][:,:, 'fxa_agr_processing-yield', 'wine-to-fruit']
+    dm_bev_wine.add(array_temp, dim='Variables', col_label='agr_ibp_bev_wine_crop_fruit', unit='kcal')
+
+    # Append together
+    dm_bev_dom_prod = dm_bev_beer.copy()
+    dm_bev_dom_prod.append(dm_bev_alc, dim='Variables')
+    dm_bev_dom_prod.append(dm_bev_fer, dim='Variables')
+    dm_bev_dom_prod.append(dm_bev_wine, dim='Variables')
+
+    # Cereals domestic production for beverages = cereals for beer + cereals for bev fer
+    dm_bev_dom_prod.operation('agr_ibp_bev_beer_crop_cereal', '+',
+                              'agr_ibp_bev_bev-fer_crop_cereal',
+                              out_col='agr_domestic-production_bev_cereal', unit='kcal')
+
+    # Fruit domestic production for beverages = fruits for bev-alc + fruits for wine
+    dm_bev_dom_prod.operation('agr_ibp_bev_bev-alc_crop_fruit', '+',
+                              'agr_ibp_bev_wine_crop_fruit',
+                              out_col='agr_domestic-production_bev_fruit', unit='kcal')
+
+    # Filter and deepen
+    dm_bev_dom_prod = dm_bev_dom_prod.filter({'Variables': ['agr_domestic-production_bev_cereal',
+                                                            'agr_domestic-production_bev_fruit']})
+    dm_bev_dom_prod.deepen()
+
+    # BYPRODUCT PRODUCTION OF BEVERAGES ------------------------------------------------------------------------------
+
+    # Byproducts per bev type [kcal] = agr_domestic_production bev [kcal] * yields [%]
+    # Beer - Feedstock Yeast
+    idx_dm_bev_beer = dm_bev_beer.idx
+    idx_cdm_ibp_beer = cdm_cp_ibp_bev_beer.idx
+    agr_ibp_bev_beer_fdk_yeast = dm_bev_beer.array[:, :, idx_dm_bev_beer['agr_domestic_production_beer']] \
+                                 * cdm_cp_ibp_bev_beer.array[idx_cdm_ibp_beer['cp_ibp_bev_beer_brf_fdk_yeast']]
+    dm_bev_beer.add(agr_ibp_bev_beer_fdk_yeast, dim='Variables', col_label='agr_ibp_bev_beer_fdk_yeast', unit='kcal')
+
+    # Beer - Feedstock Cereal
+    idx_dm_bev_beer = dm_bev_beer.idx
+    idx_cdm_ibp_beer = cdm_cp_ibp_bev_beer.idx
+    agr_ibp_bev_beer_fdk_cereal = dm_bev_beer.array[:, :, idx_dm_bev_beer['agr_domestic_production_beer']] \
+                                  * cdm_cp_ibp_bev_beer.array[idx_cdm_ibp_beer['cp_ibp_bev_beer_brf_fdk_crop_cereal']]
+    dm_bev_beer.add(agr_ibp_bev_beer_fdk_cereal, dim='Variables', col_label='agr_ibp_bev_beer_fdk_cereal', unit='kcal')
+
+    # Wine - Feedstock Marc
+    idx_dm_bev_wine = dm_bev_wine.idx
+    idx_cdm_ibp_wine = cdm_cp_ibp_bev_wine.idx
+    agr_ibp_bev_wine_fdk_marc = dm_bev_wine.array[:, :, idx_dm_bev_wine['agr_domestic_production_wine']] \
+                                * cdm_cp_ibp_bev_wine.array[idx_cdm_ibp_wine['cp_ibp_bev_wine_brf_fdk_marc']]
+    dm_bev_wine.add(agr_ibp_bev_wine_fdk_marc, dim='Variables', col_label='agr_ibp_bev_wine_fdk_marc', unit='kcal')
+
+    # Wine - Feedstock Lees
+    idx_dm_bev_wine = dm_bev_wine.idx
+    idx_cdm_ibp_wine = cdm_cp_ibp_bev_wine.idx
+    agr_ibp_bev_wine_fdk_lees = dm_bev_wine.array[:, :, idx_dm_bev_wine['agr_domestic_production_wine']] \
+                                * cdm_cp_ibp_bev_wine.array[idx_cdm_ibp_wine['cp_ibp_bev_wine_brf_fdk_lees']]
+    dm_bev_wine.add(agr_ibp_bev_wine_fdk_lees, dim='Variables', col_label='agr_ibp_bev_wine_fdk_lees', unit='kcal')
+
+    # Byproducts for other uses [kcal] = sum (wine byproducts [kcal])
+    dm_bev_wine.operation('agr_ibp_bev_wine_fdk_marc', '+',
+                          'agr_ibp_bev_wine_fdk_lees',
+                          out_col='agr_bev_ibp_use_oth', unit='kcal')
+    dm_bev_ibp_use_oth = dm_bev_wine.filter({'Variables': ['agr_bev_ibp_use_oth']})
+
+    """# Byproducts biomass use per sector = byproducts for other uses * share of bev biomass per sector [%]
+    idx_bev_ibp_use_oth = dm_bev_ibp_use_oth.idx
+    idx_bev_biomass_hierarchy = DM_alc_bev['biomass_hierarchy'].idx
+    agr_bev_ibp_use_oth = dm_bev_ibp_use_oth.array[:, :, idx_bev_ibp_use_oth['agr_bev_ibp_use_oth'], np.newaxis] * \
+                          DM_alc_bev['biomass_hierarchy'].array[:, :,
+                          idx_bev_biomass_hierarchy['agr_biomass-hierarchy-bev-ibp-use-oth'], :]
+    DM_alc_bev['biomass_hierarchy'].add(agr_bev_ibp_use_oth, dim='Variables', col_label='agr_bev_ibp_use_oth',
+                                        unit='kcal')"""
+
+    # Cereal bev byproducts allocated to feed [kcal] = sum (beer byproducts for feedstock [kcal])
+    dm_bev_beer.operation('agr_ibp_bev_beer_fdk_yeast', '+',
+                          'agr_ibp_bev_beer_fdk_cereal',
+                          out_col='agr_use_bev_ibp_cereal_feed', unit='kcal')
+    dm_bev_ibp_cereal_feed = dm_bev_beer.filter({'Variables': ['agr_use_bev_ibp_cereal_feed']})
+
+    # Unit conversion: [kcal] to [t]
+    # Filter
+    cdm_kcal = CDM_const['cdm_kcal-per-t'].copy()
+    cdm_kcal = cdm_kcal.filter({'Categories1': ['crop-cereal']})
+    cdm_kcal = cdm_kcal.flatten()
+
+    # Convert from [kcal] to [t]
+    array_temp = dm_bev_ibp_cereal_feed[:, :, 'agr_use_bev_ibp_cereal_feed'] \
+                 / cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t_crop-cereal']
+    dm_bev_ibp_cereal_feed.add(array_temp, dim='Variables',
+                    col_label='agr_use_bev_ibp_cereal_feed_t',
+                    unit='t')
+
+    # (Not used after) Fruits bev allocated to non-food [kcal] = dom prod bev alc + dom prod bev wine + bev byproducts for fertilizer
+
+    # (Not used after) Cereals bev allocated to non-food [kcal] = dom prod bev beer + dom prod bev fer + bev byproducts for fertilizer
+    # change the double count of bev byproducts for fertilizer in fruits/cereals bev allocated to non-food [kcal]
+
+    # (Not used after) Fruits bev allocated to bioenergy [kcal] = bp bev for solid bioenergy (+ bp use for ethanol (not found in knime))
+    return DM_alc_bev, dm_bev_ibp_cereal_feed, dm_bev_dom_prod
+
+
 # CalculationLeaf INTERFACE TO TPE  --------------------------------------------------------------
 def dietaryhabits_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_food):
 
@@ -491,7 +673,7 @@ def dietaryhabits_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario
 def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, write_pickle, interface=Interface()):
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    DM_ots_fts, DM_diet, CDM_const = read_data(DM_input, lever_setting, tpe_scenario)
+    DM_ots_fts, DM_diet, DM_alc_bev, CDM_const = read_data(DM_input, lever_setting, tpe_scenario)
     country_list = ['Switzerland']
 
     # INTERFACES IN ---------------------------------------------------------------------------------------------------
@@ -518,10 +700,12 @@ def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, write_pi
       dm_lfs, dm_diet_consumed, dm_diet_consumed_bau, dm_diet_consumed_scenario, dm_diet_food = lifestyle_kcal_workflow(
         DM_diet, DM_pop, CDM_const, years_setting, tpe_scenario=tpe_scenario)
 
+    DM_alc_bev, dm_bev_ibp_cereal_feed, dm_bev_dom_prod = alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs)
+
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 
     # Dietary Habits to TCAF
-    DM_TCAF_health_diet = dietaryhabits_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario,)
+    DM_TCAF_health_diet = dietaryhabits_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario)
     if write_pickle is True:
       current_file_directory = os.path.dirname(os.path.abspath(__file__))
       f = os.path.join(current_file_directory,
@@ -536,13 +720,17 @@ def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, write_pi
 
     # Dietary Habits to Livestock
     dm_demand = dm_lfs.filter({'Variables':['agr_demand']}, inplace=False)
+    DM_diet_livestock = {'demand': dm_demand,
+                         'bev_feed': dm_bev_ibp_cereal_feed}
     if write_pickle is True:
       current_file_directory = os.path.dirname(os.path.abspath(__file__))
       f = os.path.join(current_file_directory,
                        '../_database/data/interface/dietary-habits_to_livestock.pickle')
       with open(f, 'wb') as handle:
-        pickle.dump(dm_demand, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(DM_diet_livestock, handle, protocol=pickle.HIGHEST_PROTOCOL)
     interface.add_link(from_sector='dietary-habits', to_sector='livestock', dm=dm_demand)
+
+    # Dietary Habits to Crop
 
     # TPE OUTPUT -------------------------------------------------------------------------------------------------------
     results_run = dietaryhabits_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_food)

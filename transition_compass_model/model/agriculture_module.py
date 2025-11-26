@@ -2532,7 +2532,7 @@ def agriculture(lever_setting, years_setting, DM_input, interface=Interface()):
 
 def agriculture_local_run():
     country_list = ['Switzerland', 'Vaud']
-    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'agriculture')
+    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'agriculture', filter_country=True)
     years_setting, lever_setting = init_years_lever()
     agriculture(lever_setting, years_setting, DM_input['agriculture'])
     return
