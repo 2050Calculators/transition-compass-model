@@ -25,37 +25,43 @@ def init_years_lever():
 def read_data(DM_livestock, lever_setting):
 
     # Read fts based on lever_setting
-    # FIXME error it adds ots and fts
-    # DM_check = check_ots_fts_match(DM_agriculture, lever_setting)
     DM_ots_fts = read_level_data(DM_livestock, lever_setting)
 
-    # Sub-matrix for LIVESTOCK
+    # Sub-matrix for LIVESTOCK PROD & POP
     dm_livestock_losses = DM_ots_fts['livestock-losses']
+    dm_livestock_ssr = DM_ots_fts['ssr-liv']
     dm_livestock_yield = DM_ots_fts['livestock-yield']
     dm_livestock_slaughtered = DM_ots_fts['slaughter-rates']
     dm_livestock_density = DM_ots_fts['livestock-density']
-    dm_livestock_enteric_emissions = DM_ots_fts['livestock-enteric']
-    dm_livestock_manure = DM_ots_fts['livestock-manure']
-    dm_ration = DM_ots_fts['feed-ration']
-    dm_alt_protein = DM_ots_fts['alt-protein']
-    dm_ruminant_feed = DM_ots_fts['ruminant-feed']
+    dm_split_import = DM_livestock['fxa']['split-import']
+    dm_share_export = DM_livestock['fxa']['share-export']
     dm_fxa_ratio_milk = DM_livestock['fxa']['ratio_milk']
     dm_fxa_cal_liv_prod = DM_livestock['fxa']['cal_agr_domestic-production-liv']
     dm_fxa_cal_liv_pop = DM_livestock['fxa']['cal_agr_liv-population']
-    dm_fxa_cal_liv_CH4 = DM_livestock['fxa']['cal_agr_liv_CH4-emission']
-    dm_fxa_cal_liv_N2O = DM_livestock['fxa']['cal_agr_liv_N2O-emission']
-    dm_fxa_cal_demand_feed = DM_livestock['fxa']['cal_agr_demand_feed']
+
+    # Sub-matrix for MANURE
+    dm_livestock_enteric_emissions = DM_ots_fts['livestock-enteric']
+    dm_livestock_manure = DM_ots_fts['livestock-manure']
     dm_fxa_ef_liv_N2O = DM_livestock['fxa']['ef_liv_N2O-emission']
     dm_fxa_ef_liv_CH4_treated = DM_livestock['fxa']['ef_liv_CH4-emission_treated']
     dm_fxa_liv_nstock = DM_livestock['fxa']['liv_manure_n-stock']
-    dm_trade_origin = DM_livestock['fxa']['trade-origin']
+    dm_fxa_cal_liv_CH4 = DM_livestock['fxa']['cal_agr_liv_CH4-emission']
+    dm_fxa_cal_liv_N2O = DM_livestock['fxa']['cal_agr_liv_N2O-emission']
+
+    # Sub-matrix for FEED
+    dm_ration = DM_ots_fts['feed-ration']
+    dm_alt_protein = DM_ots_fts['alt-protein']
+    dm_ruminant_feed = DM_ots_fts['ruminant-feed']
+    dm_fxa_cal_demand_feed = DM_livestock['fxa']['cal_agr_demand_feed']
 
 
     # Aggregate Data Matrix - LIVESTOCK PROD & POP
     DM_liv_prod = {
         'losses': dm_livestock_losses,
         'yield': dm_livestock_yield,
-        'trade-origin': dm_trade_origin,
+        'ssr-liv': dm_livestock_ssr,
+        'split-import': dm_split_import,
+        'share-export': dm_share_export,
         'liv_slaughtered_rate': dm_livestock_slaughtered,
         'cal_liv_prod': dm_fxa_cal_liv_prod,
         'cal_liv_population': dm_fxa_cal_liv_pop,
@@ -96,32 +102,45 @@ def simulate_dietaryhabits_to_livestock_input():
 
     return dm_demand
 
-# CalculationLeaf LIVESTOCK FOOD DEMAND TO DOMESTIC FOOD PRODUCTION --------------------------------------------------------------
-def trade_livestock_workflow(DM_food_demand, dm_demand):
+# CalculationLeaf LIVESTOCK FOOD DEMAND TO DOMESTIC & IMPORTED FOOD PRODUCTION --------------------------------------------------------------
+def trade_livestock_workflow(DM_liv_prod, dm_demand):
     # Overall food demand [kcal] = food demand [kcal] + food waste [kcal] NOW IN lifestyle_workflow()
     # dm_lfs.operation('lfs_total-cal-demand', '+', 'lfs_food-wastes', out_col='agr_demand', unit='kcal')
 
-    # Filtering dms to only keep pro
-    dm_demand_pro = dm_demand.filter_w_regex({'Categories1': 'pro-.*', 'Variables': 'agr_demand'})
-    food_net_import_pro = DM_food_demand['food-net-import-pro'].filter_w_regex(
-        {'Categories1': 'pro-.*', 'Variables': 'agr_food-net-import'})
-    # Dropping the unwanted columns
-    food_net_import_pro.drop(dim='Categories1', col_label=['pro-crop-processed-cake', 'pro-crop-processed-molasse'])
+    # Filtering dms to only keep livestock products (without offal and afats)
+    dm_demand_liv = dm_demand.filter_w_regex({'Categories1': 'pro-liv-meat.*|pro-liv-abp-dairy-milk|pro-liv-abp-hens-egg', 'Variables': 'agr_demand'})
+    dm_ssr_liv = DM_liv_prod['ssr-liv']
 
     # Sorting the dms alphabetically
-    food_net_import_pro.sort(dim='Categories1')
-    dm_demand_pro.sort(dim='Categories1')
+    dm_ssr_liv.sort(dim='Categories1')
+    dm_demand_liv.sort(dim='Categories1')
 
-    # Domestic production processed food [kcal] = agr_demand_pro_(.*) [kcal] * net-imports_pro_(.*) [%]
-    idx_lfs = dm_demand_pro.idx
-    idx_import = food_net_import_pro.idx
-    agr_domestic_production = dm_demand_pro.array[:, :, idx_lfs['agr_demand'], :] \
-                              * food_net_import_pro.array[:, :, idx_import['agr_food-net-import'], :]
+    # Domestic production [kcal] = agr_demand_(.*) [kcal] * ssr_(.*) [-]
+    array_temp = dm_demand_liv[:, :,'agr_demand', :] \
+                              * dm_ssr_liv[:, :, 'agr_ssr', :]
+    dm_demand_liv.add(array_temp, dim='Variables', col_label='agr_domestic_production', unit='kcal')
 
-    # Adding agr_domestic_production to dm_demand_pro
-    dm_demand_pro.add(agr_domestic_production, dim='Variables', col_label='agr_domestic_production', unit='kcal')
+    # Dom prod for exports [kcal] = Domestic production [kcal] * share exports [exports/production]
+    dm_demand_liv.append(DM_liv_prod['share-export'], dim='Variables')
+    dm_demand_liv.operation('agr_share-export', '*', 'agr_domestic_production',
+                                     out_col='agr_exported_production', unit='kcal')
 
-    return dm_demand, dm_demand_pro
+    # Imported production total [kcal] = Demand [kcal] - (Domestic production [kcal] - Dom prod for exports [kcal])
+    dm_demand_liv.operation('agr_domestic_production', '-', 'agr_exported_production',
+                                     out_col='temp', unit='kcal')
+    dm_demand_liv.operation('agr_demand', '-', 'temp',
+                                     out_col='agr_imported_production_total', unit='kcal')
+
+    # Imported production per region [kcal] = Imported production total [kcal] * split per region [-]
+    dm_trade = DM_liv_prod['split-import'].copy()
+    array_temp = dm_demand_liv[:,:,'agr_imported_production_total',:] * \
+                 dm_trade[:,:,'agr_split-import',:]
+    DM_liv_prod['split-import'].add(array_temp, dim='Variables', col_label='agr_imported_production', unit='kcal')
+
+    # Calibration
+
+
+    return dm_demand_liv
 
 # CalculationLeaf ANIMAL SOURCED FOOD DEMAND TO LIVESTOCK POPULATION AND LIVESTOCK PRODUCTS ----------------------------
 def livestock_production_workflow(DM_liv_prod, CDM_const, dm_demand_pro, years_setting):

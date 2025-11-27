@@ -43,7 +43,7 @@ def ensure_structure(df):
 
     return df
 
-# CalculationLeaf SSR LIVESTOCK PROD & FEED ------------------------------------------------------------------------------
+# CalculationLeaf SSR LIVESTOCK PROD & FEED
 def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     # Read data ------------------------------------------------------------------------------------------------------------
     try:
@@ -280,7 +280,7 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_ssr = pd.read_excel(
-        'dictionaries/dictionnary_agriculture_landuse.xlsx',
+        'dictionaries/dictionnary_livestock.xlsx',
         sheet_name='self-sufficiency')
 
     # Prepend 'SSR'
@@ -338,6 +338,145 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     dm_ssr_feed = DataMatrix.create_from_df(df_ots, num_cat=1)
 
     return dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk
+
+
+# CalculationLeaf FXA - SHARE EXPORTS
+def exports_processing(list_countries_calc, file_dict):
+    # Read data ------------------------------------------------------------------------------------------------------------
+    try:
+        df_exports = pd.read_csv(file_dict['exports'])
+    except OSError:
+
+        # FOOD BALANCE SHEETS (FBS) - For everything except molasses and cakes -------------------------------------------------
+        # List of elements
+        list_elements = ['Production Quantity', 'Export Quantity']
+
+        list_items = ['Milk - Excluding Butter + (Total)', 'Eggs + (Total)',
+                      'Bovine Meat', 'Meat, Other', 'Pigmeat',
+                      'Poultry Meat', 'Mutton & Goat Meat']
+
+        # 1990 - 2013
+        ld = faostat.list_datasets()
+        code = 'FBSH'
+        pars = faostat.list_pars(code)
+        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
+        my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+        my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+        list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
+                      '2002',
+                      '2003', '2004', '2005', '2006', '2007', '2008', '2009']
+        my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+        my_pars = {
+            'area': my_countries,
+            'element': my_elements,
+            'item': my_items,
+            'year': my_years
+        }
+        df_ssr_1990_2013 = faostat.get_data_df(code, pars=my_pars, strval=False)
+        # Renaming the elements
+        df_ssr_1990_2013.loc[df_ssr_1990_2013['Element'].str.contains('Production Quantity', case=False, na=False), 'Element'] = 'Production'
+        df_ssr_1990_2013.loc[
+            df_ssr_1990_2013['Element'].str.contains('Export Quantity', case=False, na=False), 'Element'] = 'Export'
+
+        # 2010 - 2022
+
+        list_elements = ['Production Quantity', 'Import quantity', 'Export quantity', 'Feed', 'Processed', 'Stock Variation', 'Food', 'Other uses (non-food)', 'Residuals']
+        # Different list becuse different in item nomination such as rice
+        list_items = ['Milk - Excluding Butter + (Total)', 'Eggs + (Total)',
+                      'Bovine Meat', 'Meat, Other', 'Pigmeat',
+                      'Poultry Meat', 'Mutton & Goat Meat']
+        code = 'FBS'
+        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
+        my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+        my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+        list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023']
+        my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+        my_pars = {
+            'area': my_countries,
+            'element': my_elements,
+            'item': my_items,
+            'year': my_years
+        }
+        df_ssr_2010_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
+
+        # Renaming the elements
+        df_ssr_2010_2021.loc[
+            df_ssr_2010_2021['Element'].str.contains('Production Quantity', case=False, na=False), 'Element'] = 'Production'
+        df_ssr_2010_2021.loc[
+            df_ssr_2010_2021['Element'].str.contains('Import quantity', case=False, na=False), 'Element'] = 'Import'
+        df_ssr_2010_2021.loc[
+            df_ssr_2010_2021['Element'].str.contains('Export quantity', case=False, na=False), 'Element'] = 'Export'
+        df_ssr = pd.concat([df_ssr_1990_2013, df_ssr_2010_2021])
+
+        # Renaming the items for name matching
+
+        df_ssr.loc[
+          df_ssr['Item'].str.contains('Rice (Milled Equivalent)', case=False,
+                                      na=False, regex=False),'Item'] = 'Rice and products'
+
+        df_exports = df_ssr.copy()
+        df_exports.to_csv(file_dict['exports'], index=False)
+
+    # Filtering to keep wanted columns
+    columns_to_filter = ['Area', 'Element', 'Item', 'Year', 'Value']
+    df_exports = df_exports[columns_to_filter]
+
+    # Compute the ratio of exports compared to imports ---------------------------------------------------------------------------------
+    # 1: Pivot the DataFrame to get 'Production', 'Import Quantity', and 'Export Quantity' in separate columns
+    pivot_df = df_exports.pivot_table(index=['Area', 'Year', 'Item'], columns='Element', values='Value').reset_index()
+
+    # Fill na with 0
+    cols = [
+      'Production', 'Export'
+    ]
+
+    for c in cols:
+      pivot_df[c] = pivot_df[c].fillna(0.0)
+
+
+    # 2: Compute the ratio of exports compared to imports
+    pivot_df['value'] = pivot_df['Export'] / pivot_df['Production']
+
+    # Filter columns
+    columns_to_filter = ['Area', 'Year', 'Item', 'value']
+    pivot_df = pivot_df[columns_to_filter]
+
+    # PathwayCalc formatting -----------------------------------------------------------------------------------------------
+
+    # Food item name matching with dictionary
+    # Read excel file
+    df_dict_exports = pd.read_excel(
+        'dictionaries/dictionnary_livestock.xlsx',
+        sheet_name='exports')
+
+    # Renaming existing columns (geoscale, timsecale, value)
+    pivot_df.rename(columns={'Area': 'geoscale', 'Year': 'timescale'}, inplace=True)
+
+    # Merge based on 'Item'
+    df_exports = pd.merge(df_dict_exports, pivot_df, on='Item')
+
+    # Drop the 'Item' column
+    df_exports = df_exports.drop(columns=['Item'])
+
+    # Adding the columns module, lever, level and string-pivot at the correct places
+    lever = 'food-net-import'
+    df_exports['module'] = 'agriculture'
+    df_exports['lever'] = lever
+    df_exports['level'] = 0
+
+    # Extrapolation
+    df_exports = linear_fitting_ots_db(df_exports, years_all, countries='all')
+
+    # Format as datamatrix
+    df_ots, df_fts = database_to_df(df_exports, lever, level='all')
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm_fxa_exports = DataMatrix.create_from_df(df_ots, num_cat=1)
+
+
+    return dm_fxa_exports
+
 
 # CalculationLeaf TRADE ORIGIN
 def trade_origin_processing(years_ots, list_countries_calc, file_dict):
@@ -490,7 +629,7 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   df_trade_agg['module'] = lever
   df_trade_agg['level'] = 0.0
   df_trade_agg = ensure_structure(df_trade_agg)
-  df_trade_agg = linear_fitting_ots_db(df_trade_agg, years_ots, countries='all')
+  df_trade_agg = linear_fitting_ots_db(df_trade_agg, years_all, countries='all')
 
   # Replace negative values by 0.0
   df_trade_agg['value'] = df_trade_agg['value'].clip(lower=0.0)
@@ -640,7 +779,7 @@ def livestock_density(df_liv_pop):
 
   # Read excel file
   df_dict_csl = pd.read_excel(
-    'dictionaries/dictionnary_agriculture_landuse.xlsx',
+    'dictionaries/dictionnary_livestock.xlsx',
     sheet_name='climate-smart-livestock')
 
   # Merge based on 'Item'
@@ -806,7 +945,7 @@ def livestock_emissions():
   # Food item name matching with dictionary
   # Read excel file
   df_dict_csl_enteric = pd.read_excel(
-    'dictionaries/dictionnary_agriculture_landuse.xlsx',
+    'dictionaries/dictionnary_livestock.xlsx',
     sheet_name='climate-smart-livestock_enteric')
 
   # Merge based on 'Item' & 'Aggregation'
@@ -1013,7 +1152,7 @@ def livestock_emissions():
   # Food item name matching with dictionary
   # Read excel file
   df_dict_csl = pd.read_excel(
-    'dictionaries/dictionnary_agriculture_landuse.xlsx',
+    'dictionaries/dictionnary_livestock.xlsx',
     sheet_name='climate-smart-livestock')
 
   # Merge based on 'Item' & 'Aggregation'
@@ -1161,7 +1300,7 @@ def livestock_losses():
   # Food item name matching with dictionary
   # Read excel file
   df_dict_csl_losses = pd.read_excel(
-    'dictionaries/dictionnary_agriculture_landuse.xlsx',
+    'dictionaries/dictionnary_livestock.xlsx',
     sheet_name='climate-smart-livestock_losses')
 
   # Merge based on 'Item'
@@ -1251,7 +1390,7 @@ def feed_ration(df_feed_ration, cdm_efficiency, cdm_kcal):
 
   # Read excel file
   df_dict_csl = pd.read_excel(
-    'dictionaries/dictionnary_agriculture_landuse.xlsx',
+    'dictionaries/dictionnary_livestock.xlsx',
     sheet_name='climate-smart-livestock')
 
   # Merge based on 'Item'
@@ -1631,10 +1770,10 @@ def yield_slaughter_rate(df_liv_pop, list_countries_calc):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_csl_yield = pd.read_excel(
-        'dictionaries/dictionnary_agriculture_landuse.xlsx',
+        'dictionaries/dictionnary_livestock.xlsx',
         sheet_name='climate-smart-livestock_yield')
     df_dict_csl_slau = pd.read_excel(
-        'dictionaries/dictionnary_agriculture_landuse.xlsx',
+        'dictionaries/dictionnary_livestock.xlsx',
         sheet_name='climate-smart-livestock_slau')
 
     # Merge based on 'Item'
@@ -1872,7 +2011,7 @@ def livestock_calibration(list_countries_calc, dm_losses):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        'dictionaries/dictionnary_agriculture_landuse.xlsx',
+        'dictionaries/dictionnary_livestock.xlsx',
         sheet_name='calibration')
 
     # Merge based on 'Item'
@@ -1992,7 +2131,7 @@ def livestock_calibration(list_countries_calc, dm_losses):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        'dictionaries/dictionnary_agriculture_landuse.xlsx',
+        'dictionaries/dictionnary_livestock.xlsx',
         sheet_name='calibration')
 
     # Prepend "Diet" to each value in the 'Item' column
@@ -2138,7 +2277,7 @@ def manure_calibration(list_countries_calc):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        'dictionaries/dictionnary_agriculture_landuse.xlsx',
+        'dictionaries/dictionnary_livestock.xlsx',
         sheet_name='calibration')
 
     # Merge based on 'Item'
@@ -2192,7 +2331,7 @@ def fxa_ffr_milk(df_ffr_milk):
   # Food item name matching with dictionary
   # Read excel file
   df_dict = pd.read_excel(
-    'dictionaries/dictionnary_agriculture_landuse.xlsx',
+    'dictionaries/dictionnary_livestock.xlsx',
     sheet_name='fxa')
 
   # Renaming existing columns (geoscale, timsecale, value)
@@ -2298,7 +2437,7 @@ def manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure
    # Food item name matching with dictionary
    # Read excel file
    df_dict_csl = pd.read_excel(
-     'dictionaries/dictionnary_agriculture_landuse.xlsx',
+     'dictionaries/dictionnary_livestock.xlsx',
      sheet_name='climate-smart-livestock')
 
    # Merge based on 'Item'
@@ -2525,7 +2664,7 @@ def feed_calibration(list_countries_calc):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        'dictionaries/dictionnary_agriculture_landuse.xlsx',
+        'dictionaries/dictionnary_livestock.xlsx',
         sheet_name='calibration')
 
     # Prepend "Diet" to each value in the 'Item' column
@@ -2795,7 +2934,8 @@ def datamatrix_to_pickle():
   # FixedAssumptionsToDatamatrix -----------------------------------------------
   dict_fxa = {}
 
-  dict_fxa['trade-origin'] = dm_liv_trade_origin
+  dict_fxa['split-import'] = dm_liv_trade_origin
+  dict_fxa['share-export'] = dm_fxa_exports
   dict_fxa['ef_liv_N2O-emission'] = dm_fxa_N2O
   dict_fxa['ef_liv_CH4-emission_treated'] = dm_fxa_CH4
   dict_fxa['liv_manure_n-stock'] = dm_fxa_manure_yield
@@ -3048,9 +3188,11 @@ list_partnerregions_trade = ['Switzerland',
                          '-- Western Asia + (Total)',
                          '-- Western Europe + (Total)']
 
-file_dict = {'ssr': 'data/faostat/ssr.csv', 'cake': 'data/faostat/ssr_cake.csv',
+file_dict = {'ssr': 'data/faostat/ssr.csv',
+             'cake': 'data/faostat/ssr_cake.csv',
              'molasse': 'data/faostat/ssr_2010_2021_molasse_cake.csv',
-             'trade': 'data/faostat/trade.csv'}
+             'trade': 'data/faostat/trade.csv',
+             'exports': 'data/faostat/exports.csv'}
 
 cdm_efficiency, cdm_kcal = constant()
 dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk = self_sufficiency_processing(years_ots, list_countries_calc, file_dict)
@@ -3065,6 +3207,7 @@ dm_feed_ration, dm_grass = feed_ration(df_feed_ration, cdm_efficiency, cdm_kcal)
 dm_liv_yield, dm_slaughter_rates = yield_slaughter_rate(df_liv_pop, list_countries_calc)
 dm_cal_liv_emissions, df_liv_emissions = manure_calibration(list_countries_calc)
 dm_fxa_CH4, dm_fxa_N2O = manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa)
+dm_fxa_exports = exports_processing(list_countries_calc,file_dict)
 dm_feed_alt_protein = livestock_protein_meals_processing(df_csl_feed)
 
 #dm_fts = fts_processing(list_countries, years_ots, years_fts, cdm_kcal)
