@@ -429,16 +429,17 @@ def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs):
     # Filtering dms to only keep pro
     dm_demand_bev = dm_lfs.filter_w_regex({'Categories1': 'pro-bev.*', 'Variables': 'agr_demand'})
 
-    # Domestic production = demand * ssr [-]
     # Filtering dms to only keep pro
     food_net_import_pro = DM_alc_bev['ssr-bev'].filter_w_regex(
         {'Categories1': 'pro-bev.*', 'Variables': 'agr_ssr'})
     # Sorting the dms alphabetically
     food_net_import_pro.sort(dim='Categories1')
     dm_demand_bev.sort(dim='Categories1')
+
     # Domestic production processed food [kcal] = agr_demand_pro_(.*) [kcal] * net-imports_pro_(.*) [-]
     array_agr_domestic_production = dm_demand_bev[:, :, 'agr_demand', :] \
                               * food_net_import_pro[:, :, 'agr_ssr']
+
     # Adding agr_domestic_production to dm_lfs_pro
     dm_demand_bev.add(array_agr_domestic_production, dim='Variables', col_label='agr_domestic_production', unit='kcal')
 
@@ -467,6 +468,8 @@ def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs):
     cdm_cp_ibp_bev_fer = CDM_const['cdm_cp_ibp_bev_bev-fer']
 
     # FRUIT & CEREAL DEMAND FOR BEVERAGES ------------------------------------------------------------------------------
+
+    # Crop demand [kcal] = domestic production bev [kcal] * processing yield [input kcal/output kcal]
 
     # Beer - Crop Cereal
     idx_dm_bev_beer = dm_bev_beer.idx
