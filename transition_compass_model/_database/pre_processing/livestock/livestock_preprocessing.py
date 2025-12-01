@@ -650,8 +650,10 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
   dm_liv_trade_origin = DataMatrix.create_from_df(df_ots, num_cat=1)
 
-  # Add Switzerland as dummy
+  # Add Switzerland and Melanasia as dummy (because are in losses and other dms)
   dm_liv_trade_origin.add(0.0, dummy=True, col_label=['Switzerland'], dim='Country')
+  dm_liv_trade_origin.add(0.0, dummy=True, col_label=['Melanesia'],
+                          dim='Country')
 
   return dm_liv_trade_origin
 
@@ -872,7 +874,7 @@ def production_share():
     dm.rename_col_regex('Cheptel - ', '', dim='Categories1')
     dict_cat = {'meat-sheep': ['Moutons', 'Chèvres'],
                 'meat-pig': ['Porcs'],
-                'meat-oth-animals': ['Equidés', 'Autres animaux']}
+                'meat-oth-animal': ['Equidés', 'Autres animaux']}
     dm.groupby(dict_cat, dim='Categories1', inplace=True)
     dm.sort('Years')
     dm.filter({'Years': years_ots}, inplace=True)
@@ -888,7 +890,7 @@ def production_share():
   # else based on EUCALC doc
   lsu_conversion = {'meat-sheep': 0.1,
                     'meat-pig': 0.22,
-                    'meat-oth-animals': 0.03}
+                    'meat-oth-animal': 0.03}
 
   for cat in dm_others.col_labels['Categories1']:
     dm_others[:, :, 'agr_livestock', cat, :] = lsu_conversion[cat] \
@@ -1699,7 +1701,7 @@ def feed_ration(df_feed_ration, cdm_efficiency, cdm_kcal):
   # ASF domestic prod with losses => Unit conversion: [kcal] to [t]
   cdm_kcal_temp.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
   cdm_kcal_temp = cdm_kcal_temp.filter({'Categories1': ['abp-dairy-milk', 'abp-hens-egg',
-                                              'meat-bovine', 'meat-oth-animals',
+                                              'meat-bovine', 'meat-oth-animal',
                                               'meat-pig', 'meat-poultry',
                                               'meat-sheep']})
   dm_dom_prod_liv.sort('Categories1')
@@ -2099,8 +2101,8 @@ def livestock_protein_meals_processing(df_csl_feed):
     df_protein_meals_all['agr_alt-protein_abp-hens-egg_insect[%]'] = 0.0
     df_protein_meals_all['agr_alt-protein_meat-bovine_algae[%]'] = 0.0
     df_protein_meals_all['agr_alt-protein_meat-bovine_insect[%]'] = 0.0
-    df_protein_meals_all['agr_alt-protein_meat-oth-animals_algae[%]'] = 0.0
-    df_protein_meals_all['agr_alt-protein_meat-oth-animals_insect[%]'] = 0.0
+    df_protein_meals_all['agr_alt-protein_meat-oth-animal_algae[%]'] = 0.0
+    df_protein_meals_all['agr_alt-protein_meat-oth-animal_insect[%]'] = 0.0
     df_protein_meals_all['agr_alt-protein_meat-pig_algae[%]'] = 0.0
     df_protein_meals_all['agr_alt-protein_meat-pig_insect[%]'] = 0.0
     df_protein_meals_all['agr_alt-protein_meat-poultry_algae[%]'] = 0.0
@@ -2619,7 +2621,7 @@ def fxa_ffr_milk(df_ffr_milk):
     'Czechia', 'Czech Republic')
 
   # Extrapolation
-  df_ffr_milk = linear_fitting_ots_db(df_ffr_milk, years_ots,
+  df_ffr_milk = linear_fitting_ots_db(df_ffr_milk, years_all,
                                              countries='all')
 
   # Format as dm

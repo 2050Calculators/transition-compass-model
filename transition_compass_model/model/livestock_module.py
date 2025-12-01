@@ -31,9 +31,11 @@ def read_data(DM_livestock, lever_setting):
     dm_livestock_losses = DM_ots_fts['livestock-losses']
     dm_livestock_ssr = DM_ots_fts['ssr-liv']
     dm_livestock_yield = DM_ots_fts['livestock-yield']
+    dm_share_organic = DM_ots_fts['share-organic']
     dm_livestock_slaughtered = DM_ots_fts['slaughter-rates']
     dm_livestock_density = DM_ots_fts['livestock-density']
     dm_split_import = DM_livestock['fxa']['split-import']
+    dm_split_import.drop(dim='Country', col_label=['Switzerland'])  # drop Switzerland for imports
     dm_share_export = DM_livestock['fxa']['share-export']
     dm_fxa_ratio_milk = DM_livestock['fxa']['ratio_milk']
     dm_fxa_cal_liv_prod = DM_livestock['fxa']['cal_agr_domestic-production-liv']
@@ -62,6 +64,7 @@ def read_data(DM_livestock, lever_setting):
         'ssr-liv': dm_livestock_ssr,
         'split-import': dm_split_import,
         'share-export': dm_share_export,
+        'share-organic': dm_share_organic,
         'liv_slaughtered_rate': dm_livestock_slaughtered,
         'cal_liv_prod': dm_fxa_cal_liv_prod,
         'cal_liv_population': dm_fxa_cal_liv_pop,
@@ -135,52 +138,57 @@ def trade_livestock_workflow(DM_liv_prod, dm_demand):
     dm_trade = DM_liv_prod['split-import'].copy()
     array_temp = dm_demand_liv[:,:,'agr_imported_production_total',:] * \
                  dm_trade[:,:,'agr_split-import',:]
-    DM_liv_prod['split-import'].add(array_temp, dim='Variables', col_label='agr_imported_production', unit='kcal')
+    DM_liv_prod['split-import'].add(array_temp, dim='Variables', col_label='agr_domestic_production', unit='kcal')
+
+    # Filter to only have production
+    dm_production= dm_demand_liv.filter_w_regex({'Categories1': 'pro-liv.*', 'Variables': 'agr_domestic_production'})
+    # Drop the pro- prefix of the categories
+    dm_production.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
+
+    # Append domestic production Switzerland + other countries
+    dm_demand_imports = DM_liv_prod['split-import'].filter({'Variables': ['agr_domestic_production']}, inplace=False)
+    dm_production.append(dm_demand_imports, dim='Country')
 
     # Calibration
 
 
-    return dm_demand_liv
+    return dm_production
 
-# CalculationLeaf ANIMAL SOURCED FOOD DEMAND TO LIVESTOCK POPULATION AND LIVESTOCK PRODUCTS ----------------------------
-def livestock_production_workflow(DM_liv_prod, CDM_const, dm_demand_pro, years_setting):
-    # Filter dm_demand_pro to only have livestock products
-    dm_demand_pro_liv = dm_demand_pro.filter_w_regex({'Categories1': 'pro-liv.*', 'Variables': 'agr_domestic_production'})
-    # Drop the pro- prefix of the categories
-    dm_demand_pro_liv.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
-    # Sort the dms
-    dm_demand_pro_liv.sort(dim='Categories1')
-    DM_liv_prod['losses'].sort(dim='Categories1')
-    DM_liv_prod['yield'].sort(dim='Categories1')
+
+# CalculationLeaf DOMESTIC DEMAND TO LIVESTOCK POPULATION AND LIVESTOCK PRODUCTS ----------------------------
+def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_setting):
+
+    # Drop offals & afats for production
+    DM_liv_prod['losses'].drop(dim='Categories1', col_label=['abp-processed-offal',
+                                                   'abp-processed-afat'])
 
     # Append dm_demand_pro_liv to DM_liv_prod['losses']
-    DM_liv_prod['losses'].append(dm_demand_pro_liv, dim='Variables')
+    DM_liv_prod['losses'].append(dm_production, dim='Variables')
 
-    # Account for milk as Feed and Processed
+    # (CH only) Account for milk as Feed and Processed
     # Milk Food & Feed [kcal] = Milk Food [kcal] * fxa_milk_feed_food_ratio [%]
-    array_temp = DM_liv_prod['losses'][:,:,'agr_domestic_production','abp-dairy-milk'] * \
-                 DM_liv_prod['ratio_milk'][:,:,'fxa_agr_feed-processing-food-ratio_abp-dairy-milk']
-    DM_liv_prod['losses'][:,:,'agr_domestic_production','abp-dairy-milk'] = array_temp
+    array_temp = DM_liv_prod['losses']['Switzerland',:,'agr_domestic_production','abp-dairy-milk'] * \
+                 DM_liv_prod['ratio_milk']['Switzerland',:,'fxa_agr_feed-processing-food-ratio', 'abp-dairy-milk']
+    DM_liv_prod['losses']['Switzerland',:,'agr_domestic_production','abp-dairy-milk'] = array_temp
 
     # Livestock domestic prod with losses [kcal] = livestock domestic prod [kcal] * Production losses livestock [%]
     DM_liv_prod['losses'].operation('agr_climate-smart-livestock_losses', '*', 'agr_domestic_production',
                                      out_col='agr_domestic_production_liv_afw_raw', unit='kcal')
 
-    # Calibration - Livestock domestic production
-    dm_cal_liv_prod = DM_liv_prod['cal_liv_prod']
+    # (CH only) Calibration - Livestock domestic production
+    dm_cal_liv_prod = DM_liv_prod['cal_liv_prod'].filter({'Country': ['Switzerland']})
     dm_liv_prod = DM_liv_prod['losses'].filter({'Variables': ['agr_domestic_production_liv_afw_raw']})
-    dm_liv_prod.drop(dim='Categories1', col_label=['abp-processed-offal',
-                                                   'abp-processed-afat'])  # Filter dm_liv_prod to drop offal & afats
-    dm_cal_rates_liv_prod = calibration_rates(dm_liv_prod, dm_cal_liv_prod, calibration_start_year=1990,
+    dm_liv_prod_ch = dm_liv_prod.filter({'Country': ['Switzerland']})
+    #dm_liv_prod.drop(dim='Categories1', col_label=['abp-processed-offal','abp-processed-afat'])  # Filter dm_liv_prod to drop offal & afats
+    dm_cal_rates_liv_prod = calibration_rates(dm_liv_prod_ch, dm_cal_liv_prod, calibration_start_year=1990,
                                               calibration_end_year=2023, years_setting=years_setting)
-    dm_liv_prod.append(dm_cal_rates_liv_prod, dim='Variables')
-    dm_liv_prod.operation('agr_domestic_production_liv_afw_raw', '*', 'cal_rate', dim='Variables',
+    dm_liv_prod_ch.append(dm_cal_rates_liv_prod, dim='Variables')
+    dm_liv_prod_ch.operation('agr_domestic_production_liv_afw_raw', '*', 'cal_rate', dim='Variables',
                           out_col='agr_domestic_production_liv_afw', unit='kcal')
-    df_cal_rates_liv_prod = dm_to_database(dm_cal_rates_liv_prod, 'none', 'agriculture', level=0)
 
-    # DM_livestock['cal_liv_prod'].append(dm_cal_rates_liv_prod, dim='Variables')
-    # DM_livestock['cal_liv_prod'].operation('caf_agr_domestic-production-liv', '*', 'agr_domestic_production_liv_afw',
-    #                                       dim="Variables", out_col='cal_agr_domestic_production_liv_afw', unit='kcal')
+    # Rename and replace with calibrated value for CH
+    dm_liv_prod.rename_col('agr_domestic_production_liv_afw_raw', 'agr_domestic_production_liv_afw', dim='Variables')
+    dm_liv_prod['Switzerland',:,'agr_domestic_production_liv_afw',:] = dm_liv_prod_ch['Switzerland',:,'agr_domestic_production_liv_afw',:]
 
     # Livestock slaughtered [lsu] = meat demand [kcal] / livestock meat content [kcal/lsu]
     dm_liv_slau = dm_liv_prod.filter({'Variables': ['agr_domestic_production_liv_afw']})
@@ -191,34 +199,33 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_demand_pro, years_s
     # Livestock population (stock) [lsu] = Livestock slaughtered [lsu] / slaughter rate [%]
     dm_liv_slau_egg_dairy = DM_liv_prod['yield'].filter({'Variables': ['agr_liv_population_slau']})
     DM_liv_prod['liv_slaughtered_rate'].append(dm_liv_slau_egg_dairy, dim='Variables')
-    # dm_liv_slau_meat = DM_liv_prod['yield'].filter({'Variables': ['agr_liv_population_raw'],
-    #                                                 'Categories1': ['meat-bovine', 'meat-pig', 'meat-poultry',
-    #                                                                 'meat-sheep', 'meat-oth-animals']})
-    # DM_liv_prod['liv_slaughtered_rate'].append(dm_liv_slau_meat, dim='Variables')
     DM_liv_prod['liv_slaughtered_rate'].operation('agr_liv_population_slau', '/',
                                                    'agr_climate-smart-livestock_slaughtered',
                                                    dim="Variables", out_col='agr_liv_population_raw', unit='lsu')
 
-    # Processing for calibration: Livestock population for meat, eggs and dairy ( meat pop & slaughtered livestock for eggs and dairy)
-    # Filtering eggs, dairy and meat
-    # dm_liv_slau_egg_dairy = DM_livestock['yield'].filter(
-    #    {'Variables': ['agr_liv_population_raw'], 'Categories1': ['abp-dairy-milk', 'abp-hens-egg']})
-    # dm_liv_slau_meat = DM_livestock['liv_slaughtered_rate'].filter({'Variables': ['agr_liv_population_meat']})
-    # Rename dm_liv_slau_meat variable to match with dm_liv_slau_egg_dairy
-    # dm_liv_slau_meat.rename_col('agr_liv_population_meat', 'agr_liv_population_raw', dim='Variables')
-    # Appending between livestock population
-    # dm_liv_slau_egg_dairy.append(dm_liv_slau_meat, dim='Categories1')
-
-    # Calibration Livestock population
-    dm_cal_liv_pop = DM_liv_prod['cal_liv_population']
+    # (CH only) Calibration Livestock population
+    dm_cal_liv_pop = DM_liv_prod['cal_liv_population'].filter({'Country': ['Switzerland']})
     dm_liv_pop = DM_liv_prod['liv_slaughtered_rate'].filter({'Variables': ['agr_liv_population_raw']})
-    dm_cal_rates_liv_pop = calibration_rates(dm_liv_pop, dm_cal_liv_pop, calibration_start_year=1990,
+    dm_liv_pop_ch = dm_liv_pop.filter({'Country': ['Switzerland']})
+    dm_cal_rates_liv_pop = calibration_rates(dm_liv_pop_ch, dm_cal_liv_pop, calibration_start_year=1990,
                                              calibration_end_year=2022, years_setting=years_setting)
-    dm_liv_pop.append(dm_cal_rates_liv_pop, dim='Variables')
-    dm_liv_pop.operation('agr_liv_population_raw', '*', 'cal_rate', dim='Variables', out_col='agr_liv_population',
+    dm_liv_pop_ch.append(dm_cal_rates_liv_pop, dim='Variables')
+    dm_liv_pop_ch.operation('agr_liv_population_raw', '*', 'cal_rate', dim='Variables', out_col='agr_liv_population',
                          unit='lsu')
-    # dm_liv_slau_egg_dairy.operation('agr_liv_population_raw', '*', 'cal_rate', dim='Variables', out_col='agr_liv_population', unit='lsu')
-    df_cal_rates_liv_pop = dm_to_database(dm_cal_rates_liv_pop, 'none', 'agriculture', level=0)
+
+    # Rename and replace with calibrated value for CH
+    dm_liv_pop.rename_col('agr_liv_population_raw', 'agr_liv_population', dim='Variables')
+    dm_liv_pop['Switzerland',:,'agr_liv_population',:] = dm_liv_pop_ch['Switzerland',:,'agr_liv_population',:]
+
+    # (CH only) Organic livestock = livestock population * share-organic [-]
+    array_temp = dm_liv_pop['Switzerland',:,'agr_liv_population',:] * \
+                 DM_liv_prod['share-organic']['Switzerland',:,'livestock_share-organic',:]
+    DM_liv_prod['share-organic'].add(array_temp[np.newaxis,:,:], dim='Variables', col_label='agr_liv_population_organic', unit='lsu')
+
+    # (CH only) Intensive livestock = livestock population * ( 1 - share-organic [-])
+    array_temp = dm_liv_pop['Switzerland',:,'agr_liv_population',:] * \
+                 (1.0 - DM_liv_prod['share-organic']['Switzerland',:,'livestock_share-organic',:])
+    DM_liv_prod['share-organic'].add(array_temp[np.newaxis,:,:], dim='Variables', col_label='agr_liv_population_intensive', unit='lsu')
 
     # GRAZING LIVESTOCK
     # Filtering ruminants (bovine & sheep)
@@ -631,8 +638,8 @@ def livestock(lever_setting, years_setting, DM_input, write_pickle, interface=In
     # CalculationTree LIVESTOCK MODULE
 
 
-    dm_demand, dm_demand_pro = trade_livestock_workflow(DM_liv_prod, dm_demand)
-    DM_liv_prod, dm_liv_ibp, dm_liv_ibp, dm_liv_prod, dm_liv_pop = livestock_production_workflow(DM_liv_prod, CDM_const, dm_demand_pro, years_setting)
+    dm_demand_liv = trade_livestock_workflow(DM_liv_prod, dm_demand)
+    DM_liv_prod, dm_liv_ibp, dm_liv_ibp, dm_liv_prod, dm_liv_pop = livestock_production_workflow(DM_liv_prod, CDM_const, dm_demand_liv, years_setting)
     dm_liv_N2O, dm_CH4, DM_manure = manure_workflow(DM_manure, dm_liv_pop, years_setting)
     DM_feed, dm_aps_ibp, dm_feed_req, dm_aps, dm_feed_demand = feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const,
                   years_setting)
