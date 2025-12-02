@@ -172,7 +172,7 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
     DM_liv_prod['losses']['Switzerland',:,'agr_domestic_production','abp-dairy-milk'] = array_temp
 
     # Livestock domestic prod with losses [kcal] = livestock domestic prod [kcal] * Production losses livestock [%]
-    DM_liv_prod['losses'].operation('agr_climate-smart-livestock_losses', '*', 'agr_domestic_production',
+    DM_liv_prod['losses'].operation('agr_livestock_losses', '*', 'agr_domestic_production',
                                      out_col='agr_domestic_production_liv_afw_raw', unit='kcal')
 
     # (CH only) Calibration - Livestock domestic production
@@ -193,14 +193,14 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
     # Livestock slaughtered [lsu] = meat demand [kcal] / livestock meat content [kcal/lsu]
     dm_liv_slau = dm_liv_prod.filter({'Variables': ['agr_domestic_production_liv_afw']})
     DM_liv_prod['yield'].append(dm_liv_slau, dim='Variables')  # Append cal_agr_domestic_production_liv_afw in yield
-    DM_liv_prod['yield'].operation('agr_domestic_production_liv_afw', '/', 'agr_climate-smart-livestock_yield',
+    DM_liv_prod['yield'].operation('agr_domestic_production_liv_afw', '/', 'agr_livestock_yield',
                                     dim="Variables", out_col='agr_liv_population_slau', unit='lsu')
 
     # Livestock population (stock) [lsu] = Livestock slaughtered [lsu] / slaughter rate [%]
     dm_liv_slau_egg_dairy = DM_liv_prod['yield'].filter({'Variables': ['agr_liv_population_slau']})
     DM_liv_prod['liv_slaughtered_rate'].append(dm_liv_slau_egg_dairy, dim='Variables')
     DM_liv_prod['liv_slaughtered_rate'].operation('agr_liv_population_slau', '/',
-                                                   'agr_climate-smart-livestock_slaughtered',
+                                                   'agr_livestock_slaughtered',
                                                    dim="Variables", out_col='agr_liv_population_raw', unit='lsu')
 
     # (CH only) Calibration Livestock population
@@ -239,7 +239,7 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
     DM_liv_prod['ruminant_density'].append(dm_liv_ruminants, dim='Variables')  # Append to caf
     # Agriculture grassland [ha] = ruminant livestock [lsu] / livestock density [lsu/ha]
     DM_liv_prod['ruminant_density'].operation('agr_liv_population_ruminant', '/',
-                                               'agr_climate-smart-livestock_density',
+                                               'agr_livestock_density',
                                                dim="Variables", out_col='agr_lus_land_raw_grassland', unit='ha')
 
     # LIVESTOCK BYPRODUCTS
@@ -317,7 +317,7 @@ def manure_workflow(DM_manure, dm_liv_pop, years_setting):
     idx_nstock = DM_manure['liv_n-stock'].idx
     idx_split = DM_manure['manure'].idx
     dm_temp = DM_manure['liv_n-stock'].array[:, :, idx_nstock['agr_liv_n-stock'], :, np.newaxis] * \
-              DM_manure['manure'].array[:, :, idx_split['agr_climate-smart-livestock_manure'], :, :]
+              DM_manure['manure'].array[:, :, idx_split['agr_livestock_manure'], :, :]
     DM_manure['ef_liv_N2O'].add(dm_temp, dim='Variables', col_label='agr_liv_n-stock_split',
                                 unit='t')
 
@@ -341,7 +341,7 @@ def manure_workflow(DM_manure, dm_liv_pop, years_setting):
 
     # CH4
     # Enteric emission [tCH4] = livestock population [lsu] * enteric emission factor [tCH4/lsu]
-    DM_manure['enteric_emission'].operation('agr_climate-smart-livestock_enteric', '*', 'agr_liv_population',
+    DM_manure['enteric_emission'].operation('agr_livestock_enteric', '*', 'agr_liv_population',
                                             dim="Variables", out_col='agr_liv_CH4-emission_raw', unit='t')
 
     # Manure emission [tCH4] = livestock population [lsu] * emission factors treated manure [tCH4/lsu]
@@ -493,7 +493,7 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     idx_feed = dm_feed_req_total.idx
     idx_ration = DM_feed['ration'].idx
     dm_temp = dm_feed_req_total.array[:, :, idx_feed['agr_feed-requirement_without-grass_total'], np.newaxis] \
-              * DM_feed['ration'].array[:, :, idx_ration['agr_climate-smart-livestock_ration'], :]
+              * DM_feed['ration'].array[:, :, idx_ration['agr_livestock_ration'], :]
     DM_feed['ration'].add(dm_temp, dim='Variables', col_label='agr_demand_feed_raw', unit='kcal')
 
     # Calibration Feed demand

@@ -169,7 +169,7 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
         my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
         my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
         my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
-        list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021']
+        list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023']
         my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
         my_pars = {
@@ -332,11 +332,13 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     df_ots, df_fts = database_to_df(df_ssr_liv, lever, level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_ssr_liv = DataMatrix.create_from_df(df_ots, num_cat=1)
+    linear_fitting(dm_ssr_liv, years_ots)
 
     # Format as datamatrix - SSR feed
     df_ots, df_fts = database_to_df(df_ssr_feed, lever, level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_ssr_feed = DataMatrix.create_from_df(df_ots, num_cat=1)
+    linear_fitting(dm_ssr_feed, years_ots)
 
     return dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk
 
@@ -2062,15 +2064,15 @@ def yield_slaughter_rate(df_liv_pop, list_countries_calc):
     dm_liv_yield = DataMatrix.create_from_df(df_ots, num_cat=1)
 
     # Yield [kcal/lsu] = Domestic prod with losses [kcal] / producing-slaugthered animals [lsu]
-    dm_liv_yield.rename_col('agr_climate-smart-livestock_yield',
-                        'agr_climate-smart-livestock_yield_raw',
+    dm_liv_yield.rename_col('agr_livestock_yield',
+                        'agr_livestock_yield_raw',
                         dim='Variables')
     dm_liv_yield.append(dm_cal_dom_prod, dim='Variables')
     dm_liv_yield.operation('cal_agr_domestic-production-liv', '/',
-                              'agr_climate-smart-livestock_yield_raw',
-                              out_col='agr_climate-smart-livestock_yield',
+                              'agr_livestock_yield_raw',
+                              out_col='agr_livestock_yield',
                               unit='kcal/lsu')
-    dm_liv_yield.filter({'Variables':['agr_climate-smart-livestock_yield']}, inplace=True)
+    dm_liv_yield.filter({'Variables':['agr_livestock_yield']}, inplace=True)
 
     # Format as datamatrix - Slaughter rates
     lever = 'dummy'
@@ -2428,7 +2430,7 @@ def livestock_calibration(list_countries_calc, dm_losses):
                                'cal_agr_domestic-production-liv_raw',
                                dim='Variables')
     dm_cal_dom_prod.append(dm_losses_liv, dim='Variables')
-    dm_cal_dom_prod.operation('agr_climate-smart-livestock_losses', '*',
+    dm_cal_dom_prod.operation('agr_livestock_losses', '*',
                               'cal_agr_domestic-production-liv_raw',
                               out_col='cal_agr_domestic-production-liv',
                               unit='kcal')
@@ -3007,12 +3009,12 @@ def constant():
   return cdm_efficiency, cdm_kcal
 
 # CalculationLeaf FTS  ------------------------------
-def fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal):
+def fts_processing():
 
-  # fwaste, diet-adherence, kcal-req -------------------------------------------
+  # ssr-feed, ssr-liv, livestock-losses, share-organic, ruminand-feed ----------
   # Read Excel
   df_fts_data = pd.read_excel(
-    'data/dietary-habits_fts.xlsx',
+    'data/livestock_fts.xlsx',
     sheet_name='fts')
   df_fts_data = df_fts_data[['variables', 'timescale', 'geoscale', 'level', 'value', 'lever']]
 
@@ -3028,7 +3030,7 @@ def fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal):
       dm[level] = DataMatrix.create_from_df(df_fts, num_cat=0)
     dm_fts[lever] = dm
 
-  # diet-split-kcal ---------------------------------------------------------------
+  """# diet-split-kcal ---------------------------------------------------------------
   # Read Excel
   df_fts_diet_kcal = pd.read_excel(
       'data/dietary-habits_fts.xlsx',
@@ -3074,7 +3076,7 @@ def fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal):
 
   #dm = {}
   dm_fts_cereal = {}
-  """for level in df_fts_diet_kcal['level'].unique():
+  for level in df_fts_diet_kcal['level'].unique():
 
     df_fts_filtered = df_fts_diet_kcal[df_fts_diet_kcal['level'] == level]
     df_ots, df_fts = database_to_df(df_fts_filtered.copy(), lever, level='all')
@@ -3085,7 +3087,7 @@ def fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal):
     dm_kcal[level].filter_w_regex({'Variables': 'lfs_consumers-diet.*'}, inplace=True)
     # Filter & deepen for share wholegrains & processed meat
 
-  dm_fts[lever] = dm_kcal"""
+  dm_fts[lever] = dm_kcal
 
   # diet-split-share ---------------------------------------------------------------
   # Read Excel
@@ -3181,13 +3183,13 @@ def fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal):
     dm_fts[lever][level].normalise(dim='Categories1', inplace=True)
     # Change unit
     dm_fts[lever][level].change_unit('lfs_consumers-diet', old_unit='%',
-                            new_unit='-', factor=1)
+                            new_unit='-', factor=1)"""
 
   return dm_fts
 
 # CalculationLeaf PICKLE CREATION ------------------------------
 
-def datamatrix_to_pickle():
+def datamatrix_to_pickle(dm_fts):
 
   # Make list with all years
   years_all = years_ots + years_fts
@@ -3297,7 +3299,80 @@ def datamatrix_to_pickle():
 
   # Linear fitting between ots and fts objective (2050) ------------------
 
-  """# Lever - diet-adherence
+  # Lever - ssr-liv
+  lever = 'ssr-liv'
+  for level in range(1,5):
+    # Propagate the overall lever value across all livestock categories
+    dm_ots = dict_ots[lever].copy()
+    dm_fts_temp = dm_fts[lever][level]
+
+    array_temp =  dm_fts[lever][level][:,years_fts[-1],'agr_ssr', np.newaxis] + \
+                  dm_ots[:,years_ots[-1],'agr_ssr',:] - dm_ots[:,years_ots[-1],'agr_ssr',:] # +x-x To get the correct structure
+    # Append with ots
+    dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
+    # Linear fit
+    linear_fitting(dm_ots, years_fts)
+    dm_fts[lever][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
+  dict_fts[lever] = dm_fts[lever]
+
+  # Lever - ssr-feed
+  lever = 'ssr-feed'
+  for level in range(1,5):
+    # Propagate the overall lever value across all feed categories
+    dm_ots = dict_ots[lever].copy()
+    dm_fts_temp = dm_fts[lever][level]
+    array_temp =  dm_fts[lever][level][:,years_fts[-1],'agr_ssr', np.newaxis] + \
+                  dm_ots[:,years_ots[-1],'agr_ssr',:] - dm_ots[:,years_ots[-1],'agr_ssr',:] # +x-x To get the correct structure
+    # Append with ots
+    dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
+    # Linear fit
+    linear_fitting(dm_ots, years_fts)
+    dm_fts[lever][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
+  dict_fts[lever] = dm_fts[lever]
+
+  # Lever - share-organic
+  lever = 'share-organic'
+  for level in range(1,5):
+    # Propagate the overall lever value across all feed categories
+    dm_ots = dict_ots[lever].copy()
+    dm_fts_temp = dm_fts[lever][level]
+    array_temp =  dm_fts[lever][level][:,years_fts[-1],'livestock_share-organic', np.newaxis] + \
+                  dm_ots[:,years_ots[-1],'livestock_share-organic',:] - \
+                  dm_ots[:,years_ots[-1],'livestock_share-organic',:] # +x-x To get the correct structure
+    # Append with ots
+    dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
+    # Linear fit
+    linear_fitting(dm_ots, years_fts)
+    dm_fts[lever][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
+  dict_fts[lever] = dm_fts[lever]
+
+  # Lever - ruminant-feed
+  lever = 'ruminant-feed'
+  for level in range(1,5):
+    # Propagate the overall lever value across all feed categories
+    dm_fts[lever][level].append(dict_ots[lever], dim='Years')
+    linear_fitting(dm_fts[lever][level], years_fts)
+    dm_fts[lever][level].filter({'Years':years_fts}, inplace=True)
+  dict_fts[lever] = dm_fts[lever]
+
+  # Lever - livestock-losses
+  lever = 'livestock-losses'
+  for level in range(1,5):
+    # Compute the reduction objective in 2050 compared to the last ots value,
+    # for each food category
+    dm_ots = dict_ots[lever].copy()
+    array_temp =  1 - ( 1 - dm_ots[:,years_ots[-1],'agr_livestock_losses',:]) \
+                  * dm_fts[lever][level][:,years_fts[-1],'agr_livestock_losses', np.newaxis]
+    # Append with ots
+    dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
+    # Linear fit
+    linear_fitting(dm_ots, years_fts)
+    dm_fts[lever][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
+  dict_fts[lever] = dm_fts[lever]
+
+
+
+  # Lever - diet-adherence
   lever = 'diet-adherence'
   for level in range(1,5):
     dm_fts[lever][level].append(dict_ots[lever], dim='Years')
@@ -3397,7 +3472,7 @@ def datamatrix_to_pickle():
     dm_fts[lever][level].append(dict_ots[lever], dim='Years')
     linear_fitting(dm_fts[lever][level], years_fts)
     dm_fts[lever][level].filter({'Years':years_fts}, inplace=True)
-  dict_fts[lever] = dm_fts[lever]"""
+  dict_fts[lever] = dm_fts[lever]
 
   # ConstantsToDatamatrix ------------------------------------------------------
   dict_const = {}
@@ -3475,12 +3550,9 @@ dm_cal_liv_emissions, df_liv_emissions = manure_calibration(list_countries_calc)
 dm_fxa_CH4, dm_fxa_N2O = manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa)
 dm_fxa_exports = exports_processing(list_countries_calc,file_dict)
 dm_feed_alt_protein = livestock_protein_meals_processing(df_csl_feed)
-
-#dm_fts = fts_processing(list_countries, years_ots, years_fts, cdm_kcal)
-
-
+dm_fts = fts_processing()
 
 # CalculationTree RUNNING PICKLE CREATION
-datamatrix_to_pickle()
+datamatrix_to_pickle(dm_fts)
 
 
