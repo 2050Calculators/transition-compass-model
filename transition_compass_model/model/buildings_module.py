@@ -158,6 +158,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     interface.add_link(from_sector='buildings', to_sector='emissions', dm=DM_energy_out['TPE']['emissions'])
 
     interface.add_link(from_sector='buildings', to_sector='industry', dm=DM_floor_out['industry'])
+    # TODO: probably add non residential (offices) to interface to industry
 
     # interface.add_link(from_sector='buildings', to_sector='minerals', dm=DM_floor_out['industry'])
     
@@ -176,8 +177,7 @@ def buildings_local_run():
     # Function to run only transport module without converter and tpe
 
     # get geoscale
-    country_list = ['EU27', 'Switzerland', 'Vaud']
-    country_list = ['Switzerland']
+    country_list = ['EU27','Switzerland','Vaud']
     DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'buildings')
 
     buildings(lever_setting, years_setting, DM_input['buildings'])
