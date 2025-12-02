@@ -40,6 +40,8 @@ def read_data(DM_livestock, lever_setting):
     dm_fxa_ratio_milk = DM_livestock['fxa']['ratio_milk']
     dm_fxa_cal_liv_prod = DM_livestock['fxa']['cal_agr_domestic-production-liv']
     dm_fxa_cal_liv_pop = DM_livestock['fxa']['cal_agr_liv-population']
+    dm_fxa_cal_liv_pop_org = DM_livestock['fxa']['cal_agr_liv-population_organic']
+    dm_fxa_cal_liv_pop.append(dm_fxa_cal_liv_pop_org, dim='Variables')
 
     # Sub-matrix for MANURE
     dm_livestock_enteric_emissions = DM_ots_fts['livestock-enteric']
@@ -212,8 +214,8 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
                                                    'agr_livestock_slaughtered',
                                                    dim="Variables", out_col='agr_liv_population_raw', unit='lsu')
 
-    # (CH only) Calibration Livestock population
-    dm_cal_liv_pop = DM_liv_prod['cal_liv_population'].filter({'Country': ['Switzerland']})
+    # (CH only) Calibration Total Livestock population
+    dm_cal_liv_pop = DM_liv_prod['cal_liv_population'].filter({'Variables': ['cal_agr_liv-population']})
     dm_liv_pop = DM_liv_prod['liv_slaughtered_rate'].filter({'Variables': ['agr_liv_population_raw']})
     dm_liv_pop_ch = dm_liv_pop.filter({'Country': ['Switzerland']})
     dm_cal_rates_liv_pop = calibration_rates(dm_liv_pop_ch, dm_cal_liv_pop, calibration_start_year=1990,
@@ -229,12 +231,24 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
     # (CH only) Organic livestock = livestock population * share-organic [-]
     array_temp = dm_liv_pop['Switzerland',:,'agr_liv_population',:] * \
                  DM_liv_prod['share-organic']['Switzerland',:,'livestock_share-organic',:]
-    DM_liv_prod['share-organic'].add(array_temp[np.newaxis,:,:], dim='Variables', col_label='agr_liv_population_organic', unit='lsu')
+    DM_liv_prod['share-organic'].add(array_temp[np.newaxis,:,:], dim='Variables', col_label='agr_liv_population_organic_raw', unit='lsu')
 
     # (CH only) Intensive livestock = livestock population * ( 1 - share-organic [-])
     array_temp = dm_liv_pop['Switzerland',:,'agr_liv_population',:] * \
                  (1.0 - DM_liv_prod['share-organic']['Switzerland',:,'livestock_share-organic',:])
     DM_liv_prod['share-organic'].add(array_temp[np.newaxis,:,:], dim='Variables', col_label='agr_liv_population_intensive', unit='lsu')
+
+    # (CH only) Calibration organic Livestock population
+    dm_cal_liv_pop_org = DM_liv_prod['cal_liv_population'].filter({'Variables': ['cal_agr_liv-population_organic']})
+    dm_cal_rates_liv_pop_org = calibration_rates(DM_liv_prod['share-organic'].filter({'Variables':['agr_liv_population_organic_raw']}),
+                                             dm_cal_liv_pop_org,
+                                             calibration_start_year=1990,
+                                             calibration_end_year=2022,
+                                             years_setting=years_setting)
+    DM_liv_prod['share-organic'].append(dm_cal_rates_liv_pop_org, dim='Variables')
+    DM_liv_prod['share-organic'].operation('agr_liv_population_organic_raw', '*', 'cal_rate',
+                            dim='Variables', out_col='agr_liv_population_organic',
+                            unit='lsu')
 
     # GRAZING LIVESTOCK
     # Filtering ruminants (bovine & sheep)

@@ -905,6 +905,13 @@ def production_share():
   dm_cattle.append(dm_others, dim='Categories1')
   dm_prod_share = dm_cattle.copy()
 
+  # Create copy for calibration
+  dm_cal_liv_pop_org = dm_prod_share.filter({'Categories2': ['organic']})
+  dm_cal_liv_pop_org.switch_categories_order(cat1='Categories2', cat2='Categories1')
+  dm_cal_liv_pop_org = dm_cal_liv_pop_org.flatten()
+  dm_cal_liv_pop_org.rename_col_regex('organic_', '', dim='Categories1')
+  dm_cal_liv_pop_org.rename_col_regex('agr_livestock', 'cal_agr_liv-population_organic', dim='Variables')
+
   # Compute share of organic production compared to total
   dm_prod_share.switch_categories_order(cat1='Categories2', cat2='Categories1')
   dm_prod_share = dm_prod_share.flattest()
@@ -916,7 +923,7 @@ def production_share():
   # Filter
   dm_prod_share.filter({'Variables': ['livestock_share-organic']}, inplace=True)
 
-  return dm_prod_share
+  return dm_prod_share, dm_cal_liv_pop_org
 
 # CalculationLeaf CALIBRATION FORMATTING
 def calibration_formatting(df_diet_calibration):
@@ -2787,6 +2794,21 @@ def manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure
 
    return dm_fxa_CH4, dm_fxa_N2O
 
+# CalculationLeaf CAL - ORGANIC LIVESTOCK ----------------------------------------------------------------------------------
+
+def cal_organic_livestock(dm_cal_liv_pop, dm_prod_share):
+
+  # Filter for only CH
+  dm_cal_liv_pop_org = dm_cal_liv_pop.filter({'Country':['Switzerland']}).copy()
+
+  # Organic livstock [lsu] = livestock [lsu] * share-organic [-]
+  dm_cal_liv_pop_org[:,:,'cal_agr_liv-population',:] = \
+    dm_cal_liv_pop_org[:, :, 'cal_agr_liv-population', :] * \
+    dm_prod_share[:,:,'livestock_share-organic',:]
+
+
+  return dm_cal_liv_pop_org
+
 # CalculationLeaf CAL - FEED DEMAND ----------------------------------------------------------------------------------
 
 def feed_calibration(list_countries_calc):
@@ -3086,7 +3108,8 @@ def datamatrix_to_pickle(dm_fts):
 
   # CalibrationDataToDatamatrix ------------------------------------------------
 
-  dict_fxa['cal_agr_liv-population'] = dm_cal_liv_pop
+  dict_fxa['cal_agr_liv-population'] = dm_cal_liv_pop.filter({'Country':['Switzerland']}, inplace=False)
+  dict_fxa['cal_agr_liv-population_organic'] = dm_cal_liv_pop_org
   dict_fxa['cal_agr_domestic-production-liv'] = dm_cal_dom_prod
   dict_fxa['cal_agr_liv_CH4-emission'] = dm_cal_liv_emissions.filter({'Variables':['cal_agr_liv_CH4-emission']}, inplace=False)
   dict_fxa['cal_agr_liv_N2O-emission'] = dm_cal_liv_emissions.filter({'Variables':['cal_agr_liv_N2O-emission']}, inplace=False)
@@ -3301,7 +3324,7 @@ file_dict = {'ssr': 'data/faostat/ssr.csv',
              'exports': 'data/faostat/exports.csv'}
 
 cdm_efficiency, cdm_kcal = constant()
-dm_prod_share = production_share()
+dm_prod_share, dm_cal_liv_pop_org = production_share()
 dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk = self_sufficiency_processing(years_ots, list_countries_calc, file_dict)
 dm_fxa_ffr_milk = fxa_ffr_milk(df_ffr_milk)
 dm_liv_trade_origin = trade_origin_processing(years_ots, list_countries_calc, file_dict)
@@ -3316,6 +3339,7 @@ dm_cal_liv_emissions, df_liv_emissions = manure_calibration(list_countries_calc)
 dm_fxa_CH4, dm_fxa_N2O = manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa)
 dm_fxa_exports = exports_processing(list_countries_calc,file_dict)
 dm_feed_alt_protein = livestock_protein_meals_processing(df_csl_feed)
+#dm_cal_liv_pop_org = cal_organic_livestock(dm_cal_liv_pop, dm_prod_share)
 dm_fts = fts_processing()
 
 # CalculationTree RUNNING PICKLE CREATION
