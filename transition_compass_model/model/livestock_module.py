@@ -30,10 +30,10 @@ def read_data(DM_livestock, lever_setting):
     # Sub-matrix for LIVESTOCK PROD & POP
     dm_livestock_losses = DM_ots_fts['livestock-losses']
     dm_livestock_ssr = DM_ots_fts['ssr-liv']
-    dm_livestock_yield = DM_ots_fts['livestock-yield']
     dm_share_organic = DM_ots_fts['share-organic']
     dm_livestock_slaughtered = DM_ots_fts['slaughter-rates']
     dm_livestock_density = DM_ots_fts['livestock-density']
+    dm_livestock_yield = DM_livestock['fxa']['livestock-yield']
     dm_split_import = DM_livestock['fxa']['split-import']
     dm_split_import.drop(dim='Country', col_label=['Switzerland'])  # drop Switzerland for imports
     dm_share_export = DM_livestock['fxa']['share-export']
@@ -190,10 +190,19 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
     dm_liv_prod.rename_col('agr_domestic_production_liv_afw_raw', 'agr_domestic_production_liv_afw', dim='Variables')
     dm_liv_prod['Switzerland',:,'agr_domestic_production_liv_afw',:] = dm_liv_prod_ch['Switzerland',:,'agr_domestic_production_liv_afw',:]
 
+    # (CH Only) Yield_T [kcal/lsu] = yield_o * share_o + yield_i * share_i
+    # share in [lsu/lsu], yield (livestock meat content) [kcal/lsu]
+    # This will change values for fts only
+    array_temp = DM_liv_prod['yield']['Switzerland', :, 'agr_livestock_yield_organic', :] * \
+                 DM_liv_prod['share-organic']['Switzerland', :,'livestock_share-organic', :] + \
+                 DM_liv_prod['yield']['Switzerland', :,'agr_livestock_yield_intensive', :] * \
+                 ( 1.0 - DM_liv_prod['share-organic']['Switzerland', :,'livestock_share-organic', :])
+    DM_liv_prod['yield']['Switzerland', :, 'agr_livestock_yield_total', :] = array_temp
+
     # Livestock slaughtered [lsu] = meat demand [kcal] / livestock meat content [kcal/lsu]
     dm_liv_slau = dm_liv_prod.filter({'Variables': ['agr_domestic_production_liv_afw']})
     DM_liv_prod['yield'].append(dm_liv_slau, dim='Variables')  # Append cal_agr_domestic_production_liv_afw in yield
-    DM_liv_prod['yield'].operation('agr_domestic_production_liv_afw', '/', 'agr_livestock_yield',
+    DM_liv_prod['yield'].operation('agr_domestic_production_liv_afw', '/', 'agr_livestock_yield_total',
                                     dim="Variables", out_col='agr_liv_population_slau', unit='lsu')
 
     # Livestock population (stock) [lsu] = Livestock slaughtered [lsu] / slaughter rate [%]

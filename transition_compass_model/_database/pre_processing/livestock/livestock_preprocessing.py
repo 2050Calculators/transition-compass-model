@@ -1760,7 +1760,7 @@ def feed_ration(df_feed_ration, cdm_efficiency, cdm_kcal):
   return dm_feed_ration, dm_grass
 
 # CalculationLeaf YIELD & SLAUGHTER RATE ------------------------------------------------------------------------------
-def yield_slaughter_rate(df_liv_pop, list_countries_calc):
+def yield_slaughter_rate(df_liv_pop, dm_prod_share):
 
     # ----------------------------------------------------------------------------------------------------------------------
     # YIELD (DAIRY & EGGS) -------------------------------------------------------------------------------------------------
@@ -2063,16 +2063,48 @@ def yield_slaughter_rate(df_liv_pop, list_countries_calc):
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_liv_yield = DataMatrix.create_from_df(df_ots, num_cat=1)
 
-    # Yield [kcal/lsu] = Domestic prod with losses [kcal] / producing-slaugthered animals [lsu]
+    # Yield total [kcal/lsu] = Domestic prod with losses [kcal] / producing-slaugthered animals [lsu]
     dm_liv_yield.rename_col('agr_livestock_yield',
-                        'agr_livestock_yield_raw',
+                        'agr_livestock_producing',
                         dim='Variables')
     dm_liv_yield.append(dm_cal_dom_prod, dim='Variables')
     dm_liv_yield.operation('cal_agr_domestic-production-liv', '/',
-                              'agr_livestock_yield_raw',
-                              out_col='agr_livestock_yield',
+                              'agr_livestock_producing',
+                              out_col='agr_livestock_yield_total',
                               unit='kcal/lsu')
-    dm_liv_yield.filter({'Variables':['agr_livestock_yield']}, inplace=True)
+
+
+    # Yield evolution_o/i (organic with respect to intensive) [-] HERE
+    # Source: animal welfare working paper
+    yield_evolution = {'meat-bovine': 0.8,
+                      'meat-poultry': 0.8,
+                      'meat-sheep': 0.8,
+                      'meat-pig': 0.8,
+                      'meat-oth-animal': 0.8,
+                      'abp-dairy-milk': 0.8,
+                      'abp-hens-egg': 0.8}
+
+    # Intensive yield_i [kcal/lsu] = dom prod with losses (total) [kcal] / [ lsu_T * (share_o * (yield evolution_o/i - 1) +1)]
+    dm_liv_yield.rename_col('agr_livestock_yield',
+                            'agr_livestock_producing',
+                            dim='Variables')
+    dm_liv_yield.add(0.0, dim='Variables', dummy=True, col_label='agr_livestock_yield_intensive')
+    for cat in dm_liv_yield.col_labels['Categories1']:
+      dm_liv_yield[:, :, 'agr_livestock_yield_intensive', cat] =\
+        dm_cal_dom_prod[:, :, 'cal_agr_domestic-production-liv', cat] \
+         / (dm_liv_yield[:, :,'agr_livestock_producing', cat] *
+            ( dm_prod_share[:, :,'livestock_share-organic', cat] * (yield_evolution[cat] - 1.0 ) +1))
+
+    # Organic yield_c [kcal/lsu] =  yield_i [kcal/lsu] * yield evolution_o/i [-]
+    dm_liv_yield.add(0.0, dim='Variables', dummy=True, col_label='agr_livestock_yield_organic')
+    for cat in dm_liv_yield.col_labels['Categories1']:
+      dm_liv_yield[:, :, 'agr_livestock_yield_organic', cat] =\
+        dm_liv_yield[:, :, 'agr_livestock_yield_intensive', cat] \
+         * yield_evolution[cat]
+
+    # Format yield
+    dm_liv_yield.filter({'Variables':['agr_livestock_yield_organic', 'agr_livestock_yield_intensive', 'agr_livestock_yield_total']}, inplace=True)
+    linear_fitting(dm_liv_yield, years_all)
 
     # Format as datamatrix - Slaughter rates
     lever = 'dummy'
@@ -3045,6 +3077,7 @@ def datamatrix_to_pickle(dm_fts):
 
   dict_fxa['split-import'] = dm_liv_trade_origin
   dict_fxa['share-export'] = dm_fxa_exports
+  dict_fxa['livestock-yield'] = dm_liv_yield
   dict_fxa['ef_liv_N2O-emission'] = dm_fxa_N2O
   dict_fxa['ef_liv_CH4-emission_treated'] = dm_fxa_CH4
   dict_fxa['liv_manure_n-stock'] = dm_fxa_manure_yield
@@ -3069,8 +3102,6 @@ def datamatrix_to_pickle(dm_fts):
   dict_ots['ssr-feed'] = dm_ssr_feed
   # livestock-losses
   dict_ots['livestock-losses'] = dm_losses
-  # livestock-yield
-  dict_ots['livestock-yield'] = dm_liv_yield
   # 'slaughter-rates'
   dict_ots['slaughter-rates'] = dm_slaughter_rates
   # livestock-density
@@ -3096,8 +3127,6 @@ def datamatrix_to_pickle(dm_fts):
   DM_ots = dict_ots.copy()
 
   # Adding a new lever with dummy values
-
-  dict_fts['livestock-yield'] = {'livestock-yield': dict()}
   dict_fts['slaughter-rates'] = {'slaughter-rates': dict()}
   dict_fts['livestock-density'] = {'livestock-density': dict()}
   dict_fts['livestock-enteric'] = {'livestock-enteric': dict()}
@@ -3282,7 +3311,7 @@ dm_density = livestock_density(df_liv_pop)
 dm_manure, dm_enteric, dm_fxa_manure_yield, df_manure_ch4_fxa, df_manure_n_fxa = livestock_emissions()
 dm_cal_feed, df_feed_ration = feed_calibration(list_countries_calc)
 dm_feed_ration, dm_grass = feed_ration(df_feed_ration, cdm_efficiency, cdm_kcal)
-dm_liv_yield, dm_slaughter_rates = yield_slaughter_rate(df_liv_pop, list_countries_calc)
+dm_liv_yield, dm_slaughter_rates = yield_slaughter_rate(df_liv_pop, dm_prod_share)
 dm_cal_liv_emissions, df_liv_emissions = manure_calibration(list_countries_calc)
 dm_fxa_CH4, dm_fxa_N2O = manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa)
 dm_fxa_exports = exports_processing(list_countries_calc,file_dict)
