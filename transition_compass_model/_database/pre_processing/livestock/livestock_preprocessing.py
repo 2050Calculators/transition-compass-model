@@ -1516,7 +1516,7 @@ def livestock_losses():
   # Different list because different in item nomination such as rice
   list_elements = ['Losses', 'Production Quantity']
   code = 'FBS'
-  my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
+  my_countries = [faostat.get_par(code, 'area')[c] for c in list_partnerregions_trade]
   my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
   my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
   list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017',
@@ -2339,7 +2339,7 @@ def livestock_calibration(list_countries_calc, dm_losses):
                   'Bovine Meat', 'Meat, Other', 'Pigmeat',
                   'Poultry Meat', 'Mutton & Goat Meat']
     code = 'FBS'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_partnerregions_trade]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021',
@@ -3030,161 +3030,6 @@ def fts_processing():
       dm[level] = DataMatrix.create_from_df(df_fts, num_cat=0)
     dm_fts[lever] = dm
 
-  """# diet-split-kcal ---------------------------------------------------------------
-  # Read Excel
-  df_fts_diet_kcal = pd.read_excel(
-      'data/dietary-habits_fts.xlsx',
-    sheet_name='diet-split-kcal')
-  df_fts_diet_kcal = df_fts_diet_kcal[
-      ['variables', 'timescale', 'lever', 'level_1', 'level_2', 'level_3', 'level_4']]
-
-  # Melt
-  df_fts_diet_kcal = df_fts_diet_kcal.melt(
-    id_vars=['variables', 'timescale', 'lever'],
-    var_name='level_name',
-    value_name='value'
-  )
-
-  # Associate a level for each diet
-  # Mapping
-  level_map = {
-    'level_1': 1,
-    'level_2': 2,
-    'level_3': 3,
-    'level_4': 4,
-
-  }
-
-  # Map lever strings to numbers
-  df_fts_diet_kcal['level'] = df_fts_diet_kcal['level_name'].map(level_map)
-
-  # Format as dm
-  df_fts_diet_kcal['geoscale'] = 'Switzerland'
-
-  for lever in df_fts_diet_kcal['lever'].unique():
-    dm = {}
-    for level in df_fts_diet_kcal['level'].unique():
-      df_fts_filtered = df_fts_diet_kcal[df_fts_diet_kcal['level'] == level]
-      df_fts_filtered = df_fts_filtered[df_fts_filtered['lever'] == lever]
-      df_ots, df_fts = database_to_df(df_fts_filtered.copy(), lever, level='all')
-      df_fts = df_fts.drop(columns=[lever])  # Drop column with lever name
-      if (lever == 'share-kcal-processed-food_crop-cereal-whole') | (lever == 'share-kcal-processed-food_unprocessed-meat'):
-        dm[level] = DataMatrix.create_from_df(df_fts, num_cat=0)
-      else:
-        dm[level] = DataMatrix.create_from_df(df_fts, num_cat=1)
-    dm_fts[lever] = dm
-
-  #dm = {}
-  dm_fts_cereal = {}
-  for level in df_fts_diet_kcal['level'].unique():
-
-    df_fts_filtered = df_fts_diet_kcal[df_fts_diet_kcal['level'] == level]
-    df_ots, df_fts = database_to_df(df_fts_filtered.copy(), lever, level='all')
-    df_fts = df_fts.drop(columns=[lever])  # Drop column with lever name
-    dm[level] = DataMatrix.create_from_df(df_fts, num_cat=0)
-    # Filter for diet-split-kcal
-    dm_kcal = dm.copy()
-    dm_kcal[level].filter_w_regex({'Variables': 'lfs_consumers-diet.*'}, inplace=True)
-    # Filter & deepen for share wholegrains & processed meat
-
-  dm_fts[lever] = dm_kcal
-
-  # diet-split-share ---------------------------------------------------------------
-  # Read Excel
-  df_fts_diet = pd.read_excel(
-      'data/dietary-habits_fts.xlsx',
-    sheet_name='diet-split-share')
-  df_fts_diet = df_fts_diet[
-      ['variables', 'diet_eat-lancet-phd-2025', 'diet_eat-lancet-phd-2019', 'diet_sfp-2024']]
-
-  # Fill nan with 0.0
-  df_fts_diet = df_fts_diet.fillna(0.0)
-
-  # Melt
-  df_fts_diet = df_fts_diet.melt(
-    id_vars='variables',
-    var_name='level_name',
-    value_name='value'
-  )
-
-  # Associate a level for each diet
-  # Mapping
-  level_map = {
-    'diet_eat-lancet-phd-2025': 2,
-    'diet_eat-lancet-phd-2019': 3,
-    'diet_sfp-2024': 4
-  }
-
-  # Map lever strings to numbers
-  df_fts_diet['level'] = df_fts_diet['level_name'].map(level_map)
-
-  # Format as dm
-  df_fts_diet['timescale'] = 2050
-  df_fts_diet['geoscale'] = 'Switzerland'
-  lever = 'diet-split-share'
-  df_fts_diet['lever'] = lever
-  dm = {}
-  dm_fts_meat = {}
-  dm_fts_cereal = {}
-
-  for level in df_fts_diet['level'].unique():
-    df_fts_filtered = df_fts_diet[df_fts_diet['level'] == level]
-    df_ots, df_fts = database_to_df(df_fts_filtered.copy(), lever, level='all')
-    df_fts = df_fts.drop(columns=[lever])  # Drop column with lever name
-    dm[level] = DataMatrix.create_from_df(df_fts, num_cat=1)
-    # Compute share of whole cereals
-    dm_cereal = dm[level].filter({'Categories1':['crop-cereal-whole', 'crop-cereal-refined']}).copy()
-    dm_cereal_tot = dm_cereal.copy()
-    dm_cereal_tot.groupby({'crop-cereal': 'crop-cereal.*'}, regex=True, inplace=True, dim='Categories1')
-    dm_cereal.append(dm_cereal_tot,dim='Categories1')
-    dm_cereal = dm_cereal.flatten()
-    dm_cereal.operation('lfs_consumers-diet_crop-cereal-whole', '/', 'lfs_consumers-diet_crop-cereal',out_col='lfs_share_crop-cereal-whole', unit='-')
-    dm_cereal.filter({'Variables': ['lfs_share_crop-cereal-whole']}, inplace=True)
-    dm_fts_cereal[level] = dm_cereal
-    # Compute share of unprocessed meat
-    dm_meat = dm[level].filter_w_regex({'Categories1': 'pro-liv-meat.*'})
-    dm_meat_tot = dm_meat.copy()
-    dm_meat_tot.groupby({'pro-liv-meat-total': 'pro-liv-meat.*'}, regex=True, inplace=True, dim='Categories1')
-    dm_meat.append(dm_meat_tot,dim='Categories1')
-    dm_meat = dm_meat.flatten()
-    dm_meat.operation('lfs_consumers-diet_pro-liv-meat-unprocessed', '/', 'lfs_consumers-diet_pro-liv-meat-total',out_col='lfs_share_unprocessed-meat', unit='-')
-    dm_meat.filter({'Variables':['lfs_share_unprocessed-meat']}, inplace=True)
-    dm_fts_meat[level] = dm_meat
-    # cereals = cereals-whole + cereals-refined
-    dm[level].groupby({'crop-cereal': 'crop-cereal.*'}, regex=True, inplace=True, dim='Categories1')
-    # oilcrops = oilcrops + treenuts
-    dm[level].groupby({'crop-oilcrop': '.*oilcrop|.*treenut'}, regex=True, inplace=True, dim='Categories1')
-    # Drop unprocessed-meat
-    dm[level].drop(dim='Categories1', col_label=['pro-liv-meat-unprocessed'])
-
-  dm_fts[lever] = dm
-  dm_fts['share-processed-food_unprocessed-meat'] = dm_fts_meat
-  dm_fts['share-processed-food_crop-cereal-whole'] = dm_fts_cereal
-
-  # Convert in kcal
-  # Filter constants
-  cdm_kcal_copy = cdm_kcal.copy()
-  cdm_kcal_copy.drop(dim='Categories1', col_label=['pro-crop-processed-molasse',
-                                              'pro-crop-processed-cake',
-                                              'crop-sugarcrop',
-                                              'liv-meat-meal',
-                                              'stm'])
-  lever = 'diet-split-share'
-  for level in df_fts_diet['level'].unique():
-    dm_diet_share = dm_fts[lever][level].copy()
-    # Check Category order
-    dm_diet_share.sort('Categories1')
-    cdm_kcal_copy.sort('Categories1')
-    # Unit conversion: [g/cap/day] => [kcal/cap/day]
-    array_temp = 10**(-6) * dm_diet_share[:, :,'lfs_consumers-diet', :] \
-                 * cdm_kcal_copy[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
-    dm_fts[lever][level]['Switzerland', :, 'lfs_consumers-diet', :] = array_temp
-    # Normalise to compute share
-    dm_fts[lever][level].normalise(dim='Categories1', inplace=True)
-    # Change unit
-    dm_fts[lever][level].change_unit('lfs_consumers-diet', old_unit='%',
-                            new_unit='-', factor=1)"""
-
   return dm_fts
 
 # CalculationLeaf PICKLE CREATION ------------------------------
@@ -3251,27 +3096,22 @@ def datamatrix_to_pickle(dm_fts):
   DM_ots = dict_ots.copy()
 
   # Adding a new lever with dummy values
-  dict_temp = {}
-  dict_fts['ssr-liv'] = {'ssr-liv': dict()}
-  dict_fts['ssr-feed'] = {'ssr-feed': dict()}
-  dict_fts['livestock-losses'] = {'livestock-losses': dict()}
+
   dict_fts['livestock-yield'] = {'livestock-yield': dict()}
   dict_fts['slaughter-rates'] = {'slaughter-rates': dict()}
   dict_fts['livestock-density'] = {'livestock-density': dict()}
   dict_fts['livestock-enteric'] = {'livestock-enteric': dict()}
   dict_fts['livestock-manure'] = {'livestock-manure': dict()}
-  dict_fts['livestock-manure'] = {'livestock-manure': dict()}
   dict_fts['feed-ration'] = {'feed-ration': dict()}
   dict_fts['alt-protein'] = {'alt-protein': dict()}
-  dict_fts['ruminant-feed'] = {'ruminant-feed': dict()}
-  dict_fts['share-organic'] = {'share-organic': dict()}
+
 
   # Levers to be normalised
   list_norm = ['climate-smart-livestock_ration']
 
-  for key in DM_ots.keys():
+  for key in dict_fts.keys():
     if isinstance(DM_ots[key], dict):
-      for subkey in DM_ots[key].keys():
+      for subkey in dict_fts[key].keys():
         dm = DM_ots[key][subkey].copy()
         linear_fitting(dm, years_fts)
 
@@ -3370,109 +3210,6 @@ def datamatrix_to_pickle(dm_fts):
     dm_fts[lever][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
   dict_fts[lever] = dm_fts[lever]
 
-
-
-  # Lever - diet-adherence
-  lever = 'diet-adherence'
-  for level in range(1,5):
-    dm_fts[lever][level].append(dict_ots[lever], dim='Years')
-    linear_fitting(dm_fts[lever][level], years_fts)
-    dm_fts[lever][level].filter({'Years':years_fts}, inplace=True)
-  dict_fts[lever] = dm_fts[lever]
-
-  # Lever - fwaste
-  lever = 'fwaste'
-  for level in range(1,5):
-    # Compute the reduction objective in 2050 compared to the last ots value,
-    # for each food category
-    dm_ots = dict_ots[lever].copy()
-    array_temp =  1 - ( 1 - dm_ots[:,years_ots[-1],'lfs_consumers-food-wastes',:]) \
-                  * dm_fts[lever][level][:,years_fts[-1],'lfs_consumers-food-wastes', np.newaxis]
-    # Append with ots
-    dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
-    # Linear fit
-    linear_fitting(dm_ots, years_fts)
-    dm_fts[lever][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
-  dict_fts[lever] = dm_fts[lever]
-
-  # Lever - kcal-req
-  lever = 'kcal-req'
-  for level in range(1,5):
-    # Compute the reduction objective in 2050 compared to the last ots value,
-    # for each food category
-    dm_ots = dict_ots[lever].copy()
-    array_temp = dm_ots[:,years_ots[-1],'agr_kcal-req',:] \
-                  * dm_fts[lever][level][:,years_fts[-1],'agr_kcal-req', np.newaxis]
-    # Append with ots
-    dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
-    # Linear fit
-    linear_fitting(dm_ots, years_fts)
-    dm_fts[lever][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
-  dict_fts[lever] = dm_fts[lever]
-
-  # Lever - diet-split-share
-  lever = 'diet-split-share'
-  for level in range(2,5):
-    dm_fts[lever][level].append(dict_ots[lever], dim='Years')
-    linear_fitting(dm_fts[lever][level], years_fts)
-    dm_fts[lever][level].filter({'Years':years_fts}, inplace=True)
-  dict_fts[lever] = dm_fts[lever]
-  # Compute BAU scenario level 1
-  level = 1
-  dm_fts[lever][level] = dict_ots[lever].copy()
-  linear_fitting(dm_fts[lever][level], years_fts)
-  dm_fts[lever][level].filter({'Years': years_fts}, inplace=True)
-  dict_fts[lever][level] = dm_fts[lever][level]
-
-  # Lever - diet-split-kcal_.*
-  for lever in dm_diet_kcal.keys():
-    for level in range(1,5):
-      dm_fts[lever][level].append(dict_ots[lever], dim='Years')
-      linear_fitting(dm_fts[lever][level], years_fts)
-      dm_fts[lever][level].filter({'Years':years_fts}, inplace=True)
-    dict_fts[lever] = dm_fts[lever]
-
-  # Lever - share-processed-food_crop-cereal-whole
-  lever = 'share-processed-food_crop-cereal-whole'
-  for level in range(2,5):
-    dm_fts[lever][level].append(dict_ots[lever], dim='Years')
-    linear_fitting(dm_fts[lever][level], years_fts)
-    dm_fts[lever][level].filter({'Years':years_fts}, inplace=True)
-  dict_fts[lever] = dm_fts[lever]
-  # Compute BAU scenario level 1
-  level = 1
-  dm_fts[lever][level] = dict_ots[lever].copy()
-  linear_fitting(dm_fts[lever][level], years_fts)
-  dm_fts[lever][level].filter({'Years': years_fts}, inplace=True)
-  dict_fts[lever][level] = dm_fts[lever][level]
-
-  # Lever - share-processed-food_unprocessed-meat
-  lever = 'share-processed-food_unprocessed-meat'
-  for level in range(2,5):
-    dm_fts[lever][level].append(dict_ots[lever], dim='Years')
-    linear_fitting(dm_fts[lever][level], years_fts)
-    dm_fts[lever][level].filter({'Years':years_fts}, inplace=True)
-  dict_fts[lever] = dm_fts[lever]
-  # Compute BAU scenario level 1
-  level = 1
-  dm_fts[lever][level] = dict_ots[lever].copy()
-  linear_fitting(dm_fts[lever][level], years_fts)
-  dm_fts[lever][level].filter({'Years': years_fts}, inplace=True)
-  dict_fts[lever][level] = dm_fts[lever][level]
-
-  # Lever - share-kcal-processed-food_.*
-  lever = 'share-kcal-processed-food_unprocessed-meat'
-  for level in range(1,5):
-    dm_fts[lever][level].append(dict_ots[lever], dim='Years')
-    linear_fitting(dm_fts[lever][level], years_fts)
-    dm_fts[lever][level].filter({'Years':years_fts}, inplace=True)
-  dict_fts[lever] = dm_fts[lever]
-  lever = 'share-kcal-processed-food_crop-cereal-whole'
-  for level in range(1,5):
-    dm_fts[lever][level].append(dict_ots[lever], dim='Years')
-    linear_fitting(dm_fts[lever][level], years_fts)
-    dm_fts[lever][level].filter({'Years':years_fts}, inplace=True)
-  dict_fts[lever] = dm_fts[lever]
 
   # ConstantsToDatamatrix ------------------------------------------------------
   dict_const = {}
