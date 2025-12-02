@@ -4,10 +4,14 @@ from model.common.auxiliary_functions import linear_fitting
 import pickle
 import os
 import numpy as np
+import pandas as pd
 import warnings
 warnings.simplefilter("ignore")
+import plotly.io as pio
+pio.renderers.default='browser'
 from _database.pre_processing.routine_JRC import get_jrc_data
 from model.common.auxiliary_functions import jrc_iso2_dict
+from model.common.data_matrix_class import DataMatrix
 
 # directories
 current_file_directory = os.getcwd()
@@ -29,19 +33,39 @@ with open(filepath, 'rb') as handle:
 dict_iso2_jrc = jrc_iso2_dict()
 
 # get data
-dict_extract = {"database" : "Transport",
-                "sheet" : "TrAvia_act",
-                "variable" : "Passenger transport (mio pkm)",
-                "sheet_last_row" : "International - Extra-EEAwUK",
-                "sub_variables" : ["Domestic",
-                                    "International - Intra-EEAwUK",
-                                    "International - Extra-EEAwUK"],
-                "calc_names" : ["domestic","international-int","international-extra"]}
-dm_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
-for v in dm_avi.col_labels["Variables"]:
-    dm_avi.rename_col(v, "aviation_" + v, "Variables")
-dm_avi.deepen()
-dm_avi.group_all("Categories1")
+def get_specific_jrc_data(country_code, country_name, row_start, row_end, unit, variable = "aviation", 
+                          database = "JRC-IDEES-2021_x1990_Aviation_EU"):
+    
+    filepath_jrc = os.path.join(current_file_directory, f"../../../industry/eu/data/JRC-IDEES-2021/EU27/{database}.xlsx")
+    df_temp = pd.read_excel(filepath_jrc, sheet_name=country_code)
+    df_temp = df_temp.iloc[row_start:row_end,:]
+    indexes = df_temp.columns[0]
+    df_temp = pd.melt(df_temp, id_vars = indexes, var_name='year')
+    df_temp.columns = ["Country","Years",f"{variable}[{unit}]"]
+    df_temp["Country"] = country_name
+    
+    return df_temp
+
+country_codes = list(dict_iso2_jrc.keys())
+country_names = list(dict_iso2_jrc.values())
+df_avi = pd.concat([get_specific_jrc_data(code, name, 2, 3, "mio pkm") for code,name in zip(country_codes, country_names)],ignore_index=True)
+dm_avi = DataMatrix.create_from_df(df_avi, 0)
+
+
+# # get data
+# dict_extract = {"database" : "Transport",
+#                 "sheet" : "TrAvia_act",
+#                 "variable" : "Passenger transport (mio pkm)",
+#                 "sheet_last_row" : "International - Extra-EEAwUK",
+#                 "sub_variables" : ["Domestic",
+#                                     "International - Intra-EEAwUK",
+#                                     "International - Extra-EEAwUK"],
+#                 "calc_names" : ["domestic","international-int","international-extra"]}
+# dm_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+# for v in dm_avi.col_labels["Variables"]:
+#     dm_avi.rename_col(v, "aviation_" + v, "Variables")
+# dm_avi.deepen()
+# dm_avi.group_all("Categories1")
 dm_avi.change_unit("aviation", 1e6, "mio pkm", "pkm")
 
 # check
