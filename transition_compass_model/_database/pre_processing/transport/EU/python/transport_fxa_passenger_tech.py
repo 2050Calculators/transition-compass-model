@@ -3,13 +3,18 @@
 import pickle
 import os
 import numpy as np
+import pandas as pd
 import warnings
 import eurostat
 warnings.simplefilter("ignore")
+import plotly.express as px
+import plotly.io as pio
+pio.renderers.default='browser'
 
 from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 from _database.pre_processing.routine_JRC import get_jrc_data
 from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict, linear_fitting
+from model.common.data_matrix_class import DataMatrix
 
 # directories
 current_file_directory = os.getcwd()
@@ -206,17 +211,41 @@ dm_fleet_rail.units["rail"] = "vehicles"
 ##### AVIATION #####
 ####################
 
-# get data
-dict_extract = {"database" : "Transport",
-                "sheet" : "TrAvia_act",
-                "variable" : "Stock of aircrafts - total",
-                "sheet_last_row" : "Passenger transport",                
-                "sub_variables" : ["Passenger transport"],
-                "calc_names" : ["aviation"]}
-dm_fleet_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+# note: aviation is done in seats
+def get_aviation_data(country_code, country_name, row_start, row_end, unit):
+    
+    filepath_jrc = os.path.join(current_file_directory, "../../../industry/eu/data/JRC-IDEES-2021/EU27/JRC-IDEES-2021_x1990_Aviation_EU.xlsx")
+    df_temp = pd.read_excel(filepath_jrc, sheet_name=country_code)
+    df_temp = df_temp.iloc[row_start:row_end,:]
+    indexes = df_temp.columns[0]
+    df_temp = pd.melt(df_temp, id_vars = indexes, var_name='year')
+    df_temp.columns = ["Country","Years",f"aviation_kerosene[{unit}]"]
+    df_temp["Country"] = country_name
+    
+    return df_temp
+
+# note: instead of taking Number of seats available in departing flights, I take
+# the fleet and then I multiply it by average number of seat per flight, as later
+# I will have to get the number of seats in new planes, which is not available
+# as data point (and will have to be inferred), so for consistency I infer them
+# both in the same way. 
+
+# get fleet in number of planes
+country_codes = list(dict_iso2_jrc.keys())
+country_names = list(dict_iso2_jrc.values())
+df_fleet_avi = pd.concat([get_aviation_data(code, name, 92, 93, "unit") for code,name in zip(country_codes, country_names)],ignore_index=True)
+dm_fleet_avi = DataMatrix.create_from_df(df_fleet_avi, 0)
+dm_fleet_avi.array = np.round(dm_fleet_avi.array, 0)
+
+# get average number of seats per flight (so per plane)
+df_avi_seats = pd.concat([get_aviation_data(code, name, 273, 274, "unit") for code,name in zip(country_codes, country_names)],ignore_index=True)
+dm_avi_seats = DataMatrix.create_from_df(df_avi_seats, 0)
+dm_avi_seats.array = np.round(dm_avi_seats.array, 0)
+
+# get number of seats in fleet (instead of number of planes)
+dm_fleet_avi.array = dm_fleet_avi.array * dm_avi_seats.array
 
 # add techs (all kerosene)
-dm_fleet_avi.rename_col("aviation", "aviation_kerosene", "Variables")
 dm_fleet_avi.deepen()
 categories2_missing = categories2_all.copy()
 for cat in dm_fleet_avi.col_labels["Categories1"]: categories2_missing.remove(cat)
@@ -234,6 +263,8 @@ dm_fleet.append(dm_fleet_bus,"Variables")
 dm_fleet.append(dm_fleet_rail,"Variables")
 dm_fleet.sort("Variables")
 dm_fleet.sort("Country")
+dm_fleet.add(np.nan, "Years", list(range(1990,2000)), dummy=True)
+dm_fleet.sort("Years")
 
 # add aviation
 dm_fleet.append(dm_fleet_avi,"Variables")
@@ -247,6 +278,10 @@ dm_fleet = dm_fleet.flatten()
 idx = dm_fleet.idx
 dm_fleet.array[:,idx[2010],idx["LDV_ICE-diesel"]] = np.nan
 dm_fleet.deepen()
+
+# also, as fleet of planes is with seats of departing flights, there is a dip in covid
+# we need to avoid that (planes were just not fliying but they were there)
+for y in [2020,2021]: dm_fleet[:,y,"aviation","kerosene"] = np.nan 
 
 # fix units
 for v in dm_fleet.col_labels["Variables"]:
@@ -433,6 +468,10 @@ del cat, categories2_all, categories2_missing, dict_call, dict_iso2, dict_iso2_j
     dm_temp1, filepath, handle, idx, key, v, mapping_calc, mylist, \
     dm_fleet
 
+del code, country_codes, country_names, dict_extract, dm_eurostat_fleet, \
+    dm_eurostat_fleet_total, dm_fleet_avi, dm_fleet_ev, dm_fleet_temp, dm_share, \
+    filter, idx_eu, idx_ev, idx_share, ldvs, mapping_dim, rates, share, y
+
 ###############################################################################
 ############################### VEHICLE EFFICIENCY ############################
 ###############################################################################
@@ -588,17 +627,15 @@ dm_eneff_rail.sort("Categories1")
 ####################
 
 # get data
-# note: I assume that all high speed passenger trains are electric, and I'll take an average
-dict_extract = {"database" : "Transport",
-                "sheet" : "TrAvia_ene",
-                "variable" : "Vehicle-efficiency - effective (kgoe/100 km)",
-                "sheet_last_row" : "Passenger transport",                
-                "sub_variables" : ["Passenger transport"],
-                "calc_names" : ["aviation"]}
-dm_eneff_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+country_codes = list(dict_iso2_jrc.keys())
+country_names = list(dict_iso2_jrc.values())
+df_temp = pd.concat([get_aviation_data(code, name, 286, 287, "kgoe/seat-km") for code,name in zip(country_codes, country_names)],ignore_index=True)
+dm_eneff_avi = DataMatrix.create_from_df(df_temp, 0)
+
+# change units to kgoe/100 seat km (we call it 100 km as the other ones for the moment)
+dm_eneff_avi.change_unit("aviation_kerosene", 100, "kgoe/seat-km", "kgoe/100 km")
 
 # add techs (all kerosene)
-dm_eneff_avi.rename_col("aviation", "aviation_kerosene", "Variables")
 dm_eneff_avi.deepen()
 categories2_missing = categories2_all.copy()
 for cat in dm_eneff_avi.col_labels["Categories1"]: categories2_missing.remove(cat)
@@ -617,6 +654,8 @@ dm_eneff.append(dm_eneff_bus,"Variables")
 dm_eneff.append(dm_eneff_rail,"Variables")
 dm_eneff.sort("Variables")
 dm_eneff.sort("Country")
+dm_eneff.add(np.nan, "Years", list(range(1990,2000)), dummy=True)
+dm_eneff.sort("Years")
 
 # add aviation
 dm_eneff.append(dm_eneff_avi,"Variables")
@@ -631,19 +670,13 @@ dm_eneff.array[dm_eneff.array==0] = np.nan
 
 # do linear fitting of each variable with wathever is available
 # note: bus_ICE-diesel: until before 2000 until 2012, after 2021 after 2012
-# and aviation until 2000 is 2000-2011.
 dm_eneff_bus_icedie = dm_eneff.filter({"Variables" : ["bus"],"Categories1" : ["ICE-diesel"]})
-dm_eneff_avi_kero = dm_eneff.filter({"Variables" : ["aviation"],"Categories1" : ["kerosene"]})
 dm_eneff = linear_fitting(dm_eneff, years_ots, min_t0=0,min_tb=0)
 dm_eneff_bus_icedie = linear_fitting(dm_eneff_bus_icedie, list(range(startyear,1999+1)),based_on=list(range(2000,2012+1)), min_t0=0.1,min_tb=0.1)
 dm_eneff_bus_icedie = linear_fitting(dm_eneff_bus_icedie, list(range(2022,2023+1)),based_on=list(range(2012,2020+1)), min_t0=0.1,min_tb=0.1)
-dm_eneff_avi_kero = linear_fitting(dm_eneff_avi_kero, list(range(startyear,1999+1)),based_on=list(range(2000,2011+1)), min_t0=0.1,min_tb=0.1)
-dm_eneff_avi_kero = linear_fitting(dm_eneff_avi_kero, list(range(2022,2023+1)),based_on=list(range(2012,2020+1)), min_t0=0.1,min_tb=0.1)
 dm_eneff = dm_eneff.flatten()
 dm_eneff.drop("Variables","bus_ICE-diesel")
-dm_eneff.drop("Variables","aviation_kerosene")
 dm_eneff.append(dm_eneff_bus_icedie.flatten(),"Variables")
-dm_eneff.append(dm_eneff_avi_kero.flatten(),"Variables")
 dm_eneff.deepen()
 
 # check
@@ -747,6 +780,8 @@ del cat, categories2_all, categories2_missing, dict_iso2, dict_iso2_jrc, \
     dm_eneff_2w, dm_eneff_bus, dm_eneff_ldv, dm_eneff_rail, dm_temp, \
     dm_temp1, mapping_calc, dm_eneff_bus_icedie, \
     v, dm_eneff
+
+del country_codes, country_names, df_temp, dict_extract, dm_eneff_avi
 
 ###############################################################################
 ################################## NEW VEHICLES ###############################
@@ -926,17 +961,15 @@ dm_new_rail.units["rail"] = "vehicles"
 ##### AVIATION #####
 ####################
 
-# get data
-dict_extract = {"database" : "Transport",
-                "sheet" : "TrAvia_act",
-                "variable" : "New aircrafts",
-                "sheet_last_row" : "Passenger transport",                
-                "sub_variables" : ["Passenger transport"],
-                "calc_names" : ["aviation"]}
-dm_new_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
-dm_new_avi.units["aviation"] = "number"
-dm_new_avi.array = np.round(dm_new_avi.array,0)
-# dm_new_avi.datamatrix_plot()
+# get data of new planes
+country_codes = list(dict_iso2_jrc.keys())
+country_names = list(dict_iso2_jrc.values())
+df_temp = pd.concat([get_aviation_data(code, name, 102, 103, "unit") for code,name in zip(country_codes, country_names)],ignore_index=True)
+dm_new_avi = DataMatrix.create_from_df(df_temp, 0)
+dm_new_avi.array = np.round(dm_new_avi.array, 0)
+
+# multply by av. number of seats per flight (to get number of seats in new planes)
+dm_new_avi.array = dm_new_avi.array * dm_avi_seats.array
 
 # add techs (all kerosene)
 dm_new_avi.rename_col("aviation", "aviation_kerosene", "Variables")
@@ -956,6 +989,8 @@ dm_new.append(dm_new_bus,"Variables")
 dm_new.append(dm_new_rail,"Variables")
 dm_new.sort("Variables")
 dm_new.sort("Country")
+dm_new.add(np.nan, "Years", list(range(1990,2000)), dummy=True)
+dm_new.sort("Years")
 
 # add aviation
 dm_new.append(dm_new_avi,"Variables")
@@ -964,6 +999,9 @@ dm_new.sort("Variables")
 # fix units
 for v in dm_new.col_labels["Variables"]:
     dm_new.units[v] = "number"
+
+# aviation 1990 put missing
+dm_new[:,1990,"aviation","kerosene"] = np.nan
 
 # check
 # dm_new.flatten().filter({"Country" : ["EU27"]}).datamatrix_plot()
@@ -1301,6 +1339,11 @@ del cat, categories2_all, categories2_missing, dict_iso2, dict_call, dict_iso2_j
     dict_new, dm_new_2w, dm_new_bus, dm_new_ldv, dm_new_rail, dm_temp, \
     dm_temp1, idx, key, v, mapping_calc, mylist, \
     dm_new
+ 
+del code, country_codes, country_names, df_avi_seats, df_fleet_avi, df_temp, dict_extract, \
+    dm_eurostat_new, dm_eurostat_new_total, dm_new_avi, dm_new_ev, dm_new_temp, \
+    dm_share, filter, idx_eu, idx_ev, idx_share, ldvs, mapping_dim, rates, share, \
+    variabs, y
 
 ###############################################################################
 ##################################### WASTE ###################################

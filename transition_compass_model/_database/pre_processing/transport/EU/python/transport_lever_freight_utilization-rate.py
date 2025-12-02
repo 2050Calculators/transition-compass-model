@@ -58,11 +58,25 @@ dict_extract = {"database" : "Transport",
                 "calc_names" : ["HDVL","HDVH"]}
 dm_hdvl = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 
-# make hdvm as average between hdvh and hdvl (as it's vkm, the medium ones should carry around the average)
-dm_temp = dm_hdvl.groupby({"HDVM" : ["HDVL","HDVH"]}, 
-                          dim='Variables', aggregation = "mean", regex=False, inplace=False)
-dm_hdvl.append(dm_temp, "Variables")
+# # make hdvm as average between hdvh and hdvl (as it's vkm, the medium ones should carry around the average)
+# dm_temp = dm_hdvl.groupby({"HDVM" : ["HDVL","HDVH"]}, 
+#                           dim='Variables', aggregation = "mean", regex=False, inplace=False)
+# dm_hdvl.append(dm_temp, "Variables")
+# dm_hdvl.sort("Variables")
+
+# It seems that in JRC HDVL are all rigid trucks (majority), while HDVH are the articulated trucks (small percentage)
+# I will assume that 60% of rigid trucks are medium weight (medium and heavy rigid below)
+# | EU mass class           | GVW       | Fraction of rigids |
+# | ----------------------- | --------- | ------------------ |
+# | **HDVL** (light)        | 3.5–7.5 t | ~40%               |
+# | **HDVM** (medium)       | 7.5–16 t  | ~45%               |
+# | **HDVH* (heavy rigid)** | >16 t     | ~15%               |
+arr_medium = dm_hdvl[:,:,"HDVL"] * 0.6
+arr_light = dm_hdvl[:,:,"HDVL"] * 0.4
+dm_hdvl[:,:,"HDVL"] = arr_light
+dm_hdvl.add(arr_medium, "Variables", "HDVM", "vehicles")
 dm_hdvl.sort("Variables")
+
 
 # ###############
 # ##### IWW #####
@@ -235,6 +249,7 @@ dict_extract = {"database" : "Transport",
                                     "Heavy goods vehicles"],
                 "calc_names" : ["HDVL","HDVH"]}
 dm_hdv = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+# df_check = dm_hdv.write_df()
 
 # make hdvm as average between hdvh and hdvl (as it's vkm, the medium ones should carry around the average)
 dm_temp = dm_hdv.groupby({"HDVM" : ["HDVL","HDVH"]}, 
@@ -307,6 +322,7 @@ dm_hdv.drop("Years",startyear)
 
 # put in uti
 dm_uti.append(dm_hdv, "Variables")
+# dm_uti.filter({"Country":["EU27"]}).write_df().to_csv("/Users/echiarot/Desktop/check.csv")
 
 # split ots and fts
 DM_uti = {"ots": {"freight_utilization-rate" : []}, "fts": {"freight_utilization-rate" : dict()}}
