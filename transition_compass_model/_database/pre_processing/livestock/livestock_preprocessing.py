@@ -230,7 +230,6 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     df_processing_yield_fxa = pd.concat([df_ssr, df_ssr_feed])
 
     # Compute Self-Sufficiency Ratio (SSR) ---------------------------------------------------------------------------------
-    # SSR [%] = (100*Production) / (Production + Imports - Exports)
     # 1: Pivot the DataFrame to get 'Production', 'Import Quantity', and 'Export Quantity' in separate columns
     pivot_df = df_ssr.pivot_table(index=['Area', 'Year', 'Item'], columns='Element', values='Value').reset_index()
     pivot_df_feed = df_ssr_feed.pivot_table(index=['Area', 'Year', 'Item'],
@@ -636,16 +635,6 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
 
   # Replace negative values by 0.0
   df_trade_agg['value'] = df_trade_agg['value'].clip(lower=0.0)
-  #df_trade_agg.loc[df_trade_agg['value'] < 0, 'col'] = 0.0
-
-  # Normalise across countries to compute share of imports
-  df_trade_agg['value_norm'] = (
-    df_trade_agg['value'] /
-    df_trade_agg.groupby(['variables', 'timescale'])[
-      'value'].transform('sum')
-  )
-  df_trade_agg = df_trade_agg[['variables','geoscale', 'timescale', 'value_norm', 'level', 'lever']]
-  df_trade_agg.rename(columns={'value_norm': 'value'}, inplace=True)
 
   # Format as datamatrix
   df_ots, df_fts = database_to_df(df_trade_agg, lever, level='all')
@@ -657,7 +646,30 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   dm_liv_trade_origin.add(0.0, dummy=True, col_label=['Melanesia'],
                           dim='Country')
 
-  return dm_liv_trade_origin
+  # Unit conversion: [t] => [kcal]
+  cdm_kcal_temp = cdm_kcal.copy()
+  cdm_kcal_temp.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
+  cdm_kcal_temp = cdm_kcal_temp.filter({'Categories1': ['abp-dairy-milk', 'abp-hens-egg',
+                                              'meat-bovine', 'meat-oth-animal',
+                                              'meat-pig', 'meat-poultry',
+                                              'meat-sheep']})
+  dm_liv_trade_origin.sort('Categories1')
+  cdm_kcal_temp.sort('Categories1')
+  array_temp = dm_liv_trade_origin[:, :, 'agr_split-import', :] \
+               * cdm_kcal_temp[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
+  dm_liv_trade_origin[:, :, 'agr_split-import', :] = array_temp
+
+  # Step CALIBRATION IMPORTS
+  dm_cal_imports = dm_liv_trade_origin.copy()
+  dm_cal_imports.rename_col('agr_split-import', 'cal_agr_domestic-production','Variables')
+  dm_cal_imports.change_unit('cal_agr_domestic-production', 1.0, '-', 'kcal', '*')
+  dm_cal_imports.drop(dim='Country', col_label=['Switzerland'])
+
+  # Normalise across countries for share of imports
+  dm_liv_trade_origin.normalise(dim='Country', inplace=True)
+  dm_liv_trade_origin.change_unit('agr_split-import', 1.0, '%', '-', '*')
+
+  return dm_liv_trade_origin, dm_cal_imports
 
 # CalculationLeaf SHARE PRODUCTION METHOD
 
@@ -3097,10 +3109,10 @@ def datamatrix_to_pickle(dm_fts):
   dict_fxa['cal_agr_liv-population'] = dm_cal_liv_pop.filter({'Country':['Switzerland']}, inplace=False)
   dict_fxa['cal_agr_liv-population_organic'] = dm_cal_liv_pop_org
   dict_fxa['cal_agr_domestic-production-liv'] = dm_cal_dom_prod
+  dict_fxa['cal_agr_imports-liv'] = dm_cal_imports
   dict_fxa['cal_agr_liv_CH4-emission'] = dm_cal_liv_emissions.filter({'Variables':['cal_agr_liv_CH4-emission']}, inplace=False)
   dict_fxa['cal_agr_liv_N2O-emission'] = dm_cal_liv_emissions.filter({'Variables':['cal_agr_liv_N2O-emission']}, inplace=False)
   dict_fxa['cal_agr_demand_feed'] = dm_cal_feed
-
 
   # LeversToDatamatrix OTS -----------------------------------------------------
   dict_ots = {}
@@ -3312,7 +3324,7 @@ file_dict = {'ssr': 'data/faostat/ssr.csv',
 cdm_efficiency, cdm_kcal = constant()
 dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk = self_sufficiency_processing(years_ots, list_countries_calc, file_dict)
 dm_fxa_ffr_milk = fxa_ffr_milk(df_ffr_milk)
-dm_liv_trade_origin = trade_origin_processing(years_ots, list_countries_calc, file_dict)
+dm_liv_trade_origin, dm_cal_imports = trade_origin_processing(years_ots, list_countries_calc, file_dict)
 dm_losses = livestock_losses()
 dm_cal_dom_prod, dm_cal_liv_pop, df_liv_pop = livestock_calibration(list_countries_calc, dm_losses)
 dm_prod_share, dm_cal_liv_pop_org = production_share(dm_cal_liv_pop)

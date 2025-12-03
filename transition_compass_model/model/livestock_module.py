@@ -39,6 +39,7 @@ def read_data(DM_livestock, lever_setting):
     dm_share_export = DM_livestock['fxa']['share-export']
     dm_fxa_ratio_milk = DM_livestock['fxa']['ratio_milk']
     dm_fxa_cal_liv_prod = DM_livestock['fxa']['cal_agr_domestic-production-liv']
+    dm_fxa_cal_liv_imports = DM_livestock['fxa']['cal_agr_imports-liv']
     dm_fxa_cal_liv_pop = DM_livestock['fxa']['cal_agr_liv-population']
     dm_fxa_cal_liv_pop_org = DM_livestock['fxa']['cal_agr_liv-population_organic']
     dm_fxa_cal_liv_pop.append(dm_fxa_cal_liv_pop_org, dim='Variables')
@@ -69,6 +70,7 @@ def read_data(DM_livestock, lever_setting):
         'share-organic': dm_share_organic,
         'liv_slaughtered_rate': dm_livestock_slaughtered,
         'cal_liv_prod': dm_fxa_cal_liv_prod,
+        'cal_liv_imports': dm_fxa_cal_liv_imports,
         'cal_liv_population': dm_fxa_cal_liv_pop,
         'ruminant_density': dm_livestock_density,
         'ratio_milk': dm_fxa_ratio_milk
@@ -108,7 +110,7 @@ def simulate_dietaryhabits_to_livestock_input():
     return dm_demand
 
 # CalculationLeaf LIVESTOCK FOOD DEMAND TO DOMESTIC & IMPORTED FOOD PRODUCTION --------------------------------------------------------------
-def trade_livestock_workflow(DM_liv_prod, dm_demand):
+def trade_livestock_workflow(DM_liv_prod, dm_demand, years_setting):
     # Overall food demand [kcal] = food demand [kcal] + food waste [kcal] NOW IN lifestyle_workflow()
     # dm_lfs.operation('lfs_total-cal-demand', '+', 'lfs_food-wastes', out_col='agr_demand', unit='kcal')
 
@@ -140,19 +142,24 @@ def trade_livestock_workflow(DM_liv_prod, dm_demand):
     dm_trade = DM_liv_prod['split-import'].copy()
     array_temp = dm_demand_liv[:,:,'agr_imported_production_total',:] * \
                  dm_trade[:,:,'agr_split-import',:]
-    DM_liv_prod['split-import'].add(array_temp, dim='Variables', col_label='agr_domestic_production', unit='kcal')
+    DM_liv_prod['split-import'].add(array_temp, dim='Variables', col_label='agr_domestic_production_raw', unit='kcal')
 
-    # Filter to only have production
-    dm_production= dm_demand_liv.filter_w_regex({'Categories1': 'pro-liv.*', 'Variables': 'agr_domestic_production'})
-    # Drop the pro- prefix of the categories
-    dm_production.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
+    # Filter to only have imported production
+    dm_production= DM_liv_prod['split-import'].filter_w_regex({'Variables': 'agr_domestic_production_raw'})
+
+    # Calibration - Imports
+    dm_cal_imports = DM_liv_prod['cal_liv_imports']
+    dm_cal_rates_liv_imports = calibration_rates(dm_production, dm_cal_imports, calibration_start_year=1990,
+                                              calibration_end_year=2023, years_setting=years_setting)
+    dm_production.append(dm_cal_rates_liv_imports, dim='Variables')
+    dm_production.operation('agr_domestic_production_raw', '*', 'cal_rate', dim='Variables',
+                          out_col='agr_domestic_production', unit='kcal')
+
 
     # Append domestic production Switzerland + other countries
-    dm_demand_imports = DM_liv_prod['split-import'].filter({'Variables': ['agr_domestic_production']}, inplace=False)
-    dm_production.append(dm_demand_imports, dim='Country')
-
-    # Calibration
-
+    dm_demand_liv.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
+    dm_production.filter({'Variables': ['agr_domestic_production']}, inplace=True)
+    dm_production.append(dm_demand_liv.filter({'Variables':['agr_domestic_production']}), dim='Country')
 
     return dm_production
 
@@ -181,7 +188,6 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
     dm_cal_liv_prod = DM_liv_prod['cal_liv_prod'].filter({'Country': ['Switzerland']})
     dm_liv_prod = DM_liv_prod['losses'].filter({'Variables': ['agr_domestic_production_liv_afw_raw']})
     dm_liv_prod_ch = dm_liv_prod.filter({'Country': ['Switzerland']})
-    #dm_liv_prod.drop(dim='Categories1', col_label=['abp-processed-offal','abp-processed-afat'])  # Filter dm_liv_prod to drop offal & afats
     dm_cal_rates_liv_prod = calibration_rates(dm_liv_prod_ch, dm_cal_liv_prod, calibration_start_year=1990,
                                               calibration_end_year=2023, years_setting=years_setting)
     dm_liv_prod_ch.append(dm_cal_rates_liv_prod, dim='Variables')
@@ -242,7 +248,7 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
     dm_cal_liv_pop_org = DM_liv_prod['cal_liv_population'].filter({'Variables': ['cal_agr_liv-population_organic']})
     dm_cal_rates_liv_pop_org = calibration_rates(DM_liv_prod['share-organic'].filter({'Variables':['agr_liv_population_organic_raw']}),
                                              dm_cal_liv_pop_org,
-                                             calibration_start_year=1990,
+                                             calibration_start_year=1999,
                                              calibration_end_year=2022,
                                              years_setting=years_setting)
     DM_liv_prod['share-organic'].append(dm_cal_rates_liv_pop_org, dim='Variables')
@@ -661,7 +667,7 @@ def livestock(lever_setting, years_setting, DM_input, write_pickle, interface=In
     # CalculationTree LIVESTOCK MODULE
 
 
-    dm_demand_liv = trade_livestock_workflow(DM_liv_prod, dm_demand)
+    dm_demand_liv = trade_livestock_workflow(DM_liv_prod, dm_demand, years_setting)
     DM_liv_prod, dm_liv_ibp, dm_liv_ibp, dm_liv_prod, dm_liv_pop = livestock_production_workflow(DM_liv_prod, CDM_const, dm_demand_liv, years_setting)
     dm_liv_N2O, dm_CH4, DM_manure = manure_workflow(DM_manure, dm_liv_pop, years_setting)
     DM_feed, dm_aps_ibp, dm_feed_req, dm_aps, dm_feed_demand = feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const,
