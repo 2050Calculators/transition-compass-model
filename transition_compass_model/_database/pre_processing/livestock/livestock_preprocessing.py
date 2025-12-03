@@ -661,7 +661,7 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
 
 # CalculationLeaf SHARE PRODUCTION METHOD
 
-def production_share():
+def production_share(dm_cal_liv_pop):
 
   # Step CATTLE (DAIRY & MEAT)
   # Source: STAT-TAB Exploitations agricoles et animaux de rente selon le niveau de classification 3 par canton
@@ -730,11 +730,10 @@ def production_share():
   dm_cattle[:,:,:,'abp-dairy-milk',:] = dm_temp[:,:,:,'abp-dairy-milk',:]
   dm_cattle[:, :, :, 'other-cattle', :] = dm_temp[:, :, :, 'other-cattle',:]
 
-  # Convert animals to lsu
-  # young-cattle from https://ec.europa.eu/eurostat/statistics-explained/index.php?title=Glossary:Livestock_unit_(LSU),
-  # else based on EUCALC doc
+  # Convert animals to lsu based on EUCALC doc
+  # Note: we account for young cattle same as cattle to match FAOSTAT
   lsu_conversion = {'other-cattle': 0.6,
-                    'young-cattle': 0.4,
+                    'young-cattle': 0.6,
                     'abp-dairy-milk': 0.7,
                     'other-bovins': 0.6}
 
@@ -762,11 +761,9 @@ def production_share():
     filtering = {
       "Unité d'observation": ['Cheptel - Poules de ponte et d\'élevage',
                               'Cheptel - Poulets de chair',
-                              'Cheptel - Autres poules',
                               'Cheptel - Dindes',
                               'Cheptel - Canards',
-                              'Cheptel - Oies',
-                              'Cheptel - Autres volailles'],
+                              'Cheptel - Oies'],
       'Canton': ['Suisse'],
       'Zone de production agricole': ['Zone de production agricole - total'],
       'Classe de taille': ['Classe de taille - total'],
@@ -796,11 +793,9 @@ def production_share():
     dm.rename_col_regex('Cheptel - ', '', dim='Categories1')
     dict_cat = {'abp-hens-egg': ['Poules de ponte et d\'élevage'],
                 'meat-poultry': ['Poulets de chair'],
-                'meat-other-poultry': ['Autres poules',
-                                       'Dindes',
+                'meat-other-poultry': ['Dindes',
                                        'Canards',
-                                       'Oies',
-                                       'Autres volailles']}
+                                       'Oies']}
     dm.groupby(dict_cat, dim='Categories1', inplace=True)
     dm.sort('Years')
     dm.filter({'Years': years_ots}, inplace=True)
@@ -876,7 +871,8 @@ def production_share():
     dm.rename_col_regex('Cheptel - ', '', dim='Categories1')
     dict_cat = {'meat-sheep': ['Moutons', 'Chèvres'],
                 'meat-pig': ['Porcs'],
-                'meat-oth-animal': ['Equidés', 'Autres animaux']}
+                'meat-horse': ['Equidés'],
+                'meat-oth-animal': ['Autres animaux']}
     dm.groupby(dict_cat, dim='Categories1', inplace=True)
     dm.sort('Years')
     dm.filter({'Years': years_ots}, inplace=True)
@@ -892,6 +888,7 @@ def production_share():
   # else based on EUCALC doc
   lsu_conversion = {'meat-sheep': 0.1,
                     'meat-pig': 0.22,
+                    'meat-horse': 0.8,
                     'meat-oth-animal': 0.03}
 
   for cat in dm_others.col_labels['Categories1']:
@@ -900,11 +897,15 @@ def production_share():
   dm_others.change_unit('agr_livestock', old_unit='animals', new_unit='lsu',
                      factor=1)
 
+  # Group Horses and other animals
+  dm_others.groupby({'meat-oth-animal': ['meat-horse', 'meat-oth-animal']}, dim='Categories1', inplace=True)
+
   # Append dms
   dm_cattle.append(dm_poultry, dim='Categories1')
   dm_cattle.append(dm_others, dim='Categories1')
   dm_prod_share = dm_cattle.copy()
 
+  # Step CAL ORGANIC LIVESTOCK
   # Create copy for calibration
   dm_cal_liv_pop_org = dm_prod_share.filter({'Categories2': ['organic']})
   dm_cal_liv_pop_org.switch_categories_order(cat1='Categories2', cat2='Categories1')
@@ -2794,21 +2795,6 @@ def manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure
 
    return dm_fxa_CH4, dm_fxa_N2O
 
-# CalculationLeaf CAL - ORGANIC LIVESTOCK ----------------------------------------------------------------------------------
-
-def cal_organic_livestock(dm_cal_liv_pop, dm_prod_share):
-
-  # Filter for only CH
-  dm_cal_liv_pop_org = dm_cal_liv_pop.filter({'Country':['Switzerland']}).copy()
-
-  # Organic livstock [lsu] = livestock [lsu] * share-organic [-]
-  dm_cal_liv_pop_org[:,:,'cal_agr_liv-population',:] = \
-    dm_cal_liv_pop_org[:, :, 'cal_agr_liv-population', :] * \
-    dm_prod_share[:,:,'livestock_share-organic',:]
-
-
-  return dm_cal_liv_pop_org
-
 # CalculationLeaf CAL - FEED DEMAND ----------------------------------------------------------------------------------
 
 def feed_calibration(list_countries_calc):
@@ -3324,12 +3310,12 @@ file_dict = {'ssr': 'data/faostat/ssr.csv',
              'exports': 'data/faostat/exports.csv'}
 
 cdm_efficiency, cdm_kcal = constant()
-dm_prod_share, dm_cal_liv_pop_org = production_share()
 dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk = self_sufficiency_processing(years_ots, list_countries_calc, file_dict)
 dm_fxa_ffr_milk = fxa_ffr_milk(df_ffr_milk)
 dm_liv_trade_origin = trade_origin_processing(years_ots, list_countries_calc, file_dict)
 dm_losses = livestock_losses()
 dm_cal_dom_prod, dm_cal_liv_pop, df_liv_pop = livestock_calibration(list_countries_calc, dm_losses)
+dm_prod_share, dm_cal_liv_pop_org = production_share(dm_cal_liv_pop)
 dm_density = livestock_density(df_liv_pop)
 dm_manure, dm_enteric, dm_fxa_manure_yield, df_manure_ch4_fxa, df_manure_n_fxa = livestock_emissions()
 dm_cal_feed, df_feed_ration = feed_calibration(list_countries_calc)
@@ -3339,7 +3325,6 @@ dm_cal_liv_emissions, df_liv_emissions = manure_calibration(list_countries_calc)
 dm_fxa_CH4, dm_fxa_N2O = manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa)
 dm_fxa_exports = exports_processing(list_countries_calc,file_dict)
 dm_feed_alt_protein = livestock_protein_meals_processing(df_csl_feed)
-#dm_cal_liv_pop_org = cal_organic_livestock(dm_cal_liv_pop, dm_prod_share)
 dm_fts = fts_processing()
 
 # CalculationTree RUNNING PICKLE CREATION
