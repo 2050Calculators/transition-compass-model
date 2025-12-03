@@ -3063,7 +3063,7 @@ def constant():
 # CalculationLeaf FTS  ------------------------------
 def fts_processing():
 
-  # ssr-feed, ssr-liv, livestock-losses, share-organic, ruminand-feed ----------
+  # ssr-feed, ssr-liv_.*, livestock-losses, share-organic, ruminand-feed ----------
   # Read Excel
   df_fts_data = pd.read_excel(
     'data/livestock_fts.xlsx',
@@ -3117,8 +3117,14 @@ def datamatrix_to_pickle(dm_fts):
   # LeversToDatamatrix OTS -----------------------------------------------------
   dict_ots = {}
 
-  # ssr-liv
-  dict_ots['ssr-liv'] = dm_ssr_liv
+  # ssr-liv_.*
+  dict_ots['ssr-liv-abp-dairy-milk'] = dm_ssr_liv.filter({'Categories1':['pro-liv-abp-dairy-milk']})
+  dict_ots['ssr-liv-abp-hens-egg'] = dm_ssr_liv.filter({'Categories1': ['pro-liv-abp-hens-egg']})
+  dict_ots['ssr-liv-meat-poultry'] = dm_ssr_liv.filter({'Categories1': ['pro-liv-meat-poultry']})
+  dict_ots['ssr-liv-meat-pig'] = dm_ssr_liv.filter({'Categories1': ['pro-liv-meat-pig']})
+  dict_ots['ssr-liv-meat-bovine'] = dm_ssr_liv.filter({'Categories1': ['pro-liv-meat-bovine']})
+  dict_ots['ssr-liv-meat-sheep'] = dm_ssr_liv.filter({'Categories1': ['pro-liv-meat-sheep']})
+  dict_ots['ssr-liv-meat-oth-animal'] = dm_ssr_liv.filter({'Categories1': ['pro-liv-meat-oth-animal']})
   # ssr-feed
   dict_ots['ssr-feed'] = dm_ssr_feed
   # livestock-losses
@@ -3190,7 +3196,23 @@ def datamatrix_to_pickle(dm_fts):
   # Linear fitting between ots and fts objective (2050) ------------------
 
   # Lever - ssr-liv
-  lever = 'ssr-liv'
+  dict_lever_ssr_liv = ['ssr-liv-abp-dairy-milk',
+                        'ssr-liv-abp-hens-egg',
+                        'ssr-liv-meat-poultry',
+                        'ssr-liv-meat-pig',
+                        'ssr-liv-meat-bovine',
+                        'ssr-liv-meat-sheep',
+                        'ssr-liv-meat-oth-animal']
+  for lever in dict_lever_ssr_liv:
+    for level in range(1,5):
+      dm_fts[lever][level].deepen()
+      dm_fts[lever][level].append(dict_ots[lever], dim='Years')
+      linear_fitting(dm_fts[lever][level], years_fts)
+      dm_fts[lever][level].filter({'Years':years_fts}, inplace=True)
+    dict_fts[lever] = dm_fts[lever]
+
+
+  """lever = 'ssr-liv'
   for level in range(1,5):
     # Propagate the overall lever value across all livestock categories
     dm_ots = dict_ots[lever].copy()
@@ -3203,7 +3225,7 @@ def datamatrix_to_pickle(dm_fts):
     # Linear fit
     linear_fitting(dm_ots, years_fts)
     dm_fts[lever][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
-  dict_fts[lever] = dm_fts[lever]
+  dict_fts[lever] = dm_fts[lever]"""
 
   # Lever - ssr-feed
   lever = 'ssr-feed'

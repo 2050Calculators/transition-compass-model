@@ -29,7 +29,6 @@ def read_data(DM_livestock, lever_setting):
 
     # Sub-matrix for LIVESTOCK PROD & POP
     dm_livestock_losses = DM_ots_fts['livestock-losses']
-    dm_livestock_ssr = DM_ots_fts['ssr-liv']
     dm_share_organic = DM_ots_fts['share-organic']
     dm_livestock_slaughtered = DM_ots_fts['slaughter-rates']
     dm_livestock_density = DM_ots_fts['livestock-density']
@@ -43,6 +42,32 @@ def read_data(DM_livestock, lever_setting):
     dm_fxa_cal_liv_pop = DM_livestock['fxa']['cal_agr_liv-population']
     dm_fxa_cal_liv_pop_org = DM_livestock['fxa']['cal_agr_liv-population_organic']
     dm_fxa_cal_liv_pop.append(dm_fxa_cal_liv_pop_org, dim='Variables')
+
+    #dm_livestock_ssr = DM_ots_fts['ssr-liv']
+    # list of lever names
+    levers = ['ssr-liv-abp-dairy-milk',
+                        'ssr-liv-abp-hens-egg',
+                        'ssr-liv-meat-poultry',
+                        'ssr-liv-meat-pig',
+                        'ssr-liv-meat-bovine',
+                        'ssr-liv-meat-sheep',
+                        'ssr-liv-meat-oth-animal']
+
+    # 1: Create a dictionary of all DataMatrix objects
+    dm_livestock_ssr = {lever: DM_ots_fts[lever] for lever in levers}
+
+    # 2: Merge them all into one DataMatrix along 'Variables'
+    dm_livestock_ssr_merged = None
+
+    for lever_name, dm_split in dm_livestock_ssr.items():
+      # ensure each variable label is unique
+      dm_split.col_labels['Variables'] = ['lfs_consumers-diet']
+      #dm_split.rename_col([lever_name], 'lfs_consumers-diet', 'Variables')
+
+      if dm_livestock_ssr_merged is None:
+        dm_livestock_ssr_merged = dm_split
+      else:
+        dm_livestock_ssr_merged.append(dm_split, dim='Categories1')
 
     # Sub-matrix for MANURE
     dm_livestock_enteric_emissions = DM_ots_fts['livestock-enteric']
@@ -64,7 +89,7 @@ def read_data(DM_livestock, lever_setting):
     DM_liv_prod = {
         'losses': dm_livestock_losses,
         'yield': dm_livestock_yield,
-        'ssr-liv': dm_livestock_ssr,
+        'ssr-liv': dm_livestock_ssr_merged,
         'split-import': dm_split_import,
         'share-export': dm_share_export,
         'share-organic': dm_share_organic,
