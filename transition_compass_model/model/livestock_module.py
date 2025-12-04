@@ -38,7 +38,8 @@ def read_data(DM_livestock, lever_setting):
     dm_share_export = DM_livestock['fxa']['share-export']
     dm_fxa_ratio_milk = DM_livestock['fxa']['ratio_milk']
     dm_fxa_cal_liv_prod = DM_livestock['fxa']['cal_agr_domestic-production-liv']
-    dm_fxa_cal_liv_imports = DM_livestock['fxa']['cal_agr_imports-liv']
+    dm_fxa_cal_liv_imports_countries = DM_livestock['fxa']['cal_agr_imports-liv_countries']
+    dm_fxa_cal_liv_imports_tot = DM_livestock['fxa']['cal_agr_imports-liv_total']
     dm_fxa_cal_liv_pop = DM_livestock['fxa']['cal_agr_liv-population']
     dm_fxa_cal_liv_pop_org = DM_livestock['fxa']['cal_agr_liv-population_organic']
     dm_fxa_cal_liv_pop.append(dm_fxa_cal_liv_pop_org, dim='Variables')
@@ -46,12 +47,12 @@ def read_data(DM_livestock, lever_setting):
     #dm_livestock_ssr = DM_ots_fts['ssr-liv']
     # list of lever names
     levers = ['ssr-liv-abp-dairy-milk',
-                        'ssr-liv-abp-hens-egg',
-                        'ssr-liv-meat-poultry',
-                        'ssr-liv-meat-pig',
-                        'ssr-liv-meat-bovine',
-                        'ssr-liv-meat-sheep',
-                        'ssr-liv-meat-oth-animal']
+              'ssr-liv-abp-hens-egg',
+              'ssr-liv-meat-poultry',
+              'ssr-liv-meat-pig',
+              'ssr-liv-meat-bovine',
+              'ssr-liv-meat-sheep',
+              'ssr-liv-meat-oth-animal']
 
     # 1: Create a dictionary of all DataMatrix objects
     dm_livestock_ssr = {lever: DM_ots_fts[lever] for lever in levers}
@@ -95,7 +96,8 @@ def read_data(DM_livestock, lever_setting):
         'share-organic': dm_share_organic,
         'liv_slaughtered_rate': dm_livestock_slaughtered,
         'cal_liv_prod': dm_fxa_cal_liv_prod,
-        'cal_liv_imports': dm_fxa_cal_liv_imports,
+        'cal_imports-liv_countries': dm_fxa_cal_liv_imports_countries,
+        'cal_imports-liv_tot': dm_fxa_cal_liv_imports_tot,
         'cal_liv_population': dm_fxa_cal_liv_pop,
         'ruminant_density': dm_livestock_density,
         'ratio_milk': dm_fxa_ratio_milk
@@ -161,7 +163,19 @@ def trade_livestock_workflow(DM_liv_prod, dm_demand, years_setting):
     dm_demand_liv.operation('agr_domestic_production', '-', 'agr_exported_production',
                                      out_col='temp', unit='kcal')
     dm_demand_liv.operation('agr_demand', '-', 'temp',
-                                     out_col='agr_imported_production_total', unit='kcal')
+                                     out_col='agr_imported_production_total_raw', unit='kcal')
+
+    # Rename livestock categories
+    dm_demand_liv.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
+
+    # Calibration - Imports total
+    dm_cal_imports_tot = DM_liv_prod['cal_imports-liv_tot']
+    dm_imports_tot = dm_demand_liv.filter({'Variables':['agr_imported_production_total_raw']})
+    dm_cal_rates_liv_imports = calibration_rates(dm_imports_tot, dm_cal_imports_tot, calibration_start_year=1990,
+                                              calibration_end_year=2023, years_setting=years_setting)
+    dm_demand_liv.append(dm_cal_rates_liv_imports, dim='Variables')
+    dm_demand_liv.operation('agr_imported_production_total_raw', '*', 'cal_rate', dim='Variables',
+                          out_col='agr_imported_production_total', unit='kcal')
 
     # Imported production per region [kcal] = Imported production total [kcal] * split per region [-]
     dm_trade = DM_liv_prod['split-import'].copy()
@@ -169,20 +183,19 @@ def trade_livestock_workflow(DM_liv_prod, dm_demand, years_setting):
                  dm_trade[:,:,'agr_split-import',:]
     DM_liv_prod['split-import'].add(array_temp, dim='Variables', col_label='agr_domestic_production_raw', unit='kcal')
 
-    # Filter to only have imported production
-    dm_production= DM_liv_prod['split-import'].filter_w_regex({'Variables': 'agr_domestic_production_raw'})
+    # Filter to only have imported production per countries
+    dm_production = DM_liv_prod['split-import'].filter_w_regex({'Variables': 'agr_domestic_production_raw'})
 
-    # Calibration - Imports
-    dm_cal_imports = DM_liv_prod['cal_liv_imports']
-    dm_cal_rates_liv_imports = calibration_rates(dm_production, dm_cal_imports, calibration_start_year=1990,
+    # Calibration - Imports per countries
+    dm_cal_imports_countries = DM_liv_prod['cal_imports-liv_countries']
+    dm_cal_rates_liv_imports_countries = calibration_rates(dm_production, dm_cal_imports_countries, calibration_start_year=1990,
                                               calibration_end_year=2023, years_setting=years_setting)
-    dm_production.append(dm_cal_rates_liv_imports, dim='Variables')
+    dm_production.append(dm_cal_rates_liv_imports_countries, dim='Variables')
     dm_production.operation('agr_domestic_production_raw', '*', 'cal_rate', dim='Variables',
                           out_col='agr_domestic_production', unit='kcal')
 
 
     # Append domestic production Switzerland + other countries
-    dm_demand_liv.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
     dm_production.filter({'Variables': ['agr_domestic_production']}, inplace=True)
     dm_production.append(dm_demand_liv.filter({'Variables':['agr_domestic_production']}), dim='Country')
 

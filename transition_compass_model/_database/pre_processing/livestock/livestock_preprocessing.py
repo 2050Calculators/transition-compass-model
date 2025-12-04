@@ -260,17 +260,21 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     df_ffr_milk = pivot_df[pivot_df['Item'] =='Milk - Excluding Butter']
     df_ffr_milk = df_ffr_milk.copy()
 
+    # Create a copy to check imports equivalence between FBS & TM
+    df_imports = pivot_df[['Area', 'Year', 'Item','Import']].copy()
+
     # 2: Compute the SSR [%]
     # (previously with special condition for milk because we
     # don't account for it as feed & processed. but now fixed with and fxa_ratio)
     pivot_df['SSR[%]'] = pivot_df['Production'] / (pivot_df['Food'] + pivot_df['Feed'] + pivot_df['Processing'])
-    # Fill nan
     pivot_df_feed['SSR[%]'] = pivot_df_feed['Production']/(pivot_df_feed['Feed'])
+    df_imports['SSR[%]'] = df_imports['Import']
 
     # Filter columns
     columns_to_filter = ['Area', 'Year', 'Item', 'SSR[%]']
     pivot_df = pivot_df[columns_to_filter]
     pivot_df_feed = pivot_df_feed[columns_to_filter]
+    df_imports = df_imports[columns_to_filter]
 
     # Concat dfs
     #pivot_df = pd.concat([pivot_df, pivot_df_feed])
@@ -286,9 +290,13 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     # Prepend 'SSR'
     pivot_df['Item'] = pivot_df['Item'].apply(lambda x: f"SSR {x}")
     pivot_df_feed['Item'] = pivot_df_feed['Item'].apply(lambda x: f"SSR {x}")
+    df_imports['Item'] = df_imports['Item'].apply(lambda x: f"SSR {x}")
 
     # Renaming existing columns (geoscale, timsecale, value)
     pivot_df.rename(columns={'Area': 'geoscale', 'Year': 'timescale', 'SSR[%]': 'value'}, inplace=True)
+    df_imports.rename(
+      columns={'Area': 'geoscale', 'Year': 'timescale', 'SSR[%]': 'value'},
+      inplace=True)
     pivot_df_feed.rename(
       columns={'Area': 'geoscale', 'Year': 'timescale', 'SSR[%]': 'value'},
       inplace=True)
@@ -296,33 +304,26 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     # Merge based on 'Item'
     df_ssr_liv = pd.merge(df_dict_ssr, pivot_df, on='Item')
     df_ssr_feed = pd.merge(df_dict_ssr, pivot_df_feed, on='Item')
+    df_imports = pd.merge(df_dict_ssr, df_imports, on='Item')
 
     # Drop the 'Item' column
     df_ssr_liv = df_ssr_liv.drop(columns=['Item'])
     df_ssr_feed = df_ssr_feed.drop(columns=['Item'])
-
+    df_imports = df_imports.drop(columns=['Item'])
 
     # Adding the columns module, lever, level and string-pivot at the correct places
     lever = 'food-net-import'
     df_ssr_liv['module'] = 'agriculture'
     df_ssr_liv['lever'] = lever
     df_ssr_liv['level'] = 0
-    cols = df_ssr_liv.columns.tolist()
-    cols.insert(cols.index('value'), cols.pop(cols.index('module')))
-    cols.insert(cols.index('value'), cols.pop(cols.index('lever')))
-    cols.insert(cols.index('value'), cols.pop(cols.index('level')))
-    df_ssr_liv = df_ssr_liv[cols]
-    df_ssr_liv = df_ssr_liv.drop_duplicates()
 
     df_ssr_feed['module'] = 'agriculture'
     df_ssr_feed['lever'] = lever
     df_ssr_feed['level'] = 0
-    cols = df_ssr_feed.columns.tolist()
-    cols.insert(cols.index('value'), cols.pop(cols.index('module')))
-    cols.insert(cols.index('value'), cols.pop(cols.index('lever')))
-    cols.insert(cols.index('value'), cols.pop(cols.index('level')))
-    df_ssr_feed = df_ssr_feed[cols]
-    df_ssr_feed = df_ssr_feed.drop_duplicates()
+
+    df_imports['module'] = 'agriculture'
+    df_imports['lever'] = lever
+    df_imports['level'] = 0
 
     # Extrapolation
     df_ssr_liv = linear_fitting_ots_db(df_ssr_liv, years_ots, countries='all')
@@ -339,7 +340,27 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     dm_ssr_feed = DataMatrix.create_from_df(df_ots, num_cat=1)
     linear_fitting(dm_ssr_feed, years_ots)
 
-    return dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk
+    # Format as datamatrix - Imports
+    df_ots, df_fts = database_to_df(df_imports, lever, level='all')
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm_imports_fbs = DataMatrix.create_from_df(df_ots, num_cat=1)
+    linear_fitting(dm_imports_fbs, years_ots)
+
+    # Unit conversion: [kt] => [kcal]
+    cdm_kcal_temp = cdm_kcal.copy()
+    cdm_kcal_temp.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
+    cdm_kcal_temp = cdm_kcal_temp.filter(
+      {'Categories1': ['abp-dairy-milk', 'abp-hens-egg',
+                       'meat-bovine', 'meat-oth-animal',
+                       'meat-pig', 'meat-poultry',
+                       'meat-sheep']})
+    dm_imports_fbs.sort('Categories1')
+    cdm_kcal_temp.sort('Categories1')
+    array_temp = 1000 * dm_imports_fbs[:, :, 'agr_ssr', :] \
+                 * cdm_kcal_temp[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
+    dm_imports_fbs[:, :, 'agr_ssr', :] = array_temp
+
+    return dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk, dm_imports_fbs
 
 
 # CalculationLeaf FXA - SHARE EXPORTS
@@ -507,32 +528,51 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
                          '-- Western Europe > (List)']
 
   try:
-    df_trade = pd.read_csv(file_dict['trade'])
+    df_trade_egg = pd.read_csv(file_dict['trade_egg'])
+    df_trade_milk = pd.read_csv(file_dict['trade_milk'])
+    df_trade_meat = pd.read_csv(file_dict['trade_meat'])
   except OSError:
 
     # TRADE MATRIX (TM)
     # List of elements
     list_elements = ['Import quantity']
 
-    list_items = ['Milk - Excluding Butter + (Total)', 'Eggs + (Total)',
-                  'Bovine Meat', 'Meat, Other', 'Pigmeat',
-                  'Poultry Meat', 'Mutton & Goat Meat']
-    list_items = ['Raw milk of cattle',
-                  'Meat of cattle boneless, fresh or chilled',
-                  'Meat of cattle with the bone, fresh or chilled',
-                  'Meat of asses, fresh or chilled',
-                  'Meat of buffalo, fresh or chilled',
-                  'Meat of camels, fresh or chilled',
-                  'Meat of pig boneless, fresh or chilled',
-                  'Meat of pig with the bone, fresh or chilled',
-                  'Meat of chickens, fresh or chilled',
-                  'Meat of turkeys, fresh or chilled',
-                  'Meat of ducks, fresh or chilled',
-                  'Meat of geese, fresh or chilled',
-                  'Meat of rabbits and hares, fresh or chilled',
-                  'Meat of goat, fresh or chilled',
-                  'Meat of sheep, fresh or chilled',
-                  'Hen eggs in shell, fresh']
+    # List items
+    # Total items FAOSTAT
+    code = 'TM'
+    dict_items_faostat = faostat.get_par(code, 'item')
+    list_items_faostat = list(dict_items_faostat.keys())
+
+    # Create item list for eggs
+    keywords = ["egg"]
+    exclude = ["eggplant"]
+    list_items_egg = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+    # Create item list for meat
+    keywords = ["meat", "offal", "fat of"]
+    exclude = ["juice", "hydrogenated", "acids", "cocoa", "meal"]
+    list_items_meat = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for milk products
+    keywords = [
+      "milk", "yog", "cream", "cheese", "butter",
+      "ghee", "curd", "whey"
+    ]
+    exclude = ["wheat", "soy", "almond", "cocoa", "peanut"]
+    list_items_milk = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+    #list_items_milk = [k for k in list_items_faostat.keys() if "milk" in k.lower()]
+
 
     # 1990 - 2023
     ld = faostat.list_datasets()
@@ -542,7 +582,9 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
     my_partner_regions = [faostat.get_par(code, 'partnerregions')[p] for p in
                              list_partnerregions]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
-    my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+    my_items_egg = [faostat.get_par(code, 'item')[i] for i in list_items_egg]
+    my_items_milk = [faostat.get_par(code, 'item')[i] for i in list_items_milk]
+    my_items_meat = [faostat.get_par(code, 'item')[i] for i in list_items_meat]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996',
                   '1997', '1998', '1999', '2000', '2001', '2002',
                   '2003', '2004', '2005', '2006', '2007', '2008', '2009',
@@ -550,19 +592,58 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
                   '2017', '2018', '2019', '2020', '2021', '2022', '2023']
     my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
-    my_pars = {
+    my_pars_egg = {
       'reporterarea': my_reporter_countries,
       'partnerregions': my_partner_regions,
       'element': my_elements,
-      'item': my_items,
+      'item': my_items_egg,
       'year': my_years
     }
-    df_trade = faostat.get_data_df(code, pars=my_pars, strval=False)
-    df_trade.to_csv(file_dict['trade'], index=False)
+    my_pars_milk = {
+      'reporterarea': my_reporter_countries,
+      'partnerregions': my_partner_regions,
+      'element': my_elements,
+      'item': my_items_milk,
+      'year': my_years
+    }
+    my_pars_meat = {
+      'reporterarea': my_reporter_countries,
+      'partnerregions': my_partner_regions,
+      'element': my_elements,
+      'item': my_items_meat,
+      'year': my_years
+    }
+    df_trade_egg = faostat.get_data_df(code, pars=my_pars_egg, strval=False)
+    df_trade_egg.to_csv(file_dict['trade_egg'], index=False)
+    df_trade_milk = faostat.get_data_df(code, pars=my_pars_milk, strval=False)
+    df_trade_milk.to_csv(file_dict['trade_milk'], index=False)
+    df_trade_meat = faostat.get_data_df(code, pars=my_pars_meat, strval=False)
+    df_trade_meat.to_csv(file_dict['trade_meat'], index=False)
 
   # Filter
-  df_trade = df_trade[
-    ['Reporter Countries', 'Partner Countries', 'Item', 'Year', 'Value']]
+  col_filter = ['Reporter Countries', 'Partner Countries', 'Item', 'Year', 'Value']
+  df_trade_egg = df_trade_egg[col_filter]
+  df_trade_milk = df_trade_milk[col_filter]
+  df_trade_meat = df_trade_meat[col_filter]
+
+  # Sum items for egg and milk
+  df_trade_egg['Item'] = 'Eggs'
+  df_trade_egg = (
+    df_trade_egg
+    .groupby(['Reporter Countries', 'Partner Countries', 'Item', 'Year'],
+             as_index=False)['Value']
+    .sum()
+  )
+  df_trade_milk['Item'] = 'Milk'
+  df_trade_milk = (
+    df_trade_milk
+    .groupby(['Reporter Countries', 'Partner Countries', 'Item', 'Year'],
+             as_index=False)['Value']
+    .sum()
+  )
+
+  # Concat dfs
+  df_trade = pd.concat([df_trade_milk, df_trade_egg, df_trade_meat])
 
   # Aggregate by item ----------------------------------------------------------
   mapping = {
@@ -570,7 +651,10 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
     'milk': 'Milk',
     'cattle': 'Cattle',
     'Buffalo': 'Cattle',
+    'Beef': 'Cattle',
+    'Calves': 'Cattle',
     'Chicken': 'Chicken',
+    'poultry': 'Other bird',
     'Duck': 'Duck',
     'Turkeys': 'Turkey',
     'Geese': 'Goose',
@@ -585,7 +669,7 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
     'Other': 'Other non-specified',
     'Game': 'Game',
     'Mule': 'Mule',
-    'Hen eggs in shell, fresh': 'Eggs'
+    'meat': 'Other non-specified'
   }
 
   for key, value in mapping.items():
@@ -641,10 +725,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
   dm_liv_trade_origin = DataMatrix.create_from_df(df_ots, num_cat=1)
 
-  # Add Switzerland and Melanasia as dummy (because are in losses and other dms)
+  # Add Switzerland as dummy (because are in losses and other dms)
   dm_liv_trade_origin.add(0.0, dummy=True, col_label=['Switzerland'], dim='Country')
-  dm_liv_trade_origin.add(0.0, dummy=True, col_label=['Melanesia'],
-                          dim='Country')
 
   # Unit conversion: [t] => [kcal]
   cdm_kcal_temp = cdm_kcal.copy()
@@ -659,17 +741,23 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
                * cdm_kcal_temp[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
   dm_liv_trade_origin[:, :, 'agr_split-import', :] = array_temp
 
-  # Step CALIBRATION IMPORTS
-  dm_cal_imports = dm_liv_trade_origin.copy()
-  dm_cal_imports.rename_col('agr_split-import', 'cal_agr_domestic-production','Variables')
-  dm_cal_imports.change_unit('cal_agr_domestic-production', 1.0, '-', 'kcal', '*')
-  dm_cal_imports.drop(dim='Country', col_label=['Switzerland'])
+  # Step CALIBRATION IMPORTS PER COUNTRY
+  dm_cal_imports_countries = dm_liv_trade_origin.copy()
+  dm_cal_imports_countries.rename_col('agr_split-import', 'cal_agr_domestic-production','Variables')
+  dm_cal_imports_countries.change_unit('cal_agr_domestic-production', 1.0, '-', 'kcal', '*')
+  dm_cal_imports_countries.drop(dim='Country', col_label=['Switzerland'])
+
+  # Step CALIBRATION IMPORTS TOTAL
+  dm_cal_imports_tot = dm_liv_trade_origin.copy()
+  dm_cal_imports_tot.rename_col('agr_split-import', 'cal_agr_imported_production_total','Variables')
+  dm_cal_imports_tot.change_unit('cal_agr_imported_production_total', 1.0, '-', 'kcal', '*')
+  dm_cal_imports_tot.groupby({'Switzerland': '.*'}, dim='Country', regex=True, inplace=True)
 
   # Normalise across countries for share of imports
   dm_liv_trade_origin.normalise(dim='Country', inplace=True)
   dm_liv_trade_origin.change_unit('agr_split-import', 1.0, '%', '-', '*')
 
-  return dm_liv_trade_origin, dm_cal_imports
+  return dm_liv_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot
 
 # CalculationLeaf SHARE PRODUCTION METHOD
 
@@ -3109,7 +3197,8 @@ def datamatrix_to_pickle(dm_fts):
   dict_fxa['cal_agr_liv-population'] = dm_cal_liv_pop.filter({'Country':['Switzerland']}, inplace=False)
   dict_fxa['cal_agr_liv-population_organic'] = dm_cal_liv_pop_org
   dict_fxa['cal_agr_domestic-production-liv'] = dm_cal_dom_prod
-  dict_fxa['cal_agr_imports-liv'] = dm_cal_imports
+  dict_fxa['cal_agr_imports-liv_countries'] = dm_cal_imports_countries
+  dict_fxa['cal_agr_imports-liv_total'] = dm_cal_imports_tot
   dict_fxa['cal_agr_liv_CH4-emission'] = dm_cal_liv_emissions.filter({'Variables':['cal_agr_liv_CH4-emission']}, inplace=False)
   dict_fxa['cal_agr_liv_N2O-emission'] = dm_cal_liv_emissions.filter({'Variables':['cal_agr_liv_N2O-emission']}, inplace=False)
   dict_fxa['cal_agr_demand_feed'] = dm_cal_feed
@@ -3340,13 +3429,15 @@ list_partnerregions_trade = ['Switzerland',
 file_dict = {'ssr': 'data/faostat/ssr.csv',
              'cake': 'data/faostat/ssr_cake.csv',
              'molasse': 'data/faostat/ssr_2010_2021_molasse_cake.csv',
-             'trade': 'data/faostat/trade.csv',
+             'trade_egg': 'data/faostat/trade_egg.csv',
+             'trade_milk': 'data/faostat/trade_milk.csv',
+             'trade_meat': 'data/faostat/trade_meat.csv',
              'exports': 'data/faostat/exports.csv'}
 
 cdm_efficiency, cdm_kcal = constant()
-dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk = self_sufficiency_processing(years_ots, list_countries_calc, file_dict)
+dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk, dm_imports_fbs = self_sufficiency_processing(years_ots, list_countries_calc, file_dict)
 dm_fxa_ffr_milk = fxa_ffr_milk(df_ffr_milk)
-dm_liv_trade_origin, dm_cal_imports = trade_origin_processing(years_ots, list_countries_calc, file_dict)
+dm_liv_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = trade_origin_processing(years_ots, list_countries_calc, file_dict)
 dm_losses = livestock_losses()
 dm_cal_dom_prod, dm_cal_liv_pop, df_liv_pop = livestock_calibration(list_countries_calc, dm_losses)
 dm_prod_share, dm_cal_liv_pop_org = production_share(dm_cal_liv_pop)
