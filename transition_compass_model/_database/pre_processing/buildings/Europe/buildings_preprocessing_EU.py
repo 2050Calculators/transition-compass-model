@@ -770,9 +770,6 @@ def fix_negative_stock(dm_all_cat, dm_stock_tot):
     dm_tmp = dm_all_cat.filter({'Variables': ['bld_floor-area_stock']})
     dm_tmp.drop(col_label='F', dim='Categories2')
     
-    # # filter temp
-    # dm_tmp = dm_tmp.filter({"Country" : ["EU27"]})
-    
     # Get minimum of each time series (axis 1 is year) and change the sign
     shift = -np.min(dm_tmp.array[:, :, 0, :, :], axis=1)
     
@@ -787,10 +784,20 @@ def fix_negative_stock(dm_all_cat, dm_stock_tot):
     
     # Step 2: Compute the minimum across axis 2, ignoring NaNs
     min_values = np.nanmin(shift, axis=2, keepdims=True)
-    # note: axis 2 is the energy classes
+    # note: axis 2 is the energy classes, here you get 1 minimum value per bld type
+    # example: for EU27 for multi-family-households, min_values is array([[[1.86521196e+08]]])
     
     # Step 3: Replace NaNs with the corresponding minimum values
     shift = np.where(np.isnan(shift), min_values, shift)
+    # example: foir EU27 for multi-family-households, shift gets from array([[[7.88034128e+08, 1.86521196e+08, np.nan, np.nan]]])
+    # to array([[[7.88034128e+08, 1.86521196e+08, 1.86521196e+08, 1.86521196e+08]]])
+    # so we shift all, and the ones that did not have a problem we shift them to the minimum among the
+    # ones with problems
+    # The logic is to try to keep proportions correct.
+    
+    # there should not be anymore nan, if there are it means that for that variable things are all positive
+    # and do not need correction (like for multi)
+    shift[np.isnan(shift)] = 0
     
     # Sum the shift to dm_tmp
     dm_tmp.array[:, :, 0, :, :] = dm_tmp.array[:, :, 0, :, :] + shift[:, np.newaxis, :, :]
@@ -1099,8 +1106,6 @@ def extract_heating_mix():
     sheet = "RES_hh_num"
     df = pd.read_excel(file, sheet_name=sheet)
     
-    # TODO: see with Paola why for CH we are considering only space heating and not water heating here
-    
     # Get space heating
     df_temp = df[0:12].copy()
     names_map = {'Stock of households': 'remove', 'Space heating': 'total', 
@@ -1166,12 +1171,12 @@ def extract_heating_mix():
     # df = dm_out.filter({"Categories2" : ["solar"]}).write_df()
     # df = dm_temp.filter({"Categories2" : ["solar"]}).write_df()
     
-    # get average between space heating and domestic hot water
-    dm_out.group_all("Categories1",aggregation="mean")
-    dm_out.switch_categories_order("Categories2","Categories1")
-    dm_out.normalise("Categories2")
-    # dm_out.group_all("Categories2",inplace=False).array
-    # dm_out.flatten().flatten().datamatrix_plot()
+    # # get average between space heating and domestic hot water
+    # dm_out.group_all("Categories1",aggregation="mean")
+    # dm_out.switch_categories_order("Categories2","Categories1")
+    # dm_out.normalise("Categories2")
+    # # dm_out.group_all("Categories2",inplace=False).array
+    # # dm_out.flatten().flatten().datamatrix_plot()
     
     # Do other years
     years_missing = list(set(years_ots) - set(dm_out.col_labels['Years']))
@@ -1190,20 +1195,18 @@ def extract_heating_mix():
         dm_out.add(dm_out.array[idx["EU27"],...], "Country", c)
     dm_out.sort("Country")
     
-    # Add bld_heating-mix category
-    variabs = dm_out.col_labels["Variables"]
-    for v in variabs :
-        dm_out.rename_col(v, "bld_heating-mix_" + v, "Variables")
-    dm_out.deepen(based_on="Variables")
-    dm_out.switch_categories_order("Categories3", "Categories2")
-    dm_out.switch_categories_order("Categories1", "Categories2")
-    # dm_out.group_all("Categories3",inplace=False).array
+    # # Add bld_heating-mix category
+    # variabs = dm_out.col_labels["Variables"]
+    # for v in variabs :
+    #     dm_out.rename_col(v, "bld_heating-mix_" + v, "Variables")
+    # dm_out.deepen(based_on="Variables")
+    # dm_out.switch_categories_order("Categories3", "Categories2")
+    # dm_out.switch_categories_order("Categories1", "Categories2")
+    # # dm_out.group_all("Categories3",inplace=False).array
     
     return dm_out
 
 def extract_heating_efficiency(file, sheet_name, years_ots):
-    
-    # TODO: to see with Paola if it's fine to consider both space and water heating
     
     # get data
     df = pd.read_excel(file, sheet_name=sheet_name)
@@ -1249,8 +1252,10 @@ def extract_heating_efficiency(file, sheet_name, years_ots):
     dm_heating_eff = dm_jrc_sh.copy()
     dm_heating_eff.append(dm_jrc_dwh, "Categories1")
     dm_heating_eff.drop("Categories2", "total")
-    dm_heating_eff.group_all("Categories1",aggregation="mean")
     # df_temp = dm_heating_eff.write_df()
+    
+    # fix other tech
+    dm_heating_eff[...,"other-tech"] = 1
     
     # Do other years
     years_missing = list(set(years_ots) - set(dm_heating_eff.col_labels['Years']))
@@ -1302,11 +1307,11 @@ def compute_heating_efficiency_by_archetype(dm_heating_eff, dm_stock_cat, envelo
             if start_yr > dm_eff_cat.col_labels['Years'][0]:
                 dm_eff_cat.array[:, 0:idx[start_yr], 0, :, idx[cat]] = np.nan
 
-    # for heating-oil keep original data
-    dm_eff_cat.array[:, :, :, idx['heating-oil'], :] = dm_eff_cat_raw.array[:, :, :, idx['heating-oil'], :]
+    # # for heating-oil keep original data
+    # dm_eff_cat.array[:, :, :, idx['heating-oil'], :] = dm_eff_cat_raw.array[:, :, :, idx['heating-oil'], :]
 
-    dm_eff_cat_raw.rename_col('bld_heating-efficiency', 'bld_heating-efficiency-JRC', dim='Variables')
-    dm_eff_cat.append(dm_eff_cat_raw, dim='Variables')
+    # dm_eff_cat_raw.rename_col('bld_heating-efficiency', 'bld_heating-efficiency-JRC', dim='Variables')
+    # dm_eff_cat.append(dm_eff_cat_raw, dim='Variables')
     return dm_eff_cat
 
 def recompute_floor_area_per_capita(dm_all, dm_pop):
@@ -1377,6 +1382,399 @@ def calculate_heating_eff_fts(dm_heating_eff, years_fts, maximum_eff):
     dm_heating_eff_fts = dm_heating_eff.filter({'Years': years_fts})
 
     return dm_heating_eff_fts
+
+def get_energy_demand_useful_dhw():
+    
+    def get_energy_demand_useful_dhw_from_jrc(country_code, country_name):
+        
+        # get JRC
+        file = f"../../industry/eu/data/JRC-IDEES-2021/{country_code}/JRC-IDEES-2021_Residential_{country_code}.xlsx"
+        sheet = "RES_hh_tes"
+        df = pd.read_excel(file, sheet_name=sheet)
+
+        # Get space heating
+        df_temp = df[15:16].copy()
+        names_map = {'Water heating': 'dhw'}
+        dm_temp = df_excel_to_dm(df_temp, names_map, var_name='jrc', unit='ktoe useful', num_cat=0, country=country_name)
+        
+        return dm_temp
+
+    dict_temp = dict_iso2.copy()
+    dict_temp.pop("EU27_2020")
+    dict_temp.pop("UK")
+
+    # get useful energy demand
+    dm_dhw = get_energy_demand_useful_dhw_from_jrc("EU27", "EU27")
+    for key in dict_temp.keys():
+        dm_temp = get_energy_demand_useful_dhw_from_jrc(key, dict_temp[key])
+        dm_dhw.append(dm_temp, "Country")
+    # dm_dhw["EU27",2021,:]
+    dm_dhw.change_unit("jrc_dhw", 11630, "ktoe useful", "MWh")
+
+    # Load population data
+    filepath = "../../lifestyles/Europe/data/lifestyles_allcountries.pickle"
+    with open(filepath, 'rb') as handle:
+        DM_lfs = pickle.load(handle)
+    dm_pop = DM_lfs["ots"]["pop"]["lfs_population_"].copy()
+    dm_pop.append(DM_lfs["fts"]["pop"]["lfs_population_"][1],"Years")
+    dm_pop = dm_pop.filter({"Country" : dm_dhw.col_labels["Country"],
+                            "Years" : dm_dhw.col_labels["Years"]})
+    dm_pop.sort("Years")
+    del DM_lfs
+
+    # get per capita
+    dm_dhw.append(dm_pop, "Variables")
+    dm_dhw.operation("jrc_dhw", "/", "lfs_population_total", "Variables",
+                     out_col="bld_hw_demand", unit='MWh/cap')
+    dm_dhw_cap = dm_dhw.filter({"Variables" : ["bld_hw_demand"]})
+    linear_fitting(dm_dhw_cap, years_ots)
+    linear_fitting(dm_dhw_cap, years_fts)
+    # dm_dhw_cap.filter({"Country" : ["EU27"]}).datamatrix_plot()
+    
+    return dm_dhw_cap
+
+def get_domapp():
+    
+    def get_domapp_from_jrc(country_code, country_name):
+        
+        # get JRC
+        file = f"../../industry/eu/data/JRC-IDEES-2021/{country_code}/JRC-IDEES-2021_Residential_{country_code}.xlsx"
+        sheet = "RES_se-appl"
+        df = pd.read_excel(file, sheet_name=sheet)
+
+        # Get number per hh
+        df_temp = pd.concat([df[107:111].copy(),df[112:114].copy()])
+        names_map = {'Refrigerators and freezers': 'refrigerator',
+                     'Washing machine' : 'washing-machine',
+                     'Clothes dryer' : 'tumble-dryer',
+                     'Dishwasher' : 'dishwasher',
+                     'TV and multimedia' : 'TV',
+                     'ICT equipment' : 'PC'}
+        dm_out = df_excel_to_dm(df_temp, names_map, var_name='bld_appliances_stock', unit='unit/household', num_cat=1, country=country_name)
+        
+        
+        # get overall stock and retirement (to get retirement rate)
+        df_temp = pd.concat([df[29:33].copy(),df[34:36].copy()])
+        dm_temp = df_excel_to_dm(df_temp, names_map, var_name='bld_appliances_stock_absolute', unit='unit', num_cat=1, country=country_name)
+        dm_out.append(dm_temp, "Variables")
+        df_temp = pd.concat([df[55:59].copy(),df[60:62].copy()])
+        dm_temp = df_excel_to_dm(df_temp, names_map, var_name='bld_appliances_replaced', unit='unit', num_cat=1, country=country_name)
+        dm_temp.add(np.nan, "Years", [2000], dummy=True)
+        dm_temp.sort("Years")
+        dm_out.append(dm_temp, "Variables")
+        
+        # get electricity demand
+        df_temp = pd.concat([df[3:7].copy(),df[8:10].copy()])
+        dm_temp = df_excel_to_dm(df_temp, names_map, var_name='bld_appliances_electricity-demand_absolute', unit='ktoe', num_cat=1, country=country_name)
+        dm_out.append(dm_temp, "Variables")
+        
+        return dm_out
+
+    dict_temp = dict_iso2.copy()
+    dict_temp.pop("EU27_2020")
+    dict_temp.pop("UK")
+
+    # get stock per household
+    dm_domapp = get_domapp_from_jrc("EU27", "EU27")
+    for key in dict_temp.keys():
+        dm_temp = get_domapp_from_jrc(key, dict_temp[key])
+        dm_domapp.append(dm_temp, "Country")
+    # dm_domapp["EU27",2021,:,"washing-machine"]
+
+    # make retirement rate
+    dm_domapp.operation("bld_appliances_replaced", "/", "bld_appliances_stock_absolute", 
+                        "Variables", "bld_appliances_retirement-rate", "%")
+
+    # make electricity demand by unit and clean
+    dm_domapp.change_unit("bld_appliances_electricity-demand_absolute", 1.163*1e7, "ktoe", "kWh")
+    dm_domapp.operation("bld_appliances_electricity-demand_absolute", "/", "bld_appliances_stock_absolute", 
+                        "Variables", "bld_appliances_electricity-demand", "kWh/unit")
+    dm_domapp = dm_domapp.filter({"Variables" : ['bld_appliances_electricity-demand', 
+                                                 'bld_appliances_retirement-rate', 
+                                                 'bld_appliances_stock']})
+    dm_domapp.sort("Variables")
+
+    # re sort variables
+    dm_temp = dm_domapp.copy()
+    dm_domapp = dm_temp.filter({"Variables" : ["bld_appliances_electricity-demand"]})
+    dm_domapp.append(dm_temp.filter({"Variables" : ["bld_appliances_retirement-rate"]}), "Variables")
+    dm_domapp.append(dm_temp.filter({"Variables" : ["bld_appliances_stock"]}), "Variables")
+
+    # for freezer, use same of fridge
+    dm_domapp.add(np.nan, "Categories1", ["freezer"], dummy=True)
+    dm_domapp[...,"freezer"] = dm_domapp[...,"refrigerator"]
+    dm_domapp.sort("Categories1")
+    # dm_domapp.filter({"Country" : ["EU27"], "Variables" : ["bld_appliances_electricity-demand"]}).datamatrix_plot()
+
+    # make missing years
+    linear_fitting(dm_domapp, list(range(1990,2000)), based_on=[2000,2001])
+    linear_fitting(dm_domapp, list(range(2022,2023+1)), based_on=[2020,2021])
+    linear_fitting(dm_domapp, years_fts, based_on=[2023])
+
+    # for PC, TV, monitor, laptopt, set-top-box and oven-and-stove use values of Switzerland (JRC definitions are different)
+    dm_ch = DM_bld["fxa"]["appliances"].filter({"Years" : dm_domapp.col_labels["Years"]})
+    dm_ch[:,2021,:,"PC"]
+    dm_domapp.add(np.nan, "Categories1", ["monitor","laptop","set-top-box","oven-and-stove"], dummy=True)
+    for country in dm_domapp.col_labels["Country"]:
+        for product in ["PC", "TV", "monitor", "laptop","set-top-box", "oven-and-stove"]:
+            dm_domapp[country,:,:,product] = dm_ch["Switzerland",:,:,product]
+    dm_domapp.sort("Categories1")
+
+    # dm_domapp.filter({"Country" : ["EU27"], "Variables" : ["bld_appliances_electricity-demand"]}).datamatrix_plot()
+    # dm_domapp.filter({"Country" : ["EU27"], "Variables" : ["bld_appliances_retirement-rate"]}).datamatrix_plot()
+    # dm_domapp.filter({"Country" : ["EU27"], "Variables" : ["bld_appliances_stock"]}).datamatrix_plot()
+    # dm_ch = DM_bld["fxa"]["appliances"].filter({"Country" : ["Switzerland"]})
+    # dm_ch.filter({"Variables" : ["bld_appliances_electricity-demand"]}).datamatrix_plot()
+    # dm_ch.filter({"Variables" : ["bld_appliances_retirement-rate"]}).datamatrix_plot()
+    # dm_ch.filter({"Variables" : ["bld_appliances_stock"]}).datamatrix_plot()
+    
+    return dm_domapp
+
+def get_services():
+    
+    def get_energy_demand_useful_from_jrc(country_code, country_name):
+        
+        # get JRC
+        file = f"../../industry/eu/data/JRC-IDEES-2021/{country_code}/JRC-IDEES-2021_Tertiary_{country_code}.xlsx"
+        sheet = "SER_hh_tes"
+        df = pd.read_excel(file, sheet_name=sheet)
+
+        # Get space heating
+        df_temp = df[3:14].copy()
+        names_map = {'Solids': 'coal',
+                     'Liquified petroleum gas (LPG)': 'gas', 'Diesel oil': 'heating-oil', 
+                     'Gas heat pumps' : 'heat-pump', 'Conventional gas heaters' : 'gas',
+                     'Biomass': 'wood', 'Geothermal': 'heat-pump', 'Distributed heat': 'district-heating',
+                     'Advanced electric heating': 'heat-pump', 'Conventional electric heating': 'electricity',
+                     "Electricity in circulation and other use" : 'electricity'}
+        dm_jrc_sh = df_excel_to_dm(df_temp, names_map, var_name='bld_services_tech-mix_space-heating', unit='ktoe', num_cat=1, country=country_name)
+        dm_jrc_sh.add(0, "Categories1", "biogas", dummy=True)
+        dm_jrc_sh.add(0, "Categories1", "biomass", dummy=True)
+        dm_jrc_sh.add(0, "Categories1", "solar", dummy=True)
+        dm_jrc_sh.sort("Categories1")
+        dm_jrc_sh.deepen("_", based_on="Variables")
+        dm_jrc_sh.switch_categories_order("Categories2","Categories1")
+
+        # Get water heating
+        df_temp = df[18:26]
+        names_map = {'Solids': 'coal',
+                     'Liquified petroleum gas (LPG)': 'gas', 'Diesel oil': 'heating-oil', 'Natural gas': 'gas',
+                     'Biomass': 'wood', 'Distributed heat': 'district-heating',
+                     'Electricity': 'electricity', 'Solar': 'solar'}
+        dm_jrc_wh = df_excel_to_dm(df_temp, names_map, var_name='bld_services_tech-mix_hot-water', unit='ktoe', num_cat=1, country=country_name)
+        dm_jrc_wh.add(0, "Categories1", "biogas", dummy=True)
+        dm_jrc_wh.add(0, "Categories1", "biomass", dummy=True)
+        dm_jrc_wh.add(0, "Categories1", "heat-pump", dummy=True)
+        dm_jrc_wh.sort("Categories1")
+        dm_jrc_wh.deepen("_", based_on="Variables")
+        dm_jrc_wh.switch_categories_order("Categories2","Categories1")
+        
+        # Put together
+        dm_jrc = dm_jrc_sh.copy()
+        dm_jrc.append(dm_jrc_wh, "Categories1")
+        dm_jrc.sort("Categories1")
+        
+        # get lighting (all electricity)
+        # assuming final and useful energy demand is same for electricity (efficiency = 1)
+        file = f"../../industry/eu/data/JRC-IDEES-2021/{country_code}/JRC-IDEES-2021_Tertiary_{country_code}.xlsx"
+        sheet = "SER_se-appl"
+        df = pd.read_excel(file, sheet_name=sheet)
+        df_temp = df[3:5]
+        names_map = {'Street lighting': 'street',
+                     'Building lighting' : 'building'}
+        dm_jrc_light = df_excel_to_dm(df_temp, names_map, var_name='bld_services_tech-mix_lighting_electricity', unit='ktoe', num_cat=1, country=country_name)
+        dm_jrc_light.group_all("Categories1")
+        dm_jrc_light.deepen_twice()
+        categories_missing = dm_jrc.col_labels["Categories2"].copy()
+        categories_missing.remove("electricity")
+        for cat in categories_missing: dm_jrc_light.add(0, "Categories2", cat, dummy=True)
+        dm_jrc.append(dm_jrc_light, "Categories1")
+        
+        # move electricity to elec
+        dm_elec = dm_jrc.filter({"Categories2" : ["electricity"]})
+        dm_elec.groupby({"elec" : ['hot-water', 'space-heating']}, "Categories1", inplace=True)
+        for cat in categories_missing: dm_elec.add(0, "Categories2", cat, dummy=True)
+        dm_jrc[...,"electricity"] = 0
+        dm_jrc.drop("Categories1", "lighting")
+        dm_jrc.append(dm_elec, "Categories1")
+        dm_jrc.sort("Categories1")
+        dm_jrc.sort("Categories2")
+        
+        return dm_jrc
+
+    def get_efficiency_from_jrc(country_code, country_name):
+        
+        # get JRC
+        file = f"../../industry/eu/data/JRC-IDEES-2021/{country_code}/JRC-IDEES-2021_Tertiary_{country_code}.xlsx"
+        sheet = "SER_hh_eff"
+        df = pd.read_excel(file, sheet_name=sheet)
+
+        # Get space heating
+        df_temp = df[3:13].copy()
+        names_map = {'Solids': 'coal',
+                     'Liquified petroleum gas (LPG)': 'gas', 'Diesel oil': 'heating-oil', 
+                     'Biomass': 'wood', 'Distributed heat': 'district-heating',
+                     'Advanced electric heating': 'heat-pump', 'Conventional electric heating': 'electricity'}
+        dm_jrc_sh = df_excel_to_dm(df_temp, names_map, var_name='bld_efficiency_space-heating', unit='%', num_cat=1, country=country_name)
+        dm_jrc_sh.add(dm_jrc_sh[...,"gas"], "Categories1", "biogas", dummy=True)
+        dm_jrc_sh.add(dm_jrc_sh[...,"wood"], "Categories1", "biomass", dummy=True)
+        dm_jrc_sh.add(1, "Categories1", "solar", dummy=True)
+        dm_jrc_sh.sort("Categories1")
+        dm_jrc_sh.deepen("_", based_on="Variables")
+        dm_jrc_sh.switch_categories_order("Categories2","Categories1")
+
+        # Get water heating
+        df_temp = df[18:26]
+        names_map = {'Solids': 'coal',
+                     'Liquified petroleum gas (LPG)': 'gas', 'Diesel oil': 'heating-oil',
+                     'Biomass': 'wood', 'Distributed heat': 'district-heating',
+                     'Electricity': 'electricity', 'Solar': 'solar'}
+        dm_jrc_wh = df_excel_to_dm(df_temp, names_map, var_name='bld_efficiency_water-heating', unit='%', num_cat=1, country=country_name)
+        dm_jrc_wh.add(dm_jrc_wh[...,"gas"], "Categories1", "biogas", dummy=True)
+        dm_jrc_wh.add(dm_jrc_wh[...,"wood"], "Categories1", "biomass", dummy=True)
+        dm_jrc_wh.add(np.nan, "Categories1", "heat-pump", dummy=True)
+        dm_jrc_wh.sort("Categories1")
+        dm_jrc_wh.deepen("_", based_on="Variables")
+        dm_jrc_wh.switch_categories_order("Categories2","Categories1")
+        
+        # Put together
+        dm_jrc = dm_jrc_sh.copy()
+        dm_jrc.append(dm_jrc_wh, "Categories1")
+        dm_jrc.sort("Categories1")
+        dm_jrc.rename_col("bld_efficiency", "bld_services_efficiency", "Variables")
+        # df_temp = dm_jrc.write_df()
+        
+        # aggregate with mean
+        dm_jrc.group_all("Categories1", aggregation="mean")
+        # df_temp = dm_jrc.write_df()
+        
+        return dm_jrc
+
+    dict_temp = dict_iso2.copy()
+    dict_temp.pop("EU27_2020")
+    dict_temp.pop("UK")
+
+    # get useful energy demand
+    dm_ued = get_energy_demand_useful_from_jrc("EU27", "EU27")
+    for key in dict_temp.keys():
+        dm_temp = get_energy_demand_useful_from_jrc(key, dict_temp[key])
+        dm_ued.append(dm_temp, "Country")
+    # dm_ued["EU27",2021,"bld_services_tech-mix","elec","electricity"]
+    dm_ued.change_unit("bld_services_tech-mix", 0.01163, "ktoe", "TWh")
+
+    # get aggregate useful energy demand
+    dm_demand = dm_ued.copy()
+    dm_demand.group_all("Categories2")
+    dm_demand.rename_col("bld_services_tech-mix", "bld_services_useful-energy", "Variables")
+    # dm_demand.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
+    linear_fitting(dm_demand, list(range(1990,2000)), based_on=[2000])
+    # dm_demand.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
+    linear_fitting(dm_demand, list(range(2022,2023+1)))
+    linear_fitting(dm_demand, years_fts)
+    # dm_demand.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
+    for y in [2022,2023]: dm_demand[:,y,:,"lighting"] = dm_demand[:,2021,:,"lighting"]
+    for y in years_fts: dm_demand[:,y,:,"lighting"] = dm_demand[:,2021,:,"lighting"]
+
+    # get energy mix
+    dm_tech_mix = dm_ued.copy()
+    dm_tech_mix.normalise("Categories2")
+    linear_fitting(dm_tech_mix, list(range(1990,2000)), based_on=[2000])
+    linear_fitting(dm_tech_mix, list(range(2022,2023+1)), based_on=[2021])
+    linear_fitting(dm_tech_mix, years_fts, based_on=[2023])
+    # dm_tech_mix.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
+
+    # get efficiency
+    dm_eff = get_efficiency_from_jrc("EU27", "EU27")
+    for key in dict_temp.keys():
+        dm_temp = get_efficiency_from_jrc(key, dict_temp[key])
+        dm_eff.append(dm_temp, "Country")
+
+    # get all years
+    # dm_eff.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
+    linear_fitting(dm_eff, years_ots)
+    # dm_eff.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
+    dm_eff_hp = dm_eff.filter({"Categories1" : ["heat-pump"]})
+    dm_eff.drop("Categories1", "heat-pump")
+    linear_fitting(dm_eff, years_fts, max_t0=1, max_tb=1)
+    linear_fitting(dm_eff_hp, years_fts, max_t0=4, max_tb=4)
+    dm_eff.append(dm_eff_hp, "Categories1")
+    dm_eff.sort("Categories1")
+    # dm_eff.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
+    
+    return dm_demand, dm_tech_mix, dm_eff
+
+def get_domapp_other():
+    
+    def get_domapp_other_from_jrc(country_code, country_name):
+        
+        # get JRC
+        file = f"../../industry/eu/data/JRC-IDEES-2021/{country_code}/JRC-IDEES-2021_Residential_{country_code}.xlsx"
+        sheet = "RES_se-appl"
+        df = pd.read_excel(file, sheet_name=sheet)
+
+        # Get number per hh
+        df_temp = df[11:13].copy()
+        names_map = {'Lighting ': 'lighting',
+                     'Other appliances (vacuum cleaners, irons etc.)' : 'other'}
+        dm_out = df_excel_to_dm(df_temp, names_map, var_name='bld', unit='ktoe', num_cat=1, country=country_name)
+        
+        return dm_out
+
+    dict_temp = dict_iso2.copy()
+    dict_temp.pop("EU27_2020")
+    dict_temp.pop("UK")
+
+    # get lighting and other
+    dm_domapp = get_domapp_other_from_jrc("EU27", "EU27")
+    for key in dict_temp.keys():
+        dm_temp = get_domapp_other_from_jrc(key, dict_temp[key])
+        dm_domapp.append(dm_temp, "Country")
+    # dm_domapp["EU27",2021,:,"washing-machine"]
+
+    # get lighting
+    dm_domapp_lighting = dm_domapp.filter({"Categories1" : ["lighting"]})
+    dm_domapp_lighting = dm_domapp_lighting.flatten()
+    dm_domapp_lighting.rename_col('bld_lighting','bld_residential-lighting',"Variables")
+    dm_domapp_lighting.change_unit("bld_residential-lighting", 0.01163, "ktoe", "TWh")
+    # dm_domapp_lighting.filter({"Country" : ["EU27"]}).datamatrix_plot()
+    linear_fitting(dm_domapp_lighting, list(range(1990,2000)), based_on=list(range(2000,2008+1)))
+    # dm_domapp_lighting.filter({"Country" : ["EU27"]}).datamatrix_plot()
+    linear_fitting(dm_domapp_lighting, list(range(2022,2023+1)), based_on=list(range(2020,2021+1)))
+    # dm_domapp_lighting.filter({"Country" : ["EU27"]}).datamatrix_plot()
+    linear_fitting(dm_domapp_lighting, years_fts)
+    # dm_domapp_lighting.filter({"Country" : ["EU27"]}).datamatrix_plot()
+
+    # get other
+    dm_domapp_other = dm_domapp.filter({"Categories1" : ["other"]})
+    dm_domapp_other = dm_domapp_other.flatten()
+    dm_domapp_other.rename_col('bld_other','bld_energy-demand_other_electricity',"Variables")
+    dm_domapp_other.change_unit("bld_energy-demand_other_electricity", 11630000, "ktoe", "kWh")
+
+    # Load population data
+    filepath = "../../lifestyles/Europe/data/lifestyles_allcountries.pickle"
+    with open(filepath, 'rb') as handle:
+        DM_lfs = pickle.load(handle)
+    dm_pop = DM_lfs["ots"]["pop"]["lfs_population_"].copy()
+    dm_pop.append(DM_lfs["fts"]["pop"]["lfs_population_"][1],"Years")
+    dm_pop = dm_pop.filter({"Country" : dm_domapp_other.col_labels["Country"],
+                            "Years" : dm_domapp_other.col_labels["Years"]})
+    dm_pop.sort("Years")
+
+    # get other per capita
+    dm_domapp_other.append(dm_pop, "Variables")
+    dm_domapp_other.operation("bld_energy-demand_other_electricity", "/", "lfs_population_total", 
+                              "Variables", "per_capita", "kWh/cap")
+    dm_domapp_other = dm_domapp_other.filter({"Variables" : ["per_capita"]})
+    dm_domapp_other.rename_col("per_capita","bld_energy-demand_other_electricity","Variables")
+    # dm_domapp_other.filter({"Country" : ["EU27"]}).datamatrix_plot()
+    linear_fitting(dm_domapp_other, years_ots + years_fts)
+    # dm_domapp_other.filter({"Country" : ["EU27"]}).datamatrix_plot()
+    # DM_bld["fxa"]["other-electricity-demand"].filter({"Country" : ["Switzerland"]}).datamatrix_plot()
+    # TODO: here this other is half in EU than what it is for CH, see later if this needs to be
+    # higher (probably I can assign some of the ITC / multimedia ones)
+    dm_domapp_other.deepen()
+    
+    return dm_domapp_lighting, dm_domapp_other
 
 #######################################################################
 ########################### CHECK VARIABLES ###########################
@@ -1686,11 +2084,11 @@ dm_s2f = cdm_to_dm(cdm_s2f, dm_stock_cat.col_labels["Country"], ["All"])
 ###########################################
 
 dm_heating_mix = extract_heating_mix()
-dm_heating_cat = dm_heating_mix.groupby(construction_period_envelope_cat, dim='Categories2', aggregation="mean")
+dm_heating_cat = dm_heating_mix.groupby(construction_period_envelope_cat, dim='Categories3', aggregation="mean")
 
 # Put zero for years where building was not present yet
 for y in range(1990,2010+1):
-    dm_heating_cat[:,y,:,:,"B",:] = 0
+    dm_heating_cat[:,y,:,:,:,"B"] = 0
 
 # check
 # dm_heating_cat.group_all("Categories3",inplace=False).array
@@ -1702,10 +2100,18 @@ for y in range(1990,2010+1):
 
 file = '../Europe/data/databases_full/JRC/JRC-IDEES-2021_Residential_EU27.xlsx'
 sheet_name = 'RES_hh_eff'
-dm_heating_eff = extract_heating_efficiency(file, sheet_name, years_ots)
+dm_heating_eff_all = extract_heating_efficiency(file, sheet_name, years_ots)
 # df = dm_heating_eff.write_df()
+# dm_heating_eff_all.filter({"Country" : ["EU27"], "Categories1" : ["sh"]}).flatten().datamatrix_plot()
+# dm_heating_eff_all.filter({"Country" : ["EU27"], "Categories1" : ["dhw"]}).flatten().datamatrix_plot()
 
-dm_heating_eff_cat = compute_heating_efficiency_by_archetype(dm_heating_eff, dm_all, envelope_cat_new,
+# note: there is no solar for space heating, and there is no heat pump for water heating
+dm_heating_eff_all[...,"sh","solar"] = np.nan
+dm_heating_eff_all[...,"dhw","heat-pump"] = np.nan
+
+dm_heating_eff_sh = dm_heating_eff_all.filter({"Categories1" : ["sh"]})
+dm_heating_eff_sh.group_all("Categories1")
+dm_heating_eff_cat = compute_heating_efficiency_by_archetype(dm_heating_eff_sh, dm_all, envelope_cat_new,
                                                              categories=dm_stock_cat.col_labels['Categories2'])
 # TODO: in the function above, instead of dm_all Paola is using dm_stock_cat, to be understood why
 
@@ -1777,7 +2183,7 @@ for c in country_missing:
     dm_temp.add(dm_temp["EU27",...], dim='Country', col_label=c)
 dm_temp.sort("Country")
 DM_buildings['fxa']['heating-energy-calibration'] = dm_temp.copy()
-# TODO: make values for EU27, for the moment this is the same of CH. See with Paola about post processing.
+# TODO: for the moment this is not used, to be seen later in case it's used.
 
 #########################################
 #####  FLOOR INTENSITY - SPACE/CAP  #####
@@ -1789,6 +2195,7 @@ dm_lfs_household_size.drop("Country","United Kingdom")
 dm_space_cap.append(dm_lfs_household_size, dim='Variables')
 
 DM_buildings['ots']['floor-intensity'] = dm_space_cap.copy()
+# dm_space_cap.filter({"Country":["EU27"]}).datamatrix_plot()
 linear_fitting(dm_space_cap, years_fts)
 DM_buildings['fts']['floor-intensity'] = dict()
 for lev in range(4):
@@ -1819,11 +2226,15 @@ cat_Tint = {'F': 19, 'E': 20, 'D': 21, 'C': 22, 'B': 23}
 for cat, tint in cat_Tint.items():
     dm_Tint_heat.array[:, :, idx['bld_Tint-heating'], idx['multi-family-households'], idx[cat]] = tint
     dm_Tint_heat.array[:, :, idx['bld_Tint-heating'], idx['single-family-households'], idx[cat]] = tint - 1
-DM_buildings['ots']['heatcool-behaviour'] = dm_Tint_heat.filter({'Years': years_ots})
+DM_buildings['ots']['heatcool-behaviour'] = dm_Tint_heat.filter({'Years': years_ots, 
+                                                                 "Categories1" : ["single-family-households",
+                                                                                  "multi-family-households"]})
 DM_buildings['fts']['heatcool-behaviour'] = dict()
 for lev in range(4):
     lev = lev + 1
-    DM_buildings['fts']['heatcool-behaviour'][lev] = dm_Tint_heat.filter({'Years': years_fts})
+    DM_buildings['fts']['heatcool-behaviour'][lev] = dm_Tint_heat.filter({'Years': years_fts,
+                                                                          "Categories1" : ["single-family-households",
+                                                                                           "multi-family-households"]})
     
 # # check
 # variab = "heatcool-behaviour"
@@ -1864,7 +2275,8 @@ for lev in range(4):
 #####         RENOVATION           ######
 #########################################
 
-dm_rr = dm_renovation.filter({'Variables': ['bld_renovation-rate']})
+dm_rr = dm_renovation.filter({'Variables': ['bld_renovation-rate'], 
+                              "Categories1" : ["single-family-households","multi-family-households"]})
 DM_buildings['ots']['building-renovation-rate']['bld_renovation-rate'] = dm_rr.copy()
 # FTS
 DM_buildings['fts']['building-renovation-rate']['bld_renovation-rate'] = dict()
@@ -1899,8 +2311,12 @@ for lev in range(4):
 # Compute demolition rate by bld type
 dm_tot = dm_stock_tot.copy()
 dm_tot.append(dm_waste_tot, dim='Variables')
-dm_tot.operation('bld_floor-area_waste', '/', 'bld_floor-area_stock', out_col='bld_demolition-rate', unit='%')
+dm_tot.lag_variable('bld_floor-area_stock', shift=1, subfix='_tm1')
+dm_tot.operation('bld_floor-area_waste', '/', 'bld_floor-area_stock_tm1', out_col='bld_demolition-rate', unit='%')
 dm_demolition_rate = dm_tot.filter({'Variables': ['bld_demolition-rate']})
+dm_demolition_rate[:,1990,:,:] = np.nan
+dm_demolition_rate.fill_nans("Years")
+dm_demolition_rate = dm_demolition_rate.filter({"Categories1" : ['single-family-households','multi-family-households']})
 DM_buildings['ots']['building-renovation-rate']['bld_demolition-rate'] = dm_demolition_rate.copy()
 
 # Compute average demolition rate in the last 10 years and forecast to future
@@ -1921,6 +2337,7 @@ for lev in range(4):
 # Create a bld age matrix to be used with demolition-rate
 first_bld = {'F': 1900, 'E': 1970, 'D': 1980, 'C': 1990, 'B': 2000}
 dm_age = compute_building_age(dm_stock_cat, years_fts, first_bld)
+dm_age = dm_age.filter({"Categories1" : ['single-family-households','multi-family-households']})
 DM_buildings['fxa']['bld_age'] = dm_age
 
 # # check
@@ -1934,7 +2351,7 @@ DM_buildings['fxa']['bld_age'] = dm_age
 #####          U-VALUE            #######
 #########################################
 
-DM_buildings['fxa']['u-value'] = dm_u_value
+DM_buildings['fxa']['u-value'] = dm_u_value.filter({"Categories1" : ['single-family-households','multi-family-households']})
 
 # # Check
 # dm = DM_buildings['fxa']['u-value']
@@ -1944,7 +2361,7 @@ DM_buildings['fxa']['u-value'] = dm_u_value
 #####       SURFACE-2-FLOOR       #######
 #########################################
 
-DM_buildings['fxa']['surface-to-floorarea'] = dm_s2f
+DM_buildings['fxa']['surface-to-floorarea'] = dm_s2f.filter({"Categories1" : ['single-family-households','multi-family-households']})
 
 # # Check
 # dm = DM_buildings['fxa']['surface-to-floorarea']
@@ -1955,17 +2372,39 @@ DM_buildings['fxa']['surface-to-floorarea'] = dm_s2f
 ###########################################
 
 DM_buildings['ots']['heating-technology-fuel'] = dict()
-dm_heating_cat.sort('Categories3')
-DM_buildings['ots']['heating-technology-fuel']['bld_heating-technology'] = dm_heating_cat.copy()
-dm_heating_cat.add(np.nan, dim='Years', dummy=True, col_label=years_fts)
-dm_heating_cat.fill_nans('Years')
-dm_heating_cat_fts = dm_heating_cat.filter({'Years': years_fts}, inplace=False)
+
+dm_temp = dm_heating_cat.filter({"Categories1" : ["sh"]})
+dm_temp.group_all("Categories1")
+for v in dm_temp.col_labels["Variables"]:
+    dm_temp.rename_col(v,"bld_heating-mix_" + v, "Variables")
+dm_temp.deepen(based_on="Variables")
+dm_temp.switch_categories_order("Categories1","Categories3")
+dm_temp = dm_temp.filter({"Categories1" : ['multi-family-households', 'single-family-households']})
+
+DM_buildings['ots']['heating-technology-fuel']['bld_heating-technology'] = dm_temp.copy()
+dm_temp.add(np.nan, dim='Years', dummy=True, col_label=years_fts)
+dm_temp.fill_nans('Years')
+dm_heating_cat_fts = dm_temp.filter({'Years': years_fts}, inplace=False)
 #dm_heating_cat_fts = compute_heating_tech_mix_fts(dm_heating_cat)
 DM_buildings['fts']['heating-technology-fuel'] = dict()
 DM_buildings['fts']['heating-technology-fuel']['bld_heating-technology'] = dict()
 for lev in range(4):
     lev = lev + 1
     DM_buildings['fts']['heating-technology-fuel']['bld_heating-technology'][lev] = dm_heating_cat_fts
+    
+dm_temp = dm_heating_cat.filter({"Categories1" : ["dhw"]})
+dm_temp.group_all("Categories1")
+for v in dm_temp.col_labels["Variables"]:
+    dm_temp.rename_col(v,"bld_hw_tech-mix_" + v, "Variables")
+dm_temp.deepen(based_on="Variables")
+dm_temp = dm_temp.filter({"Categories3" : ['multi-family-households', 'single-family-households']})
+dm_temp.group_all("Categories3",aggregation="mean")
+dm_temp.group_all("Categories2",aggregation="mean")
+dm_temp.filter({"Categories1" : DM_bld["fxa"]["hot-water"]["hw-tech-mix"].col_labels["Categories1"]}, inplace=True)
+dm_temp.normalise("Categories1")
+# np.sum(dm_temp["EU27",2023,:,:])
+dm_temp.add(np.nan, dim='Years', dummy=True, col_label=years_fts)
+dm_heating_dhw = dm_temp.copy()
 
 # # check
 # dm = DM_buildings['ots']['heating-technology-fuel']['bld_heating-technology'].copy()
@@ -1978,16 +2417,29 @@ for lev in range(4):
 
 dm_heating_eff = dm_heating_eff_cat.copy()
 dm_heating_eff.sort('Categories2')
-dm_heating_eff.filter({'Categories1': dm_heating_cat.col_labels['Categories3']}, inplace=True)
+dm_heating_eff.filter({'Categories1': dm_heating_cat.col_labels['Categories2']}, inplace=True)
 dm_heating_eff.sort('Categories1')
 dm_heating_eff_fts = calculate_heating_eff_fts(dm_heating_eff.copy(), years_fts, maximum_eff=0.98)
 dm_heating_eff.switch_categories_order()
 dm_heating_eff_fts.switch_categories_order()
+dm_heating_eff_fts.sort("Categories2")
 DM_buildings['ots']['heating-efficiency'] = dm_heating_eff.copy()
 DM_buildings['fts']['heating-efficiency'] = dict()
 for lev in range(4):
     lev = lev + 1
-    DM_buildings['fts']['heating-efficiency'][lev] = dm_heating_eff_fts
+    DM_buildings['fts']['heating-efficiency'][lev] = dm_heating_eff_fts.copy()
+
+dm_temp = dm_heating_eff_all.filter({"Categories1" : ["dhw"]})
+# dm_temp.filter({"Country":["EU27"]}).flatten().datamatrix_plot()
+dm_temp.group_all("Categories1")
+dm_temp.filter({"Categories1" : DM_bld["fxa"]["hot-water"]["hw-efficiency"].col_labels["Categories1"]}, inplace=True)
+# np.sum(dm_temp["EU27",2023,:,:])
+dm_temp_fts = calculate_heating_eff_fts(dm_temp.copy(), years_fts, maximum_eff=0.98)
+dm_temp.append(dm_temp_fts, "Years")
+# dm_temp.filter({"Country":["EU27"]}).datamatrix_plot()
+dm_temp[...,"heat-pump"] = np.nan
+dm_temp.rename_col('bld_heating-efficiency',"bld_hot-water_efficiency", "Variables")
+dm_heating_eff_dhw = dm_temp.copy()
 
 # # check
 # dm = DM_buildings['ots']["heating-efficiency"]
@@ -2028,21 +2480,81 @@ dm_elec.array = arr_elec
 dm_elec.fill_nans(dim_to_interp="Years")
 DM_buildings['fxa']['emission-factor-electricity'] = dm_elec
 
+##############################
+#####     APPLIANCES    ######
+##############################
+
+DM_bld["fxa"]["appliances"].units
+
+# note: in JRC oven-and-stove is missing as category of domestic appliance. I will
+# use the same values that I have for Switzerland (in any case they are all relative
+# values, like unit/household, kWh/unit and %)
+
+dm_domapp = get_domapp()
+DM_buildings["fxa"]["appliances"] = dm_domapp.copy()
+
+#############################
+#####     HOT WATER    ######
+#############################
+
+# 'bld_hw_demand': 'MWh/cap'
+
+# dm_water_tot.operation('bld_hw_useful-energy', '/', 'lfs_population_total',  out_col='bld_hw_demand', unit='TWh/cap')
+
+dm_dhw_cap = get_energy_demand_useful_dhw()
+
+# create fxa for hot water
+DM_buildings["fxa"]["hot-water"]= dict()
+DM_buildings["fxa"]["hot-water"]["hw-energy-demand"] = dm_dhw_cap.copy()
+DM_buildings["fxa"]["hot-water"]["hw-efficiency"] = dm_heating_eff_dhw.copy()
+DM_buildings["fxa"]["hot-water"]["hw-tech-mix"] = dm_heating_dhw.copy()
+
+# on monday: do 'services','lighting', 'other-electricity-demand' in fxa
+
+############################
+#####     SERVICES    ######
+############################
+
+DM_bld["fxa"]["services"]["services_demand"].units
+DM_bld["fxa"]["services"]["services_tech-mix"].units
+# note: lighting is only electricity. For demand of lighting, I'll take street and building lighting from JRC
+# also, I'll assign biomass to wood (for consistency) and put the category biomass to zero (this is a category
+# that we did not have for normal buildings). 
+# also I'll put biogas to zero, as it is rarely used.
+DM_bld["fxa"]["services"]["services_efficiencies"].units
+
+dm_demand, dm_tech_mix, dm_eff = get_services()
+
+DM_buildings["fxa"]["services"] = dict()
+DM_bld["fxa"]["services"]["services_demand"] = dm_demand.copy()
+DM_bld["fxa"]["services"]["services_tech-mix"] = dm_tech_mix.copy()
+DM_bld["fxa"]["services"]["services_efficiencies"] = dm_eff.copy()
+
+######################################
+#####     LIGHTING AND OTHER    ######
+######################################
+
+DM_bld["fxa"]["lighting"].units
+DM_bld["fxa"]["other-electricity-demand"].units
+
+# note this is from appliances JRC under Lighting  and other appliances
+
+dm_domapp_lighting, dm_domapp_other = get_domapp_other()
+
+DM_buildings["fxa"]["lighting"] = dm_domapp_lighting.copy()
+DM_buildings["fxa"]["other-electricity-demand"] = dm_domapp_other.copy()
+
 ##########################
 #####     FILTER    ######
 ##########################
 
-def filter_nested_structure(data, countries = ["EU27"], bld_types = ['multi-family-households', 'single-family-households']):
+def filter_nested_structure(data, countries = ["EU27"]):
     if isinstance(data, dict):
         for key, value in data.items():
             if isinstance(value, DataMatrix):
-                value = value.filter({"Country": countries})
-                if len(value.dim_labels) > 3:
-                    if "education" in value.col_labels["Categories1"]:
-                        value = value.filter({"Categories1": bld_types})
-                data[key] = value
+                data[key] = value.filter({"Country": countries})
             else:
-                filter_nested_structure(value)
+                filter_nested_structure(value, countries)
 
 filter_nested_structure(DM_buildings["ots"])
 filter_nested_structure(DM_buildings["fts"])
@@ -2055,8 +2567,6 @@ filter_nested_structure(DM_buildings["fxa"])
 
 file = '../../../data/datamatrix/buildings.pickle'
 my_pickle_dump(DM_buildings, file)
-
-
 
 
 
