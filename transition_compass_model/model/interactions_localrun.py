@@ -2,6 +2,7 @@
 from model.transport_module import transport
 from model.population_module import population
 from model.buildings_module import buildings
+from model.crop_module import crop
 
 from model.forestry_module import forestry
 # from model.minerals_module import minerals

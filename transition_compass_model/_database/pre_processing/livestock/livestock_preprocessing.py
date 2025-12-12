@@ -201,6 +201,84 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
         df_ssr_cake.to_csv(file_dict['cake'], index=False)
         df_ssr_2010_2021_molasse_cake.to_csv(file_dict['molasse'], index=False)
 
+    # Feed voil ----------------------------------------------------------------
+    try:
+      df_ssr_feed_pro = pd.read_csv(file_dict['feed-pro'])
+
+    except OSError:
+
+      # FOOD BALANCE SHEETS (FBS) - --------------------------------------------
+      # List of elements
+      list_elements = ['Production Quantity', 'Import Quantity', 'Export Quantity',
+                       'Feed', 'Processed', 'Stock Variation', 'Food',
+                       'Other uses (non-food)', 'Residuals']
+
+      list_items = ['Vegetable Oils + (Total)', 'Sugar (Raw Equivalent)']
+
+      # 1990 - 2013
+      ld = faostat.list_datasets()
+      code = 'FBSH'
+      pars = faostat.list_pars(code)
+      my_countries = [faostat.get_par(code, 'area')[c] for c in
+                      list_countries_calc]
+      my_elements = [faostat.get_par(code, 'elements')[e] for e in
+                     list_elements]
+      my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+      list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996',
+                    '1997', '1998', '1999', '2000', '2001',
+                    '2002',
+                    '2003', '2004', '2005', '2006', '2007', '2008', '2009']
+      my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+      my_pars = {
+        'area': my_countries,
+        'element': my_elements,
+        'item': my_items,
+        'year': my_years
+      }
+      df_feed_voil_1990_2013 = faostat.get_data_df(code, pars=my_pars, strval=False)
+
+      # 2010-2022
+      list_elements = ['Production Quantity', 'Import quantity', 'Export quantity',
+                       'Feed', 'Processed', 'Stock Variation', 'Food',
+                       'Other uses (non-food)', 'Residuals']
+
+      code = 'FBS'
+      my_countries = [faostat.get_par(code, 'area')[c] for c in
+                      list_countries_calc]
+      my_elements = [faostat.get_par(code, 'elements')[e] for e in
+                     list_elements]
+      my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+      list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016',
+                    '2017', '2018', '2019', '2020', '2021',
+                    '2022', '2023']
+      my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+      my_pars = {
+        'area': my_countries,
+        'element': my_elements,
+        'item': my_items,
+        'year': my_years
+      }
+      df_feed_voil_2010_2022 = faostat.get_data_df(code, pars=my_pars, strval=False)
+
+      # Renaming the elements
+      df_feed_voil_2010_2022.loc[
+        df_feed_voil_2010_2022['Element'].str.contains('Production Quantity',
+                                                 case=False,
+                                                 na=False), 'Element'] = 'Production'
+      df_feed_voil_2010_2022.loc[
+        df_feed_voil_2010_2022['Element'].str.contains('Import quantity', case=False,
+                                                 na=False), 'Element'] = 'Import'
+      df_feed_voil_2010_2022.loc[
+        df_feed_voil_2010_2022['Element'].str.contains('Export quantity', case=False,
+                                                 na=False), 'Element'] = 'Export'
+      # Concatenating all the years together
+      df_ssr_feed_pro = pd.concat([df_feed_voil_1990_2013, df_feed_voil_2010_2022])
+
+      # Export to csv
+      df_ssr_feed_pro.to_csv(file_dict['feed-pro'], index=False)
+
     # Filtering
     filtered_df = df_ssr_cake[df_ssr_cake['Item'].str.contains('cake', case=False)]
     # Groupby Area, Year and Element and sum the Value
@@ -225,6 +303,7 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     columns_to_filter = ['Area', 'Element', 'Item', 'Year', 'Value']
     df_ssr = df_ssr[columns_to_filter]
     df_ssr_feed = df_ssr_feed[columns_to_filter]
+    df_ssr_feed_pro = df_ssr_feed_pro[columns_to_filter]
 
     # Concat and create copy for processing yield
     df_processing_yield_fxa = pd.concat([df_ssr, df_ssr_feed])
@@ -235,6 +314,9 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     pivot_df_feed = df_ssr_feed.pivot_table(index=['Area', 'Year', 'Item'],
                                   columns='Element',
                                   values='Value').reset_index()
+    pivot_df_feed_pro = df_ssr_feed_pro.pivot_table(index=['Area', 'Year', 'Item'],
+                                            columns='Element',
+                                            values='Value').reset_index()
 
     # Fill na with 0
     cols = [
@@ -244,6 +326,7 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
 
     for c in cols:
       pivot_df[c] = pivot_df[c].fillna(0.0)
+      pivot_df_feed_pro[c] = pivot_df_feed_pro[c].fillna(0.0)
 
     # For pivot_df_feed (only 3 columns)
     cols_feed = ['Production', 'Import', 'Export']
@@ -267,17 +350,19 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     # (previously with special condition for milk because we
     # don't account for it as feed & processed. but now fixed with and fxa_ratio)
     pivot_df['SSR[%]'] = pivot_df['Production'] / (pivot_df['Food'] + pivot_df['Feed'] + pivot_df['Processing'])
+    pivot_df_feed_pro['SSR[%]'] = pivot_df_feed_pro['Production'] / (pivot_df_feed_pro['Food'] + pivot_df_feed_pro['Feed'] + pivot_df_feed_pro['Processing'])
     pivot_df_feed['SSR[%]'] = pivot_df_feed['Production']/(pivot_df_feed['Feed'])
     df_imports['SSR[%]'] = df_imports['Import']
 
     # Filter columns
     columns_to_filter = ['Area', 'Year', 'Item', 'SSR[%]']
     pivot_df = pivot_df[columns_to_filter]
+    pivot_df_feed_pro = pivot_df_feed_pro[columns_to_filter]
     pivot_df_feed = pivot_df_feed[columns_to_filter]
     df_imports = df_imports[columns_to_filter]
 
     # Concat dfs
-    #pivot_df = pd.concat([pivot_df, pivot_df_feed])
+    pivot_df_feed = pd.concat([pivot_df_feed_pro, pivot_df_feed])
 
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
 
@@ -334,7 +419,7 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     dm_ssr_liv = DataMatrix.create_from_df(df_ots, num_cat=1)
     linear_fitting(dm_ssr_liv, years_ots)
 
-    # Format as datamatrix - SSR feed
+    # Format as datamatrix - SSR feed pro
     df_ots, df_fts = database_to_df(df_ssr_feed, lever, level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_ssr_feed = DataMatrix.create_from_df(df_ots, num_cat=1)
@@ -552,7 +637,7 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
          and not any(bad in k.lower() for bad in exclude)
     ]
     # Create item list for meat
-    keywords = ["meat", "offal", "fat of"]
+    keywords = ["meat", "offal", "fat of", "pork", "ham", "bacon"]
     exclude = ["juice", "hydrogenated", "acids", "cocoa", "meal"]
     list_items_meat = [
       k for k in dict_items_faostat.keys()
@@ -648,6 +733,9 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   # Aggregate by item ----------------------------------------------------------
   mapping = {
     'Pig': 'Pig',
+    'Pork': 'Pig',
+    'Ham': 'Pig',
+    'Bacon': 'Pig',
     'milk': 'Milk',
     'cattle': 'Cattle',
     'Buffalo': 'Cattle',
@@ -1090,7 +1178,7 @@ def livestock_density(df_liv_pop):
                 '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009',
                 '2010', '2011', '2012', '2013',
                 '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021',
-                '2022']
+                '2022', '2023']
   my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
   my_pars = {
@@ -2899,7 +2987,7 @@ def manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure
 
 def feed_calibration(list_countries_calc):
     # ----------------------------------------------------------------------------------------------------------------------
-    # HERE! FEED DEMAND PART I --------------------------------------------------------------------------------------------
+    # FEED DEMAND PART I --------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
 
     # Read data ------------------------------------------------------------------------------------------------------------
@@ -3093,12 +3181,67 @@ def feed_calibration(list_countries_calc):
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_cal_feed = DataMatrix.create_from_df(df_ots, num_cat=1)
 
+    # Add dummies for fruits and processed voils
+    dm_cal_feed.add(0.0, dim='Categories1', dummy=True,
+                     col_label='crop-fruit')
+    dm_cal_feed.add(0.0, dim='Categories1', dummy=True,
+                    col_label='crop-processed-voil')
+
     return dm_cal_feed, df_feed_ration
 
 # CalculationLeaf CONSTANTS  ------------------------------
 
 def constant():
-  # FEED - ENERGY CONVERSION EFFICIENCY  ----------------------------------------------------------------------------------------
+
+  # OFFAL YIELDS -------------------------------------------------------
+  # Read excel
+  df_offal = pd.read_excel('dictionaries/constants_livestock.xlsx',
+                            sheet_name='cp_ibp_offal')
+
+  # Filter columns
+  df_offal = df_offal[['variables', 'value']].copy()
+
+  # Turn the df in a dict
+  dict_offal = dict(zip(df_offal['variables'], df_offal['value']))
+  categories1 = df_offal['variables'].tolist()
+
+  # Format as a cdm
+  cdm_cp_ibp_offal = ConstantDataMatrix(col_labels={'Variables': ['cp_ibp_liv'],
+                                            'Categories1': categories1})
+  arr = np.zeros((len(cdm_cp_ibp_offal.col_labels['Variables']),
+                  len(cdm_cp_ibp_offal.col_labels['Categories1'])))
+  cdm_cp_ibp_offal.array = arr
+  idx = cdm_cp_ibp_offal.idx
+  for cat, val in dict_offal.items():
+    cdm_cp_ibp_offal.array[idx['cp_ibp_liv'], idx[cat]] = val
+  cdm_cp_ibp_offal.units["cp_ibp_liv"] = "kcal/lsu"
+
+
+  # AFAT YIELDS -------------------------------------------------------
+  # Read excel
+  df_afat = pd.read_excel('dictionaries/constants_livestock.xlsx',
+                            sheet_name='cp_ibp_afat')
+
+  # Filter columns
+  df_afat = df_afat[['variables', 'value']].copy()
+
+  # Turn the df in a dict
+  dict_afat = dict(zip(df_afat['variables'], df_afat['value']))
+  categories1 = df_afat['variables'].tolist()
+
+  # Format as a cdm
+  cdm_cp_ibp_afat = ConstantDataMatrix(col_labels={'Variables': ['cp_ibp_liv'],
+                                            'Categories1': categories1})
+  arr = np.zeros((len(cdm_cp_ibp_afat.col_labels['Variables']),
+                  len(cdm_cp_ibp_afat.col_labels['Categories1'])))
+  cdm_cp_ibp_afat.array = arr
+  idx = cdm_cp_ibp_afat.idx
+  for cat, val in dict_afat.items():
+    cdm_cp_ibp_afat.array[idx['cp_ibp_liv'], idx[cat]] = val
+  cdm_cp_ibp_afat.units["cp_ibp_liv"] = "kcal/lsu"
+
+
+  # FEED - ENERGY CONVERSION EFFICIENCY  ---------------------------------------
 
   # Read excel
   df_feed_conv = pd.read_excel('dictionaries/constants_livestock.xlsx',
@@ -3122,7 +3265,7 @@ def constant():
     cdm_efficiency.array[idx['cp_efficiency_liv'], idx[cat]] = val
   cdm_efficiency.units["cp_efficiency_liv"] = "kg DM feed/kg EW"
 
-  # KCAL TO T ----------------------------------------------------------------------------------------
+  # KCAL TO T ------------------------------------------------------------------
 
   # Read excel
   df_kcal_t = pd.read_excel('dictionaries/kcal_to_t.xlsx',
@@ -3146,12 +3289,12 @@ def constant():
     cdm_kcal.array[idx['cp_kcal-per-t'], idx[cat]] = val
   cdm_kcal.units["cp_kcal-per-t"] = "kcal/t"
 
-  return cdm_efficiency, cdm_kcal
+  return cdm_efficiency, cdm_kcal, cdm_cp_ibp_afat, cdm_cp_ibp_offal
 
 # CalculationLeaf FTS  ------------------------------
 def fts_processing():
 
-  # ssr-feed, ssr-liv_.*, livestock-losses, share-organic, ruminand-feed ----------
+  # ssr-feed-pro, ssr-liv_.*, livestock-losses, share-organic, ruminand-feed ----------
   # Read Excel
   df_fts_data = pd.read_excel(
     'data/livestock_fts.xlsx',
@@ -3214,8 +3357,8 @@ def datamatrix_to_pickle(dm_fts):
   dict_ots['ssr-liv-meat-bovine'] = dm_ssr_liv.filter({'Categories1': ['pro-liv-meat-bovine']})
   dict_ots['ssr-liv-meat-sheep'] = dm_ssr_liv.filter({'Categories1': ['pro-liv-meat-sheep']})
   dict_ots['ssr-liv-meat-oth-animal'] = dm_ssr_liv.filter({'Categories1': ['pro-liv-meat-oth-animal']})
-  # ssr-feed
-  dict_ots['ssr-feed'] = dm_ssr_feed
+  # ssr-feed-pro
+  dict_ots['ssr-feed-pro'] = dm_ssr_feed
   # livestock-losses
   dict_ots['livestock-losses'] = dm_losses
   # 'slaughter-rates'
@@ -3316,8 +3459,8 @@ def datamatrix_to_pickle(dm_fts):
     dm_fts[lever][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
   dict_fts[lever] = dm_fts[lever]"""
 
-  # Lever - ssr-feed
-  lever = 'ssr-feed'
+  # Lever - ssr-feed-pro
+  lever = 'ssr-feed-pro'
   for level in range(1,5):
     # Propagate the overall lever value across all feed categories
     dm_ots = dict_ots[lever].copy()
@@ -3375,7 +3518,9 @@ def datamatrix_to_pickle(dm_fts):
   # ConstantsToDatamatrix ------------------------------------------------------
   dict_const = {}
   dict_const['cdm_kcal-per-t'] = cdm_kcal
-  #dict_const['cdm_lifestyle'] = cdm_lifestyle
+  dict_const['cdm_ibp_afat'] = cdm_cp_ibp_afat
+  dict_const['cdm_ibp_offal'] = cdm_cp_ibp_offal
+  dict_const['cdm_cp_efficiency'] = cdm_efficiency
 
   # Group all datamatrix in a single structure ---------------------------------
   DM_livestock = {
@@ -3428,13 +3573,14 @@ list_partnerregions_trade = ['Switzerland',
 
 file_dict = {'ssr': 'data/faostat/ssr.csv',
              'cake': 'data/faostat/ssr_cake.csv',
+             'feed-pro': 'data/faostat/ssr_feed_pro.csv',
              'molasse': 'data/faostat/ssr_2010_2021_molasse_cake.csv',
              'trade_egg': 'data/faostat/trade_egg.csv',
              'trade_milk': 'data/faostat/trade_milk.csv',
              'trade_meat': 'data/faostat/trade_meat.csv',
              'exports': 'data/faostat/exports.csv'}
 
-cdm_efficiency, cdm_kcal = constant()
+cdm_efficiency, cdm_kcal, cdm_cp_ibp_afat, cdm_cp_ibp_offal = constant()
 dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk, dm_imports_fbs = self_sufficiency_processing(years_ots, list_countries_calc, file_dict)
 dm_fxa_ffr_milk = fxa_ffr_milk(df_ffr_milk)
 dm_liv_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = trade_origin_processing(years_ots, list_countries_calc, file_dict)

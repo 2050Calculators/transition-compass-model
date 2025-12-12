@@ -734,6 +734,16 @@ def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, write_pi
     interface.add_link(from_sector='dietary-habits', to_sector='livestock', dm=dm_demand)
 
     # Dietary Habits to Crop
+    dm_demand = dm_lfs.filter({'Variables':['agr_demand']}, inplace=False)
+    DM_diet_crop = {'demand': dm_demand,
+                    'crop_bev': dm_bev_dom_prod}
+    if write_pickle is True:
+      current_file_directory = os.path.dirname(os.path.abspath(__file__))
+      f = os.path.join(current_file_directory,
+                       '../_database/data/interface/dietary-habits_to_crop.pickle')
+      with open(f, 'wb') as handle:
+        pickle.dump(DM_diet_crop, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    interface.add_link(from_sector='dietary-habits', to_sector='crop', dm=dm_demand)
 
     # TPE OUTPUT -------------------------------------------------------------------------------------------------------
     results_run = dietaryhabits_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_food)
