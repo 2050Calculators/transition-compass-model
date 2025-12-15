@@ -214,6 +214,9 @@ def make_dm(df, first_year, years_start = None, years_end = None, years_gap = No
     unit_cable_numerator = unit_rail.split("/")[0]
     dm.change_unit('trolley-cables', factor=1e3, old_unit = unit_cable, new_unit = unit_cable_numerator + "/km")
     
+    # substitute missing with zeroes so that when flattening / deepening we keep dimensions
+    dm.array[np.isnan(dm.array)] = 0
+    
     return dm
 
 def make_dm_fts(df, scenario, agg_prod_dict=None, agg_mat_dict=None, deepen_n_cat = 1):
@@ -240,6 +243,9 @@ def make_dm_fts(df, scenario, agg_prod_dict=None, agg_mat_dict=None, deepen_n_ca
     dm_fts.sort("Years")
     years_fts = list(range(2025, 2050+ 5, 5))
     dm_fts = linear_fitting(dm_fts, years_fts)
+    
+    # substitute missing with zeroes so that when flattening / deepening we keep dimensions
+    dm_fts.array[np.isnan(dm_fts.array)] = 0
     
     return dm_fts
 
@@ -281,6 +287,8 @@ df_ots = df_mat.loc[df_mat['Scenario_year'].isin(['SSP5-Base_2025'])]
 # make dm
 dm_ots = make_dm(df_ots, 2023, 1990, 2022, 1, 
                  agg_prod_dict = agg_prod_dict, agg_mat_dict = agg_mat_dict)
+
+# dm_ots.array[np.isnan(dm_ots.array)]
 
 ###############
 ##### FTS #####
@@ -407,32 +415,50 @@ DM_heavy_metals = make_dm_dict(df_else, "heavy-metals")
 ##### PUT TOGETHER DMS #####
 ############################
 
-# note: the groups all have different units, and different "categories", so
-# the only way to put them all in one dm is to flatten at variable level
+DM = {}
+DM["ots"] = {}
+DM["fts"] = {}
 
-DM_all = {}
+DM_current = {"materials" : DM_mat, "ene-demand-elec" : DM_ene_dem_elec,
+              "ene-demand-ff" : DM_ene_dem_ff, "ecological" : DM_eco,
+              "global-warming-potential" : DM_gwp, "water" : DM_water,
+              "air-pollution" : DM_air, "heavy-metals-in-soil" : DM_heavy_metals}
 
-for element in ["ots","fts1","fts2","fts3","fts4"]:
+for key in DM_current.keys():
+    DM["ots"][key] = DM_current[key]["ots"].copy()
+    DM["fts"][key] = {1 : DM_current[key]["fts1"].copy(), 
+                      2 : DM_current[key]["fts2"].copy(),
+                      3 : DM_current[key]["fts3"].copy(),
+                      4 : DM_current[key]["fts4"].copy()}
 
-    dm = DM_mat[element].copy()
-    for c in dm.col_labels["Categories1"]:
-        dm.rename_col(c, "material-footprint-" + c, "Categories1")
-    dm = dm.flatten()
+
+# # note: the groups all have different units, and different "categories", so
+# # the only way to put them all in one dm is to flatten at variable level
+
+# DM_all = {}
+
+# for element in ["ots","fts1","fts2","fts3","fts4"]:
+
+#     dm = DM_mat[element].copy()
+#     for c in dm.col_labels["Categories1"]:
+#         dm.rename_col(c, "material-footprint-" + c, "Categories1")
+#     dm = dm.flatten()
     
-    list_DM = [DM_ene_dem_elec, DM_ene_dem_ff, DM_eco, DM_gwp, DM_water, DM_air, DM_heavy_metals]
-    for DM in list_DM: 
-        dm.append(DM[element].flatten(), "Variables")
+#     list_DM = [DM_ene_dem_elec, DM_ene_dem_ff, DM_eco, DM_gwp, DM_water, DM_air, DM_heavy_metals]
+#     for DM in list_DM: 
+#         dm.append(DM[element].flatten(), "Variables")
     
-    DM_all[element] = dm.copy()
+#     DM_all[element] = dm.copy()
     
 
 ################
 ##### SAVE #####
 ################
 
-DM_fts = {1: DM_all["fts1"].copy(), 2: DM_all["fts2"].copy(), 3: DM_all["fts3"].copy(), 4: DM_all["fts4"].copy()}
-DM = {"ots" : DM_all["ots"].copy(),
-      "fts" : DM_fts}
+# DM_fts = {1: DM_all["fts1"].copy(), 2: DM_all["fts2"].copy(), 3: DM_all["fts3"].copy(), 4: DM_all["fts4"].copy()}
+# DM = {"ots" : DM_all["ots"].copy(),
+#       "fts" : DM_fts}
+
 f = '../data/datamatrix/lever_footprint.pickle'
 with open(f, 'wb') as handle:
     pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
