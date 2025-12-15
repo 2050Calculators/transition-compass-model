@@ -27,37 +27,73 @@ def read_data(DM_crop_pickle, lever_setting):
     DM_ots_fts = read_level_data(DM_crop_pickle, lever_setting)
 
     # Sub-matrix for CROP
-    dm_food_net_import_crop = DM_ots_fts['food-net-import'].filter_w_regex({'Categories1': 'crop-.*',
-                                                                            'Variables': 'agr_food-net-import'})  # filtered here on purpose and not in the pickle (other parts of the datamatrix are used)
-    dm_food_net_import_crop.rename_col_regex(str1="crop-", str2="", dim="Categories1")
-    dm_crop = DM_ots_fts['crop_losses']
+
+    # For levers : ssr-crop-.*
+    # list of lever names
+    levers = ['ssr-crop-cereal',
+              'ssr-crop-fruit',
+              'ssr-crop-veg',
+              'ssr-crop-rice',
+              'ssr-crop-starch',
+              'ssr-crop-oilcrop',
+              'ssr-crop-pulse',
+              'ssr-crop-sugarcrop']
+
+    # 1: Create a dictionary of all DataMatrix objects
+    dm_crop_ssr = {lever: DM_ots_fts[lever] for lever in levers}
+
+    # 2: Merge them all into one DataMatrix along 'Variables'
+    dm_crop_ssr_merged = None
+
+    for lever_name, dm_temp in dm_crop_ssr.items():
+      if dm_crop_ssr_merged is None:
+        dm_crop_ssr_merged = dm_temp
+      else:
+        dm_crop_ssr_merged.append(dm_temp, dim='Categories1')
+
+    # For levers : ssr-bev-.*
+    # list of lever names
+    levers = ['ssr-bev-beer',
+              'ssr-bev-wine',
+              'ssr-bev-bev-alc',
+              'ssr-bev-bev-fer']
+
+    # 1: Create a dictionary of all DataMatrix objects
+    dm_bev_ssr = {lever: DM_ots_fts[lever] for lever in levers}
+
+    # 2: Merge them all into one DataMatrix along 'Variables'
+    dm_bev_ssr_merged = None
+
+    for lever_name, dm_temp in dm_bev_ssr.items():
+      if dm_bev_ssr_merged is None:
+        dm_bev_ssr_merged = dm_temp
+      else:
+        dm_bev_ssr_merged.append(dm_temp, dim='Categories1')
+
+    dm_crop = DM_ots_fts['crop-losses']
     #dm_food_net_import_crop.drop(dim='Categories1', col_label=['stm'])
-    dm_crop.append(dm_food_net_import_crop, dim='Variables')
     #dm_residues_yield = DM_crop_pickle['fxa']['residues_yield']
     #dm_hierarchy_residues_cereals = DM_ots_fts['biomass-hierarchy']['biomass-hierarchy_crop_cereal']
     dm_cal_crop = DM_crop_pickle['fxa']['cal_agr_domestic-production_food']
     dm_cal_crop_bev = DM_crop_pickle['fxa']['cal_agr_domestic-production_bev']
     # dm_crop.append(dm_cal_crop, dim='Variables')
-    dm_ef_residues = DM_crop_pickle['fxa']['ef_burnt-residues']
-    dm_ssr_feed_crop = DM_ots_fts['feed-net-import']
+    #dm_ef_residues = DM_crop_pickle['fxa']['ef_burnt-residues']
+    #dm_ssr_feed_crop = DM_ots_fts['feed-net-import']
     dm_processing_yield = DM_crop_pickle['fxa']['processing-yield']
-    dm_food_net_import_pro = DM_ots_fts['food-net-import'].filter_w_regex(
-        {'Categories1': 'pro-.*', 'Variables': 'agr_food-net-import'})
+    #dm_food_net_import_pro = DM_ots_fts['food-net-import'].filter_w_regex(
+    #    {'Categories1': 'pro-.*', 'Variables': 'agr_food-net-import'})
 
     # Aggregated Data Matrix - CROP
     DM_crop = {
         'crop': dm_crop,
         'cal_crop': dm_cal_crop,
         'cal_bev': dm_cal_crop_bev,
-        'ef_residues': dm_ef_residues,
-        'residues_yield': dm_residues_yield,
-        'hierarchy_residues_cereals': dm_hierarchy_residues_cereals,
-        'food-net-import-pro': dm_food_net_import_pro,
-        'feed-net-import_crop': dm_ssr_feed_crop,
+        'ssr-crop': dm_crop_ssr_merged,
+        'ssr-bev': dm_bev_ssr_merged,
         'processing-yields': dm_processing_yield
     }
 
-    CDM_const = DM_crop['constant']
+    CDM_const = DM_crop_pickle['constant']
 
     return DM_ots_fts, DM_crop, CDM_const
 
@@ -466,7 +502,7 @@ def crop_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario):
 def crop(lever_setting, years_setting, DM_input, write_pickle, interface=Interface()):
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    DM_ots_fts, DM_liv_prod, DM_manure, DM_feed, CDM_const = read_data(DM_input, lever_setting)
+    DM_ots_fts, DM_crop, CDM_const = read_data(DM_input, lever_setting)
     country_list = ['Switzerland']
 
     # INTERFACES IN ---------------------------------------------------------------------------------------------------
@@ -489,16 +525,16 @@ def crop(lever_setting, years_setting, DM_input, write_pickle, interface=Interfa
     # livestock
     if interface.has_link(from_sector='livestock', to_sector='crop'):
         DM_livestock_to_crop = interface.get_link(from_sector='dietary-habits', to_sector='crop')
-        dm_demand = DM_livestock_to_crop['demand']
-        dm_bev_ibp_cereal_feed = DM_livestock_to_crop['bev_feed']
+        dm_feed_pro = DM_livestock_to_crop['feed-processed']
+        dm_feed_unpro = DM_livestock_to_crop['feed-unprocessed']
     else:
         if len(interface.list_link()) != 0:
             print('You are missing livestock to crop interface')
         DM_livestock_to_crop = simulate_livestock_to_crop_input()
-        for key in DM_diet_crop.keys():
-            DM_livestock_to_crop.filter({'Country': country_list}, inplace=True)
-        dm_demand = DM_diet_crop['demand']
-        dm_bev_ibp_cereal_feed = DM_diet_crop['bev_feed']
+        for key in DM_livestock_to_crop.keys():
+            DM_livestock_to_crop[key].filter({'Country': country_list}, inplace=True)
+        dm_feed_pro = DM_livestock_to_crop['feed-processed']
+        dm_feed_unpro = DM_livestock_to_crop['feed-unprocessed']
 
     # CalculationTree CROP MODULE
 

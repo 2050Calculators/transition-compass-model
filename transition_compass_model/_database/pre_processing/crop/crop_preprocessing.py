@@ -58,7 +58,7 @@ def crop_losses():
                   'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
                   'Pulses + (Total)', 'Rice (Milled Equivalent)',
                   'Starchy Roots + (Total)', 'Sugar Crops + (Total)',
-                  'Vegetables + (Total)', ]
+                  'Vegetables + (Total)' ]
 
     # 1990 - 2013
     code = 'FBSH'
@@ -103,8 +103,10 @@ def crop_losses():
     df_losses_2010_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
 
     # Renanming rice to have same name with other df
+    df_losses_1990_2013 = df_losses_1990_2013.copy()
     df_losses_1990_2013['Item'] = df_losses_1990_2013['Item'].replace(
-      'Rice (Milled Equivalent)', 'Rice and products')
+      'Rice (Milled Equivalent)', 'Rice and products'
+    )
 
     # Concatenating
     df_losses = pd.concat([df_losses_1990_2013, df_losses_2010_2021])
@@ -285,7 +287,7 @@ def crop_yield():
   return dm_yield
 
 # CalculationLeaf CAL - DOM PROD CROP & BEV
-def crop_calibration(list_countries_calc, dm_losses):
+def crop_calibration(list_countries_calc, dm_losses, dm_fxa_pro_yield, cdm_bev):
 
     # ----------------------------------------------------------------------------------------------------------------------
     # DOMESTIC PRODUCTION (CROP PRODUCTS) ----------------------------------------------------------------------
@@ -347,8 +349,11 @@ def crop_calibration(list_countries_calc, dm_losses):
 
       # Renaming the items for name matching
       df_domestic_supply_1990_2013.loc[
-        df_domestic_supply_1990_2013['Item'].str.contains('Rice \(Milled Equivalent\)', case=False,
-                                               na=False), 'Item'] = 'Rice and products'
+        df_domestic_supply_1990_2013['Item'].str.contains(
+          'Rice (Milled Equivalent)', case=False, na=False, regex=False
+        ),
+        'Item'
+      ] = 'Rice and products'
 
       # Concatenating all the years together
       df_domestic_supply = pd.concat([df_domestic_supply_1990_2013, df_domestic_supply_2010_2022])
@@ -417,11 +422,10 @@ def crop_calibration(list_countries_calc, dm_losses):
     # Format as datamatrix - Cal dom prod crop
     df_cal_dom_prod_crop = df_cal_dom_prod[
         df_cal_dom_prod['variables'].str.contains('cal_agr_domestic-production_food', case=False, na=False)
-    ]
+    ].copy()
     df_ots, df_fts = database_to_df(df_cal_dom_prod_crop, lever, level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_cal_dom_prod_crop = DataMatrix.create_from_df(df_ots, num_cat=1)
-
 
 
     # Crop domestic prod with losses [kcal] = crop domestic prod [kcal] * Production losses crop [%]
@@ -438,7 +442,7 @@ def crop_calibration(list_countries_calc, dm_losses):
     # Format as datamatrix - Cal dom prod bev
     df_cal_dom_prod_bev = df_cal_dom_prod[
         df_cal_dom_prod['variables'].str.contains('cal_agr_domestic-production_bev', case=False, na=False)
-    ]
+    ].copy()
     df_ots, df_fts = database_to_df(df_cal_dom_prod_bev, lever, level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_cal_dom_prod_bev = DataMatrix.create_from_df(df_ots, num_cat=1)
@@ -446,26 +450,17 @@ def crop_calibration(list_countries_calc, dm_losses):
     # Here we want to convert the domestic production of beverages in raw materials
     # (e.g. in fruits and not wine) for wine & bev-alc
 
-    # Load data
-    # Import from fxa processing
-    CDM_const = DM_agriculture['constant'].copy()
-    cdm_yield_bev_wine = CDM_const['cdm_cp_ibp_bev_wine'].copy()
-    cdm_yield_bev_alc = CDM_const['cdm_cp_ibp_bev_alc'].copy()
-    cdm_yield_bev_fer = CDM_const['cdm_cp_ibp_bev_fer'].copy()
-    cdm_yield_bev_beer = CDM_const['cdm_cp_ibp_bev_beer'].copy()
-
     # Wine : Raw materials [kcal] = product [kcal] * processing yield [%]
     array_temp = dm_cal_dom_prod_bev[:, :, 'cal_agr_domestic-production_bev',
                  'wine'] \
-                 * cdm_yield_bev_wine[
-                   np.newaxis, np.newaxis, 'cp_ibp_bev_wine_brf_crop_grape', np.newaxis]
+                 * dm_fxa_pro_yield[:,:, 'fxa_agr_processing-yield', 'wine-to-fruit']
     # Overwrite
     dm_cal_dom_prod_bev['Switzerland', :,'cal_agr_domestic-production_bev', 'wine'] = array_temp
 
     # Bev-alc : Raw materials [kcal] = product [kcal] * processing yield [%]
     array_temp = dm_cal_dom_prod_bev[:, :, 'cal_agr_domestic-production_bev',
                  'bev-alc'] \
-                 * cdm_yield_bev_alc[
+                 * cdm_bev[
                    np.newaxis, np.newaxis, 'cp_ibp_bev_bev-alc_brf_crop_fruit', np.newaxis]
     # Overwrite
     dm_cal_dom_prod_bev['Switzerland', :,'cal_agr_domestic-production_bev', 'bev-alc'] = array_temp
@@ -473,7 +468,7 @@ def crop_calibration(list_countries_calc, dm_losses):
     # Bev-fer : Raw materials [kcal] = product [kcal] * processing yield [%]
     array_temp = dm_cal_dom_prod_bev[:, :, 'cal_agr_domestic-production_bev',
                  'bev-fer'] \
-                 * cdm_yield_bev_fer[
+                 * cdm_bev[
                    np.newaxis, np.newaxis, 'cp_ibp_bev_bev-fer_brf_crop_cereal', np.newaxis]
     # Overwrite
     dm_cal_dom_prod_bev['Switzerland', :,'cal_agr_domestic-production_bev', 'bev-fer'] = array_temp
@@ -481,7 +476,7 @@ def crop_calibration(list_countries_calc, dm_losses):
     # Beer : Raw materials [kcal] = product [kcal] * processing yield [%]
     array_temp = dm_cal_dom_prod_bev[:, :, 'cal_agr_domestic-production_bev',
                  'bev-beer'] \
-                 * cdm_yield_bev_beer[
+                 * cdm_bev[
                    np.newaxis, np.newaxis, 'cp_ibp_bev_beer_brf_crop_cereal', np.newaxis]
     # Overwrite
     dm_cal_dom_prod_bev['Switzerland', :, 'cal_agr_domestic-production_bev', 'bev-beer'] = array_temp
@@ -631,8 +626,11 @@ def fxa_processing_yield(df_processing_yield_fxa):
   df_calc_processing_yield = linear_fitting_ots_db(df_calc_processing_yield, years_ots,
                                              countries='all')
 
-  # Format as cdm
-  dm_fxa_pro_yield = df_calc_processing_yield
+  # Format as datamatrix
+  df_ots, df_fts = database_to_df(df_calc_processing_yield, lever, level='all')
+  df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+  dm_fxa_pro_yield = DataMatrix.create_from_df(df_ots, num_cat=1)
+  linear_fitting(dm_fxa_pro_yield, years_ots)
 
   return dm_fxa_pro_yield
 
@@ -1598,9 +1596,11 @@ def exports_processing(list_countries_calc, file_dict):
         # List of elements
         list_elements = ['Production Quantity', 'Export Quantity']
 
-        list_items = ['Milk - Excluding Butter + (Total)', 'Eggs + (Total)',
-                      'Bovine Meat', 'Meat, Other', 'Pigmeat',
-                      'Poultry Meat', 'Mutton & Goat Meat']
+        list_items = ['Cereals - Excluding Beer + (Total)',
+                  'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
+                  'Pulses + (Total)', 'Rice (Milled Equivalent)',
+                  'Starchy Roots + (Total)', 'Sugar Crops + (Total)',
+                  'Vegetables + (Total)']
 
         # 1990 - 2013
         ld = faostat.list_datasets()
@@ -1630,9 +1630,11 @@ def exports_processing(list_countries_calc, file_dict):
 
         list_elements = ['Production Quantity', 'Import quantity', 'Export quantity', 'Feed', 'Processed', 'Stock Variation', 'Food', 'Other uses (non-food)', 'Residuals']
         # Different list becuse different in item nomination such as rice
-        list_items = ['Milk - Excluding Butter + (Total)', 'Eggs + (Total)',
-                      'Bovine Meat', 'Meat, Other', 'Pigmeat',
-                      'Poultry Meat', 'Mutton & Goat Meat']
+        list_items = ['Cereals - Excluding Beer + (Total)',
+                  'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
+                  'Pulses + (Total)', 'Rice and products',
+                  'Starchy Roots + (Total)', 'Sugar Crops + (Total)',
+                  'Vegetables + (Total)']
         code = 'FBS'
         my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
         my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
@@ -1658,11 +1660,9 @@ def exports_processing(list_countries_calc, file_dict):
         df_ssr = pd.concat([df_ssr_1990_2013, df_ssr_2010_2021])
 
         # Renaming the items for name matching
-
         df_ssr.loc[
           df_ssr['Item'].str.contains('Rice (Milled Equivalent)', case=False,
                                       na=False, regex=False),'Item'] = 'Rice and products'
-
         df_exports = df_ssr.copy()
         df_exports.to_csv(file_dict['exports'], index=False)
 
@@ -1695,7 +1695,7 @@ def exports_processing(list_countries_calc, file_dict):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_exports = pd.read_excel(
-        'dictionaries/dictionnary_livestock.xlsx',
+        'dictionaries/dictionary_crop.xlsx',
         sheet_name='exports')
 
     # Renaming existing columns (geoscale, timsecale, value)
@@ -1720,7 +1720,6 @@ def exports_processing(list_countries_calc, file_dict):
     df_ots, df_fts = database_to_df(df_exports, lever, level='all')
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_fxa_exports = DataMatrix.create_from_df(df_ots, num_cat=1)
-
 
     return dm_fxa_exports
 
@@ -1752,9 +1751,7 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
                          '-- Western Europe > (List)']
 
   try:
-    df_trade_egg = pd.read_csv(file_dict['trade_egg'])
-    df_trade_milk = pd.read_csv(file_dict['trade_milk'])
-    df_trade_meat = pd.read_csv(file_dict['trade_meat'])
+    df_trade_agg = pd.read_csv(file_dict['trade-crop'])
   except OSError:
 
     # TRADE MATRIX (TM)
@@ -1767,35 +1764,215 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
     dict_items_faostat = faostat.get_par(code, 'item')
     list_items_faostat = list(dict_items_faostat.keys())
 
-    # Create item list for eggs
-    keywords = ["egg"]
-    exclude = ["eggplant"]
-    list_items_egg = [
-      k for k in dict_items_faostat.keys()
-      if any(word in k.lower() for word in keywords)
-         and not any(bad in k.lower() for bad in exclude)
-    ]
-    # Create item list for meat
-    keywords = ["meat", "offal", "fat of", "pork", "ham", "bacon"]
-    exclude = ["juice", "hydrogenated", "acids", "cocoa", "meal"]
-    list_items_meat = [
+    # Create item list for fruits
+    keywords = ["fruit"]
+    exclude = ["feed"]
+    list_items_fruit = [
       k for k in dict_items_faostat.keys()
       if any(word in k.lower() for word in keywords)
          and not any(bad in k.lower() for bad in exclude)
     ]
 
-    # Create item list for milk products
-    keywords = [
-      "milk", "yog", "cream", "cheese", "butter",
-      "ghee", "curd", "whey"
-    ]
-    exclude = ["wheat", "soy", "almond", "cocoa", "peanut"]
-    list_items_milk = [
+    # Create item list for Cereals - excluding beer
+    keywords = ["cereal", "wheat", "barley", "oat", "grain", "fonio", "millet",
+                "maize", "rye", "sorghum"]
+    exclude = ["straw", "beer"]
+    list_items_cereal = [
       k for k in dict_items_faostat.keys()
       if any(word in k.lower() for word in keywords)
          and not any(bad in k.lower() for bad in exclude)
     ]
-    #list_items_milk = [k for k in list_items_faostat.keys() if "milk" in k.lower()]
+
+    # Create item list for Oilcrops
+    keywords = ["coconut", "olive", "soya bean",
+                "canola", "seed", "groundnut", "sesame"]
+    exclude = ["oil", "cake"]
+    list_items_oilcrop = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Processed voil
+    keywords = ["oil of", "coconut oil", "palm oil", "olive oil", "soya bean oil",
+                "canola oil", "seed oil", "groundnut oil"]
+    exclude = ["rice"]
+    list_items_pro_voil = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Pulses
+    keywords = ["pulse", "beans", "peas"]
+    exclude = ["vegetables", "oil", "cake", "cocoa"]
+    list_items_pulse = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Rice
+    keywords = ["rice"]
+    exclude = ["beverages", "cake", "oil", "paper"]
+    list_items_rice = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Starchy Roots
+    keywords = ["root", "potatoe", "cassava", "yam"]
+    exclude = ["cigars", "vegetables", "string"]
+    list_items_starch = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Sugarcrops
+    keywords = ["sugar cane", "sugar beet"]
+    exclude = ["none"]
+    list_items_sugarcrop = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Vegetables
+    keywords = ['Artichokes',
+    'Asparagus',
+    'Cabbages',
+    'Carrots and turnips',
+    'Cauliflowers and broccoli',
+    'Cucumbers and gherkins',
+    'Eggplants (aubergines)',
+    'Green garlic',
+    'Leeks',
+    'Lettuce',
+    'Mushrooms',
+    'Okra',
+    'Onions',
+    'Spinach',
+    'String beans',
+    'Tomatoes',
+    'Pumpkins, squash and gourds',]
+    exclude = ["sugar", "oil"]
+    list_items_vegetables = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Beer
+    keywords = ["beer"]
+    exclude = ["none"]
+    list_items_beer = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Beverages, alcoholic
+    keywords = ["alcohol"]
+    exclude = ["non"]
+    list_items_bev_alc = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Beverages, fermented
+    keywords = ["fermented beverages"]
+    exclude = ["none"]
+    list_items_bev_fer = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Wine
+    keywords = ["wine"]
+    exclude = ["swine"]
+    list_items_wine = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Cocoa and products
+    keywords = ["cocoa"]
+    exclude = ["cake"]
+    list_items_cocoa = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Coffee
+    keywords = ["coffee"]
+    exclude = ["subsitute", "extract"]
+    list_items_coffee = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Tea
+    keywords = ["tea"]
+    exclude = ["stearine"]
+    list_items_tea = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Processed sugar
+    keywords = ["refined sugar", "refined cane or beet sugar",
+                "raw cane or beet sugar"]
+    exclude = ["syrup"]
+    list_items_pro_sugar = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    # Create item list for Processed sweeteners
+    keywords = ["honey", "syrup"]
+    exclude = ["none"]
+    list_items_pro_sweet = [
+      k for k in dict_items_faostat.keys()
+      if any(word in k.lower() for word in keywords)
+         and not any(bad in k.lower() for bad in exclude)
+    ]
+
+    dict_item_groups = {
+      # Crops
+      "crop-fruit": list_items_fruit,
+      "crop-cereal": list_items_cereal,
+      "crop-oilcrop": list_items_oilcrop,
+      "crop-pulse": list_items_pulse,
+      "crop-rice": list_items_rice,
+      "crop-starch": list_items_starch,
+      "crop-sugarcrop": list_items_sugarcrop,
+      "crop-veg": list_items_vegetables,
+
+      # Processed crop products
+      "pro-crop-processed-voil": list_items_pro_voil,
+      "pro-crop-processed-sugar": list_items_pro_sugar,
+      "pro-crop-processed-sweet": list_items_pro_sweet,
+
+      # Beverages
+      "pro-bev-beer": list_items_beer,
+      "pro-bev-bev-alc": list_items_bev_alc,
+      "pro-bev-bev-fer": list_items_bev_fer,
+      "pro-bev-wine": list_items_wine,
+
+      # Stimulants
+      "stm-cocoa": list_items_cocoa,
+      "stm-coffee": list_items_coffee,
+      "stm-tea": list_items_tea,
+    }
 
 
     # 1990 - 2023
@@ -1806,9 +1983,6 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
     my_partner_regions = [faostat.get_par(code, 'partnerregions')[p] for p in
                              list_partnerregions]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
-    my_items_egg = [faostat.get_par(code, 'item')[i] for i in list_items_egg]
-    my_items_milk = [faostat.get_par(code, 'item')[i] for i in list_items_milk]
-    my_items_meat = [faostat.get_par(code, 'item')[i] for i in list_items_meat]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996',
                   '1997', '1998', '1999', '2000', '2001', '2002',
                   '2003', '2004', '2005', '2006', '2007', '2008', '2009',
@@ -1816,104 +1990,68 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
                   '2017', '2018', '2019', '2020', '2021', '2022', '2023']
     my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
-    my_pars_egg = {
-      'reporterarea': my_reporter_countries,
-      'partnerregions': my_partner_regions,
-      'element': my_elements,
-      'item': my_items_egg,
-      'year': my_years
-    }
-    my_pars_milk = {
-      'reporterarea': my_reporter_countries,
-      'partnerregions': my_partner_regions,
-      'element': my_elements,
-      'item': my_items_milk,
-      'year': my_years
-    }
-    my_pars_meat = {
-      'reporterarea': my_reporter_countries,
-      'partnerregions': my_partner_regions,
-      'element': my_elements,
-      'item': my_items_meat,
-      'year': my_years
-    }
-    df_trade_egg = faostat.get_data_df(code, pars=my_pars_egg, strval=False)
-    df_trade_egg.to_csv(file_dict['trade_egg'], index=False)
-    df_trade_milk = faostat.get_data_df(code, pars=my_pars_milk, strval=False)
-    df_trade_milk.to_csv(file_dict['trade_milk'], index=False)
-    df_trade_meat = faostat.get_data_df(code, pars=my_pars_meat, strval=False)
-    df_trade_meat.to_csv(file_dict['trade_meat'], index=False)
 
-  # Filter
-  col_filter = ['Reporter Countries', 'Partner Countries', 'Item', 'Year', 'Value']
-  df_trade_egg = df_trade_egg[col_filter]
-  df_trade_milk = df_trade_milk[col_filter]
-  df_trade_meat = df_trade_meat[col_filter]
+    # Loop to download data from FAOSTAT
 
-  # Sum items for egg and milk
-  df_trade_egg['Item'] = 'Eggs'
-  df_trade_egg = (
-    df_trade_egg
-    .groupby(['Reporter Countries', 'Partner Countries', 'Item', 'Year'],
-             as_index=False)['Value']
-    .sum()
-  )
-  df_trade_milk['Item'] = 'Milk'
-  df_trade_milk = (
-    df_trade_milk
-    .groupby(['Reporter Countries', 'Partner Countries', 'Item', 'Year'],
-             as_index=False)['Value']
-    .sum()
-  )
+    dict_dfs_trade = {}
 
-  # Concat dfs
-  df_trade = pd.concat([df_trade_milk, df_trade_egg, df_trade_meat])
+    for group_name, item_list in dict_item_groups.items():
+      my_items = [
+        faostat.get_par(code, 'item')[i]
+        for i in item_list
+      ]
 
-  # Aggregate by item ----------------------------------------------------------
-  mapping = {
-    'Pig': 'Pig',
-    'Pork': 'Pig',
-    'Ham': 'Pig',
-    'Bacon': 'Pig',
-    'milk': 'Milk',
-    'cattle': 'Cattle',
-    'Buffalo': 'Cattle',
-    'Beef': 'Cattle',
-    'Calves': 'Cattle',
-    'Chicken': 'Chicken',
-    'poultry': 'Other bird',
-    'Duck': 'Duck',
-    'Turkeys': 'Turkey',
-    'Geese': 'Goose',
-    'Pigeon': 'Pigeon',
-    'Horse': 'Horse',
-    'Rabbits and hares': 'Rabbit',
-    'Sheep': 'Sheep',
-    'Goat': 'Goat',
-    'Asse': 'Asse',
-    'Camel': 'Other non-specified',
-    'Rodent': 'Other non-specified',
-    'Other': 'Other non-specified',
-    'Game': 'Game',
-    'Mule': 'Mule',
-    'meat': 'Other non-specified'
-  }
+      my_pars = {
+        'reporterarea': my_reporter_countries,
+        'partnerregions': my_partner_regions,
+        'element': my_elements,
+        'item': my_items,
+        'year': my_years
+      }
 
-  for key, value in mapping.items():
-    mask = df_trade['Item'].str.contains(key, case=False,
-                                                         na=False)
-    df_trade.loc[mask, 'Item'] = value
+      # Download FAOSTAT data
+      data = faostat.get_data(code, pars=my_pars)
 
-    # Reading excel lsu equivalent
-  df_lsu = pd.read_excel(
-        'dictionaries/lsu_equivalent.xlsx',
-        sheet_name='lsu_equivalent')
-  # Merging
-  df_trade_agg = pd.merge(df_trade, df_lsu, on='Item')
+      # Convert safely to DataFrame
+      df = pd.DataFrame(data)
 
-  # Aggregating
-  df_trade_agg['Value'] = df_trade_agg['Value'].fillna(0.0)
-  df_trade_agg = df_trade_agg.groupby(['variables', 'Partner Countries', 'Reporter Countries', 'Year'], as_index=False)['Value'].sum()
+      # Change 1st row as column name
+      df.columns = df.iloc[0]
+      df = df.iloc[1:].reset_index(drop=True)
+
+      # Ensure Value is numeric
+      df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
+
+      # Store dataframe
+      dict_dfs_trade[group_name] = df
+
+    # Filter & sum items per category
+    col_filter = ['Reporter Countries', 'Partner Countries', 'Item', 'Year',
+                  'Value']
+    df_trade_agg_temp = []
+
+    for item_name, df in dict_dfs_trade.items():
+      df_tmp = (
+        df[col_filter]
+        .assign(Item=item_name)  # replace Item safely
+        .groupby(
+          ['Reporter Countries', 'Partner Countries', 'Item', 'Year'],
+          as_index=False
+        )['Value']
+        .sum()
+      )
+
+      df_trade_agg_temp.append(df_tmp)
+
+    # Final combined dataframe
+    df_trade_agg = pd.concat(df_trade_agg_temp, ignore_index=True)
+    df_trade_agg.to_csv(file_dict['trade-crop'], index=False)
+
+  # Rename Item as variables
+  df_trade_agg.rename(columns={'Item': 'variables'},inplace=True)
+
+  # Prepend var name and unit
+  df_trade_agg['variables'] = df_trade_agg['variables'].apply(lambda x: f"agr_split-import_{x}[-]")
 
   # Aggregate by countries -----------------------------------------------------
 
@@ -1950,41 +2088,38 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   # Format as datamatrix
   df_ots, df_fts = database_to_df(df_trade_agg, lever, level='all')
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
-  dm_liv_trade_origin = DataMatrix.create_from_df(df_ots, num_cat=1)
+  dm_crop_trade_origin = DataMatrix.create_from_df(df_ots, num_cat=1)
 
   # Add Switzerland as dummy (because are in losses and other dms)
-  dm_liv_trade_origin.add(0.0, dummy=True, col_label=['Switzerland'], dim='Country')
+  dm_crop_trade_origin.add(0.0, dummy=True, col_label=['Switzerland'], dim='Country')
 
   # Unit conversion: [t] => [kcal]
   cdm_kcal_temp = cdm_kcal.copy()
   cdm_kcal_temp.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
-  cdm_kcal_temp = cdm_kcal_temp.filter({'Categories1': ['abp-dairy-milk', 'abp-hens-egg',
-                                              'meat-bovine', 'meat-oth-animal',
-                                              'meat-pig', 'meat-poultry',
-                                              'meat-sheep']})
-  dm_liv_trade_origin.sort('Categories1')
+  cdm_kcal_temp = cdm_kcal_temp.filter({'Categories1': dm_crop_trade_origin.col_labels['Categories1']})
+  dm_crop_trade_origin.sort('Categories1')
   cdm_kcal_temp.sort('Categories1')
-  array_temp = dm_liv_trade_origin[:, :, 'agr_split-import', :] \
+  array_temp = dm_crop_trade_origin[:, :, 'agr_split-import', :] \
                * cdm_kcal_temp[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
-  dm_liv_trade_origin[:, :, 'agr_split-import', :] = array_temp
+  dm_crop_trade_origin[:, :, 'agr_split-import', :] = array_temp
 
   # Step CALIBRATION IMPORTS PER COUNTRY
-  dm_cal_imports_countries = dm_liv_trade_origin.copy()
+  dm_cal_imports_countries = dm_crop_trade_origin.copy()
   dm_cal_imports_countries.rename_col('agr_split-import', 'cal_agr_domestic-production','Variables')
   dm_cal_imports_countries.change_unit('cal_agr_domestic-production', 1.0, '-', 'kcal', '*')
   dm_cal_imports_countries.drop(dim='Country', col_label=['Switzerland'])
 
   # Step CALIBRATION IMPORTS TOTAL
-  dm_cal_imports_tot = dm_liv_trade_origin.copy()
+  dm_cal_imports_tot = dm_crop_trade_origin.copy()
   dm_cal_imports_tot.rename_col('agr_split-import', 'cal_agr_imported_production_total','Variables')
   dm_cal_imports_tot.change_unit('cal_agr_imported_production_total', 1.0, '-', 'kcal', '*')
   dm_cal_imports_tot.groupby({'Switzerland': '.*'}, dim='Country', regex=True, inplace=True)
 
   # Normalise across countries for share of imports
-  dm_liv_trade_origin.normalise(dim='Country', inplace=True)
-  dm_liv_trade_origin.change_unit('agr_split-import', 1.0, '%', '-', '*')
+  dm_crop_trade_origin.normalise(dim='Country', inplace=True)
+  dm_crop_trade_origin.change_unit('agr_split-import', 1.0, '%', '-', '*')
 
-  return dm_liv_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot
+  return dm_crop_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot
 
 # CalculationLeaf SHARE PRODUCTION METHOD
 
@@ -2260,8 +2395,29 @@ def production_share(dm_cal_liv_pop):
 # CalculationLeaf CONSTANTS  ------------------------------
 
 def constant():
+  # Beverages processing yield and byproducts ----------------------------------
 
-  # KCAL TO T ----------------------------------------------------------------------------------------
+  # Read excel
+  df_cp_bev = pd.read_excel('data/crop_constants.xlsx',
+                            sheet_name='cp_ibp_bev')
+
+  # Filter columns
+  df_cp_bev = df_cp_bev[['variables', 'value']].copy()
+
+  # Turn the df in a dict
+  dict_cp_bev = dict(zip(df_cp_bev['variables'], df_cp_bev['value']))
+  variables = df_cp_bev['variables'].tolist()
+
+  # Format as a cdm
+  cdm_bev = ConstantDataMatrix(col_labels={'Variables': variables})
+  arr = np.zeros((len(cdm_bev.col_labels['Variables'])))
+  cdm_bev.array = arr
+  idx = cdm_bev.idx
+  for var, val in dict_cp_bev.items():
+    cdm_bev.array[idx[var]] = val
+    cdm_bev.units[var] = "-"
+
+  # KCAL TO T ------------------------------------------------------------------
 
   # Read excel
   df_kcal_t = pd.read_excel('dictionaries/kcal_to_t.xlsx',
@@ -2285,7 +2441,7 @@ def constant():
     cdm_kcal.array[idx['cp_kcal-per-t'], idx[cat]] = val
   cdm_kcal.units["cp_kcal-per-t"] = "kcal/t"
 
-  return cdm_kcal
+  return cdm_kcal, cdm_bev
 
 # CalculationLeaf FTS  ------------------------------
 def fts_processing():
@@ -2313,43 +2469,47 @@ def fts_processing():
 
 # CalculationLeaf PICKLE CREATION ------------------------------
 
-def datamatrix_to_pickle(dm_fts):
+def datamatrix_to_pickle():
 
   # Make list with all years
   years_all = years_ots + years_fts
 
-  dm_food_net_import_crop = DM_ots_fts['food-net-import'].filter_w_regex(
-    {'Categories1': 'crop-.*',
-     'Variables': 'agr_food-net-import'})  # filtered here on purpose and not in the pickle (other parts of the datamatrix are used)
-  dm_food_net_import_crop.rename_col_regex(str1="crop-", str2="",
-                                           dim="Categories1")
-  dm_crop = DM_ots_fts['climate-smart-crop']['climate-smart-crop_losses']
-  dm_crop.append(dm_food_net_import_crop, dim='Variables')
-  dm_ssr_feed_crop = DM_ots_fts['climate-smart-crop']['feed-net-import']
-  dm_food_net_import_pro = DM_ots_fts['food-net-import'].filter_w_regex(
-    {'Categories1': 'pro-.*', 'Variables': 'agr_food-net-import'})
-
   # FixedAssumptionsToDatamatrix -----------------------------------------------
   dict_fxa = {}
 
-
-  #dict_fxa['processing-yield'] =
-
+  dict_fxa['processing-yield'] = dm_fxa_pro_yield
+  dict_fxa['split-import'] = dm_crop_trade_origin
+  dict_fxa['share-export'] = dm_fxa_exports
 
 
   # CalibrationDataToDatamatrix ------------------------------------------------
 
-  #dict_fxa['cal_agr_domestic-production_food'] =
-  #dict_fxa['cal_agr_domestic-production_bev'] =
+  dict_fxa['cal_agr_domestic-production_food'] = dm_cal_dom_prod_crop
+  dict_fxa['cal_agr_domestic-production_bev'] = dm_cal_dom_prod_bev
 
   # LeversToDatamatrix OTS -----------------------------------------------------
   dict_ots = {}
 
-  # ssr-food_.*
-  #dict_ots['ssr-food'] =
+  # ssr-crop_.*
+  #dict_ots['ssr-crop-cereal'] =
+  dict_ots['ssr-crop-cereal'] = dm_ssr_crop.filter({'Categories1': ['crop-cereal']})
+  dict_ots['ssr-crop-fruit'] = dm_ssr_crop.filter({'Categories1': ['crop-fruit']})
+  dict_ots['ssr-crop-veg'] = dm_ssr_crop.filter({'Categories1': ['crop-veg']})
+  dict_ots['ssr-crop-pulse'] = dm_ssr_crop.filter({'Categories1': ['crop-pulse']})
+  dict_ots['ssr-crop-oilcrop'] = dm_ssr_crop.filter({'Categories1': ['crop-oilcrop']})
+  dict_ots['ssr-crop-sugarcrop'] = dm_ssr_crop.filter({'Categories1': ['crop-sugarcrop']})
+  dict_ots['ssr-crop-starch'] = dm_ssr_crop.filter({'Categories1': ['crop-starch']})
+  dict_ots['ssr-crop-rice'] = dm_ssr_crop.filter({'Categories1': ['crop-rice']})
+  #dict_ots['ssr-crop-stm'] = dm_ssr_crop.filter({'Categories1': ['crop-stm']})
+
+  # ssr-bev_.*
+  dict_ots['ssr-bev-beer'] = dm_ssr_crop.filter({'Categories1': ['pro-bev-beer']})
+  dict_ots['ssr-bev-bev-alc'] = dm_ssr_crop.filter({'Categories1': ['pro-bev-bev-alc']})
+  dict_ots['ssr-bev-bev-fer'] = dm_ssr_crop.filter({'Categories1': ['pro-bev-bev-fer']})
+  dict_ots['ssr-bev-wine'] = dm_ssr_crop.filter({'Categories1': ['pro-bev-wine']})
 
   # crop-losses
-  #dict_ots['crop-losses'] = dm_losses
+  dict_ots['crop-losses'] = dm_losses
 
   # crop-share-intensive
 
@@ -2364,13 +2524,8 @@ def datamatrix_to_pickle(dm_fts):
   DM_ots = dict_ots.copy()
 
   # Adding a new lever with dummy values
-  dict_fts['slaughter-rates'] = {'slaughter-rates': dict()}
-  dict_fts['livestock-density'] = {'livestock-density': dict()}
-  dict_fts['livestock-enteric'] = {'livestock-enteric': dict()}
-  dict_fts['livestock-manure'] = {'livestock-manure': dict()}
-  dict_fts['feed-ration'] = {'feed-ration': dict()}
-  dict_fts['alt-protein'] = {'alt-protein': dict()}
-
+  for lever_temp in dict_ots.keys():
+    dict_fts[lever_temp] = {lever_temp: dict()}
 
   # Levers to be normalised
   list_norm = ['climate-smart-livestock_ration']
@@ -2424,7 +2579,15 @@ def datamatrix_to_pickle(dm_fts):
   # ConstantsToDatamatrix ------------------------------------------------------
   dict_const = {}
   dict_const['cdm_kcal-per-t'] = cdm_kcal
-  #dict_const['cdm_lifestyle'] = cdm_lifestyle
+
+  # Alcoholic beverages byproduct
+  dict_const['cdm_cp_ibp_bev_beer'] = cdm_bev.filter_w_regex({'Variables': '.*beer.*'})
+  dict_const['cdm_cp_ibp_bev_wine'] = cdm_bev.filter_w_regex(
+    {'Variables': '.*wine.*'})
+  dict_const['cdm_cp_ibp_bev_bev-fer'] = cdm_bev.filter_w_regex(
+    {'Variables': '.*bev-fer.*'})
+  dict_const['cdm_cp_ibp_bev_bev-alc'] = cdm_bev.filter_w_regex(
+    {'Variables': '.*bev-alc.*'})
 
   # Group all datamatrix in a single structure ---------------------------------
   DM_crop_pickle = {
@@ -2482,24 +2645,26 @@ file_dict = {'losses': 'data/faostat/losses.csv',
              'yield': 'data/faostat/yield.csv',
              'ssr-crop': 'data/faostat/ssr-crop.csv',
              'dom-prod-crop': 'data/faostat/dom-prod-crop.csv',
-             'cropland': 'data/faostat/cropand.csv',
+             'trade-crop': 'data/faostat/trade-crop.csv',
+             'exports': 'data/faostat/exports.csv',
+             'cropland': 'data/faostat/cropland.csv',
              'urea': 'data/faostat/urea.csv',
              'land': 'data/faostat/land.csv',
              'nitro': 'data/faostat/nitro.csv',
              'pesticide': 'data/faostat/pesticide.csv',
              'liming': 'data/faostat/liming.csv'}
 
-cdm_kcal = constant()
+cdm_kcal, cdm_bev = constant()
 dm_losses = crop_losses()
 dm_yield = crop_yield()
 dm_ssr_crop, df_processing_yield_fxa, dm_imports_fbs = self_sufficiency_processing(years_ots, list_countries_calc, file_dict)
 dm_fxa_pro_yield = fxa_processing_yield(df_processing_yield_fxa)
-dm_cal_dom_prod_crop, dm_cal_dom_prod_bev = crop_calibration(list_countries_calc, dm_losses)
-dm_liv_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = trade_origin_processing(years_ots, list_countries_calc, file_dict)
+dm_cal_dom_prod_crop, dm_cal_dom_prod_bev = crop_calibration(list_countries_calc, dm_losses, dm_fxa_pro_yield, cdm_bev)
+dm_crop_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = trade_origin_processing(years_ots, list_countries_calc, file_dict)
 dm_fxa_exports = exports_processing(list_countries_calc,file_dict)
-dm_fts = fts_processing()
+#dm_fts = fts_processing()
 
 # CalculationTree RUNNING PICKLE CREATION
-datamatrix_to_pickle(dm_fts)
+datamatrix_to_pickle()
 
 

@@ -1319,7 +1319,7 @@ def constant():
     cdm_kcal.array[idx['cp_kcal-per-t'], idx[cat]] = val
   cdm_kcal.units["cp_kcal-per-t"] = "kcal/t"
 
-  # Beverages byproducts ----------------------------------------------------------------------------------------
+  # Beverages processing yield and byproducts ----------------------------------
 
   # Read excel
   df_cp_bev = pd.read_excel('data/dietary-habits_constants.xlsx',
