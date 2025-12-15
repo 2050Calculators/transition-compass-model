@@ -1,6 +1,7 @@
 
 # packages
-from model.common.auxiliary_functions import my_pickle_dump
+from model.common.auxiliary_functions import my_pickle_dump, DataMatrix
+import numpy as np
 import pickle
 import os
 import warnings
@@ -13,6 +14,34 @@ current_file_directory = os.getcwd()
 filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
 with open(filepath, 'rb') as handle:
     DM_tra = pickle.load(handle)
+
+# # change freight kerosene
+# # freight_technology-share_new
+# # freight_vehicle-efficiency_new
+# # fxa_freight-tech
+# for lever in ["freight_technology-share_new", "freight_vehicle-efficiency_new"]:
+#     dm = DM_tra["ots"][lever]
+#     dm.add(np.nan, "Categories2", "kerosene", dummy = True)
+#     dm.add(np.nan, "Categories2", "H2", dummy = True)
+#     dm[...,"aviation","kerosene"] = dm[...,"aviation","ICE"]
+#     dm[...,"aviation","ICE"] = np.nan
+#     dm.sort("Categories2")
+#     for i in list(range(1,4+1)):
+#         dm = DM_tra["fts"][lever][i]
+#         dm.add(np.nan, "Categories2", "kerosene", dummy = True)
+#         dm.add(np.nan, "Categories2", "H2", dummy = True)
+#         dm[...,"aviation","kerosene"] = dm[...,"aviation","ICE"]
+#         dm[...,"aviation","ICE"] = np.nan
+#         dm.sort("Categories2")
+# dm = DM_tra["fxa"]["freight_tech"]
+# dm.add(np.nan, "Categories2", "kerosene", dummy = True)
+# dm.add(np.nan, "Categories2", "H2", dummy = True)
+# dm[...,"aviation","kerosene"] = dm[...,"aviation","ICE"]
+# dm[...,"aviation","ICE"] = np.nan
+# dm.sort("Categories2")
+# f = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
+# # my_pickle_dump(DM_tra, f) # this one does not work in this case, will need to use pickle.write
+# with open(f, 'wb') as handle: pickle.dump(DM_tra, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 # # fix fts years if needed
 # for key in DM_tra["fts"].keys():
@@ -41,6 +70,7 @@ with open(filepath, 'rb') as handle:
 # subprocess.run(['python', os.path.join(current_file_directory, 'transport_lever_passenger_aviation-pkm.py')])
 # subprocess.run(['python', os.path.join(current_file_directory, 'transport_lever_passenger_modal-share.py')])
 # subprocess.run(['python', os.path.join(current_file_directory, 'transport_lever_passenger_occupancy.py')])
+# subprocess.run(['python', os.path.join(current_file_directory, 'transport_fxa_vehicles-max.py')])
 # subprocess.run(['python', os.path.join(current_file_directory, 'transport_lever_passenger_technology-share_new.py')])
 # subprocess.run(['python', os.path.join(current_file_directory, 'transport_lever_passenger_utilization-rate.py')])
 # subprocess.run(['python', os.path.join(current_file_directory, 'transport_lever_passenger_veh-efficiency_new.py')])
@@ -110,10 +140,12 @@ DM_transport["fts"] = DM_fts.copy()
 fxa_files = ['fxa_passenger_tech.pickle','fxa_passenger_vehicle-lifetime.pickle',
              'fxa_emission-factor-electricity.pickle','fxa_freight_tech.pickle',
              'fxa_freight_mode_other.pickle','fxa_freight_mode_road.pickle',
+             'fxa_vehicles-max.pickle',
              'fxa_share-local-emissions.pickle','fxa_fuel-mix-availability.pickle']
 fxa_names = ['passenger_tech','passenger_vehicle-lifetime',
              'emission-factor-electricity','freight_tech',
              'freight_mode_other','freight_mode_road',
+             'vehicles-max',
              'share-local-emissions','fuel-mix-availability']
 
 # load dms
@@ -137,7 +169,7 @@ for key in DM_transport["fts"].keys():
         DM_transport["fts"][key][level].filter({"Country" : ["EU27"]},inplace=True)
 for key in DM_transport["fxa"].keys():
     DM_transport["fxa"][key].filter({"Country" : ["EU27"]},inplace=True)
-    
+
 # #############################################################
 # ##### PUT ZERO FOR FCEV IN FREIGHT (INSTEAD OF MISSING) #####
 # #############################################################

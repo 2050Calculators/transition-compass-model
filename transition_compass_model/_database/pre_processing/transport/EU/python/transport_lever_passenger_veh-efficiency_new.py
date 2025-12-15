@@ -4,12 +4,16 @@
 from model.common.auxiliary_functions import linear_fitting
 from _database.pre_processing.routine_JRC import get_jrc_data
 from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
+from model.common.data_matrix_class import DataMatrix
 
 import pickle
 import os
 import numpy as np
 import warnings
+import pandas as pd
 warnings.simplefilter("ignore")
+import plotly.io as pio
+pio.renderers.default='browser'
 
 # directories
 current_file_directory = os.getcwd()
@@ -18,6 +22,12 @@ current_file_directory = os.getcwd()
 filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
 with open(filepath, 'rb') as handle:
     DM_tra = pickle.load(handle)
+    
+# load vkm (which is seat km for aviation)
+filepath = os.path.join(current_file_directory, '../data/datamatrix/intermediate_files/passenger_vkm.pickle')
+with open(filepath, 'rb') as handle:
+    dm_avi_seatkm = pickle.load(handle)
+    dm_avi_seatkm = dm_avi_seatkm.filter({"Categories1" : ["aviation"]})
 
 # Set years range
 years_setting = [1989, 2023, 2050, 5]
@@ -199,20 +209,68 @@ dm_eneff_new_rail.sort("Categories1")
 ##### AVIATION #####
 ####################
 
-# note: here we do not have test efficiency of new vehicles, but we have the theoretical one,
-# which is lower than the effective (as the test efficiency is lower than effective)
-# so I will take the theoretical, and assume that it proxies the efficiency of new planes
+# NOTE: here I do not have the energy efficiency of new planes, but rather the energy efficiency
+# of the fleet (effective). In addition, I need to calculate efficiency, as I need to do it wrt
+# seat km. So basically I will assume that this "computed efficiency of the seats"
+# is the same of the one of the seats in new planes.
 
-dict_extract = {"database" : "Transport",
-                "sheet" : "TrAvia_ene",
-                "variable" : "Vehicle-efficiency - theoretical (kgoe/100 km)*",
-                "sheet_last_row" : "Passenger transport",                
-                "sub_variables" : ["Passenger transport"],
-                "calc_names" : ["aviation"]}
-dm_eneff_new_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+def get_specific_jrc_data(country_code, country_name, row_start, row_end, unit, variable = "aviation_kerosene", 
+                          database = "JRC-IDEES-2021_x1990_Aviation_EU"):
+    
+    filepath_jrc = os.path.join(current_file_directory, f"../../../industry/eu/data/JRC-IDEES-2021/EU27/{database}.xlsx")
+    df_temp = pd.read_excel(filepath_jrc, sheet_name=country_code)
+    df_temp = df_temp.iloc[row_start:row_end,:]
+    indexes = df_temp.columns[0]
+    df_temp = pd.melt(df_temp, id_vars = indexes, var_name='year')
+    df_temp.columns = ["Country","Years",f"{variable}[{unit}]"]
+    df_temp["Country"] = country_name
+    
+    return df_temp
 
-# add techs (all kerosene)
-dm_eneff_new_avi.rename_col("aviation", "aviation_kerosene", "Variables")
+country_codes = list(dict_iso2_jrc.keys())
+country_names = list(dict_iso2_jrc.values())
+
+# get efficiency
+df_eneff_new_avi = pd.concat([get_specific_jrc_data(code, name, 134, 135, "kgoe/100km", "efficiency") for code,name in zip(country_codes, country_names)],ignore_index=True)
+dm_eneff_new_avi  = DataMatrix.create_from_df(df_eneff_new_avi , 0)
+# dm_eneff_new_avi.change_unit("efficiency", 1e-2, "kgoe/100km", "kgoe/vkm")
+
+# get number of seat per flight
+df_seatsperflight = pd.concat([get_specific_jrc_data(code, name, 273, 274, "number", "nseats") for code,name in zip(country_codes, country_names)],ignore_index=True)
+dm_seatsperflight_avi  = DataMatrix.create_from_df(df_seatsperflight , 0)
+
+# get efficiency per seat km
+dm_eneff_new_avi.append(dm_seatsperflight_avi, "Variables")
+dm_eneff_new_avi.operation("efficiency", "/", "nseats", out_col="aviation_kerosene", unit="kgoe/100 km")
+dm_eneff_new_avi = dm_eneff_new_avi.filter({"Variables" : ["aviation_kerosene"]})
+
+# df_totener_new_avi = pd.concat([get_specific_jrc_data(code, name, 133, 134, "kgoe") for code,name in zip(country_codes, country_names)],ignore_index=True)
+# dm_totener_new_avi  = DataMatrix.create_from_df(df_totener_new_avi , 0)
+
+# # get energy efficiency = total energy consumption / 100 skm
+# dm_avi_seatkm = dm_avi_seatkm.flatten()
+# dm_avi_seatkm.change_unit("tra_passenger_vkm_aviation", 1e2, "vkm", "100 km")
+# dm_avi_seatkm = dm_avi_seatkm.filter({"Years" : dm_totener_new_avi.col_labels["Years"]})
+# dm_totener_new_avi.append(dm_avi_seatkm,"Variables")
+# dm_totener_new_avi.rename_col("aviation_kerosene", "energy", "Variables")
+# dm_totener_new_avi.operation("energy", "/", "tra_passenger_vkm_aviation", "Variables", "aviation_kerosene", "kgoe/100 km")
+# dm_totener_new_avi = dm_totener_new_avi.filter({"Variables" : ["aviation_kerosene"]})
+# dm_eneff_new_avi = dm_totener_new_avi.copy()
+
+# # note: here we do not have test efficiency of new vehicles, but we have the theoretical one,
+# # which is lower than the effective (as the test efficiency is lower than effective)
+# # so I will take the theoretical, and assume that it proxies the efficiency of new planes
+
+# dict_extract = {"database" : "Transport",
+#                 "sheet" : "TrAvia_ene",
+#                 "variable" : "Vehicle-efficiency - theoretical (kgoe/100 km)*",
+#                 "sheet_last_row" : "Passenger transport",                
+#                 "sub_variables" : ["Passenger transport"],
+#                 "calc_names" : ["aviation"]}
+# dm_eneff_new_avi = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
+
+# # add techs (all kerosene)
+# dm_eneff_new_avi.rename_col("aviation", "aviation_kerosene", "Variables")
 dm_eneff_new_avi.deepen()
 categories2_missing = categories2_all.copy()
 for cat in dm_eneff_new_avi.col_labels["Categories1"]: categories2_missing.remove(cat)
@@ -232,6 +290,7 @@ dm_eneff_new.sort("Variables")
 dm_eneff_new.sort("Country")
 
 # add aviation
+dm_eneff_new.add(np.nan, "Years", list(range(1990,2000)), dummy=True)
 dm_eneff_new.append(dm_eneff_new_avi,"Variables")
 dm_eneff_new.sort("Variables")
 
@@ -317,7 +376,8 @@ dm_eneff_new = make_fts(dm_eneff_new, "bus_ICE-gasoline", baseyear_start, baseye
 dm_eneff_new = make_fts(dm_eneff_new, "metrotram_mt", baseyear_start, baseyear_end, dim = "Variables")
 dm_eneff_new = make_fts(dm_eneff_new, "rail_CEV", baseyear_start, baseyear_end, dim = "Variables")
 dm_eneff_new = make_fts(dm_eneff_new, "rail_ICE-diesel", baseyear_start, baseyear_end, dim = "Variables")
-dm_eneff_new = make_fts(dm_eneff_new, "aviation_kerosene", baseyear_start, baseyear_end, dim = "Variables")
+dm_eneff_new = make_fts(dm_eneff_new, "aviation_kerosene", baseyear_start, baseyear_end, dim = "Variables",
+                        min_t0=0, min_tb=0)
 
 # check
 # dm_eneff_new.filter({"Country" : ["EU27"]}).datamatrix_plot()
@@ -345,6 +405,8 @@ dm_eneff_new.sort("Categories2")
 
 # check
 # dm_eneff_new.flatten().flatten().filter({"Country" : ["EU27"]}).datamatrix_plot()
+# dm_eneff_new.filter({"Country" : ["EU27"], "Categories1" : ["aviation"], "Categories2" : ["kerosene"]}).write_df()
+# these values are too small, probably same thing of before, you need to get average number of seat per flight etc
 
 # add back h2
 dm_eneff_new.add(np.nan, "Categories2", "H2", 'MJ/km', True)

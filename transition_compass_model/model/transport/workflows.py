@@ -646,7 +646,7 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     )
 
     dm_energy_aviation = dm_energy_aviation.groupby(
-        {"ejetfuel": ["ICEefuel"], "biojetfuel": ["ICEbio"], "kerosene": ["ICE"]},
+        {"ejetfuel": ["ICEefuel"], "biojetfuel": ["ICEbio"]},
         inplace=False,
         dim="Categories2",
     )

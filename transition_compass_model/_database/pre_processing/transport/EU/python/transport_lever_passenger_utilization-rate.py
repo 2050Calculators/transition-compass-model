@@ -43,10 +43,10 @@ dm_fleet.deepen()
 # get vkm data
 filepath = os.path.join(current_file_directory, '../data/datamatrix/intermediate_files/passenger_vkm.pickle')
 with open(filepath, 'rb') as handle:
-    DM_vkm = pickle.load(handle)
-dm_vkm = DM_vkm["ots"]["passenger_vkm"].copy()
-dm_vkm.append(DM_vkm["fts"]["passenger_vkm"][1].copy(),"Years")
-dm_vkm.sort("Years")
+    dm_vkm = pickle.load(handle)
+# dm_vkm = DM_vkm["ots"]["passenger_vkm"].copy()
+# dm_vkm.append(DM_vkm["fts"]["passenger_vkm"][1].copy(),"Years")
+# dm_vkm.sort("Years")
 
 # obtain vkm/veh
 dm_uti = dm_vkm.copy()
@@ -56,6 +56,7 @@ dm_uti.rename_col("tra_passenger_vkm","tra_passenger_utilisation-rate","Variable
 
 # check
 # dm_uti.filter({"Country" : ["EU27"]}).datamatrix_plot()
+# dm_uti.filter({"Country" : ["EU27"]}).write_df().to_csv("/Users/echiarot/Desktop/check.csv")
 
 ###############
 ##### OTS #####
