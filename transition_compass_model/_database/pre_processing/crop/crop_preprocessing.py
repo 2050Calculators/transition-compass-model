@@ -160,6 +160,8 @@ def crop_losses():
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
   dm_losses= DataMatrix.create_from_df(df_ots, num_cat=1)
 
+  linear_fitting(dm_losses, years_ots)
+
   return dm_losses
 
 # CalculationLeaf CROP YIELD
@@ -451,10 +453,13 @@ def crop_calibration(list_countries_calc, dm_losses, dm_fxa_pro_yield, cdm_bev):
     # Here we want to convert the domestic production of beverages in raw materials
     # (e.g. in fruits and not wine) for wine & bev-alc
 
+    # Filter processing yields
+    dm_fxa_pro_yield_temp = dm_fxa_pro_yield.filter({'Years':years_ots})
+
     # Wine : Raw materials [kcal] = product [kcal] * processing yield [%]
     array_temp = dm_cal_dom_prod_bev[:, :, 'cal_agr_domestic-production_bev',
                  'wine'] \
-                 * dm_fxa_pro_yield[:,:, 'fxa_agr_processing-yield', 'wine-to-fruit']
+                 * dm_fxa_pro_yield_temp[:,:, 'fxa_agr_processing-yield', 'wine-to-fruit']
     # Overwrite
     dm_cal_dom_prod_bev['Switzerland', :,'cal_agr_domestic-production_bev', 'wine'] = array_temp
 
@@ -631,7 +636,7 @@ def fxa_processing_yield(df_processing_yield_fxa):
   df_ots, df_fts = database_to_df(df_calc_processing_yield, lever, level='all')
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
   dm_fxa_pro_yield = DataMatrix.create_from_df(df_ots, num_cat=1)
-  linear_fitting(dm_fxa_pro_yield, years_ots)
+  linear_fitting(dm_fxa_pro_yield, years_all)
 
   return dm_fxa_pro_yield
 
@@ -2117,6 +2122,7 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   dm_cal_imports_tot.groupby({'Switzerland': '.*'}, dim='Country', regex=True, inplace=True)
 
   # Normalise across countries for share of imports
+  dm_crop_trade_origin.drop(dim='Country', col_label=['Switzerland'])
   dm_crop_trade_origin.normalise(dim='Country', inplace=True)
   dm_crop_trade_origin.change_unit('agr_split-import', 1.0, '%', '-', '*')
 
@@ -2357,6 +2363,8 @@ def datamatrix_to_pickle(dm_fts):
 
   dict_fxa['cal_agr_domestic-production_food'] = dm_cal_dom_prod_crop
   dict_fxa['cal_agr_domestic-production_bev'] = dm_cal_dom_prod_bev
+  dict_fxa['cal_agr_imports-crop_total'] = dm_cal_imports_tot
+  dict_fxa['cal_agr_imports-crop_countries'] = dm_cal_imports_countries
 
   # LeversToDatamatrix OTS -----------------------------------------------------
   dict_ots = {}
