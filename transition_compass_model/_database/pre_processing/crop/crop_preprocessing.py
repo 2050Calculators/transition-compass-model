@@ -4,6 +4,7 @@ from model.common.auxiliary_functions import interpolate_nans, add_missing_ots_y
 from scipy.stats import linregress
 import pandas as pd
 import faostat
+import copy
 from _database.pre_processing.api_routines_CH import get_data_api_CH
 import os
 import re
@@ -2130,7 +2131,7 @@ def production_share():
   # https://www.pxweb.bfs.admin.ch/pxweb/fr/px-x-0702000000_106/px-x-0702000000_106/px-x-0702000000_106.px
 
   table_id = 'px-x-0702000000_106'
-  file = 'data/stat-tab/crop_area_method.pickle'
+  file = 'data/stat-tab/crop_area.pickle'
 
   try:
     with open(file, 'rb') as handle:
@@ -2314,13 +2315,12 @@ def constant():
 
   return cdm_kcal, cdm_bev
 
-# CalculationLeaf FTS  ------------------------------
+# CalculationLeaf FTS
 def fts_processing():
 
-  # ssr-feed, ssr-liv_.*, livestock-losses, share-organic, ruminand-feed ----------
   # Read Excel
   df_fts_data = pd.read_excel(
-    'data/livestock_fts.xlsx',
+    'data/crop_fts.xlsx',
     sheet_name='fts')
   df_fts_data = df_fts_data[['variables', 'timescale', 'geoscale', 'level', 'value', 'lever']]
 
@@ -2338,9 +2338,9 @@ def fts_processing():
 
   return dm_fts
 
-# CalculationLeaf PICKLE CREATION ------------------------------
+# CalculationLeaf PICKLE CREATION
 
-def datamatrix_to_pickle():
+def datamatrix_to_pickle(dm_fts):
 
   # Make list with all years
   years_all = years_ots + years_fts
@@ -2373,11 +2373,19 @@ def datamatrix_to_pickle():
   dict_ots['ssr-crop-rice'] = dm_ssr_crop.filter({'Categories1': ['crop-rice']})
   #dict_ots['ssr-crop-stm'] = dm_ssr_crop.filter({'Categories1': ['crop-stm']})
 
-  # ssr-bev_.*
+  # ssr-bev-.*
   dict_ots['ssr-bev-beer'] = dm_ssr_crop.filter({'Categories1': ['pro-bev-beer']})
   dict_ots['ssr-bev-bev-alc'] = dm_ssr_crop.filter({'Categories1': ['pro-bev-bev-alc']})
   dict_ots['ssr-bev-bev-fer'] = dm_ssr_crop.filter({'Categories1': ['pro-bev-bev-fer']})
   dict_ots['ssr-bev-wine'] = dm_ssr_crop.filter({'Categories1': ['pro-bev-wine']})
+
+  # ssr-pro-.*
+  dict_ots['ssr-pro-sugar'] = dm_ssr_crop.filter(
+    {'Categories1': ['pro-crop-processed-sugar']})
+  dict_ots['ssr-pro-sweet'] = dm_ssr_crop.filter(
+    {'Categories1': ['pro-crop-processed-sweet']})
+  dict_ots['ssr-pro-voil'] = dm_ssr_crop.filter(
+    {'Categories1': ['pro-crop-processed-voil']})
 
   # crop-losses
   dict_ots['crop-losses'] = dm_losses
@@ -2431,6 +2439,126 @@ def datamatrix_to_pickle():
         dict_fts[key][lev] = dm.filter({'Years': years_fts}, inplace=False)
 
   # Linear fitting between ots and fts objective (2050) ------------------
+
+  # Lever - ssr-crop-.*
+  dict_lever_ssr_crop = {
+    lever: value
+    for lever, value in dict_ots.items()
+    if 'ssr-crop' in lever
+  }
+  for lever in dict_lever_ssr_crop:
+    # Create a copy across all dimensions to not have issues
+    dm_fts[lever] = copy.deepcopy(dm_fts['ssr-crop'])
+    # Create new variable name
+    var = "agr_ssr_" + lever.replace("ssr-", "", 1)
+    for level in range(1,5):
+      dm_fts[lever][level].rename_col('agr_ssr', var,'Variables')
+      dm_fts[lever][level].deepen()
+      dm_fts[lever][level].append(dict_ots[lever], dim='Years')
+      linear_fitting(dm_fts[lever][level], years_fts)
+      dm_fts[lever][level].filter({'Years':years_fts}, inplace=True)
+    dict_fts[lever] = dm_fts[lever]
+
+  # Lever - ssr-bev-.*
+  dict_lever_ssr_bev = {
+    lever: value
+    for lever, value in dict_ots.items()
+    if 'ssr-bev' in lever
+  }
+  for lever in dict_lever_ssr_bev:
+    # Create a copy across all dimensions to not have issues
+    dm_fts[lever] = copy.deepcopy(dm_fts['ssr-bev'])
+    # Create new variable name
+    var = "agr_ssr_pro-" + lever.replace("ssr-", "", 1)
+    for level in range(1,5):
+      dm_fts[lever][level].rename_col('agr_ssr', var,'Variables')
+      dm_fts[lever][level].deepen()
+      dm_fts[lever][level].append(dict_ots[lever], dim='Years')
+      linear_fitting(dm_fts[lever][level], years_fts)
+      dm_fts[lever][level].filter({'Years':years_fts}, inplace=True)
+    dict_fts[lever] = dm_fts[lever]
+
+  # Lever - ssr-pro-.*
+  dict_lever_ssr_pro = {
+    lever: value
+    for lever, value in dict_ots.items()
+    if 'ssr-pro' in lever
+  }
+  for lever in dict_lever_ssr_pro:
+    # Create a copy across all dimensions to not have issues
+    dm_fts[lever] = copy.deepcopy(dm_fts['ssr-pro'])
+    # Create new variable name
+    var = "agr_ssr_pro-crop-processed-" + lever.replace("ssr-pro-", "", 1)
+    for level in range(1,5):
+      dm_fts[lever][level].rename_col('agr_ssr', var,'Variables')
+      dm_fts[lever][level].deepen()
+      dm_fts[lever][level].append(dict_ots[lever], dim='Years')
+      linear_fitting(dm_fts[lever][level], years_fts)
+      dm_fts[lever][level].filter({'Years':years_fts}, inplace=True)
+    dict_fts[lever] = dm_fts[lever]
+
+  # Lever - crop-share-intensive
+  lever = 'crop-share-intensive'
+  for level in range(1,5):
+    # Propagate the overall lever value across all feed categories
+    dm_ots = dict_ots[lever].copy()
+    dm_fts_temp = dm_fts[lever][level]
+    array_temp =  dm_fts[lever][level][:,years_fts[-1],'agr_land-use_share-intensive', np.newaxis] + \
+                  dm_ots[:,years_ots[-1],'agr_land-use_share-intensive',:] - \
+                  dm_ots[:,years_ots[-1],'agr_land-use_share-intensive',:] # +x-x To get the correct structure
+    # Append with ots
+    dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
+    # Linear fit
+    linear_fitting(dm_ots, years_fts)
+    dm_fts[lever][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
+  dict_fts[lever] = dm_fts[lever]
+
+  # Lever - crop-share-extensive
+  lever = 'crop-share-extensive'
+  for level in range(1,5):
+    # Propagate the overall lever value across all feed categories
+    dm_ots = dict_ots[lever].copy()
+    dm_fts_temp = dm_fts[lever][level]
+    array_temp =  dm_fts[lever][level][:,years_fts[-1],'agr_land-use_share-extensive', np.newaxis] + \
+                  dm_ots[:,years_ots[-1],'agr_land-use_share-extensive',:] - \
+                  dm_ots[:,years_ots[-1],'agr_land-use_share-extensive',:] # +x-x To get the correct structure
+    # Append with ots
+    dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
+    # Linear fit
+    linear_fitting(dm_ots, years_fts)
+    dm_fts[lever][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
+  dict_fts[lever] = dm_fts[lever]
+
+  # Lever - crop-share-organic
+  lever = 'crop-share-organic'
+  for level in range(1,5):
+    # Propagate the overall lever value across all feed categories
+    dm_ots = dict_ots[lever].copy()
+    dm_fts_temp = dm_fts[lever][level]
+    array_temp =  dm_fts[lever][level][:,years_fts[-1],'agr_land-use_share-organic', np.newaxis] + \
+                  dm_ots[:,years_ots[-1],'agr_land-use_share-organic',:] - \
+                  dm_ots[:,years_ots[-1],'agr_land-use_share-organic',:] # +x-x To get the correct structure
+    # Append with ots
+    dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
+    # Linear fit
+    linear_fitting(dm_ots, years_fts)
+    dm_fts[lever][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
+  dict_fts[lever] = dm_fts[lever]
+
+  # Lever - crop-losses
+  lever = 'crop-losses'
+  for level in range(1,5):
+    # Compute the reduction objective in 2050 compared to the last ots value,
+    # for each food category
+    dm_ots = dict_ots[lever].copy()
+    array_temp =  1 - ( 1 - dm_ots[:,years_ots[-1],'agr_crop_losses',:]) \
+                  * dm_fts[lever][level][:,years_fts[-1],'agr_crop_losses', np.newaxis]
+    # Append with ots
+    dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
+    # Linear fit
+    linear_fitting(dm_ots, years_fts)
+    dm_fts[lever][level] = dm_ots.filter({'Years':years_fts}, inplace=False)
+  dict_fts[lever] = dm_fts[lever]
 
   """# Lever - ssr-liv
   dict_lever_ssr_liv = ['ssr-liv-abp-dairy-milk',
@@ -2535,9 +2663,9 @@ dm_cal_dom_prod_crop, dm_cal_dom_prod_bev = crop_calibration(list_countries_calc
 dm_crop_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = trade_origin_processing(years_ots, list_countries_calc, file_dict)
 dm_cal_crop_area, dm_prod_share = production_share()
 dm_fxa_exports = exports_processing(list_countries_calc,file_dict)
-#dm_fts = fts_processing()
+dm_fts = fts_processing()
 
 # CalculationTree RUNNING PICKLE CREATION
-datamatrix_to_pickle()
+datamatrix_to_pickle(dm_fts)
 
 
