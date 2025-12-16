@@ -735,11 +735,13 @@ class DataMatrix:
         return dm_keep
 
     def rename_col_regex(self, str1, str2, dim):
-        # Rename all columns containing str1 with str2
-        col_in = [col for col in self.col_labels[dim] if re.search(str1, col)]
-        col_out = [re.sub(str1, str2, word) for word in col_in]
-        self.rename_col(col_in, col_out, dim=dim)
-        return
+      # Treat str1 as literal text (no regex needed by caller)
+      pattern = re.escape(str1)
+
+      col_in = [col for col in self.col_labels[dim] if re.search(pattern, col)]
+      col_out = [re.sub(pattern, str2, col) for col in col_in]
+
+      self.rename_col(col_in, col_out, dim=dim)
 
     def sort(self, dim):
         sort_index = np.argsort(np.array(self.col_labels[dim]))

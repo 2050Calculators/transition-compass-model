@@ -386,11 +386,13 @@ class ConstantDataMatrix:
         return
 
     def rename_col_regex(self, str1, str2, dim):
-        # Rename all columns containing str1 with str2
-        col_in = [col for col in self.col_labels[dim] if str1 in col]
-        col_out = [word.replace(str1, str2) for word in col_in]
-        self.rename_col(col_in, col_out, dim=dim)
-        return
+      # Treat str1 as literal text (no regex needed by caller)
+      pattern = re.escape(str1)
+
+      col_in = [col for col in self.col_labels[dim] if re.search(pattern, col)]
+      col_out = [re.sub(pattern, str2, col) for col in col_in]
+
+      self.rename_col(col_in, col_out, dim=dim)
     
     def switch_categories_order(self, cat1='Categories1', cat2='Categories2'):
         if 'Categories' not in cat1 or 'Categories' not in cat2:

@@ -2121,272 +2121,143 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
 
   return dm_crop_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot
 
-# CalculationLeaf SHARE PRODUCTION METHOD
+# CalculationLeaf AREA & SHARE PRODUCTION METHOD
 
-def production_share(dm_cal_liv_pop):
+def production_share():
 
-  # Step CATTLE (DAIRY & MEAT)
-  # Source: STAT-TAB Exploitations agricoles et animaux de rente selon le niveau de classification 3 par canton
-  # https://www.pxweb.bfs.admin.ch/pxweb/fr/px-x-0702000000_108/-/px-x-0702000000_108.px/
+  # Step DATA CROPS
+  # Source: Exploitations agricoles et surface agricole utile (SAU) selon le niveau de classification 3 par canton
+  # https://www.pxweb.bfs.admin.ch/pxweb/fr/px-x-0702000000_106/px-x-0702000000_106/px-x-0702000000_106.px
 
-  table_id = 'px-x-0702000000_108'
-  file = 'data/stat-tab/livestock_cattle.pickle'
+  table_id = 'px-x-0702000000_106'
+  file = 'data/stat-tab/crop_area_method.pickle'
+
   try:
     with open(file, 'rb') as handle:
-      dm_cattle = pickle.load(handle)
+      dm_crop_area = pickle.load(handle)
       print(
-        f'The livestock units are read from file {file}. Delete it if you want to update data from api.')
+        f'The crops are read from file {file}. Delete it if you want to update data from api.')
   except OSError:
     structure, title = get_data_api_CH(table_id, mode='example', language='fr')
-    i = 0
-    filtering = {
-      "Unité d'observation": ['Cheptel - Vaches laitières',
-                              'Cheptel - Autres vaches',
-                              'Cheptel - Veaux et autres bovins - de 1 an',
-                              'Cheptel - Autres bovins'],
-      'Canton': ['Suisse'],
-      'Zone de production agricole': ['Zone de production agricole - total'],
-      'Classe de taille': ['Classe de taille - total'],
-      "Système d'exploitation": ['Système d\'exploitation - total', 'Exploitations biologiques'],
-      "Forme d'exploitation": ["Forme d'exploitation - total"],
-      'Année': structure['Année']}
-
+    # The table is too big to be downloaded at once
+    filtering = {"Unité d'observation": structure["Unité d'observation"],
+                 'Canton': ['Suisse'],
+                 'Zone de production agricole': [
+                   'Zone de production agricole - total'],
+                 "Système d'exploitation": ['Système d\'exploitation - total', 'Exploitations biologiques',
+                                            'Exploitations conventionnelles', 'Indéterminé'],
+                 "Forme d'exploitation": ["Forme d'exploitation - total"],
+                 'Année': structure['Année']}
     mapping_dim = {'Country': 'Canton',
                    'Years': 'Année',
                    'Variables': 'Zone de production agricole',
                    'Categories1': "Unité d'observation",
                    'Categories2': "Système d'exploitation"}
-
-    # Extract data
-    dm = get_data_api_CH(table_id, mode='extract', filter=filtering,
+    dm_crop_area = get_data_api_CH(table_id, mode='extract', filter=filtering,
                          mapping_dims=mapping_dim,
-                         units=['animals'], language='fr')
-    # Format
-    dm.rename_col('Suisse', 'Switzerland',
+                         units=['ha'], language='fr')
+    dm_crop_area.drop(dim='Categories1',
+            col_label=['Exploitations', 'SAU - Total (en ha)'])
+    dm_crop_area.rename_col_regex('SAU - ', '', dim='Categories1')
+    dm_crop_area.rename_col_regex(' (en ha)', '', dim='Categories1')
+    dm_crop_area.rename_col('Suisse', 'Switzerland',
                   'Country')
-    dm.rename_col('Zone de production agricole - total', 'agr_livestock',
-                  'Variables')
-    dm.rename_col('Système d\'exploitation - total', 'total',
+    dm_crop_area.rename_col('Zone de production agricole - total','agr_land-use',
+                            dim='Variables')
+    dm_crop_area.rename_col('Système d\'exploitation - total', 'total',
                   'Categories2')
-    dm.rename_col('Exploitations biologiques', 'organic',
+    dm_crop_area.rename_col('Exploitations biologiques', 'organic',
                   'Categories2')
-    dm.rename_col_regex('Cheptel - ', '', dim='Categories1')
-    dict_cat = {'abp-dairy-milk': ['Vaches laitières'],
-                'other-cattle': ['Autres vaches'],
-                'young-cattle': ['Veaux et autres bovins - de 1 an'],
-                'other-bovins': ['Autres bovins']}
-    dm.groupby(dict_cat, dim='Categories1', inplace=True)
-    dm.sort('Years')
-    dm.filter({'Years': years_ots}, inplace=True)
-    linear_fitting(dm, years_ots)
+    dm_crop_area.rename_col('Exploitations conventionnelles', 'intensive',
+                            'Categories2')
+    dm_crop_area.rename_col('Indéterminé', 'extensive',
+                            'Categories2')
+
+    cat_map = {
+      "crop-cereal": ["Blé", "Orge", "Avoine", "Seigle", "Triticale",
+                      "Epeautre", 'Céréales en général',
+                      "Méteil et autres céréales panifiables", "Maïs grain",
+                      'Autres céréales', "Maïs d'ensilage et maïs vert", "Houblon"],
+      "crop-fruit": ["Baies annuelles", "Cultures de baies sous abri",
+                     'Cultures fruitières en général', 'Pommes',
+                     'Poires', 'Fruits à noyaux', 'Baies pluriannuelles', 'Vigne'],
+      "crop-oilcrop": ["Colza pour matière première renouvelable",
+                       "Tournesol pour matière première renouvelable",
+                       "Lin", "Chanvre", 'Colza pour huile comestible',
+                       'Tournesol pour huile comestible',
+                       'Courge à huile'],
+      "crop-pulse": ['Pois protéagineux', 'Féveroles',
+                     'Légumineuses en général', 'Lupin fourrager', "Soja"],
+      "crop-starch": ["Pommes de terre"],
+      "crop-sugarcrop": ["Betteraves sucrières","Betteraves fourragères"],
+      "crop-veg": ["Cultures maraîchères de plein champ",
+                   "Cultures maraîchères sous abri", "Asperges",
+                   "Rhubarbe"],
+      "remove": ["Plantes aromatiques et médicinales annuelles",
+                 "Plantes aromatiques et médicinales pluriannuelles",
+                 "Arbrisseaux ornementaux", "Sapins de Noël",
+                 "Pépinières forestières hors forêt sur SAU",
+                 "Autres pépinières", "Prairies artificielles", "Pâturages",
+                 "Prairies extensives", "Prairies peu intensives",
+                 "Prairies dans la région d'estivage",
+                 "Autres prairies permanentes",
+                 "Surfaces à litières",
+                 "Haies, bosquets champêtres et berges boisées",
+                 "Matières premières renouvelables annuelles",
+                 "Matières premières renouvelables pluriannuelles",
+                 "Autres SAU", "Tabac", "Jachère", "Autres terres ouvertes",
+                 'Méteil et autres céréales fourragères'],
+      "other": ["Cultures horticoles de plein champ annuelles",
+                "Cultures horticoles sous abri", "Autres cultures pérennes",
+                "Autres cultures sous abri", "Cultures sous abri en général"]
+    }
+
+    dm_crop_area.groupby(cat_map, dim='Categories1', inplace=True)
+    dm_crop_area.drop(dim='Categories1', col_label=['remove'])
+
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     f = os.path.join(current_file_directory, file)
     with open(f, 'wb') as handle:
-      pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    dm_cattle = dm.copy()
-
-  # For abp-dairy-milk & other-cattle: extrapolate for missing years (before 1999)
-  years_temp = create_years_list(1999, 2023, 1)
-  dm_temp = dm_cattle.filter({'Years': years_temp, 'Categories1': ['abp-dairy-milk', 'other-cattle']}, inplace=False)
-  linear_fitting(dm_temp, years_ots)
-  dm_cattle[:,:,:,'abp-dairy-milk',:] = dm_temp[:,:,:,'abp-dairy-milk',:]
-  dm_cattle[:, :, :, 'other-cattle', :] = dm_temp[:, :, :, 'other-cattle',:]
-
-  # Convert animals to lsu based on EUCALC doc
-  # Note: we account for young cattle same as cattle to match FAOSTAT
-  lsu_conversion = {'other-cattle': 0.6,
-                    'young-cattle': 0.6,
-                    'abp-dairy-milk': 0.7,
-                    'other-bovins': 0.6}
-
-  for cat in dm_cattle.col_labels['Categories1']:
-    dm_cattle[:, :, 'agr_livestock', cat, :] = lsu_conversion[cat] \
-                                            * dm_cattle[:, :,'agr_livestock', cat, :]
-  dm_cattle.change_unit('agr_livestock', old_unit='animals', new_unit='lsu',
-                     factor=1)
-
-  # Sum cattle meat = young-cattle + other-cattle + other-bovins
-  dm_cattle.groupby({'meat-bovine': ['young-cattle', 'other-cattle', 'other-bovins']}, dim='Categories1', inplace=True)
+      pickle.dump(dm_crop_area, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-  # Step POULTRY (LAYERS & BROILERS)
-  table_id = 'px-x-0702000000_108'
-  file = 'data/stat-tab/livestock_poultry.pickle'
-  try:
-    with open(file, 'rb') as handle:
-      dm_poultry = pickle.load(handle)
-      print(
-        f'The livestock units are read from file {file}. Delete it if you want to update data from api.')
-  except OSError:
-    structure, title = get_data_api_CH(table_id, mode='example', language='fr')
-    i = 0
-    filtering = {
-      "Unité d'observation": ['Cheptel - Poules de ponte et d\'élevage',
-                              'Cheptel - Poulets de chair',
-                              'Cheptel - Dindes',
-                              'Cheptel - Canards',
-                              'Cheptel - Oies'],
-      'Canton': ['Suisse'],
-      'Zone de production agricole': ['Zone de production agricole - total'],
-      'Classe de taille': ['Classe de taille - total'],
-      "Système d'exploitation": ['Système d\'exploitation - total', 'Exploitations biologiques'],
-      "Forme d'exploitation": ["Forme d'exploitation - total"],
-      'Année': structure['Année']}
+  # Linear fitting
+  linear_fitting(dm_crop_area, years_ots)
+  dm_crop_area.filter({'Years': years_ots}, inplace=True)
 
-    mapping_dim = {'Country': 'Canton',
-                   'Years': 'Année',
-                   'Variables': 'Zone de production agricole',
-                   'Categories1': "Unité d'observation",
-                   'Categories2': "Système d'exploitation"}
+  # Compute share of organic, intensive and extensive (we assume undertermined)
+  # crop area
 
-    # Extract data
-    dm = get_data_api_CH(table_id, mode='extract', filter=filtering,
-                         mapping_dims=mapping_dim,
-                         units=['animals'], language='fr')
-    # Format
-    dm.rename_col('Suisse', 'Switzerland',
-                  'Country')
-    dm.rename_col('Zone de production agricole - total', 'agr_livestock',
-                  'Variables')
-    dm.rename_col('Système d\'exploitation - total', 'total',
-                  'Categories2')
-    dm.rename_col('Exploitations biologiques', 'organic',
-                  'Categories2')
-    dm.rename_col_regex('Cheptel - ', '', dim='Categories1')
-    dict_cat = {'abp-hens-egg': ['Poules de ponte et d\'élevage'],
-                'meat-poultry': ['Poulets de chair'],
-                'meat-other-poultry': ['Dindes',
-                                       'Canards',
-                                       'Oies']}
-    dm.groupby(dict_cat, dim='Categories1', inplace=True)
-    dm.sort('Years')
-    dm.filter({'Years': years_ots}, inplace=True)
-    linear_fitting(dm, years_ots)
-    current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    f = os.path.join(current_file_directory, file)
-    with open(f, 'wb') as handle:
-      pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    dm_poultry = dm.copy()
-
-  # Convert animals to lsu
-  # young-cattle from https://ec.europa.eu/eurostat/statistics-explained/index.php?title=Glossary:Livestock_unit_(LSU),
-  # else based on EUCALC doc
-  lsu_conversion = {'abp-hens-egg': 0.014,
-                    'meat-poultry': 0.007,
-                    'meat-other-poultry': 0.03}
-
-  for cat in dm_poultry.col_labels['Categories1']:
-    dm_poultry[:, :, 'agr_livestock', cat, :] = lsu_conversion[cat] \
-                                            * dm_poultry[:, :,'agr_livestock', cat, :]
-  dm_poultry.change_unit('agr_livestock', old_unit='animals', new_unit='lsu',
-                     factor=1)
-
-  # Sum poultry meat = young-cattle + other-cattle + other-bovins
-  dm_poultry.groupby({'meat-poultry': ['meat-poultry', 'meat-other-poultry']}, dim='Categories1', inplace=True)
-
-  # Step OTHERS (PIG, SHEEP, OTHERS)
-  # Source: Emplois, exploitations agricoles, surface agricole utile (SAU) et animaux de rente selon le niveau de classification 1 par canton
-  # https://www.pxweb.bfs.admin.ch/pxweb/fr/px-x-0702000000_101/-/px-x-0702000000_101.px
-
-  table_id = 'px-x-0702000000_101'
-  file = 'data/stat-tab/livestock_others.pickle'
-  try:
-    with open(file, 'rb') as handle:
-      dm_others = pickle.load(handle)
-      print(
-        f'The livestock units are read from file {file}. Delete it if you want to update data from api.')
-  except OSError:
-    structure, title = get_data_api_CH(table_id, mode='example', language='fr')
-    i = 0
-    filtering = {
-      "Unité d'observation": ['Cheptel - Equidés',
-                              'Cheptel - Moutons',
-                              'Cheptel - Chèvres',
-                              'Cheptel - Porcs',
-                              'Cheptel - Autres animaux'],
-      'Canton': ['Suisse'],
-      'Zone de production agricole': ['Zone de production agricole - total'],
-      'Classe de taille': ['Classe de taille - total'],
-      "Système d'exploitation": ['Système d\'exploitation - total', 'Exploitations biologiques'],
-      "Forme d'exploitation": ["Forme d'exploitation - total"],
-      'Année': structure['Année']}
-
-    mapping_dim = {'Country': 'Canton',
-                   'Years': 'Année',
-                   'Variables': 'Zone de production agricole',
-                   'Categories1': "Unité d'observation",
-                   'Categories2': "Système d'exploitation"}
-
-    # Extract data
-    dm = get_data_api_CH(table_id, mode='extract', filter=filtering,
-                         mapping_dims=mapping_dim,
-                         units=['animals'], language='fr')
-    # Format
-    dm.rename_col('Suisse', 'Switzerland',
-                  'Country')
-    dm.rename_col('Zone de production agricole - total', 'agr_livestock',
-                  'Variables')
-    dm.rename_col('Système d\'exploitation - total', 'total',
-                  'Categories2')
-    dm.rename_col('Exploitations biologiques', 'organic',
-                  'Categories2')
-    dm.rename_col_regex('Cheptel - ', '', dim='Categories1')
-    dict_cat = {'meat-sheep': ['Moutons', 'Chèvres'],
-                'meat-pig': ['Porcs'],
-                'meat-horse': ['Equidés'],
-                'meat-oth-animal': ['Autres animaux']}
-    dm.groupby(dict_cat, dim='Categories1', inplace=True)
-    dm.sort('Years')
-    dm.filter({'Years': years_ots}, inplace=True)
-    linear_fitting(dm, years_ots)
-    current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    f = os.path.join(current_file_directory, file)
-    with open(f, 'wb') as handle:
-      pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    dm_others = dm.copy()
-
-  # Convert animals to lsu
-  # young-cattle from https://ec.europa.eu/eurostat/statistics-explained/index.php?title=Glossary:Livestock_unit_(LSU),
-  # else based on EUCALC doc
-  lsu_conversion = {'meat-sheep': 0.1,
-                    'meat-pig': 0.22,
-                    'meat-horse': 0.8,
-                    'meat-oth-animal': 0.03}
-
-  for cat in dm_others.col_labels['Categories1']:
-    dm_others[:, :, 'agr_livestock', cat, :] = lsu_conversion[cat] \
-                                            * dm_others[:, :,'agr_livestock', cat, :]
-  dm_others.change_unit('agr_livestock', old_unit='animals', new_unit='lsu',
-                     factor=1)
-
-  # Group Horses and other animals
-  dm_others.groupby({'meat-oth-animal': ['meat-horse', 'meat-oth-animal']}, dim='Categories1', inplace=True)
-
-  # Append dms
-  dm_cattle.append(dm_poultry, dim='Categories1')
-  dm_cattle.append(dm_others, dim='Categories1')
-  dm_prod_share = dm_cattle.copy()
-
-  # Step CAL ORGANIC LIVESTOCK
+  # Step CAL ORGANIC, INTENSIVE, EXTENSIVE CROPS
+  # Note: for later in landuse module?
   # Create copy for calibration
-  dm_cal_liv_pop_org = dm_prod_share.filter({'Categories2': ['organic']})
-  dm_cal_liv_pop_org.switch_categories_order(cat1='Categories2', cat2='Categories1')
-  dm_cal_liv_pop_org = dm_cal_liv_pop_org.flatten()
-  dm_cal_liv_pop_org.rename_col_regex('organic_', '', dim='Categories1')
-  dm_cal_liv_pop_org.rename_col_regex('agr_livestock', 'cal_agr_liv-population_organic', dim='Variables')
+  dm_cal_crop_area = dm_crop_area.filter({'Categories2': ['organic']})
+  #dm_cal_crop_area.switch_categories_order(cat1='Categories2', cat2='Categories1')
+  #dm_cal_crop_area = dm_cal_crop_area.flatten()
+  #dm_cal_crop_area.rename_col_regex('organic_', '', dim='Categories1')
+  #dm_cal_crop_area.rename_col_regex('agr_livestock', 'cal_agr_liv-population_organic', dim='Variables')
 
-  # Compute share of organic production compared to total
-  dm_prod_share.switch_categories_order(cat1='Categories2', cat2='Categories1')
-  dm_prod_share = dm_prod_share.flattest()
+  # Step SHARE ORGANIC, INTENSIVE, EXTENSIVE CROPS
+  dm_crop_area.switch_categories_order(cat1='Categories2', cat2='Categories1')
+  dm_prod_share = dm_crop_area.flattest()
   dm_prod_share.deepen()
-  dm_prod_share.operation('agr_livestock_organic', '/',
-                            'agr_livestock_total',
-                            out_col='livestock_share-organic', unit='-')
+  dm_prod_share.operation('agr_land-use_organic', '/',
+                            'agr_land-use_total',
+                            out_col='agr_land-use_share-organic', unit='-')
+  dm_prod_share.operation('agr_land-use_extensive', '/',
+                          'agr_land-use_total',
+                          out_col='agr_land-use_share-extensive', unit='-')
+  dm_prod_share.operation('agr_land-use_intensive', '/',
+                          'agr_land-use_total',
+                          out_col='agr_land-use_share-intensive', unit='-')
+
 
   # Filter
-  dm_prod_share.filter({'Variables': ['livestock_share-organic']}, inplace=True)
+  dm_prod_share.filter({'Variables': ['agr_land-use_share-organic',
+                                      'agr_land-use_share-extensive',
+                                      'agr_land-use_share-intensive']}, inplace=True)
 
-  return dm_prod_share, dm_cal_liv_pop_org
+  return dm_cal_crop_area, dm_prod_share
 
 
 
@@ -2511,10 +2382,11 @@ def datamatrix_to_pickle():
   # crop-losses
   dict_ots['crop-losses'] = dm_losses
 
-  # crop-share-intensive
-
-  # crop-share-organic
-
+  # crop-share-.*
+  dict_ots['crop-share-organic'] = dm_prod_share.filter({'Variables': ['agr_land-use_share-organic']})
+  dict_ots['crop-share-extensive'] = dm_prod_share.filter({'Variables': ['agr_land-use_share-extensive']})
+  dict_ots['crop-share-intensive'] = dm_prod_share.filter(
+    {'Variables': ['agr_land-use_share-intensive']})
 
 
   # LeversToDatamatrix FTS -----------------------------------------------------
@@ -2661,6 +2533,7 @@ dm_ssr_crop, df_processing_yield_fxa, dm_imports_fbs = self_sufficiency_processi
 dm_fxa_pro_yield = fxa_processing_yield(df_processing_yield_fxa)
 dm_cal_dom_prod_crop, dm_cal_dom_prod_bev = crop_calibration(list_countries_calc, dm_losses, dm_fxa_pro_yield, cdm_bev)
 dm_crop_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = trade_origin_processing(years_ots, list_countries_calc, file_dict)
+dm_cal_crop_area, dm_prod_share = production_share()
 dm_fxa_exports = exports_processing(list_countries_calc,file_dict)
 #dm_fts = fts_processing()
 
