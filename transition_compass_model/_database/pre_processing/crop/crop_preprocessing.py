@@ -166,7 +166,7 @@ def crop_losses():
 
 # CalculationLeaf CROP YIELD
 
-def crop_yield():
+def crop_yield(dm_prod_share):
 
   # CROPS  (QCL) (for everything except lgn-energycrop, gas-energycrop, algae and insect)
   try:
@@ -176,13 +176,21 @@ def crop_yield():
     list_elements = ['Yield']
 
     list_items = ['Cereals, primary + (Total)',
-                  'Fibre Crops, Fibre Equivalent + (Total)',
                   'Fruit Primary + (Total)',
                   'Oilcrops, Oil Equivalent + (Total)',
                   'Pulses, Total + (Total)', 'Rice',
                   'Roots and Tubers, Total + (Total)',
                   'Sugar Crops Primary + (Total)',
                   'Vegetables Primary + (Total)']
+
+    """list_items = ['Cereals, primary + (Total)',
+                  'Fibre Crops, Fibre Equivalent + (Total)',
+                  'Fruit Primary + (Total)',
+                  'Oilcrops, Oil Equivalent + (Total)',
+                  'Pulses, Total + (Total)', 'Rice',
+                  'Roots and Tubers, Total + (Total)',
+                  'Sugar Crops Primary + (Total)',
+                  'Vegetables Primary + (Total)']"""
 
     # 1990 - 2022
     code = 'QCL'
@@ -203,9 +211,9 @@ def crop_yield():
       'item': my_items,
       'year': my_years
     }
-    df_yield_1990_2022 = faostat.get_data_df(code, pars=my_pars, strval=False)
-    df_yield_1990_2022.loc[
-      df_yield_1990_2022['Item'].str.contains('Rice', case=False,
+    df_yield = faostat.get_data_df(code, pars=my_pars, strval=False)
+    df_yield.loc[
+      df_yield['Item'].str.contains('Rice', case=False,
                                               na=False), 'Item'] = 'Rice and products'
     df_yield.to_csv(file_dict['yield'], index=False)
 
@@ -286,6 +294,59 @@ def crop_yield():
                                   level='all')
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
   dm_yield = DataMatrix.create_from_df(df_ots, num_cat=1)
+
+  # Step Yield evolution_o/i & _e/i (organic/extensive with respect to intensive) [-]
+  # fixme Source: find correct source
+  yield_evolution_o = {'cereal': 0.8,
+                      'sugarcrop': 0.8,
+                      'oilcrop': 0.8,
+                      'veg': 0.8,
+                      'fruit': 0.8,
+                      'starch': 0.8,
+                      'pulse': 0.8}
+  yield_evolution_e = {'cereal': 0.8,
+                      'sugarcrop': 0.8,
+                      'oilcrop': 0.8,
+                      'veg': 0.8,
+                      'fruit': 0.8,
+                      'starch': 0.8,
+                      'pulse': 0.8}
+
+  # Intensive yield_i [kcal/ha] = yield_T / [share_i + evol_o*share_o + evol_e*share_e]
+  dm_yield.rename_col('agr_crop_yield',
+                          'agr_crop_yield_total',
+                          dim='Variables')
+  dm_yield.add(0.0, dim='Variables', dummy=True,
+                   col_label='agr_crop_yield_intensive')
+  for cat in dm_yield.col_labels['Categories1']:
+    dm_yield['Switzerland', :, 'agr_crop_yield_intensive', cat] = \
+      dm_yield['Switzerland', :, 'agr_crop_yield_total', cat] \
+      / (dm_prod_share['Switzerland', :, 'agr_land-use_share-intensive', cat] +
+         dm_prod_share['Switzerland', :, 'agr_land-use_share-organic', cat] * yield_evolution_o[cat] +
+         dm_prod_share['Switzerland', :, 'agr_land-use_share-extensive', cat] * yield_evolution_e[cat])
+
+  # Organic yield_c [kcal/lsu] =  yield_i [kcal/lsu] * yield evolution_o/i [-]
+  dm_yield.add(0.0, dim='Variables', dummy=True,
+                   col_label='agr_crop_yield_organic')
+  for cat in dm_yield.col_labels['Categories1']:
+    dm_yield[:, :, 'agr_crop_yield_organic', cat] = \
+      dm_yield[:, :, 'agr_crop_yield_intensive', cat] \
+      * yield_evolution_o[cat]
+
+  # Extensive yield_c [kcal/lsu] =  yield_i [kcal/lsu] * yield evolution_o/i [-]
+  dm_yield.add(0.0, dim='Variables', dummy=True,
+                   col_label='agr_crop_yield_extensive')
+  for cat in dm_yield.col_labels['Categories1']:
+    dm_yield[:, :, 'agr_crop_yield_extensive', cat] = \
+      dm_yield[:, :, 'agr_crop_yield_intensive', cat] \
+      * yield_evolution_e[cat]
+
+  # Format yield
+  dm_yield.filter({'Variables': ['agr_crop_yield_organic',
+                                 'agr_crop_yield_extensive',
+                                 'agr_crop_yield_intensive',
+                                 'agr_crop_yield_total']}, inplace=True)
+  linear_fitting(dm_yield, years_all)
 
   return dm_yield
 
@@ -2181,23 +2242,23 @@ def production_share():
                             'Categories2')
 
     cat_map = {
-      "crop-cereal": ["Blé", "Orge", "Avoine", "Seigle", "Triticale",
+      "cereal": ["Blé", "Orge", "Avoine", "Seigle", "Triticale",
                       "Epeautre", 'Céréales en général',
                       "Méteil et autres céréales panifiables", "Maïs grain",
                       'Autres céréales', "Maïs d'ensilage et maïs vert", "Houblon"],
-      "crop-fruit": ["Baies annuelles", "Cultures de baies sous abri",
+      "fruit": ["Baies annuelles", "Cultures de baies sous abri",
                      'Cultures fruitières en général', 'Pommes',
                      'Poires', 'Fruits à noyaux', 'Baies pluriannuelles', 'Vigne'],
-      "crop-oilcrop": ["Colza pour matière première renouvelable",
+      "oilcrop": ["Colza pour matière première renouvelable",
                        "Tournesol pour matière première renouvelable",
                        "Lin", "Chanvre", 'Colza pour huile comestible',
                        'Tournesol pour huile comestible',
                        'Courge à huile'],
-      "crop-pulse": ['Pois protéagineux', 'Féveroles',
+      "pulse": ['Pois protéagineux', 'Féveroles',
                      'Légumineuses en général', 'Lupin fourrager', "Soja"],
-      "crop-starch": ["Pommes de terre"],
-      "crop-sugarcrop": ["Betteraves sucrières","Betteraves fourragères"],
-      "crop-veg": ["Cultures maraîchères de plein champ",
+      "starch": ["Pommes de terre"],
+      "sugarcrop": ["Betteraves sucrières","Betteraves fourragères"],
+      "veg": ["Cultures maraîchères de plein champ",
                    "Cultures maraîchères sous abri", "Asperges",
                    "Rhubarbe"],
       "remove": ["Plantes aromatiques et médicinales annuelles",
@@ -2221,6 +2282,7 @@ def production_share():
 
     dm_crop_area.groupby(cat_map, dim='Categories1', inplace=True)
     dm_crop_area.drop(dim='Categories1', col_label=['remove'])
+    dm_crop_area.drop(dim='Categories1', col_label=['other'])
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     f = os.path.join(current_file_directory, file)
@@ -2357,6 +2419,7 @@ def datamatrix_to_pickle(dm_fts):
   dict_fxa['processing-yield'] = dm_fxa_pro_yield
   dict_fxa['split-import'] = dm_crop_trade_origin
   dict_fxa['share-export'] = dm_fxa_exports
+  dict_fxa['yield'] = dm_yield
 
 
   # CalibrationDataToDatamatrix ------------------------------------------------
@@ -2664,12 +2727,12 @@ file_dict = {'losses': 'data/faostat/losses.csv',
 
 cdm_kcal, cdm_bev = constant()
 dm_losses = crop_losses()
-dm_yield = crop_yield()
 dm_ssr_crop, df_processing_yield_fxa, dm_imports_fbs = self_sufficiency_processing(years_ots, list_countries_calc, file_dict)
 dm_fxa_pro_yield = fxa_processing_yield(df_processing_yield_fxa)
 dm_cal_dom_prod_crop, dm_cal_dom_prod_bev = crop_calibration(list_countries_calc, dm_losses, dm_fxa_pro_yield, cdm_bev)
 dm_crop_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = trade_origin_processing(years_ots, list_countries_calc, file_dict)
 dm_cal_crop_area, dm_prod_share = production_share()
+dm_yield = crop_yield(dm_prod_share)
 dm_fxa_exports = exports_processing(list_countries_calc,file_dict)
 dm_fts = fts_processing()
 

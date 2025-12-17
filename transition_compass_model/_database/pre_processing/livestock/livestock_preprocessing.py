@@ -2270,7 +2270,7 @@ def yield_slaughter_rate(df_liv_pop, dm_prod_share):
                               unit='kcal/lsu')
 
 
-    # Yield evolution_o/i (organic with respect to intensive) [-] HERE
+    # Step Yield evolution_o/i (organic with respect to intensive) [-]
     # Source: animal welfare working paper
     yield_evolution = {'meat-bovine': 0.8,
                       'meat-poultry': 0.8,
