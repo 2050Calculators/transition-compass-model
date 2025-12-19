@@ -320,7 +320,10 @@ def get_crop_prod(table_id, file, years_ots):
                 "Cultures sous abri en général",
             ],
         }
+
         # FIXME: Where should bettreve fourrageres go ?
+        for key, cat_list in cat_map.items():
+            cat_map[key] = [cat + " (en ha)" for cat in cat_list]
         dm.groupby(cat_map, dim="Categories1", inplace=True)
         dm.drop(dim="Categories1", col_label=["remove"])
         dm.rename_col(
@@ -329,6 +332,7 @@ def get_crop_prod(table_id, file, years_ots):
 
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(current_file_directory, file)
+        dm.sort("Years")
         with open(f, "wb") as handle:
             pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
