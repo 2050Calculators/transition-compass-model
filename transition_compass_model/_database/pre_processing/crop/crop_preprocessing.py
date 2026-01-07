@@ -321,9 +321,9 @@ def crop_yield(dm_prod_share):
   for cat in dm_yield.col_labels['Categories1']:
     dm_yield['Switzerland', :, 'agr_crop_yield_intensive', cat] = \
       dm_yield['Switzerland', :, 'agr_crop_yield_total', cat] \
-      / (dm_prod_share['Switzerland', :, 'agr_land-use_share-intensive', cat] +
-         dm_prod_share['Switzerland', :, 'agr_land-use_share-organic', cat] * yield_evolution_o[cat] +
-         dm_prod_share['Switzerland', :, 'agr_land-use_share-extensive', cat] * yield_evolution_e[cat])
+      / (dm_prod_share['Switzerland', :, 'agr_share_intensive', cat] +
+         dm_prod_share['Switzerland', :, 'agr_share_organic', cat] * yield_evolution_o[cat] +
+         dm_prod_share['Switzerland', :, 'agr_share_extensive', cat] * yield_evolution_e[cat])
 
   # Organic yield_c [kcal/lsu] =  yield_i [kcal/lsu] * yield evolution_o/i [-]
   dm_yield.add(0.0, dim='Variables', dummy=True,
@@ -2300,8 +2300,9 @@ def production_share():
   # Step CAL ORGANIC, INTENSIVE, EXTENSIVE CROPS
   # Note: for later in landuse module?
   # Create copy for calibration
-  dm_cal_crop_area = dm_crop_area.filter({'Categories2': ['organic']})
-  #dm_cal_crop_area.switch_categories_order(cat1='Categories2', cat2='Categories1')
+  dm_cal_crop_area = dm_crop_area.filter({'Categories2': ['intensive','extensive','organic']})
+  dm_cal_crop_area.rename_col('agr_land-use', 'agr_cropland', dim='Variables')
+  dm_cal_crop_area.switch_categories_order(cat1='Categories2', cat2='Categories1')
   #dm_cal_crop_area = dm_cal_crop_area.flatten()
   #dm_cal_crop_area.rename_col_regex('organic_', '', dim='Categories1')
   #dm_cal_crop_area.rename_col_regex('agr_livestock', 'cal_agr_liv-population_organic', dim='Variables')
@@ -2312,19 +2313,19 @@ def production_share():
   dm_prod_share.deepen()
   dm_prod_share.operation('agr_land-use_organic', '/',
                             'agr_land-use_total',
-                            out_col='agr_land-use_share-organic', unit='-')
+                            out_col='agr_share_organic', unit='-')
   dm_prod_share.operation('agr_land-use_extensive', '/',
                           'agr_land-use_total',
-                          out_col='agr_land-use_share-extensive', unit='-')
+                          out_col='agr_share_extensive', unit='-')
   dm_prod_share.operation('agr_land-use_intensive', '/',
                           'agr_land-use_total',
-                          out_col='agr_land-use_share-intensive', unit='-')
+                          out_col='agr_share_intensive', unit='-')
 
 
   # Filter
-  dm_prod_share.filter({'Variables': ['agr_land-use_share-organic',
-                                      'agr_land-use_share-extensive',
-                                      'agr_land-use_share-intensive']}, inplace=True)
+  dm_prod_share.filter({'Variables': ['agr_share_organic',
+                                      'agr_share_extensive',
+                                      'agr_share_intensive']}, inplace=True)
 
   return dm_cal_crop_area, dm_prod_share
 
@@ -2428,6 +2429,7 @@ def datamatrix_to_pickle(dm_fts):
   dict_fxa['cal_agr_domestic-production_bev'] = dm_cal_dom_prod_bev
   dict_fxa['cal_agr_imports-crop_total'] = dm_cal_imports_tot
   dict_fxa['cal_agr_imports-crop_countries'] = dm_cal_imports_countries
+  dict_fxa['cal_crop-share-area'] = dm_cal_crop_area
 
   # LeversToDatamatrix OTS -----------------------------------------------------
   dict_ots = {}
@@ -2462,10 +2464,10 @@ def datamatrix_to_pickle(dm_fts):
   dict_ots['crop-losses'] = dm_losses
 
   # crop-share-.*
-  dict_ots['crop-share-organic'] = dm_prod_share.filter({'Variables': ['agr_land-use_share-organic']})
-  dict_ots['crop-share-extensive'] = dm_prod_share.filter({'Variables': ['agr_land-use_share-extensive']})
+  dict_ots['crop-share-organic'] = dm_prod_share.filter({'Variables': ['agr_share_organic']})
+  dict_ots['crop-share-extensive'] = dm_prod_share.filter({'Variables': ['agr_share_extensive']})
   dict_ots['crop-share-intensive'] = dm_prod_share.filter(
-    {'Variables': ['agr_land-use_share-intensive']})
+    {'Variables': ['agr_share_intensive']})
 
 
   # LeversToDatamatrix FTS -----------------------------------------------------
@@ -2571,12 +2573,12 @@ def datamatrix_to_pickle(dm_fts):
   # Lever - crop-share-intensive
   lever = 'crop-share-intensive'
   for level in range(1,5):
-    # Propagate the overall lever value across all feed categories
+    # Propagate the overall lever value across all categories
     dm_ots = dict_ots[lever].copy()
     dm_fts_temp = dm_fts[lever][level]
-    array_temp =  dm_fts[lever][level][:,years_fts[-1],'agr_land-use_share-intensive', np.newaxis] + \
-                  dm_ots[:,years_ots[-1],'agr_land-use_share-intensive',:] - \
-                  dm_ots[:,years_ots[-1],'agr_land-use_share-intensive',:] # +x-x To get the correct structure
+    array_temp =  dm_fts[lever][level][:,years_fts[-1],'agr_share_intensive', np.newaxis] + \
+                  dm_ots[:,years_ots[-1],'agr_share_intensive',:] - \
+                  dm_ots[:,years_ots[-1],'agr_share_intensive',:] # +x-x To get the correct structure
     # Append with ots
     dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
     # Linear fit
@@ -2587,12 +2589,12 @@ def datamatrix_to_pickle(dm_fts):
   # Lever - crop-share-extensive
   lever = 'crop-share-extensive'
   for level in range(1,5):
-    # Propagate the overall lever value across all feed categories
+    # Propagate the overall lever value across all categories
     dm_ots = dict_ots[lever].copy()
     dm_fts_temp = dm_fts[lever][level]
-    array_temp =  dm_fts[lever][level][:,years_fts[-1],'agr_land-use_share-extensive', np.newaxis] + \
-                  dm_ots[:,years_ots[-1],'agr_land-use_share-extensive',:] - \
-                  dm_ots[:,years_ots[-1],'agr_land-use_share-extensive',:] # +x-x To get the correct structure
+    array_temp =  dm_fts[lever][level][:,years_fts[-1],'agr_share_extensive', np.newaxis] + \
+                  dm_ots[:,years_ots[-1],'agr_share_extensive',:] - \
+                  dm_ots[:,years_ots[-1],'agr_share_extensive',:] # +x-x To get the correct structure
     # Append with ots
     dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
     # Linear fit
@@ -2603,12 +2605,12 @@ def datamatrix_to_pickle(dm_fts):
   # Lever - crop-share-organic
   lever = 'crop-share-organic'
   for level in range(1,5):
-    # Propagate the overall lever value across all feed categories
+    # Propagate the overall lever value across all categories
     dm_ots = dict_ots[lever].copy()
     dm_fts_temp = dm_fts[lever][level]
-    array_temp =  dm_fts[lever][level][:,years_fts[-1],'agr_land-use_share-organic', np.newaxis] + \
-                  dm_ots[:,years_ots[-1],'agr_land-use_share-organic',:] - \
-                  dm_ots[:,years_ots[-1],'agr_land-use_share-organic',:] # +x-x To get the correct structure
+    array_temp =  dm_fts[lever][level][:,years_fts[-1],'agr_share_organic', np.newaxis] + \
+                  dm_ots[:,years_ots[-1],'agr_share_organic',:] - \
+                  dm_ots[:,years_ots[-1],'agr_share_organic',:] # +x-x To get the correct structure
     # Append with ots
     dm_ots.add(array_temp[:,np.newaxis,np.newaxis,:], dim='Years', dummy=True, col_label=years_fts[-1])
     # Linear fit

@@ -128,6 +128,9 @@ def read_data(DM_crop_pickle, lever_setting):
     #dm_food_net_import_pro = DM_ots_fts['food-net-import'].filter_w_regex(
     #    {'Categories1': 'pro-.*', 'Variables': 'agr_food-net-import'})
 
+    # Sub-matrix - CROPLAND
+    dm_cal_crop_share_area = DM_crop_pickle['fxa']['cal_crop-share-area']
+
     # Aggregated Data Matrix - CROP
     DM_crop_prod = {
         'crop': dm_crop,
@@ -144,7 +147,8 @@ def read_data(DM_crop_pickle, lever_setting):
 
     DM_cropland = {
       'yield': dm_fxa_yield,
-      'crop-share': dm_prod_share_merged
+      'crop-share': dm_prod_share_merged,
+      'cal_crop-share-area': dm_cal_crop_share_area
     }
 
     CDM_const = DM_crop_pickle['constant']
@@ -405,6 +409,8 @@ def crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_deman
     dm_crop_demand.operation('agr_domestic-production_without_bev', '+', 'agr_domestic-production_bev',
                              out_col='agr_domestic_production', unit='kcal')
 
+    # FIXME make sure its correct for processed food/feed
+
     # Dom prod for exports [kcal] = Domestic production [kcal] * share exports [exports/production]
     dm_crop_demand.append(DM_crop_prod['share-export'], dim='Variables')
     dm_crop_demand.operation('agr_share-export', '*', 'agr_domestic_production',
@@ -528,7 +534,7 @@ def crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_deman
 
 
 # CalculationLeaf CROPLAND CH
-def cropland_workflow(dm_crop_ch, DM_cropland):
+def cropland_workflow(dm_crop_ch, DM_cropland, years_setting):
 
   # Formatting
   DM_cropland['crop-share'].deepen(based_on='Variables')
@@ -537,65 +543,63 @@ def cropland_workflow(dm_crop_ch, DM_cropland):
   # (CH Only) Yield_T [kcal/ha] = yield_o * share_o + yield_e * share_e + yield_i * share_i
   # This will change values for fts only
   array_temp = DM_cropland['yield']['Switzerland', :,'agr_crop_yield_organic', :] * \
-               DM_cropland['crop-share']['Switzerland', :,'agr_land-use','share-organic', :] + \
+               DM_cropland['crop-share']['Switzerland', :,'agr_share','organic', :] + \
                DM_cropland['yield']['Switzerland', :,'agr_crop_yield_extensive', :] * \
-               DM_cropland['crop-share']['Switzerland', :,'agr_land-use','share-extensive', :] + \
+               DM_cropland['crop-share']['Switzerland', :,'agr_share','extensive', :] + \
                DM_cropland['yield']['Switzerland', :,'agr_crop_yield_intensive', :] * \
-               DM_cropland['crop-share']['Switzerland', :,'agr_land-use','share-intensive', :]
+               DM_cropland['crop-share']['Switzerland', :,'agr_share','intensive', :]
   DM_cropland['yield']['Switzerland', :, 'agr_crop_yield_total',:] = array_temp
 
-  # (CH only) Total cropland [ha] = domestic prod [kcal] * yield_t [kcal/ha]
+  # (CH only) Total cropland [ha] = domestic prod [kcal] / yield_t [kcal/ha]
   dm_crop_ch.append(DM_cropland['yield'].filter({'Country':['Switzerland']}), dim='Variables')
-  dm_crop_ch.operation('agr_domestic-production_afw', '*', 'agr_crop_yield_total',
+  dm_crop_ch.operation('agr_domestic-production_afw', '/', 'agr_crop_yield_total',
                                  dim='Variables',
                                  out_col='agr_cropland_total',
                                  unit='ha')
 
   # (CH only) Organic/ex/int cropland [ha] = Total cropland [ha] * share-organic/ext/int [-]
   array_temp = dm_crop_ch['Switzerland', :, 'agr_cropland_total', np.newaxis, :] * \
-               DM_cropland['crop-share']['Switzerland', :,'agr_land-use',:, :]
+               DM_cropland['crop-share']['Switzerland', :,'agr_share',:, :]
   DM_cropland['crop-share'].add(array_temp[np.newaxis,:,np.newaxis,:,:],
                                 dim='Variables',
                                 col_label='agr_cropland_raw',
                                 unit='ha')
 
+  # (CH only) Calibration Cropland per type
+  dm_cal_crop_share_area = DM_cropland['cal_crop-share-area']
+  dm_crop_share_area = DM_cropland['crop-share'].filter({'Variables': ['agr_cropland_raw']})
+  dm_cal_rates_crop_share_area = calibration_rates(dm_crop_share_area,
+    dm_cal_crop_share_area,
+    calibration_start_year=1990,
+    calibration_end_year=2022,
+    years_setting=years_setting)
+  DM_cropland['crop-share'].append(dm_cal_rates_crop_share_area, dim='Variables')
+  DM_cropland['crop-share'].operation('agr_cropland_raw', '*',
+                                         'cal_rate',
+                                         dim='Variables',
+                                         out_col='agr_cropland',
+                                         unit='ha')
+
   # (CH only) Organic/ex/int dom prod [ha] = yield_o/e/i [kcal/ha] * Organic/ex/int cropland [ha]
   DM_cropland['crop-share'].add(0.0, dummy=True, col_label='agr_domestic-production_afw', dim='Variables', unit='kcal')
   array_org = DM_cropland['yield']['Switzerland', :,'agr_crop_yield_organic', :] * \
-               DM_cropland['crop-share']['Switzerland', :,'agr_cropland_raw','share-organic', :]
-  DM_cropland['crop-share'][:,:,'agr_domestic-production_afw','share-organic',:] = array_org
+               DM_cropland['crop-share']['Switzerland', :,'agr_cropland','organic', :]
+  DM_cropland['crop-share'][:,:,'agr_domestic-production_afw','organic',:] = array_org
 
   array_org = DM_cropland['yield']['Switzerland', :,'agr_crop_yield_extensive', :] * \
-               DM_cropland['crop-share']['Switzerland', :,'agr_cropland_raw','share-extensive', :]
-  DM_cropland['crop-share'][:,:,'agr_domestic-production_afw','share-extensive',:] = array_org
+               DM_cropland['crop-share']['Switzerland', :,'agr_cropland','extensive', :]
+  DM_cropland['crop-share'][:,:,'agr_domestic-production_afw','extensive',:] = array_org
 
   array_org = DM_cropland['yield']['Switzerland', :,'agr_crop_yield_intensive', :] * \
-               DM_cropland['crop-share']['Switzerland', :,'agr_cropland_raw','share-intensive', :]
-  DM_cropland['crop-share'][:,:,'agr_domestic-production_afw','share-intensive',:] = array_org
-
-
-  # (CH only) Calibration Cropland per type
-  dm_cal_liv_pop_org = DM_liv_prod['cal_liv_population'].filter(
-    {'Variables': ['cal_agr_liv-population_organic']})
-  dm_cal_rates_liv_pop_org = calibration_rates(
-    DM_liv_prod['share-organic'].filter(
-      {'Variables': ['agr_liv_population_organic_raw']}),
-    dm_cal_liv_pop_org,
-    calibration_start_year=1999,
-    calibration_end_year=2022,
-    years_setting=years_setting)
-  DM_liv_prod['share-organic'].append(dm_cal_rates_liv_pop_org, dim='Variables')
-  DM_liv_prod['share-organic'].operation('agr_liv_population_organic_raw', '*',
-                                         'cal_rate',
-                                         dim='Variables',
-                                         out_col='agr_liv_population_organic',
-                                         unit='lsu')
+               DM_cropland['crop-share']['Switzerland', :,'agr_cropland','intensive', :]
+  DM_cropland['crop-share'][:,:,'agr_domestic-production_afw','intensive',:] = array_org
 
 
   # Compute the total land necessary
 
 
-  # Compute crops produced through org, ext or int
+  # Calibration cropland aggregated by production type?
+
 
 
   return
@@ -717,7 +721,7 @@ def crop(lever_setting, years_setting, DM_input, write_pickle, interface=Interfa
     # CalculationTree CROP MODULE
 
     DM_crop_prod, dm_crop_ch, dm_feed_processed, dm_food_processed = crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_demand, dm_bev_dom_prod, years_setting)
-    cropland_workflow(dm_crop_ch, DM_cropland)
+    cropland_workflow(dm_crop_ch, DM_cropland, years_setting)
 
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 
