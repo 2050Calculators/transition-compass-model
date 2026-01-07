@@ -177,6 +177,7 @@ def crop_yield(dm_prod_share):
 
     list_items = ['Cereals, primary + (Total)',
                   'Fruit Primary + (Total)',
+                  'Rice',
                   'Oilcrops, Oil Equivalent + (Total)',
                   'Pulses, Total + (Total)', 'Rice',
                   'Roots and Tubers, Total + (Total)',
@@ -212,9 +213,6 @@ def crop_yield(dm_prod_share):
       'year': my_years
     }
     df_yield = faostat.get_data_df(code, pars=my_pars, strval=False)
-    df_yield.loc[
-      df_yield['Item'].str.contains('Rice', case=False,
-                                              na=False), 'Item'] = 'Rice and products'
     df_yield.to_csv(file_dict['yield'], index=False)
 
   # Unit conversion from [kg/ha] to [kcal/ha]  ----------------------------------------------------------------------------
@@ -295,60 +293,69 @@ def crop_yield(dm_prod_share):
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
   dm_yield = DataMatrix.create_from_df(df_ots, num_cat=1)
 
-  # Step Yield evolution_o/i & _e/i (organic/extensive with respect to intensive) [-]
+  # Yields for all countries without Switzerland
+  dm_yield_world = dm_yield.copy()
+  dm_yield_world.drop(dim='Country', col_label='Switzerland')
+  linear_fitting(dm_yield_world, years_all)
+
+  # Step CH: Yield evolution_o/i & _e/i (organic/extensive with respect to intensive) [-]
   # fixme Source: find correct source
-  yield_evolution_o = {'cereal': 0.8,
-                      'sugarcrop': 0.8,
-                      'oilcrop': 0.8,
-                      'veg': 0.8,
-                      'fruit': 0.8,
-                      'starch': 0.8,
-                      'pulse': 0.8}
-  yield_evolution_e = {'cereal': 0.8,
-                      'sugarcrop': 0.8,
-                      'oilcrop': 0.8,
-                      'veg': 0.8,
-                      'fruit': 0.8,
-                      'starch': 0.8,
-                      'pulse': 0.8}
+  yield_evolution_o = {'cereal': 1.0,
+                      'sugarcrop': 1.0,
+                      'oilcrop': 1.0,
+                      'veg': 1.0,
+                      'fruit': 1.0,
+                      'starch': 1.0,
+                      'pulse': 1.0}
+  yield_evolution_e = {'cereal': 1.0,
+                      'sugarcrop': 1.0,
+                      'oilcrop': 1.0,
+                      'veg': 1.0,
+                      'fruit': 1.0,
+                      'starch': 1.0,
+                      'pulse': 1.0}
+
+  # Format
+  dm_yield_ch = dm_yield.filter({'Country':['Switzerland']})
+  dm_yield_ch.drop(dim='Categories1', col_label='rice')
 
   # Intensive yield_i [kcal/ha] = yield_T / [share_i + evol_o*share_o + evol_e*share_e]
-  dm_yield.rename_col('agr_crop_yield',
+  dm_yield_ch.rename_col('agr_crop_yield',
                           'agr_crop_yield_total',
                           dim='Variables')
-  dm_yield.add(0.0, dim='Variables', dummy=True,
+  dm_yield_ch.add(0.0, dim='Variables', dummy=True,
                    col_label='agr_crop_yield_intensive')
-  for cat in dm_yield.col_labels['Categories1']:
-    dm_yield['Switzerland', :, 'agr_crop_yield_intensive', cat] = \
-      dm_yield['Switzerland', :, 'agr_crop_yield_total', cat] \
+  for cat in dm_yield_ch.col_labels['Categories1']:
+    dm_yield_ch['Switzerland', :, 'agr_crop_yield_intensive', cat] = \
+      dm_yield_ch['Switzerland', :, 'agr_crop_yield_total', cat] \
       / (dm_prod_share['Switzerland', :, 'agr_share_intensive', cat] +
          dm_prod_share['Switzerland', :, 'agr_share_organic', cat] * yield_evolution_o[cat] +
          dm_prod_share['Switzerland', :, 'agr_share_extensive', cat] * yield_evolution_e[cat])
 
   # Organic yield_c [kcal/lsu] =  yield_i [kcal/lsu] * yield evolution_o/i [-]
-  dm_yield.add(0.0, dim='Variables', dummy=True,
+  dm_yield_ch.add(0.0, dim='Variables', dummy=True,
                    col_label='agr_crop_yield_organic')
-  for cat in dm_yield.col_labels['Categories1']:
-    dm_yield[:, :, 'agr_crop_yield_organic', cat] = \
-      dm_yield[:, :, 'agr_crop_yield_intensive', cat] \
+  for cat in dm_yield_ch.col_labels['Categories1']:
+    dm_yield_ch[:, :, 'agr_crop_yield_organic', cat] = \
+      dm_yield_ch[:, :, 'agr_crop_yield_intensive', cat] \
       * yield_evolution_o[cat]
 
   # Extensive yield_c [kcal/lsu] =  yield_i [kcal/lsu] * yield evolution_o/i [-]
-  dm_yield.add(0.0, dim='Variables', dummy=True,
+  dm_yield_ch.add(0.0, dim='Variables', dummy=True,
                    col_label='agr_crop_yield_extensive')
-  for cat in dm_yield.col_labels['Categories1']:
-    dm_yield[:, :, 'agr_crop_yield_extensive', cat] = \
-      dm_yield[:, :, 'agr_crop_yield_intensive', cat] \
+  for cat in dm_yield_ch.col_labels['Categories1']:
+    dm_yield_ch[:, :, 'agr_crop_yield_extensive', cat] = \
+      dm_yield_ch[:, :, 'agr_crop_yield_intensive', cat] \
       * yield_evolution_e[cat]
 
   # Format yield
-  dm_yield.filter({'Variables': ['agr_crop_yield_organic',
+  dm_yield_ch.filter({'Variables': ['agr_crop_yield_organic',
                                  'agr_crop_yield_extensive',
                                  'agr_crop_yield_intensive',
                                  'agr_crop_yield_total']}, inplace=True)
-  linear_fitting(dm_yield, years_all)
+  linear_fitting(dm_yield_ch, years_all)
 
-  return dm_yield
+  return dm_yield_world, dm_yield_ch
 
 # CalculationLeaf CAL - DOM PROD CROP & BEV
 def crop_calibration(list_countries_calc, dm_losses, dm_fxa_pro_yield, cdm_bev):
@@ -494,14 +501,15 @@ def crop_calibration(list_countries_calc, dm_losses, dm_fxa_pro_yield, cdm_bev):
 
     # Crop domestic prod with losses [kcal] = crop domestic prod [kcal] * Production losses crop [%]
     dm_cal_dom_prod_crop.rename_col('cal_agr_domestic-production_food',
-                                'cal_agr_domestic-production_food_raw',
+                                'cal_agr_domestic-production_withoutafw',
                                 dim='Variables')
     list_cat_crop = dm_cal_dom_prod_crop.col_labels['Categories1']
     dm_cal_dom_prod_crop.append(dm_losses.filter({'Country':['Switzerland'], 'Categories1': list_cat_crop}), dim='Variables')
     dm_cal_dom_prod_crop.operation('agr_crop_losses', '*',
-                               'cal_agr_domestic-production_food_raw',
-                               out_col='cal_agr_domestic-production_food',
+                               'cal_agr_domestic-production_withoutafw',
+                               out_col='cal_agr_domestic-production',
                                unit='kcal')
+    dm_cal_dom_prod_crop.filter({'Variables':['cal_agr_domestic-production']}, inplace=True)
 
     # Format as datamatrix - Cal dom prod bev
     df_cal_dom_prod_bev = df_cal_dom_prod[
@@ -549,6 +557,89 @@ def crop_calibration(list_countries_calc, dm_losses, dm_fxa_pro_yield, cdm_bev):
     dm_cal_dom_prod_bev['Switzerland', :, 'cal_agr_domestic-production_bev', 'bev-beer'] = array_temp
 
     return dm_cal_dom_prod_crop, dm_cal_dom_prod_bev
+
+# CalculationLeaf CAL - CROPLAND
+def cropland_calibration(list_countries):
+    # ----------------------------------------------------------------------------------------------------------------------
+    # CROPLAND ----------------------------------------------------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------------------------------------------
+
+    # CROPS  (QCL) (for everything except lgn-energycrop, gas-energycrop, algae and insect)
+    try:
+        df_cropland = pd.read_csv(file_dict['cropland'])
+    except OSError:
+        # List of elements
+        list_elements = ['Area harvested']
+
+        list_items = ['Cereals, primary + (Total)', 'Fibre Crops, Fibre Equivalent + (Total)', 'Fruit Primary + (Total)',
+                      'Oilcrops, Oil Equivalent + (Total)', 'Pulses, Total + (Total)', 'Rice',
+                      'Roots and Tubers, Total + (Total)',
+                      'Sugar Crops Primary + (Total)', 'Vegetables Primary + (Total)']
+
+        # 1990 - 2022
+        code = 'QCL'
+        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+        my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+        list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
+                      '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013',
+                      '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023']
+        my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+        my_pars = {
+            'area': my_countries,
+            'element': my_elements,
+            'item': my_items,
+            'year': my_years
+        }
+        df_cropland = faostat.get_data_df(code, pars=my_pars, strval=False)
+        df_cropland.loc[
+            df_cropland['Item'].str.contains('Rice', case=False,
+                                                    na=False), 'Item'] = 'Rice and products'
+        df_cropland.to_csv(file_dict['cropland'], index=False)
+
+    # Filter columns
+    list_filter = ['Area', 'Item', 'Year', 'Value']
+    df_cropland = df_cropland[list_filter]
+
+    # Prepend "Cropland" to each value in the 'Item' column
+    df_cropland['Item'] = df_cropland['Item'].apply(lambda x: f"Cropland {x}")
+
+    # PathwayCalc formatting -----------------------------------------------------------------------------------------------
+
+    # Food item name matching with dictionary
+    # Read excel file
+    df_dict_csc = pd.read_excel(
+        'dictionaries/dictionary_crop.xlsx',
+        sheet_name='calibration')
+
+    # Merge based on 'Item'
+    df_cropland_pathwaycalc = pd.merge(df_dict_csc, df_cropland, on='Item')
+
+    # Drop the 'Item' column
+    df_cropland_pathwaycalc = df_cropland_pathwaycalc.drop(columns=['Item'])
+
+    # Renaming existing columns (geoscale, timsecale, value)
+    df_cropland_pathwaycalc.rename(columns={'Area': 'geoscale', 'Year': 'timescale', 'Value': 'value'}, inplace=True)
+
+    # Adding the columns module, lever, level and string-pivot at the correct places
+    lever = 'dummy'
+    df_cropland_pathwaycalc['module'] = 'agriculture'
+    df_cropland_pathwaycalc['lever'] = lever
+    df_cropland_pathwaycalc['level'] = 0
+
+    # Extrapolation
+    df_cropland_pathwaycalc = linear_fitting_ots_db(df_cropland_pathwaycalc,
+                                                     years_ots,
+                                                     countries='all')
+
+    # Format as datamatrix
+    df_ots, df_fts = database_to_df(df_cropland_pathwaycalc, lever,
+                                    level='all')
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm_cal_cropland = DataMatrix.create_from_df(df_ots, num_cat=1)
+
+    return dm_cal_cropland
 
 # CalculationLeaf FXA - PROCESSING YIELD CROP & BEV
 def fxa_processing_yield(df_processing_yield_fxa):
@@ -2420,8 +2511,8 @@ def datamatrix_to_pickle(dm_fts):
   dict_fxa['processing-yield'] = dm_fxa_pro_yield
   dict_fxa['split-import'] = dm_crop_trade_origin
   dict_fxa['share-export'] = dm_fxa_exports
-  dict_fxa['yield'] = dm_yield
-
+  dict_fxa['yield-ch'] = dm_yield_ch
+  dict_fxa['yield-imports'] = dm_yield_world
 
   # CalibrationDataToDatamatrix ------------------------------------------------
 
@@ -2430,6 +2521,7 @@ def datamatrix_to_pickle(dm_fts):
   dict_fxa['cal_agr_imports-crop_total'] = dm_cal_imports_tot
   dict_fxa['cal_agr_imports-crop_countries'] = dm_cal_imports_countries
   dict_fxa['cal_crop-share-area'] = dm_cal_crop_area
+  dict_fxa['cal_cropland_total'] = dm_cal_cropland
 
   # LeversToDatamatrix OTS -----------------------------------------------------
   dict_ots = {}
@@ -2734,7 +2826,8 @@ dm_fxa_pro_yield = fxa_processing_yield(df_processing_yield_fxa)
 dm_cal_dom_prod_crop, dm_cal_dom_prod_bev = crop_calibration(list_countries_calc, dm_losses, dm_fxa_pro_yield, cdm_bev)
 dm_crop_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = trade_origin_processing(years_ots, list_countries_calc, file_dict)
 dm_cal_crop_area, dm_prod_share = production_share()
-dm_yield = crop_yield(dm_prod_share)
+dm_cal_cropland = cropland_calibration(list_countries_calc)
+dm_yield_world, dm_yield_ch = crop_yield(dm_prod_share)
 dm_fxa_exports = exports_processing(list_countries_calc,file_dict)
 dm_fts = fts_processing()
 

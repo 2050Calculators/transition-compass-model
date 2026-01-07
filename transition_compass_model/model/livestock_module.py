@@ -643,6 +643,9 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     dm_feed_processed.operation('agr_demand_feed', '*', 'agr_ssr',
                                 out_col='agr_demand_feed_pro',
                                 unit='kcal')
+    dm_feed_processed.operation('agr_demand_feed', '-', 'agr_demand_feed_pro',
+                                out_col='agr_imports_feed_pro',
+                                unit='kcal')
 
     # Summing sugar & sweets together
     dm_feed_processed.groupby({'sugar-to-sugarcrop': '.*-to-sugarcrop'}, dim='Categories1',

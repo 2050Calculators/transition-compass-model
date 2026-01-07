@@ -124,12 +124,14 @@ def read_data(DM_crop_pickle, lever_setting):
     #dm_ef_residues = DM_crop_pickle['fxa']['ef_burnt-residues']
     #dm_ssr_feed_crop = DM_ots_fts['feed-net-import']
     dm_processing_yield = DM_crop_pickle['fxa']['processing-yield']
-    dm_fxa_yield = DM_crop_pickle['fxa']['yield']
     #dm_food_net_import_pro = DM_ots_fts['food-net-import'].filter_w_regex(
     #    {'Categories1': 'pro-.*', 'Variables': 'agr_food-net-import'})
 
     # Sub-matrix - CROPLAND
     dm_cal_crop_share_area = DM_crop_pickle['fxa']['cal_crop-share-area']
+    dm_cal_cropland = DM_crop_pickle['fxa']['cal_cropland_total']
+    dm_fxa_yield_ch = DM_crop_pickle['fxa']['yield-ch']
+    dm_fxa_yield_imports = DM_crop_pickle['fxa']['yield-imports']
 
     # Aggregated Data Matrix - CROP
     DM_crop_prod = {
@@ -146,9 +148,11 @@ def read_data(DM_crop_pickle, lever_setting):
     }
 
     DM_cropland = {
-      'yield': dm_fxa_yield,
+      'yield-ch': dm_fxa_yield_ch,
+      'yield-imports': dm_fxa_yield_imports,
       'crop-share': dm_prod_share_merged,
-      'cal_crop-share-area': dm_cal_crop_share_area
+      'cal_crop-share-area': dm_cal_crop_share_area,
+      'cal_cropland_total': dm_cal_cropland
     }
 
     CDM_const = DM_crop_pickle['constant']
@@ -191,12 +195,20 @@ def crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_deman
     dm_feed_processed.operation('agr_demand_feed_pro', '*', 'fxa_agr_processing-yield',
                                 out_col='agr_demand_feed_pro_raw',
                                 unit='kcal')
+    # Imports of raw processed feed
+    dm_feed_processed.operation('agr_imports_feed_pro', '*',
+                                'fxa_agr_processing-yield',
+                                out_col='agr_imports_feed_pro_raw',
+                                unit='kcal')
 
 
     # Summing by crop category (oilcrop and sugarcrop)
     dm_feed_processed.groupby({'crop-oilcrop': '.*-to-oilcrop', 'crop-sugarcrop': '.*-to-sugarcrop'}, dim='Categories1',
                               regex=True,
                               inplace=True)
+
+    # Creating copy
+    dm_feed_processed_copy = dm_feed_processed.copy()
 
     # Adding dummy columns filled with 0.0 for total feed demand calculations
     dm_feed_processed.add(0.0, dummy=True, col_label='crop-cereal', dim='Categories1', unit='kcal')
@@ -235,6 +247,9 @@ def crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_deman
     dm_food_processed.append(dm_ssr_food_pro, dim='Variables')
     dm_food_processed.operation('agr_demand', '*', 'agr_ssr', out_col='agr_domestic-production_food_pro',
                                 unit='kcal')
+    dm_food_processed.operation('agr_demand', '-', 'agr_domestic-production_food_pro',
+                                out_col='agr_imports_food_pro',
+                                unit='kcal')
 
     # Processed Food crop demand [kcal] = processed crops [kcal] * processing yield [%] (only for sweets & processed sugar)
     # sum processed sugar in one variable : sweets : sweets + processed sugar
@@ -249,6 +264,11 @@ def crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_deman
     dm_food_processed.append(dm_pro_yield, dim='Variables')
     dm_food_processed.operation('agr_domestic-production_food_pro_temp', '*', 'fxa_agr_processing-yield',
                                 out_col='agr_demand_food',
+                                unit='kcal')
+    # Imports of raw processed food
+    dm_food_processed.operation('agr_imports_food_pro', '*',
+                                'fxa_agr_processing-yield',
+                                out_col='agr_imports_food_pro_raw',
                                 unit='kcal')
 
 
@@ -407,20 +427,94 @@ def crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_deman
     # (CH only) Dom prod [kcal] = Dom prod (without bev) + Dom prod bev (raw crop)
     dm_crop_demand.append(dm_bev_dom_prod, dim='Variables')
     dm_crop_demand.operation('agr_domestic-production_without_bev', '+', 'agr_domestic-production_bev',
-                             out_col='agr_domestic_production', unit='kcal')
+                             out_col='agr_domestic_production_raw', unit='kcal')
+
+    # Processing for calibration :
+    dm_cal_bev_fruit = DM_crop_prod['cal_bev'].filter(
+      {'Categories1': ['wine']})
+    dm_cal_bev_cereal = DM_crop_prod['cal_bev'].filter(
+      {'Categories1': ['bev-beer', 'bev-fer']})
+    # Groupby fruits or cereals
+    dm_cal_bev_fruit.groupby({'fruit': '.*'}, dim='Categories1', regex=True,
+                    inplace=True)
+    dm_cal_bev_cereal.groupby({'cereal': '.*'}, dim='Categories1', regex=True,
+                    inplace=True)
+    # cal_crop total = cal_crop_food (actually also includes feed) + cal_crop_bev
+    dm_cal_crop = DM_crop_prod['cal_crop'].copy()
+    array_temp_cereal = dm_cal_bev_cereal[:,:,'cal_agr_domestic-production_bev','cereal'] \
+                        + dm_cal_crop[:,:,'cal_agr_domestic-production','cereal']
+    dm_cal_crop[:, :, 'cal_agr_domestic-production', 'cereal'] = array_temp_cereal
+    array_temp_fruit = dm_cal_bev_fruit[:,:,'cal_agr_domestic-production_bev','fruit'] \
+                        + dm_cal_crop[:,:,'cal_agr_domestic-production','fruit']
+    dm_cal_crop[:, :, 'cal_agr_domestic-production', 'fruit'] = array_temp_fruit
+
+    # Cal Domestic production without losses [kcal] = cal domestic prod with losses / food losses [%]
+    years_ots = create_years_list(1990, 2023, 1)
+    dm_cal_crop.rename_col('cal_agr_domestic-production', 'cal_agr_domestic-production_afw', dim='Variables')
+    dm_losses = DM_crop_prod['crop'].filter({'Country':['Switzerland'],
+                                             'Years':years_ots,
+                                             'Variables':['agr_crop_losses'],
+                                             'Categories1':dm_cal_crop.col_labels['Categories1']})
+    dm_cal_crop.append(dm_losses,dim='Variables')
+    dm_cal_crop.operation('cal_agr_domestic-production_afw', '/', 'agr_crop_losses',
+                              out_col='cal_agr_domestic_production', unit='kcal')
+    dm_cal_crop.filter({'Variables': ['cal_agr_domestic_production']}, inplace=True)
+
+    # (CH only) CALIBRATION CROP PRODUCTION --------------------------------------------------------------------------------------
+    dm_crop_ch = dm_crop_demand.filter({'Variables': ['agr_domestic_production_raw']})
+    # Drop rice because not produced in Switzerland
+    dm_crop_ch.drop(dim='Categories1', col_label='rice')
+    dm_cal_rates_crop = calibration_rates(dm_crop_ch, dm_cal_crop, calibration_start_year=1990,
+                                          calibration_end_year=2023, years_setting=years_setting)
+    # Add dummy with 1.0 for rice (because no rice produced in Switzerland)
+    dm_cal_rates_crop.add(1.0, dummy=True,col_label='rice',dim='Categories1', unit='%')
+    dm_crop_demand.append(dm_cal_rates_crop, dim='Variables')
+    dm_crop_demand.operation('agr_domestic_production_raw', '*', 'cal_rate', dim='Variables',
+                              out_col='agr_domestic_production', unit='kcal')
+    dm_crop_demand.filter({'Variables':['agr_domestic_production','agr_demand_total','agr_demand_total']}, inplace=True)
+
+    # Step IMPORTS
+
+    # FIXME add imports of processes food, feed and beverages
 
     # FIXME make sure its correct for processed food/feed
+    #dm_food_processed.operation('agr_imports_food_pro', '*',
+    #                            'fxa_agr_processing-yield',
+    #                            out_col='agr_imports_food',
+    #                            unit='kcal')
+
+    # dm_feed_processed.operation('agr_imports_feed_pro', '*',
+    #                                 'fxa_agr_processing-yield',
+    #                                 out_col='agr_imports_feed_pro_raw',
+    #                                 unit='kcal')
 
     # Dom prod for exports [kcal] = Domestic production [kcal] * share exports [exports/production]
     dm_crop_demand.append(DM_crop_prod['share-export'], dim='Variables')
     dm_crop_demand.operation('agr_share-export', '*', 'agr_domestic_production',
                                      out_col='agr_exported_production', unit='kcal')
 
+    # Account for processed food and feed in the demand (raw products)
+    # processed imports + raw products for processing imported ?
+    # Sugarcrops
+    array_temp = dm_food_processed[:,:,'agr_imports_food_pro_raw','crop-sugarcrop'] + \
+                 dm_feed_processed_copy[:, :, 'agr_imports_feed_pro_raw', 'crop-sugarcrop'] + \
+                 dm_crop_demand[:,:,'agr_demand_total','sugarcrop']
+    dm_crop_demand[:, :, 'agr_demand_total', 'sugarcrop'] = array_temp
+    # Oilcrops
+    array_temp = dm_feed_processed_copy[:, :, 'agr_imports_feed_pro_raw', 'crop-oilcrop'] + \
+                 dm_crop_demand[:,:,'agr_demand_total','oilcrop']
+    dm_crop_demand[:, :, 'agr_demand_total', 'oilcrop'] = array_temp
+
     # Imported production total [kcal] = Demand [kcal] - (Domestic production [kcal] - Dom prod for exports [kcal])
-    dm_crop_demand.operation('agr_domestic_production', '-', 'agr_exported_production',
+    '''dm_crop_demand.operation('agr_domestic_production', '-', 'agr_exported_production',
                                      out_col='temp', unit='kcal')
     dm_crop_demand.operation('agr_demand_total', '-', 'temp',
-                                     out_col='agr_imported_production_total_raw', unit='kcal')
+                                     out_col='agr_imported_production_total_raw', unit='kcal')'''
+
+    # Imported production total [kcal] = Demand [kcal] - Domestic production [kcal]
+    dm_crop_demand.operation('agr_demand_total', '-', 'agr_domestic_production',
+                             out_col='agr_imported_production_total_raw',
+                             unit='kcal')
 
     # Calibration - Imports total
     dm_cal_imports_tot = DM_crop_prod['cal_imports-crop_tot'].filter_w_regex({'Categories1': 'crop-'})
@@ -450,7 +544,6 @@ def crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_deman
     dm_production.operation('agr_domestic_production_raw', '*', 'cal_rate', dim='Variables',
                           out_col='agr_domestic_production', unit='kcal')
 
-
     # Append domestic production Switzerland + other countries
     dm_production.rename_col_regex('crop-', '', dim='Categories1')
     dm_production.filter({'Variables': ['agr_domestic_production']}, inplace=True)
@@ -459,42 +552,7 @@ def crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_deman
     # Domestic production with losses [kcal] = domestic prod * food losses [%]
     DM_crop_prod['crop'].append(dm_production, dim='Variables')
     DM_crop_prod['crop'].operation('agr_domestic_production', '*', 'agr_crop_losses',
-                              out_col='agr_domestic-production_afw_raw', unit='kcal')
-
-    # Processing for calibration :
-    dm_cal_bev_fruit = DM_crop_prod['cal_bev'].filter(
-      {'Categories1': ['wine']})
-    dm_cal_bev_cereal = DM_crop_prod['cal_bev'].filter(
-      {'Categories1': ['bev-beer', 'bev-fer']})
-    # Groupby fruits or cereals
-    dm_cal_bev_fruit.groupby({'fruit': '.*'}, dim='Categories1', regex=True,
-                    inplace=True)
-    dm_cal_bev_cereal.groupby({'cereal': '.*'}, dim='Categories1', regex=True,
-                    inplace=True)
-    # cal_crop total = cal_crop_food (actually also includes feed) + cal_crop_bev
-    dm_cal_crop = DM_crop_prod['cal_crop'].copy()
-    array_temp_cereal = dm_cal_bev_cereal[:,:,'cal_agr_domestic-production_bev','cereal'] \
-                        + dm_cal_crop[:,:,'cal_agr_domestic-production_food','cereal']
-    dm_cal_crop[:, :, 'cal_agr_domestic-production_food', 'cereal'] = array_temp_cereal
-    array_temp_fruit = dm_cal_bev_fruit[:,:,'cal_agr_domestic-production_bev','fruit'] \
-                        + dm_cal_crop[:,:,'cal_agr_domestic-production_food','fruit']
-    dm_cal_crop[:, :, 'cal_agr_domestic-production_food', 'fruit'] = array_temp_fruit
-
-    # (CH only) CALIBRATION CROP PRODUCTION --------------------------------------------------------------------------------------
-    #dm_cal_crop = DM_crop_prod['cal_crop']
-    dm_crop_ch = DM_crop_prod['crop'].filter({'Variables': ['agr_domestic-production_afw_raw'], 'Country':['Switzerland']})
-    # Drop rice because not produced in Switzerland
-    dm_crop_ch.drop(dim='Categories1', col_label='rice')
-    dm_cal_rates_crop = calibration_rates(dm_crop_ch, dm_cal_crop, calibration_start_year=1990,
-                                          calibration_end_year=2023, years_setting=years_setting)
-    dm_crop_ch.append(dm_cal_rates_crop, dim='Variables')
-    dm_crop_ch.operation('agr_domestic-production_afw_raw', '*', 'cal_rate', dim='Variables',
                               out_col='agr_domestic-production_afw', unit='kcal')
-
-    # Fill NaN with 0.0 for rice (because no rice produced in Switzerland)
-    array_temp = dm_crop_ch.array[:, :, :, :]
-    array_temp = np.nan_to_num(array_temp, nan=0.0)
-    #DM_crop_prod['crop'].array['Switzerland', :, :, :] = array_temp
 
     """# CROP RESIDUES ----------------------------------------------------------------------------------------------------
 
@@ -530,32 +588,50 @@ def crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_deman
                'bioenergy': dm_ssr_bioe_pro,
                'processed': DM_crop['food-net-import-pro']}"""
 
-    return DM_crop_prod, dm_crop_ch, dm_feed_processed, dm_food_processed
+    return DM_crop_prod, DM_crop_prod, dm_feed_processed, dm_food_processed
 
 
-# CalculationLeaf CROPLAND CH
-def cropland_workflow(dm_crop_ch, DM_cropland, years_setting):
+# CalculationLeaf CROPLAND
+def cropland_workflow(DM_crop_prod, DM_cropland, years_setting):
+
+  # Step Switzerland - organic, extensive, intensive
 
   # Formatting
   DM_cropland['crop-share'].deepen(based_on='Variables')
   DM_cropland['crop-share'].switch_categories_order(cat1='Categories2', cat2='Categories1')
+  dm_crop_ch = DM_crop_prod['crop'].filter({'Variables':['agr_domestic-production_afw'],
+                                            'Country':['Switzerland'],
+                                            'Categories1':DM_cropland['yield-ch'].col_labels['Categories1']})
 
   # (CH Only) Yield_T [kcal/ha] = yield_o * share_o + yield_e * share_e + yield_i * share_i
   # This will change values for fts only
-  array_temp = DM_cropland['yield']['Switzerland', :,'agr_crop_yield_organic', :] * \
+  array_temp = DM_cropland['yield-ch']['Switzerland', :,'agr_crop_yield_organic', :] * \
                DM_cropland['crop-share']['Switzerland', :,'agr_share','organic', :] + \
-               DM_cropland['yield']['Switzerland', :,'agr_crop_yield_extensive', :] * \
+               DM_cropland['yield-ch']['Switzerland', :,'agr_crop_yield_extensive', :] * \
                DM_cropland['crop-share']['Switzerland', :,'agr_share','extensive', :] + \
-               DM_cropland['yield']['Switzerland', :,'agr_crop_yield_intensive', :] * \
+               DM_cropland['yield-ch']['Switzerland', :,'agr_crop_yield_intensive', :] * \
                DM_cropland['crop-share']['Switzerland', :,'agr_share','intensive', :]
-  DM_cropland['yield']['Switzerland', :, 'agr_crop_yield_total',:] = array_temp
+  DM_cropland['yield-ch']['Switzerland', :, 'agr_crop_yield_total',:] = array_temp
 
-  # (CH only) Total cropland [ha] = domestic prod [kcal] / yield_t [kcal/ha]
-  dm_crop_ch.append(DM_cropland['yield'].filter({'Country':['Switzerland']}), dim='Variables')
+  # (CH only) Total cropland per crop type [ha] = domestic prod [kcal] / yield_t [kcal/ha]
+  dm_crop_ch.append(DM_cropland['yield-ch'], dim='Variables')
   dm_crop_ch.operation('agr_domestic-production_afw', '/', 'agr_crop_yield_total',
                                  dim='Variables',
-                                 out_col='agr_cropland_total',
+                                 out_col='agr_cropland_total_raw',
                                  unit='ha')
+
+  # (CH only) Calibration cropland per type (without algae, insect and lgn-energycrop)
+  dm_cal_cropland = DM_cropland['cal_cropland_total']
+  dm_cal_cropland.drop(dim='Categories1', col_label='fibres-plant-eq')
+  dm_cal_rates_cropland = calibration_rates(dm_crop_ch.filter({'Variables':['agr_cropland_total_raw']}),
+                                            dm_cal_cropland,
+                                            calibration_start_year=1990,
+                                            calibration_end_year=2023,
+                                            years_setting=years_setting)
+  dm_crop_ch.append(dm_cal_rates_cropland, dim='Variables')
+  dm_crop_ch.operation('agr_cropland_total_raw', '*', 'cal_rate',
+                        dim='Variables',
+                        out_col='agr_cropland_total', unit='ha')
 
   # (CH only) Organic/ex/int cropland [ha] = Total cropland [ha] * share-organic/ext/int [-]
   array_temp = dm_crop_ch['Switzerland', :, 'agr_cropland_total', np.newaxis, :] * \
@@ -565,7 +641,7 @@ def cropland_workflow(dm_crop_ch, DM_cropland, years_setting):
                                 col_label='agr_cropland_raw',
                                 unit='ha')
 
-  # (CH only) Calibration Cropland per type
+  # (CH only) Calibration Cropland per crop type and production method
   dm_cal_crop_share_area = DM_cropland['cal_crop-share-area']
   dm_crop_share_area = DM_cropland['crop-share'].filter({'Variables': ['agr_cropland_raw']})
   dm_cal_rates_crop_share_area = calibration_rates(dm_crop_share_area,
@@ -582,24 +658,33 @@ def cropland_workflow(dm_crop_ch, DM_cropland, years_setting):
 
   # (CH only) Organic/ex/int dom prod [ha] = yield_o/e/i [kcal/ha] * Organic/ex/int cropland [ha]
   DM_cropland['crop-share'].add(0.0, dummy=True, col_label='agr_domestic-production_afw', dim='Variables', unit='kcal')
-  array_org = DM_cropland['yield']['Switzerland', :,'agr_crop_yield_organic', :] * \
+  array_org = DM_cropland['yield-ch']['Switzerland', :,'agr_crop_yield_organic', :] * \
                DM_cropland['crop-share']['Switzerland', :,'agr_cropland','organic', :]
   DM_cropland['crop-share'][:,:,'agr_domestic-production_afw','organic',:] = array_org
 
-  array_org = DM_cropland['yield']['Switzerland', :,'agr_crop_yield_extensive', :] * \
+  array_org = DM_cropland['yield-ch']['Switzerland', :,'agr_crop_yield_extensive', :] * \
                DM_cropland['crop-share']['Switzerland', :,'agr_cropland','extensive', :]
   DM_cropland['crop-share'][:,:,'agr_domestic-production_afw','extensive',:] = array_org
 
-  array_org = DM_cropland['yield']['Switzerland', :,'agr_crop_yield_intensive', :] * \
+  array_org = DM_cropland['yield-ch']['Switzerland', :,'agr_crop_yield_intensive', :] * \
                DM_cropland['crop-share']['Switzerland', :,'agr_cropland','intensive', :]
   DM_cropland['crop-share'][:,:,'agr_domestic-production_afw','intensive',:] = array_org
 
+  # Step Imports
+
+  # Formatting
+  dm_crop_imports = DM_crop_prod['crop'].filter({'Variables':['agr_domestic-production_afw']})
+  dm_crop_imports.drop(dim='Country', col_label='Switzerland')
+
+  # Total cropland per crop type [ha] = domestic prod [kcal] / yield [kcal/ha]
+  dm_crop_imports.append(DM_cropland['yield-imports'], dim='Variables')
+  dm_crop_imports.operation('agr_domestic-production_afw', '/', 'agr_crop_yield',
+                                 dim='Variables',
+                                 out_col='agr_cropland_total',
+                                 unit='ha')
+
 
   # Compute the total land necessary
-
-
-  # Calibration cropland aggregated by production type?
-
 
 
   return
@@ -721,7 +806,7 @@ def crop(lever_setting, years_setting, DM_input, write_pickle, interface=Interfa
     # CalculationTree CROP MODULE
 
     DM_crop_prod, dm_crop_ch, dm_feed_processed, dm_food_processed = crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_demand, dm_bev_dom_prod, years_setting)
-    cropland_workflow(dm_crop_ch, DM_cropland, years_setting)
+    cropland_workflow(DM_crop_prod, DM_cropland, years_setting)
 
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 

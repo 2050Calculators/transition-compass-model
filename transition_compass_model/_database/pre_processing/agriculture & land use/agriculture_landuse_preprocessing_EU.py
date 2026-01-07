@@ -6489,7 +6489,7 @@ df_ssr_pathwaycalc, df_csl_feed, df_processing_yield_fxa, pivot_df_milk = self_s
 df_calc_processing_yield = fxa_processing_yield(df_processing_yield_fxa, pivot_df_milk)
 df_feed_ssr_pathwaycalc = feed_ssr_processing(years_ots)
 df_land_use_fao_calibration, df_cropland_density, df_agri_land = land_calibration(list_countries)
-file_dict = {'losses': 'data/faostat/losses.csv', 'yield': 'data/faostat/yield.csv','cropland': 'data/faostat/cropand.csv', 'urea': 'data/faostat/urea.csv',
+file_dict = {'losses': 'data/faostat/losses.csv', 'yield': 'data/faostat/yield.csv','cropland': 'data/faostat/cropland.csv', 'urea': 'data/faostat/urea.csv',
              'land': 'data/faostat/land.csv', 'nitro': 'data/faostat/nitro.csv',
              'pesticide': 'data/faostat/pesticide.csv', 'liming': 'data/faostat/liming.csv'}
 df_climate_smart_crop_pathwaycalc, df_energy_demand_cal, df_CO2_cal = climate_smart_crop_processing(list_countries, df_agri_land, file_dict)
