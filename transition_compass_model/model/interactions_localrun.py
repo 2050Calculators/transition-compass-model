@@ -2,7 +2,6 @@
 from model.transport_module import transport
 from model.population_module import population
 from model.buildings_module import buildings
-from model.crop_module import crop
 
 from model.forestry_module import forestry
 # from model.minerals_module import minerals
@@ -15,7 +14,6 @@ from model.climate_module import climate
 from model.ammonia_module import ammonia
 from model.industry_module import industry
 from model.power_module import power
-from model.landuse_module import land_use
 from model.oilrefinery_module import refinery
 from model.lca_module import lca
 
@@ -25,7 +23,6 @@ import logging
 import math
 import copy
 import time
-import os
 import json
 
 

@@ -31,7 +31,6 @@ def read_data(DM_livestock, lever_setting):
     dm_livestock_losses = DM_ots_fts['livestock-losses']
     dm_share_organic = DM_ots_fts['share-organic']
     dm_livestock_slaughtered = DM_ots_fts['slaughter-rates']
-    dm_livestock_density = DM_ots_fts['livestock-density']
     dm_livestock_yield = DM_livestock['fxa']['livestock-yield']
     dm_split_import = DM_livestock['fxa']['split-import']
     dm_split_import.drop(dim='Country', col_label=['Switzerland'])  # drop Switzerland for imports
@@ -100,7 +99,6 @@ def read_data(DM_livestock, lever_setting):
         'cal_imports-liv_countries': dm_fxa_cal_liv_imports_countries,
         'cal_imports-liv_tot': dm_fxa_cal_liv_imports_tot,
         'cal_liv_population': dm_fxa_cal_liv_pop,
-        'ruminant_density': dm_livestock_density,
         'ratio_milk': dm_fxa_ratio_milk
     }
 
@@ -295,23 +293,6 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
     DM_liv_prod['share-organic'].operation('agr_liv_population_organic_raw', '*', 'cal_rate',
                             dim='Variables', out_col='agr_liv_population_organic',
                             unit='lsu')
-
-    # (CH only) GRAZING LIVESTOCK
-    # Filtering ruminants (bovine & sheep)
-    dm_liv_ruminants = dm_liv_pop.filter(
-        {'Variables': ['agr_liv_population'],
-         'Categories1': ['meat-bovine', 'meat-sheep', 'abp-dairy-milk'],
-         'Country':['Switzerland']})
-    # Ruminant livestock [lsu] = population bovine + population sheep + population dairy
-    dm_liv_ruminants.groupby({'ruminant': '.*'}, dim='Categories1', regex=True, inplace=True)
-    # Append to relevant dm
-    dm_liv_ruminants = dm_liv_ruminants.filter({'Variables': ['agr_liv_population'], 'Categories1': ['ruminant']})
-    dm_liv_ruminants = dm_liv_ruminants.flatten()  # change from category to variable
-    DM_liv_prod['ruminant_density'].append(dm_liv_ruminants, dim='Variables')  # Append to caf
-    # Agriculture grassland [ha] = ruminant livestock [lsu] / livestock density [lsu/ha]
-    DM_liv_prod['ruminant_density'].operation('agr_liv_population_ruminant', '/',
-                                               'agr_livestock_density',
-                                               dim="Variables", out_col='agr_lus_land_raw_grassland', unit='ha')
 
     # LIVESTOCK BYPRODUCTS
     # Filter ibp constants for offal
@@ -764,6 +745,16 @@ def livestock(lever_setting, years_setting, DM_input, write_pickle, interface=In
 
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 
+    # livestock to land-use
+    dm_livestock_landuse = dm_liv_pop.filter({'Variables': ['agr_liv_population']})
+    if write_pickle is True:
+      current_file_directory = os.path.dirname(os.path.abspath(__file__))
+      f = os.path.join(current_file_directory,
+                           '../_database/data/interface/livestock_to_land-use.pickle')
+      with open(f, 'wb') as handle:
+        pickle.dump(dm_livestock_landuse, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    interface.add_link(from_sector='livestock', to_sector='TCAF',dm=dm_livestock_landuse)
+
     """# Livestock to TCAF
     DM_TCAF_livestock = livestock_TCAF_interface()
     if write_pickle is True:
@@ -778,13 +769,24 @@ def livestock(lever_setting, years_setting, DM_input, write_pickle, interface=In
         # Pour remplacer des valeurs dans la même structure. Accepete un pays différent
         #my_pickle_dump(DM_new=DM_TCAF_health_diet, local_pickle_file=f)
 
-    # Livestock to Crop module
+    # livestock to crop module
     DM_livestock_to_crop = {'feed-processed': dm_feed_processed,
                             'feed-unprocessed': dm_feed_unprocessed}
     if write_pickle is True:
       current_file_directory = os.path.dirname(os.path.abspath(__file__))
       f = os.path.join(current_file_directory,
                        '../_database/data/interface/livestock_to_crop.pickle')
+      with open(f, 'wb') as handle:
+        pickle.dump(DM_livestock_to_crop, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    interface.add_link(from_sector='livestock', to_sector='crop',
+                           dm=DM_livestock_to_crop)
+
+    # livestock to land-use module
+    DM_livestock_to_crop = dm_liv_pop.filter({'Variables':['agr_liv_population']})
+    if write_pickle is True:
+      current_file_directory = os.path.dirname(os.path.abspath(__file__))
+      f = os.path.join(current_file_directory,
+                       '../_database/data/interface/livestock_to_land-use.pickle')
       with open(f, 'wb') as handle:
         pickle.dump(DM_livestock_to_crop, handle, protocol=pickle.HIGHEST_PROTOCOL)
     interface.add_link(from_sector='livestock', to_sector='crop',

@@ -1,4 +1,3 @@
-from model.population_module import population
 from model.buildings_module import buildings
 
 from model.forestry_module import forestry
@@ -6,14 +5,9 @@ from model.forestry_module import forestry
 from model.common.interface_class import Interface
 from model.agriculture_module import agriculture
 
-from model.landuse_module import land_use
-
-
 import math
 import copy
 import time
-import os
-import json
 
 
 def runner(lever_setting, years_setting, DM_in, sectors, logger):

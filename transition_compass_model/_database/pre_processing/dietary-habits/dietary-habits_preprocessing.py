@@ -45,7 +45,7 @@ def ensure_structure(df):
 
 
 # CalculationLeaf DIET ------------------------------------------------------------------------------------
-def diet_processing(list_countries, cdm_kcal, dm_kcal_req):
+def diet_processing(list_countries_calc, cdm_kcal, dm_kcal_req):
     # ----------------------------------------------------------------------------------------------------------------------
     # FOOD SUPPLY Part 1 - including food waste
     # ----------------------------------------------------------------------------------------------------------------------
@@ -74,7 +74,7 @@ def diet_processing(list_countries, cdm_kcal, dm_kcal_req):
         ld = faostat.list_datasets()
         code = 'FBSH'
         pars = faostat.list_pars(code)
-        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries] # faostat.get_par(code, 'elements')
+        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc] # faostat.get_par(code, 'elements')
         my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
         my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
         list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
@@ -102,7 +102,7 @@ def diet_processing(list_countries, cdm_kcal, dm_kcal_req):
                       'Poultry Meat', 'Mutton & Goat Meat', 'Fish, Seafood + (Total)', 'Coffee and products'
                       ]
         code = 'FBS'
-        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
         my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
         my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
         list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021',
@@ -440,7 +440,7 @@ def energy_requirements_processing(country_list, years_ots):
     return dm_kcal_req
 
 # CalculationLeaf SHARE DIET ADHERENCE -----------------------------------------------------------------------------------
-def diet_adherence_processing(list_countries, years_ots):
+def diet_adherence_processing(list_countries_calc, years_ots):
 
   # Create df with dummy year
   df_adherence = pd.DataFrame({
@@ -460,7 +460,7 @@ def diet_adherence_processing(list_countries, years_ots):
 
 
 # CalculationLeaf CAL - DIETARY HABITS -----------------------------------------------------------------------------------
-def dietaryhabits_calibration(list_countries, cdm_kcal):
+def dietaryhabits_calibration(list_countries_calc, cdm_kcal):
     # ----------------------------------------------------------------------------------------------------------------------
     # FOOD SUPPLY (DIET) ---------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -487,7 +487,7 @@ def dietaryhabits_calibration(list_countries, cdm_kcal):
     ld = faostat.list_datasets()
     code = 'FBSH'
     pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
@@ -515,7 +515,7 @@ def dietaryhabits_calibration(list_countries, cdm_kcal):
                   'Bovine Meat', 'Meat, Other', 'Pigmeat',
                   'Poultry Meat', 'Mutton & Goat Meat', 'Fish, Seafood + (Total)', 'Coffee and products']
     code = 'FBS'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021',
@@ -600,6 +600,224 @@ def dietaryhabits_calibration(list_countries, cdm_kcal):
     linear_fitting(dm_cal_diet, years_ots)
 
     return dm_cal_diet
+
+# CalculationLeaf CAL - DOM PROD CROP & BEV
+def crop_calibration(list_countries_calc, dm_fxa_pro_yield, cdm_bev):
+
+    # ----------------------------------------------------------------------------------------------------------------------
+    # DOMESTIC PRODUCTION (CROP PRODUCTS) ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------------------------------------------
+
+    try:
+      df_domestic_supply = pd.read_csv(file_dict['dom-prod-crop'])
+    except OSError:
+
+      # FOOD BALANCE SHEETS (FBS) - -------------------------------------------------
+      # List of elements
+      list_elements = ['Production Quantity', 'Losses']
+
+      list_items = ['Cereals - Excluding Beer + (Total)', 'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
+                  'Pulses + (Total)', 'Rice (Milled Equivalent)',
+                  'Starchy Roots + (Total)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
+                  'Beverages, Fermented', 'Beverages, Alcoholic', 'Beer', 'Wine']
+
+      # 1990 - 2013
+      ld = faostat.list_datasets()
+      code = 'FBSH'
+      pars = faostat.list_pars(code)
+      my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc ]
+      my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+      my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+      list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
+                  '2002',
+                  '2003', '2004', '2005', '2006', '2007', '2008', '2009']
+      my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+      my_pars = {
+        'area': my_countries,
+        'element': my_elements,
+        'item': my_items,
+        'year': my_years
+      }
+      df_domestic_supply_1990_2013 = faostat.get_data_df(code, pars=my_pars, strval=False)
+
+      # 2010-2022
+      list_items = ['Cereals - Excluding Beer + (Total)', 'Fruits - Excluding Wine + (Total)', 'Oilcrops + (Total)',
+                  'Pulses + (Total)', 'Rice and products',
+                  'Starchy Roots + (Total)', 'Sugar Crops + (Total)', 'Vegetables + (Total)',
+                  'Beverages, Fermented', 'Beverages, Alcoholic', 'Beer', 'Wine']
+      code = 'FBS'
+      my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc ]
+      my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+      my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+      list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021',
+                  '2022', '2023']
+      my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+      my_pars = {
+        'area': my_countries,
+        'element': my_elements,
+        'item': my_items,
+        'year': my_years
+      }
+      df_domestic_supply_2010_2022 = faostat.get_data_df(code, pars=my_pars, strval=False)
+
+      # Renaming the items for name matching
+      df_domestic_supply_1990_2013.loc[
+        df_domestic_supply_1990_2013['Item'].str.contains(
+          'Rice (Milled Equivalent)', case=False, na=False, regex=False
+        ),
+        'Item'
+      ] = 'Rice and products'
+
+      # Concatenating all the years together
+      df_domestic_supply = pd.concat([df_domestic_supply_1990_2013, df_domestic_supply_2010_2022])
+
+      # Save to csv
+      df_domestic_supply.to_csv(file_dict['dom-prod-crop'], index=False)
+
+    # Filtering to keep wanted columns
+    columns_to_filter = ['Area', 'Element', 'Item', 'Year', 'Value']
+    df_domestic_supply = df_domestic_supply[columns_to_filter]
+
+    # Pivot the df
+    pivot_df_domestic_supply = df_domestic_supply.pivot_table(index=['Area', 'Year', 'Item'], columns='Element',
+                                        values='Value').reset_index()
+
+    # Unit conversion [kt] => [t]
+    pivot_df_domestic_supply['Production [t]'] = 1000 * pivot_df_domestic_supply['Production']
+
+    # Unit conversion [t] => [kcal]
+    # Read excel
+    df_kcal_t = pd.read_excel(
+        'dictionaries/kcal_to_t.xlsx',
+        sheet_name='kcal_per_100g')
+    df_kcal_t = df_kcal_t[['Item', 'kcal per t']]
+    # Merge
+    merged_df = pd.merge(
+        df_kcal_t,
+        pivot_df_domestic_supply,  # Only keep the needed columns
+        on=['Item']
+    )
+    # Operation
+    merged_df['Production [kcal]'] = merged_df['Production [t]'] * merged_df['kcal per t']
+    pivot_df_domestic_supply = merged_df[['Area', 'Year', 'Item', 'Production [kcal]']]
+    pivot_df_domestic_supply = pivot_df_domestic_supply.copy()
+
+    # PathwayCalc formatting -----------------------------------------------------------------------------------------------
+    # Food item name matching with dictionary
+    # Read excel file
+    df_dict_calibration = pd.read_excel(
+        'dictionaries/dictionnary_dietary-habits.xlsx',
+        sheet_name='calibration')
+
+    # Prepend "Diet" to each value in the 'Item' column
+    pivot_df_domestic_supply['Item'] = pivot_df_domestic_supply['Item'].apply(lambda x: f"Production {x}")
+
+    # Renaming existing columns (geoscale, timsecale, value)
+    pivot_df_domestic_supply.rename(
+        columns={'Area': 'geoscale', 'Year': 'timescale', 'Production [kcal]': 'value'},
+        inplace=True)
+
+    # Merge based on 'Item'
+    df_cal_dom_prod = pd.merge(df_dict_calibration, pivot_df_domestic_supply, on='Item')
+
+    # Drop the 'Item' column
+    df_cal_dom_prod = df_cal_dom_prod.drop(columns=['Item'])
+
+    # Adding the columns module, lever, level and string-pivot at the correct places
+    lever = 'food-net-import'
+    df_cal_dom_prod['module'] = 'agriculture'
+    df_cal_dom_prod['lever'] = lever
+    df_cal_dom_prod['level'] = 0
+
+    # Extrapolation
+    df_cal_dom_prod = linear_fitting_ots_db(df_cal_dom_prod, years_ots, countries='all')
+
+    # Format as datamatrix - Cal dom prod crop
+    df_cal_dom_prod_crop = df_cal_dom_prod[
+        ~df_cal_dom_prod['variables'].str.contains('cal_agr_domestic-production_bev', case=False, na=False)
+    ].copy() # filter what does not contain _bev
+    df_ots, df_fts = database_to_df(df_cal_dom_prod_crop, lever, level='all')
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm_cal_dom_prod_crop = DataMatrix.create_from_df(df_ots, num_cat=1)
+
+    '''# Crop domestic prod with losses [kcal] = crop domestic prod [kcal] * Production losses crop [%]
+    dm_cal_dom_prod_crop.rename_col('cal_agr_domestic-production_food',
+                                'cal_agr_domestic-production_withoutafw',
+                                dim='Variables')
+    list_cat_crop = dm_cal_dom_prod_crop.col_labels['Categories1']
+    dm_cal_dom_prod_crop.append(dm_losses.filter({'Country':['Switzerland'], 'Categories1': list_cat_crop}), dim='Variables')
+    dm_cal_dom_prod_crop.operation('agr_crop_losses', '*',
+                               'cal_agr_domestic-production_withoutafw',
+                               out_col='cal_agr_domestic-production',
+                               unit='kcal')
+    dm_cal_dom_prod_crop.filter({'Variables':['cal_agr_domestic-production']}, inplace=True)'''
+
+    # Format as datamatrix - Cal dom prod bev
+    df_cal_dom_prod_bev = df_cal_dom_prod[
+        df_cal_dom_prod['variables'].str.contains('cal_agr_domestic-production_bev', case=False, na=False)
+    ].copy()
+    df_ots, df_fts = database_to_df(df_cal_dom_prod_bev, lever, level='all')
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm_cal_dom_prod_bev = DataMatrix.create_from_df(df_ots, num_cat=1)
+
+    # Here we want to convert the domestic production of beverages in raw materials
+    # (e.g. in fruits and not wine) for wine & bev-alc
+
+    # Filter processing yields
+    dm_fxa_pro_yield_temp = dm_fxa_pro_yield.filter({'Years':years_ots})
+
+    # Wine : Raw materials [kcal] = product [kcal] * processing yield [%]
+    array_temp = dm_cal_dom_prod_bev[:, :, 'cal_agr_domestic-production_bev',
+                 'wine'] \
+                 * dm_fxa_pro_yield_temp[:,:, 'fxa_agr_processing-yield', 'wine-to-fruit']
+    # Overwrite
+    dm_cal_dom_prod_bev['Switzerland', :,'cal_agr_domestic-production_bev', 'wine'] = array_temp
+
+    # Bev-alc : Raw materials [kcal] = product [kcal] * processing yield [%]
+    array_temp = dm_cal_dom_prod_bev[:, :, 'cal_agr_domestic-production_bev',
+                 'bev-alc'] \
+                 * cdm_bev[
+                   np.newaxis, np.newaxis, 'cp_ibp_bev_bev-alc_brf_crop_fruit', np.newaxis]
+    # Overwrite
+    dm_cal_dom_prod_bev['Switzerland', :,'cal_agr_domestic-production_bev', 'bev-alc'] = array_temp
+
+    # Bev-fer : Raw materials [kcal] = product [kcal] * processing yield [%]
+    array_temp = dm_cal_dom_prod_bev[:, :, 'cal_agr_domestic-production_bev',
+                 'bev-fer'] \
+                 * cdm_bev[
+                   np.newaxis, np.newaxis, 'cp_ibp_bev_bev-fer_brf_crop_cereal', np.newaxis]
+    # Overwrite
+    dm_cal_dom_prod_bev['Switzerland', :,'cal_agr_domestic-production_bev', 'bev-fer'] = array_temp
+
+    # Beer : Raw materials [kcal] = product [kcal] * processing yield [%]
+    array_temp = dm_cal_dom_prod_bev[:, :, 'cal_agr_domestic-production_bev',
+                 'bev-beer'] \
+                 * cdm_bev[
+                   np.newaxis, np.newaxis, 'cp_ibp_bev_beer_brf_crop_cereal', np.newaxis]
+    # Overwrite
+    dm_cal_dom_prod_bev['Switzerland', :, 'cal_agr_domestic-production_bev', 'bev-beer'] = array_temp
+
+    # Sum crops for beverages with crops for food/feed
+    # Groupby fruits or cereals
+    dm_cal_dom_prod_bev.groupby({'cereal': 'bev-fer|bev-beer'}, dim='Categories1', regex=True,
+                             inplace=True)
+    dm_cal_dom_prod_bev.groupby({'fruit': 'bev-alc|wine'}, dim='Categories1', regex=True,
+                              inplace=True)
+    # cal_crop total = cal_crop_food (actually also includes feed) + cal_crop_bev
+    array_temp_cereal = dm_cal_dom_prod_bev[:, :,
+                        'cal_agr_domestic-production_bev', 'cereal'] \
+                        + dm_cal_dom_prod_crop[:, :, 'cal_agr_domestic-production',
+                          'cereal']
+    dm_cal_dom_prod_crop[:, :, 'cal_agr_domestic-production','cereal'] = array_temp_cereal
+    array_temp_fruit = dm_cal_dom_prod_bev[:, :, 'cal_agr_domestic-production_bev',
+                       'fruit'] \
+                       + dm_cal_dom_prod_crop[:, :, 'cal_agr_domestic-production',
+                         'fruit']
+    dm_cal_dom_prod_crop[:, :, 'cal_agr_domestic-production', 'fruit'] = array_temp_fruit
+
+    return dm_cal_dom_prod_crop, dm_cal_dom_prod_bev
 
 # CalculationLeaf HEALTH (SHARE WHOLE GRAINS AND PROCESSED MEAT) ---------------
 def health_processing():
@@ -730,7 +948,7 @@ def ssr_beverages_processing():
     ld = faostat.list_datasets()
     code = 'FBSH'
     pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996',
@@ -764,7 +982,7 @@ def ssr_beverages_processing():
                      'Export quantity', 'Feed', 'Processed', 'Stock Variation',
                      'Food', 'Other uses (non-food)', 'Residuals']
     code = 'FBS'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016',
@@ -872,7 +1090,7 @@ def ssr_beverages_processing():
 
 
 # CalculationLeaf FXA PROCESSING YIELD---------------------------------------------------------------------------------------------
-def fxa_processing_yield():
+def fxa_processing_yield(cdm_kcal):
   # Read data ------------------------------------------------------------------------------------------------------------
   try:
     df_ssr = pd.read_csv(file_dict['ssr'])
@@ -905,7 +1123,7 @@ def fxa_processing_yield():
     ld = faostat.list_datasets()
     code = 'FBSH'
     pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996',
@@ -956,7 +1174,7 @@ def fxa_processing_yield():
                   'Fish, Seafood + (Total)', 'Sugar & Sweeteners + (Total)',
                   'Grapes and products (excl wine)']
     code = 'FBS'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016',
@@ -1004,7 +1222,7 @@ def fxa_processing_yield():
                   'Rape and Mustard Cake', 'Sesameseed Cake', 'Soyabean Cake',
                   'Sunflowerseed Cake']
     code = 'CBH'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996',
@@ -1048,7 +1266,7 @@ def fxa_processing_yield():
                   'Cake of sesame seed', 'Cake of sunflower seed',
                   'Cake, oilseeds nes', 'Cake, poppy seed']
     code = 'SCL'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016',
@@ -1289,6 +1507,50 @@ def fxa_processing_yield():
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
   dm_fxa_pro_yield = DataMatrix.create_from_df(df_ots, num_cat=1)
 
+  # The idea is to change unit from t input / t output to kcal input / kcal output
+  # because that is what is used in the Calculator
+  # Yield [kcal input / kcal output] = Yield [t input / t output] * (kcal per t input) / (kcal per t output)
+
+  # Voil
+  array_temp = dm_fxa_pro_yield[:, :, 'fxa_agr_processing-yield', 'voil-to-oilcrop'] \
+               * cdm_kcal[
+                 np.newaxis, np.newaxis, 'cp_kcal-per-t', 'crop-oilcrop'] \
+               / cdm_kcal[
+                 np.newaxis, np.newaxis, 'cp_kcal-per-t', 'pro-crop-processed-voil']
+  dm_fxa_pro_yield[:, :, 'fxa_agr_processing-yield','voil-to-oilcrop'] = array_temp
+
+  # Cake
+  array_temp = dm_fxa_pro_yield[:, :, 'fxa_agr_processing-yield', 'cake-to-oilcrop'] \
+               * cdm_kcal[
+                 np.newaxis, np.newaxis, 'cp_kcal-per-t', 'crop-oilcrop'] \
+               / cdm_kcal[
+                 np.newaxis, np.newaxis, 'cp_kcal-per-t', 'pro-crop-processed-cake']
+  dm_fxa_pro_yield[:, :, 'fxa_agr_processing-yield','cake-to-oilcrop'] = array_temp
+
+  # Molasse
+  array_temp = dm_fxa_pro_yield[:, :, 'fxa_agr_processing-yield',
+               'molasse-to-sugarcrop'] \
+               * cdm_kcal[
+                 np.newaxis, np.newaxis, 'cp_kcal-per-t', 'crop-sugarcrop'] \
+               / cdm_kcal[
+                 np.newaxis, np.newaxis, 'cp_kcal-per-t', 'pro-crop-processed-molasse']
+  dm_fxa_pro_yield[:, :, 'fxa_agr_processing-yield','molasse-to-sugarcrop'] = array_temp
+
+  # Sugar
+  array_temp = dm_fxa_pro_yield[:, :, 'fxa_agr_processing-yield', 'sugar-to-sugarcrop'] \
+               * cdm_kcal[
+                 np.newaxis, np.newaxis, 'cp_kcal-per-t', 'crop-sugarcrop'] \
+               / cdm_kcal[
+                 np.newaxis, np.newaxis, 'cp_kcal-per-t', 'pro-crop-processed-sugar']
+  dm_fxa_pro_yield[:, :, 'fxa_agr_processing-yield','sugar-to-sugarcrop'] = array_temp
+
+  # Wine
+  array_temp = dm_fxa_pro_yield[:, :, 'fxa_agr_processing-yield', 'wine-to-fruit'] \
+               * cdm_kcal[np.newaxis, np.newaxis, 'cp_kcal-per-t', 'crop-fruit'] \
+               / cdm_kcal[
+                 np.newaxis, np.newaxis, 'cp_kcal-per-t', 'pro-bev-wine']
+  dm_fxa_pro_yield[:, :, 'fxa_agr_processing-yield','wine-to-fruit'] = array_temp
+
   return dm_fxa_pro_yield
 
 # CalculationLeaf CONSTANTS  ------------------------------
@@ -1355,7 +1617,7 @@ def constant():
   return cdm_kcal, cdm_lifestyle, cdm_bev
 
 # CalculationLeaf FTS  ------------------------------
-def fts_processing(list_countries, years_ots, years_fts, cdm_kcal):
+def fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal):
 
   # fwaste, diet-adherence, kcal-req, ssr-bev -------------------------------------------
   # Read Excel
@@ -1550,6 +1812,7 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
 
   # Diet
   dict_fxa['cal_agr_diet'] = dm_cal_diet
+  dict_fxa['cal_agr_domestic-production_bev'] = dm_cal_dom_prod_bev
 
 
   # LeversToDatamatrix OTS -----------------------------------------------------
@@ -1781,24 +2044,26 @@ years_all = years_ots + years_fts
 if not os.path.exists('data/faostat'):
     os.makedirs('data/faostat')
 
-list_countries = ['Switzerland']
+list_countries_calc = ['Switzerland']
 
 # Create files for storing data
 file_dict = {'ssr': 'data/faostat/ssr.csv',
              'ssr_bev': 'data/faostat/ssr_bev.csv',
+             'dom-prod-crop': 'data/faostat/dom-prod-crop.csv',
              'cake': 'data/faostat/ssr_cake.csv',
              'molasse': 'data/faostat/ssr_2010_2021_molasse_cake.csv',
              'diet': 'data/faostat/diet.csv'}
 
 cdm_kcal, cdm_lifestyle, cdm_bev = constant()
-dm_cal_diet = dietaryhabits_calibration(list_countries, cdm_kcal)
-dm_kcal_req_temp = energy_requirements_processing(list_countries, years_ots)
-dm_diet_share, dm_waste, dm_kcal_req, dm_diet_kcal = diet_processing(list_countries, cdm_kcal, dm_kcal_req_temp)
-dm_adherence = diet_adherence_processing(list_countries, years_ots)
-dm_fts = fts_processing(list_countries, years_ots, years_fts, cdm_kcal)
+dm_cal_diet = dietaryhabits_calibration(list_countries_calc, cdm_kcal)
+dm_kcal_req_temp = energy_requirements_processing(list_countries_calc, years_ots)
+dm_diet_share, dm_waste, dm_kcal_req, dm_diet_kcal = diet_processing(list_countries_calc, cdm_kcal, dm_kcal_req_temp)
+dm_adherence = diet_adherence_processing(list_countries_calc, years_ots)
+dm_fts = fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal)
 dm_food_health = health_processing()
-dm_fxa_pro_yield = fxa_processing_yield()
+dm_fxa_pro_yield = fxa_processing_yield(cdm_kcal)
 dm_ssr_bev = ssr_beverages_processing()
+dm_cal_dom_prod_crop, dm_cal_dom_prod_bev = crop_calibration(list_countries_calc, dm_fxa_pro_yield, cdm_bev)
 
 
 # CalculationTree RUNNING PICKLE CREATION

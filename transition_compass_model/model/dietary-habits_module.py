@@ -102,6 +102,7 @@ def read_data(DM_diet_input, lever_setting, tpe_scenario):
     #dm_alc_bev = DM_ots_fts['biomass-hierarchy']['biomass-hierarchy-bev-ibp-use-oth']
     dm_processing_yield = DM_diet_input['fxa']['processing-yield']
     dm_bev_ssr = DM_ots_fts['ssr-bev']
+    dm_cal_crop_bev = DM_diet_input['fxa']['cal_agr_domestic-production_bev']
 
     # Aggregate Data Matrix - DIETARY HABITS
     DM_diet = {
@@ -118,7 +119,8 @@ def read_data(DM_diet_input, lever_setting, tpe_scenario):
     DM_alc_bev = {
         #'biomass_hierarchy': dm_alc_bev,
         'processing-yields': dm_processing_yield,
-        'ssr-bev': dm_bev_ssr
+        'ssr-bev': dm_bev_ssr,
+        'cal_bev': dm_cal_crop_bev
     }
 
 
@@ -425,7 +427,7 @@ def lifestyle_kcal_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scena
     return dm_lfs, dm_diet_consumed, dm_diet_consumed_bau, dm_diet_consumed_scenario, dm_diet_food
 
 # CalculationLeaf ALCOHOLIC BEVERAGES INDUSTRY -------------------------------------------------------------------------
-def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs):
+def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs, years_setting):
     # Filtering dms to only keep pro
     dm_demand_bev = dm_lfs.filter_w_regex({'Categories1': 'pro-bev.*', 'Variables': 'agr_demand'})
 
@@ -509,17 +511,25 @@ def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs):
     # Cereals domestic production for beverages = cereals for beer + cereals for bev fer
     dm_bev_dom_prod.operation('agr_ibp_bev_beer_crop_cereal', '+',
                               'agr_ibp_bev_bev-fer_crop_cereal',
-                              out_col='agr_domestic-production_bev_cereal', unit='kcal')
+                              out_col='agr_domestic-production_bev_raw_cereal', unit='kcal')
 
     # Fruit domestic production for beverages = fruits for bev-alc + fruits for wine
     dm_bev_dom_prod.operation('agr_ibp_bev_bev-alc_crop_fruit', '+',
                               'agr_ibp_bev_wine_crop_fruit',
-                              out_col='agr_domestic-production_bev_fruit', unit='kcal')
+                              out_col='agr_domestic-production_bev_raw_fruit', unit='kcal')
 
     # Filter and deepen
-    dm_bev_dom_prod = dm_bev_dom_prod.filter({'Variables': ['agr_domestic-production_bev_cereal',
-                                                            'agr_domestic-production_bev_fruit']})
+    dm_bev_dom_prod = dm_bev_dom_prod.filter({'Variables': ['agr_domestic-production_bev_raw_cereal',
+                                                            'agr_domestic-production_bev_raw_fruit']})
     dm_bev_dom_prod.deepen()
+
+    # (CH only) CALIBRATION CROP PRODUCTION BEVERAGES --------------------------------------------------------------------------------------
+    dm_cal_rates_bev = calibration_rates(dm_bev_dom_prod, DM_alc_bev['cal_bev'], calibration_start_year=1990,
+                                          calibration_end_year=2023, years_setting=years_setting)
+    dm_bev_dom_prod.append(dm_cal_rates_bev, dim='Variables')
+    dm_bev_dom_prod.operation('agr_domestic-production_bev_raw', '*', 'cal_rate', dim='Variables',
+                          out_col='agr_domestic-production_bev', unit='kcal')
+    dm_bev_dom_prod.filter({'Variables': ['agr_domestic-production_bev']}, inplace=True)
 
     # BYPRODUCT PRODUCTION OF BEVERAGES ------------------------------------------------------------------------------
 
@@ -703,7 +713,7 @@ def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, write_pi
       dm_lfs, dm_diet_consumed, dm_diet_consumed_bau, dm_diet_consumed_scenario, dm_diet_food = lifestyle_kcal_workflow(
         DM_diet, DM_pop, CDM_const, years_setting, tpe_scenario=tpe_scenario)
 
-    DM_alc_bev, dm_bev_ibp_cereal_feed, dm_bev_dom_prod = alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs)
+    DM_alc_bev, dm_bev_ibp_cereal_feed, dm_bev_dom_prod = alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs, years_setting,)
 
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 

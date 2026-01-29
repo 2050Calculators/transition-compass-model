@@ -20,7 +20,7 @@ import time
 def init_years_lever():
     # function that can be used when running the module as standalone to initialise years and levers
     years_setting = [1990, 2015, 2020, 2050, 5]
-    f = open('../config/lever_position.json')
+    f = open('../../config/lever_position.json')
     lever_setting = json.load(f)[0]
     return years_setting, lever_setting
 

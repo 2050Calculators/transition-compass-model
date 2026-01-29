@@ -1155,127 +1155,6 @@ def calibration_formatting(df_diet_calibration):
 
     return df_calibration_ext_agr
 
-# CalculationLeaf LIVESTOCK DENSITY & GRAZING INTENSITY ------------------------------------------------------------------------------
-
-def livestock_density(df_liv_pop):
-  # Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
-
-  # List of elements
-  list_elements = ['Area']
-
-  list_items = ['-- Cropland', '--- Temporary crops', '--- Temporary fallow',
-                '-- Permanent meadows and pastures']
-
-  # 1990 - 2022
-  ld = faostat.list_datasets()
-  code = 'RL'
-  pars = faostat.list_pars(code)
-  my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
-  my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
-  my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
-  list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997',
-                '1998', '1999', '2000', '2001',
-                '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009',
-                '2010', '2011', '2012', '2013',
-                '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021',
-                '2022', '2023']
-  my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
-
-  my_pars = {
-    'area': my_countries,
-    'element': my_elements,
-    'item': my_items,
-    'year': my_years
-  }
-  df_land_use_fao = faostat.get_data_df(code, pars=my_pars, strval=False)
-
-  # Filtering to keep wanted columns
-  columns_to_filter = ['Area', 'Item', 'Year', 'Value']
-  df_land_use_fao = df_land_use_fao[columns_to_filter]
-
-  # Pivot the df
-  df_land_use_fao = df_land_use_fao.pivot_table(index=['Area', 'Year', 'Item'],
-                                                values='Value').reset_index()
-
-  # Unit conversion [k ha] => [ha]
-  df_land_use_fao['Value'] = df_land_use_fao['Value'] * 1000
-
-  # Filter for Cropland for density lsu
-  df_cropland_density = df_land_use_fao[df_land_use_fao['Item'].isin(
-    ['Cropland', 'Permanent meadows and pastures'])]
-  df_cropland_density = df_cropland_density.pivot_table(
-    index=['Area', 'Year'],
-    columns='Item',
-    values='Value'
-  ).reset_index()
-
-  # Filter grazing ruminant livestock (cattle meat, sheep, goats) and sum per year
-  df_ruminant = df_liv_pop[df_liv_pop['Item'].isin(
-    ['Cattle, dairy', 'Cattle, non-dairy', 'Sheep and Goats'])]
-  df_ruminant = df_ruminant.groupby(['Area', 'Year'], as_index=False)[
-    'Value'].sum()
-
-  # Merge with cropland_density
-  df_ruminant = pd.merge(df_ruminant, df_cropland_density, on=['Area', 'Year'])
-
-  # Compute livestock density of ruminant per area of permanent meadows and pastures
-  df_ruminant['Livestock density [lsu/ha]'] = df_ruminant['Value'] / \
-                                              df_ruminant[
-                                                'Permanent meadows and pastures']
-
-  # Filter and add column density
-  df_ruminant = df_ruminant[['Year', 'Area', 'Livestock density [lsu/ha]']]
-
-  # Adding an Item column for name
-  df_ruminant['Item'] = 'Density'
-
-
-  # PathwayCalc formatting -----------------------------------------------------------------------------------------------
-
-  # Renaming into 'Value'
-  df_ruminant.rename(columns={'Area': 'geoscale', 'Year': 'timescale',
-                              'Livestock density [lsu/ha]': 'value'},
-                     inplace=True)
-
-  # Read excel file
-  df_dict_csl = pd.read_excel(
-    'dictionaries/dictionnary_livestock.xlsx',
-    sheet_name='climate-smart-livestock')
-
-  # Merge based on 'Item'
-  df_csl_density_pathwaycalc = pd.merge(df_dict_csl, df_ruminant, on='Item')
-
-  # Drop the 'Item' column
-  df_csl_density_pathwaycalc = df_csl_density_pathwaycalc.drop(columns=['Item'])
-
-  # Adding the columns module, lever, level and string-pivot at the correct places
-  df_csl_density_pathwaycalc['module'] = 'agriculture'
-  lever = 'dummy'
-  df_csl_density_pathwaycalc['lever'] = lever
-  df_csl_density_pathwaycalc['level'] = 0
-  cols = df_csl_density_pathwaycalc.columns.tolist()
-  cols.insert(cols.index('value'), cols.pop(cols.index('module')))
-  cols.insert(cols.index('value'), cols.pop(cols.index('lever')))
-  cols.insert(cols.index('value'), cols.pop(cols.index('level')))
-  df_csl_density_pathwaycalc = df_csl_density_pathwaycalc[cols]
-
-  # Rename countries to Pathaywcalc name
-  df_csl_density_pathwaycalc['geoscale'] = df_csl_density_pathwaycalc[
-    'geoscale'].replace(
-    'United Kingdom of Great Britain and Northern Ireland', 'United Kingdom')
-  df_csl_density_pathwaycalc['geoscale'] = df_csl_density_pathwaycalc[
-    'geoscale'].replace(
-    'Netherlands (Kingdom of the)',
-    'Netherlands')
-  df_csl_density_pathwaycalc['geoscale'] = df_csl_density_pathwaycalc[
-    'geoscale'].replace('Czechia', 'Czech Republic')
-
-  # Format as datamatrix
-  df_ots, df_fts = database_to_df(df_csl_density_pathwaycalc, lever, level='all')
-  df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
-  dm_density = DataMatrix.create_from_df(df_ots, num_cat=0)
-
-  return dm_density
 
 # CalculationLeaf LIVESTOCK EMISSIONS ------------------------------------------------------------------------------
 def livestock_emissions():
@@ -3363,8 +3242,6 @@ def datamatrix_to_pickle(dm_fts):
   dict_ots['livestock-losses'] = dm_losses
   # 'slaughter-rates'
   dict_ots['slaughter-rates'] = dm_slaughter_rates
-  # livestock-density
-  dict_ots['livestock-density'] = dm_density
   # livestock-enteric
   dict_ots['livestock-enteric'] = dm_enteric
   # livestock-manure
@@ -3587,7 +3464,6 @@ dm_liv_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = trade_origin
 dm_losses = livestock_losses()
 dm_cal_dom_prod, dm_cal_liv_pop, df_liv_pop = livestock_calibration(list_countries_calc, dm_losses)
 dm_prod_share, dm_cal_liv_pop_org = production_share(dm_cal_liv_pop)
-dm_density = livestock_density(df_liv_pop)
 dm_manure, dm_enteric, dm_fxa_manure_yield, df_manure_ch4_fxa, df_manure_n_fxa = livestock_emissions()
 dm_cal_feed, df_feed_ration = feed_calibration(list_countries_calc)
 dm_feed_ration, dm_grass = feed_ration(df_feed_ration, cdm_efficiency, cdm_kcal)
