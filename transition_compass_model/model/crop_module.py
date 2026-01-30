@@ -177,6 +177,15 @@ def simulate_livestock_to_crop_input():
     DM_livestock_to_crop = pickle.load(handle)
   return DM_livestock_to_crop
 
+# SimulateInteractions alcoholic-beverages
+def simulate_alc_to_crop_input():
+  current_file_directory = os.path.dirname(os.path.abspath(__file__))
+  f = os.path.join(current_file_directory,
+                   "../_database/data/interface/alcoholic-beverages_to_crop.pickle")
+  with open(f, 'rb') as handle:
+    DM_alc_to_crop = pickle.load(handle)
+  return DM_alc_to_crop
+
 # CalculationLeaf CROP PRODUCTION ----------------------------------------------------------------------------------
 def crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_demand, dm_bev_dom_prod, years_setting):
 
@@ -445,9 +454,15 @@ def crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_deman
 
     # Step IMPORTS
 
+
+
     # FIXME add imports of processes food, feed and beverages
 
+
+
     # FIXME make sure its correct for processed food/feed
+
+
     #dm_food_processed.operation('agr_imports_food_pro', '*',
     #                            'fxa_agr_processing-yield',
     #                            out_col='agr_imports_food',
@@ -650,7 +665,6 @@ def crop(lever_setting, years_setting, DM_input, write_pickle, interface=Interfa
     if interface.has_link(from_sector='dietary-habits', to_sector='crop'):
         DM_diet_crop = interface.get_link(from_sector='dietary-habits', to_sector='crop')
         dm_demand = DM_diet_crop['demand']
-        dm_bev_dom_prod = DM_diet_crop['crop_bev']
     else:
         if len(interface.list_link()) != 0:
             print('You are missing dietary-habits to crop interface')
@@ -658,7 +672,6 @@ def crop(lever_setting, years_setting, DM_input, write_pickle, interface=Interfa
         for key in DM_diet_crop.keys():
             DM_diet_crop[key].filter({'Country': country_list}, inplace=True)
         dm_demand = DM_diet_crop['demand']
-        dm_bev_dom_prod = DM_diet_crop['crop_bev']
 
     # livestock
     if interface.has_link(from_sector='livestock', to_sector='crop'):
@@ -673,6 +686,18 @@ def crop(lever_setting, years_setting, DM_input, write_pickle, interface=Interfa
             DM_livestock_to_crop[key].filter({'Country': country_list}, inplace=True)
         dm_feed_processed = DM_livestock_to_crop['feed-processed']
         dm_feed_unprocessed = DM_livestock_to_crop['feed-unprocessed']
+
+    # alcoholic-beverages
+    if interface.has_link(from_sector='livestock', to_sector='crop'):
+        DM_alc_to_crop = interface.get_link(from_sector='alcoholic-beverages', to_sector='crop')
+        dm_bev_dom_prod = DM_alc_to_crop['crop_bev']
+    else:
+        if len(interface.list_link()) != 0:
+            print('You are missing livestock to crop interface')
+        DM_alc_to_crop = simulate_alc_to_crop_input()
+        for key in DM_alc_to_crop.keys():
+            DM_alc_to_crop[key].filter({'Country': country_list}, inplace=True)
+        dm_bev_dom_prod = DM_alc_to_crop['crop_bev']
 
     # CalculationTree CROP MODULE
 

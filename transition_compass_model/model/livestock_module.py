@@ -133,8 +133,17 @@ def simulate_dietaryhabits_to_livestock_input():
     f = os.path.join(current_file_directory, "../_database/data/interface/dietary-habits_to_livestock.pickle")
     with open(f, 'rb') as handle:
         dm_demand = pickle.load(handle)
-
     return dm_demand
+
+
+def simulate_alcholic_beverages_to_livestock_input():
+  current_file_directory = os.path.dirname(os.path.abspath(__file__))
+  f = os.path.join(current_file_directory,
+                   "../_database/data/interface/alcoholic-beverages_to_livestock.pickle")
+  with open(f, 'rb') as handle:
+    dm_demand = pickle.load(handle)
+
+  return dm_demand
 
 # CalculationLeaf LIVESTOCK FOOD DEMAND TO DOMESTIC & IMPORTED FOOD PRODUCTION --------------------------------------------------------------
 def trade_livestock_workflow(DM_liv_prod, dm_demand, years_setting):
@@ -720,11 +729,10 @@ def livestock(lever_setting, years_setting, DM_input, write_pickle, interface=In
 
     # INTERFACES IN ---------------------------------------------------------------------------------------------------
 
-    # Link interface or Simulate data from other modules
+    # dietary-habits to livestock
     if interface.has_link(from_sector='dietary-habits', to_sector='livestock'):
         DM_diet_livestock = interface.get_link(from_sector='dietary-habits', to_sector='livestock')
         dm_demand = DM_diet_livestock['demand']
-        dm_bev_ibp_cereal_feed = DM_diet_livestock['bev_feed']
     else:
         if len(interface.list_link()) != 0:
             print('You are missing dietary-habits to livestock interface')
@@ -732,7 +740,21 @@ def livestock(lever_setting, years_setting, DM_input, write_pickle, interface=In
         for key in DM_diet_livestock.keys():
             DM_diet_livestock[key].filter({'Country': country_list}, inplace=True)
         dm_demand = DM_diet_livestock['demand']
-        dm_bev_ibp_cereal_feed = DM_diet_livestock['bev_feed']
+
+    # alcoholic-beverages to livestock
+    if interface.has_link(from_sector='alcoholic-beverages',
+                          to_sector='livestock'):
+      DM_alc_to_livestock = interface.get_link(from_sector='alcoholic-beverages',
+                                                 to_sector='livestock')
+      dm_bev_ibp_cereal_feed = DM_alc_to_livestock['bev_feed']
+    else:
+      if len(interface.list_link()) != 0:
+        print('You are missing alcoholic-beverages to livestock interface')
+      DM_alc_to_livestock = simulate_alcholic_beverages_to_livestock_input()
+      for key in DM_alc_to_livestock.keys():
+        DM_alc_to_livestock[key].filter({'Country': country_list},
+                                          inplace=True)
+      dm_bev_ibp_cereal_feed = DM_alc_to_livestock['bev_feed']
 
     # CalculationTree LIVESTOCK MODULE
 
