@@ -29,16 +29,20 @@ def read_data(DM_alc_bev_input, lever_setting):
 
     # Sub-matrix for ALCOHOLIC BEVERAGES
     #dm_alc_bev = DM_ots_fts['biomass-hierarchy']['biomass-hierarchy-bev-ibp-use-oth']
-    dm_processing_yield = DM_alc_bev_input['fxa']['processing-yield']
     dm_bev_ssr = DM_ots_fts['ssr-bev']
     dm_cal_crop_bev = DM_alc_bev_input['fxa']['cal_agr_domestic-production_bev']
+    dm_cal_crop_bev_imports = DM_alc_bev_input['fxa']['cal_agr_imports-bev_total']
+    dm_imports = DM_alc_bev_input['fxa']['split-import']
+    dm_processing_yield = DM_alc_bev_input['fxa']['processing-yield']
 
     # Aggregated Data Matrix - ALCOHOLIC BEVERAGES
     DM_alc_bev = {
         #'biomass_hierarchy': dm_alc_bev,
         'processing-yields': dm_processing_yield,
+        'split-import': dm_imports,
         'ssr-bev': dm_bev_ssr,
-        'cal_bev': dm_cal_crop_bev
+        'cal_bev': dm_cal_crop_bev,
+        'cal_bev_imports': dm_cal_crop_bev_imports
     }
 
 
@@ -68,22 +72,11 @@ def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs, years_setting):
     food_net_import_pro.sort(dim='Categories1')
     dm_demand_bev.sort(dim='Categories1')
 
+    # Step Domestic production -------------------------------------------------
     # Domestic production processed food [kcal] = agr_demand_pro_(.*) [kcal] * net-imports_pro_(.*) [-]
     array_agr_domestic_production = dm_demand_bev[:, :, 'agr_demand', :] \
                               * food_net_import_pro[:, :, 'agr_ssr']
     dm_demand_bev.add(array_agr_domestic_production, dim='Variables', col_label='agr_domestic_production', unit='kcal')
-
-    # Imports processed bev [kcal] = demand bev processed bev[kcal] - domestic production processed bev[kcal]
-    dm_demand_bev.operation('agr_demand', '-',
-                              'agr_domestic_production',
-                              out_col='agr_domestic_production_raw', unit='kcal')
-
-    # Calibration imports
-
-    # Splits imports per country
-
-    # Raw crops [kcal] =  imported bev per country [kcal] * processing yield [input kcal/output kcal]
-
 
     # Filter domestic production bev and rename
     # Beer
@@ -139,7 +132,7 @@ def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs, years_setting):
 
     # Wine - Crop Grape (fruit)
     array_temp = dm_bev_wine[:, :, 'agr_domestic_production_wine'] \
-                                  * DM_alc_bev['processing-yields'][:,:, 'fxa_agr_processing-yield', 'wine-to-fruit']
+                                  * DM_alc_bev['processing-yields']['Switzerland',:, 'fxa_agr_processing-yield', 'wine-to-fruit']
     dm_bev_wine.add(array_temp, dim='Variables', col_label='agr_ibp_bev_wine_crop_fruit', unit='kcal')
 
     # Append together
@@ -163,7 +156,7 @@ def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs, years_setting):
                                                             'agr_domestic-production_bev_raw_fruit']})
     dm_bev_dom_prod.deepen()
 
-    # (CH only) CALIBRATION CROP PRODUCTION BEVERAGES --------------------------------------------------------------------------------------
+    # (CH only) CALIBRATION CROP PRODUCTION BEVERAGES (raw) --------------------------------------------------------------------------------------
     dm_cal_rates_bev = calibration_rates(dm_bev_dom_prod, DM_alc_bev['cal_bev'], calibration_start_year=1990,
                                           calibration_end_year=2023, years_setting=years_setting)
     dm_bev_dom_prod.append(dm_cal_rates_bev, dim='Variables')
@@ -236,6 +229,60 @@ def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs, years_setting):
     dm_bev_ibp_cereal_feed.add(array_temp, dim='Variables',
                     col_label='agr_use_bev_ibp_cereal_feed_t',
                     unit='t')
+
+    # Step Imports -------------------------------------------------------------
+    # Imports processed bev [kcal] = demand bev processed bev[kcal] - domestic production processed bev[kcal]
+    dm_demand_bev.operation('agr_demand', '-', 'agr_domestic_production',
+                              out_col='agr_imported_production_raw', unit='kcal')
+
+    # Calibration imports (processed beverages)
+    dm_cal_rates_bev = calibration_rates(dm_demand_bev.filter({'Variables': ['agr_imported_production_raw']}), DM_alc_bev['cal_bev_imports'], calibration_start_year=2000,
+                                          calibration_end_year=2023, years_setting=years_setting)
+    dm_demand_bev.append(dm_cal_rates_bev, dim='Variables')
+    dm_demand_bev.operation('agr_imported_production_raw', '*', 'cal_rate', dim='Variables',
+                          out_col='agr_imported_production', unit='kcal')
+    dm_demand_bev.filter({'Variables': ['agr_demand','agr_domestic_production','agr_imported_production']}, inplace=True)
+
+    # Imported production per region [kcal] = Imported production total [kcal] * split per region [-]
+    #DM_alc_bev['split-import'].filter_w_regex({'Categories1': 'crop-'},inplace=True)
+    dm_trade = DM_alc_bev['split-import'].copy()
+    array_temp = dm_demand_bev[:, :, 'agr_imported_production', :] * \
+                 dm_trade[:, :, 'agr_split-import', :]
+    DM_alc_bev['split-import'].add(array_temp, dim='Variables',
+                                     col_label='agr_domestic_production',
+                                     unit='kcal')
+
+    # Raw crops [kcal] =  imported bev per country [kcal] * processing yield [input kcal/output kcal]
+    # Create dummy variable to overwite
+    DM_alc_bev['split-import'].add(0.0, dummy=True, col_label='agr_domestic_production_bev_raw',
+                          dim='Variables', unit='kcal')
+
+    # Beer - Crop Cereal
+    array_temp = DM_alc_bev['split-import'][:, :, 'agr_domestic_production', 'pro-bev-beer'] \
+                                   * cdm_cp_ibp_bev_beer['cp_ibp_bev_beer_brf_crop_cereal']
+    DM_alc_bev['split-import'][:, :, 'agr_domestic_production_bev_raw', 'pro-bev-beer'] = array_temp
+
+    # Bev-fer - Crop cereal
+    array_temp = DM_alc_bev['split-import'][:, :, 'agr_domestic_production',
+                 'pro-bev-bev-fer'] \
+                 * cdm_cp_ibp_bev_fer['cp_ibp_bev_bev-fer_brf_crop_cereal']
+    DM_alc_bev['split-import'][:, :, 'agr_domestic_production_bev_raw',
+    'pro-bev-bev-fer'] = array_temp
+
+    # Bev-alc - Crop fruit
+    array_temp = DM_alc_bev['split-import'][:, :, 'agr_domestic_production',
+                 'pro-bev-bev-alc'] \
+                 * cdm_cp_ibp_bev_alc['cp_ibp_bev_bev-alc_brf_crop_fruit']
+    DM_alc_bev['split-import'][:, :, 'agr_domestic_production_bev_raw',
+    'pro-bev-bev-alc'] = array_temp
+
+
+    # Wine - Crop Grape (fruit)
+    dm_pro_yield_imports = DM_alc_bev['processing-yields'].filter({'Country': DM_alc_bev['split-import'].col_labels['Country']})
+    array_temp = dm_bev_wine[:, :, 'agr_domestic_production_wine'] \
+                                  * dm_pro_yield_imports[:,:, 'fxa_agr_processing-yield', 'wine-to-fruit']
+    DM_alc_bev['split-import'][:, :, 'agr_domestic_production_bev_raw','pro-bev-wine'] = array_temp
+
 
     # (Not used after) Fruits bev allocated to non-food [kcal] = dom prod bev alc + dom prod bev wine + bev byproducts for fertilizer
 
@@ -375,7 +422,7 @@ def alcoholic_beverages(lever_setting, years_setting, DM_input, write_pickle, in
 
 def alcoholic_beverages_local_run():
     country_list = ['Switzerland']
-    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'alcoholic-beverages', filter_country=True)
+    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'alcoholic-beverages', filter_country=False)
     years_setting, lever_setting = init_years_lever()
     alcoholic_beverages(lever_setting, years_setting, DM_input['alcoholic-beverages'], write_pickle=True)
 

@@ -695,7 +695,7 @@ def crop(lever_setting, years_setting, DM_input, write_pickle, interface=Interfa
         if len(interface.list_link()) != 0:
             print('You are missing livestock to crop interface')
         DM_alc_to_crop = simulate_alc_to_crop_input()
-        for key in DM_alc_to_crop.keys():
+        for key in DM_livestock_to_crop.keys():
             DM_alc_to_crop[key].filter({'Country': country_list}, inplace=True)
         dm_bev_dom_prod = DM_alc_to_crop['crop_bev']
 

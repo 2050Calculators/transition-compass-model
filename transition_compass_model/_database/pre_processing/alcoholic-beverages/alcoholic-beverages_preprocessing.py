@@ -193,14 +193,14 @@ def bev_calibration(list_countries_calc, dm_fxa_pro_yield, cdm_bev):
     dm_fxa_pro_yield_temp = dm_fxa_pro_yield.filter({'Years':years_ots})
 
     # Wine : Raw materials [kcal] = product [kcal] * processing yield [%]
-    array_temp = dm_cal_dom_prod_bev[:, :, 'cal_agr_domestic-production_bev',
+    array_temp = dm_cal_dom_prod_bev['Switzerland', :, 'cal_agr_domestic-production_bev',
                  'wine'] \
-                 * dm_fxa_pro_yield_temp[:,:, 'fxa_agr_processing-yield', 'wine-to-fruit']
+                 * dm_fxa_pro_yield_temp['Switzerland',:, 'fxa_agr_processing-yield', 'wine-to-fruit']
     # Overwrite
-    dm_cal_dom_prod_bev['Switzerland', :,'cal_agr_domestic-production_bev', 'wine'] = array_temp
+    dm_cal_dom_prod_bev[:, :,'cal_agr_domestic-production_bev', 'wine'] = array_temp
 
     # Bev-alc : Raw materials [kcal] = product [kcal] * processing yield [%]
-    array_temp = dm_cal_dom_prod_bev[:, :, 'cal_agr_domestic-production_bev',
+    array_temp = dm_cal_dom_prod_bev['Switzerland', :, 'cal_agr_domestic-production_bev',
                  'bev-alc'] \
                  * cdm_bev[
                    np.newaxis, np.newaxis, 'cp_ibp_bev_bev-alc_brf_crop_fruit', np.newaxis]
@@ -208,7 +208,7 @@ def bev_calibration(list_countries_calc, dm_fxa_pro_yield, cdm_bev):
     dm_cal_dom_prod_bev['Switzerland', :,'cal_agr_domestic-production_bev', 'bev-alc'] = array_temp
 
     # Bev-fer : Raw materials [kcal] = product [kcal] * processing yield [%]
-    array_temp = dm_cal_dom_prod_bev[:, :, 'cal_agr_domestic-production_bev',
+    array_temp = dm_cal_dom_prod_bev['Switzerland', :, 'cal_agr_domestic-production_bev',
                  'bev-fer'] \
                  * cdm_bev[
                    np.newaxis, np.newaxis, 'cp_ibp_bev_bev-fer_brf_crop_cereal', np.newaxis]
@@ -216,7 +216,7 @@ def bev_calibration(list_countries_calc, dm_fxa_pro_yield, cdm_bev):
     dm_cal_dom_prod_bev['Switzerland', :,'cal_agr_domestic-production_bev', 'bev-fer'] = array_temp
 
     # Beer : Raw materials [kcal] = product [kcal] * processing yield [%]
-    array_temp = dm_cal_dom_prod_bev[:, :, 'cal_agr_domestic-production_bev',
+    array_temp = dm_cal_dom_prod_bev['Switzerland', :, 'cal_agr_domestic-production_bev',
                  'bev-beer'] \
                  * cdm_bev[
                    np.newaxis, np.newaxis, 'cp_ibp_bev_beer_brf_crop_cereal', np.newaxis]
@@ -372,15 +372,6 @@ def ssr_beverages_processing():
   df_ssr_bev['module'] = lever
   df_ssr_bev['lever'] = lever
   df_ssr_bev['level'] = 0
-
-  # Rename countries to Pathaywcalc name
-  df_ssr_bev['geoscale'] = df_ssr_bev['geoscale'].replace(
-    'United Kingdom of Great Britain and Northern Ireland', 'United Kingdom')
-  df_ssr_bev['geoscale'] = df_ssr_bev['geoscale'].replace(
-    'Netherlands (Kingdom of the)',
-    'Netherlands')
-  df_ssr_bev['geoscale'] = df_ssr_bev['geoscale'].replace(
-    'Czechia', 'Czech Republic')
 
   # Extrapolation
   df_ssr_bev = ensure_structure(df_ssr_bev)
@@ -557,9 +548,9 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   # Prepend var name and unit
   df_trade_agg['variables'] = df_trade_agg['variables'].apply(lambda x: f"agr_split-import_{x}[-]")
 
-  # Aggregate by countries -----------------------------------------------------
+  # Aggregate countries by region -----------------------------------------------------
 
-  # Read csv
+  '''# Read csv
   df_countries = pd.read_csv('data/faostat/FAOSTAT_data_partner-countries-regions.csv')
 
   # Filter the regions
@@ -576,7 +567,14 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   df_trade_agg = df_trade_agg.groupby(['variables', 'Partner Country Group', 'Year'], as_index=False)['Value'].sum()
 
   df_trade_agg.rename(columns={'Partner Country Group': 'geoscale',
-                               'Year': 'timescale', 'Value':'value'}, inplace=True)
+                               'Year': 'timescale', 'Value':'value'}, inplace=True)'''
+
+  # Rename and format correctly
+  df_trade_agg = df_trade_agg[['Partner Countries','variables','Year','Value']]
+  df_trade_agg.rename(columns={'Partner Countries': 'geoscale',
+                               'Year': 'timescale', 'Value': 'value'},
+                      inplace=True)
+
 
   # Extrapolation for missing data
   lever = 'dummy'
@@ -585,6 +583,7 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   df_trade_agg['level'] = 0.0
   df_trade_agg = ensure_structure(df_trade_agg)
   df_trade_agg = linear_fitting_ots_db(df_trade_agg, years_all, countries='all')
+  df_trade_agg['value'] = df_trade_agg['value'].fillna(0.0)
 
   # Replace negative values by 0.0
   df_trade_agg['value'] = df_trade_agg['value'].clip(lower=0.0)
@@ -592,39 +591,39 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   # Format as datamatrix
   df_ots, df_fts = database_to_df(df_trade_agg, lever, level='all')
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
-  dm_crop_trade_origin = DataMatrix.create_from_df(df_ots, num_cat=1)
+  dm_bev_trade_origin = DataMatrix.create_from_df(df_ots, num_cat=1)
 
   # Add Switzerland as dummy (because are in losses and other dms)
-  dm_crop_trade_origin.add(0.0, dummy=True, col_label=['Switzerland'], dim='Country')
+  dm_bev_trade_origin.add(0.0, dummy=True, col_label=['Switzerland'], dim='Country')
 
   # Unit conversion: [t] => [kcal]
   cdm_kcal_temp = cdm_kcal.copy()
   cdm_kcal_temp.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
-  cdm_kcal_temp = cdm_kcal_temp.filter({'Categories1': dm_crop_trade_origin.col_labels['Categories1']})
-  dm_crop_trade_origin.sort('Categories1')
+  cdm_kcal_temp = cdm_kcal_temp.filter({'Categories1': dm_bev_trade_origin.col_labels['Categories1']})
+  dm_bev_trade_origin.sort('Categories1')
   cdm_kcal_temp.sort('Categories1')
-  array_temp = dm_crop_trade_origin[:, :, 'agr_split-import', :] \
+  array_temp = dm_bev_trade_origin[:, :, 'agr_split-import', :] \
                * cdm_kcal_temp[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
-  dm_crop_trade_origin[:, :, 'agr_split-import', :] = array_temp
+  dm_bev_trade_origin[:, :, 'agr_split-import', :] = array_temp
 
   # Step CALIBRATION IMPORTS PER COUNTRY
-  dm_cal_imports_countries = dm_crop_trade_origin.copy()
+  dm_cal_imports_countries = dm_bev_trade_origin.copy()
   dm_cal_imports_countries.rename_col('agr_split-import', 'cal_agr_domestic-production','Variables')
   dm_cal_imports_countries.change_unit('cal_agr_domestic-production', 1.0, '-', 'kcal', '*')
   dm_cal_imports_countries.drop(dim='Country', col_label=['Switzerland'])
 
   # Step CALIBRATION IMPORTS TOTAL
-  dm_cal_imports_tot = dm_crop_trade_origin.copy()
+  dm_cal_imports_tot = dm_bev_trade_origin.copy()
   dm_cal_imports_tot.rename_col('agr_split-import', 'cal_agr_imported_production_total','Variables')
   dm_cal_imports_tot.change_unit('cal_agr_imported_production_total', 1.0, '-', 'kcal', '*')
   dm_cal_imports_tot.groupby({'Switzerland': '.*'}, dim='Country', regex=True, inplace=True)
 
   # Normalise across countries for share of imports
-  dm_crop_trade_origin.drop(dim='Country', col_label=['Switzerland'])
-  dm_crop_trade_origin.normalise(dim='Country', inplace=True)
-  dm_crop_trade_origin.change_unit('agr_split-import', 1.0, '%', '-', '*')
+  dm_bev_trade_origin.drop(dim='Country', col_label=['Switzerland'])
+  dm_bev_trade_origin.normalise(dim='Country', inplace=True)
+  dm_bev_trade_origin.change_unit('agr_split-import', 1.0, '%', '-', '*')
 
-  return dm_crop_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot
+  return dm_bev_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot
 
 # CalculationLeaf FXA PROCESSING YIELD---------------------------------------------------------------------------------------------
 def fxa_processing_yield(cdm_kcal):
@@ -660,7 +659,7 @@ def fxa_processing_yield(cdm_kcal):
     ld = faostat.list_datasets()
     code = 'FBSH'
     pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_partnerregions_trade]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996',
@@ -759,7 +758,7 @@ def fxa_processing_yield(cdm_kcal):
                   'Rape and Mustard Cake', 'Sesameseed Cake', 'Soyabean Cake',
                   'Sunflowerseed Cake']
     code = 'CBH'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_partnerregions_trade]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996',
@@ -803,7 +802,7 @@ def fxa_processing_yield(cdm_kcal):
                   'Cake of sesame seed', 'Cake of sunflower seed',
                   'Cake, oilseeds nes', 'Cake, poppy seed']
     code = 'SCL'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_partnerregions_trade]
     my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
     my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
     list_years = ['2010', '2011', '2012', '2013', '2014', '2015', '2016',
@@ -1026,16 +1025,8 @@ def fxa_processing_yield(cdm_kcal):
   df_calc_processing_yield = df_calc_processing_yield[cols]
   df_calc_processing_yield = df_calc_processing_yield.drop_duplicates()
 
-  # Rename countries to Pathaywcalc name
-  df_calc_processing_yield['geoscale'] = df_calc_processing_yield['geoscale'].replace(
-    'United Kingdom of Great Britain and Northern Ireland', 'United Kingdom')
-  df_calc_processing_yield['geoscale'] = df_calc_processing_yield['geoscale'].replace(
-    'Netherlands (Kingdom of the)',
-    'Netherlands')
-  df_calc_processing_yield['geoscale'] = df_calc_processing_yield['geoscale'].replace(
-    'Czechia', 'Czech Republic')
-
   # Extrapolation
+  df_calc_processing_yield = ensure_structure(df_calc_processing_yield)
   df_calc_processing_yield = linear_fitting_ots_db(df_calc_processing_yield, years_all,
                                              countries='all')
 
@@ -1187,13 +1178,13 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
   # FixedAssumptionsToDatamatrix -----------------------------------------------
   dict_fxa = {}
 
-  # Processing yields
   dict_fxa['processing-yield'] = dm_fxa_pro_yield
+  dict_fxa['split-import'] = dm_bev_trade_origin
 
   # CalibrationDataToDatamatrix ------------------------------------------------
 
-  # Diet
   dict_fxa['cal_agr_domestic-production_bev'] = dm_cal_dom_prod_bev
+  dict_fxa['cal_agr_imports-bev_total'] = dm_cal_imports_tot
 
 
   # LeversToDatamatrix OTS -----------------------------------------------------
@@ -1260,6 +1251,29 @@ if not os.path.exists('data/faostat'):
     os.makedirs('data/faostat')
 
 list_countries_calc = ['Switzerland']
+list_partnerregions_trade = ['Switzerland',
+                         '-- Australia and New Zealand > (List)',
+                         '-- Caribbean > (List)',
+                         '-- Central America > (List)',
+                         '-- Central Asia > (List)',
+                         '-- Eastern Africa > (List)',
+                         '-- Eastern Asia > (List)',
+                         '-- Eastern Europe > (List)',
+                         '-- Melanesia > (List)',
+                         '-- Micronesia > (List)',
+                         '-- Middle Africa > (List)',
+                         '-- Northern Africa > (List)',
+                         '-- Northern America > (List)',
+                         '-- Northern Europe > (List)',
+                         '-- Polynesia > (List)',
+                         '-- South America > (List)',
+                         '-- South-eastern Asia > (List)',
+                         '-- Southern Africa > (List)',
+                         '-- Southern Asia > (List)',
+                         '-- Southern Europe > (List)',
+                         '-- Western Africa > (List)',
+                         '-- Western Asia > (List)',
+                         '-- Western Europe > (List)']
 
 # Create files for storing data
 file_dict = {'ssr': 'data/faostat/ssr.csv',
@@ -1275,7 +1289,12 @@ dm_fts = fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal)
 dm_fxa_pro_yield = fxa_processing_yield(cdm_kcal)
 dm_ssr_bev = ssr_beverages_processing()
 dm_cal_dom_prod_bev = bev_calibration(list_countries_calc, dm_fxa_pro_yield, cdm_bev)
-dm_crop_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = trade_origin_processing(years_ots, list_countries_calc, file_dict)
+dm_bev_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = trade_origin_processing(years_ots, list_countries_calc, file_dict)
+
+# Filter countries to match Food Balance Sheet
+dm_bev_trade_origin.filter({'Country': dm_fxa_pro_yield.col_labels['Country']}, inplace=True)
+countries_filter = (['Switzerland'] + dm_fxa_pro_yield.col_labels['Country'])
+dm_fxa_pro_yield.filter({'Country': countries_filter}, inplace=True)
 
 
 # CalculationTree RUNNING PICKLE CREATION
