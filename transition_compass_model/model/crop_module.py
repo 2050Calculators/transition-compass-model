@@ -201,8 +201,8 @@ def crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_deman
       'sugar-to-sugarcrop',
       'voil-to-oilcrop']})
     dm_feed_processed.append(dm_pro_yield, dim='Variables')
-    dm_feed_processed.operation('agr_demand_feed_pro', '*', 'fxa_agr_processing-yield',
-                                out_col='agr_demand_feed_pro_raw',
+    dm_feed_processed.operation('agr_domestic_production_feed_pro', '*', 'fxa_agr_processing-yield',
+                                out_col='agr_domestic_production_feed_pro_raw',
                                 unit='kcal')
     # Imports of raw processed feed
     dm_feed_processed.operation('agr_imports_feed_pro', '*',
@@ -230,10 +230,10 @@ def crop_workflow(DM_crop_prod, dm_feed_processed, dm_feed_unprocessed, dm_deman
     # Accounting for processed feed demand : Adding the columns for sugarcrops and oilcrops from previous calculation
     # Appending with dm_feed_processed
     dm_feed_unprocessed = dm_feed_unprocessed.filter({'Variables': ['agr_demand_feed']})
-    dm_feed_processed = dm_feed_processed.filter({'Variables': ['agr_demand_feed_pro_raw']})
+    dm_feed_processed = dm_feed_processed.filter({'Variables': ['agr_domestic_production_feed_pro_raw']})
     dm_feed_unprocessed.append(dm_feed_processed, dim='Variables')
     # Summing
-    dm_feed_unprocessed.operation('agr_demand_feed_pro_raw', '+', 'agr_demand_feed', out_col='agr_demand_feed_total',
+    dm_feed_unprocessed.operation('agr_domestic_production_feed_pro_raw', '+', 'agr_demand_feed', out_col='agr_demand_feed_total',
                                   unit='kcal')
     dm_feed_unprocessed = dm_feed_unprocessed.filter({'Variables': ['agr_demand_feed_total']})
 

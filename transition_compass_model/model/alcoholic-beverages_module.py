@@ -405,7 +405,8 @@ def alcoholic_beverages(lever_setting, years_setting, DM_input, write_pickle, in
     interface.add_link(from_sector='alcoholic-beverages', to_sector='livestock', dm=DM_alc_livestock)
 
     # alcoholic-beverages to crop
-    DM_alc_to_crop = {'crop_bev': dm_bev_dom_prod}
+    DM_alc_to_crop = {'crop_bev': dm_bev_dom_prod,
+                      'imports_bev_raw': DM_alc_bev['split-import'].filter({'Variables': ['agr_domestic_production_bev_raw']})}
     if write_pickle is True:
       current_file_directory = os.path.dirname(os.path.abspath(__file__))
       f = os.path.join(current_file_directory,
