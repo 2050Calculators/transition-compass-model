@@ -69,14 +69,14 @@ def read_data(DM_livestock, lever_setting):
       else:
         dm_livestock_ssr_merged.append(dm_split, dim='Categories1')
 
-    # Sub-matrix for MANURE
+    """# Sub-matrix for MANURE
     dm_livestock_enteric_emissions = DM_ots_fts['livestock-enteric']
     dm_livestock_manure = DM_ots_fts['livestock-manure']
     dm_fxa_ef_liv_N2O = DM_livestock['fxa']['ef_liv_N2O-emission']
     dm_fxa_ef_liv_CH4_treated = DM_livestock['fxa']['ef_liv_CH4-emission_treated']
     dm_fxa_liv_nstock = DM_livestock['fxa']['liv_manure_n-stock']
     dm_fxa_cal_liv_CH4 = DM_livestock['fxa']['cal_agr_liv_CH4-emission']
-    dm_fxa_cal_liv_N2O = DM_livestock['fxa']['cal_agr_liv_N2O-emission']
+    dm_fxa_cal_liv_N2O = DM_livestock['fxa']['cal_agr_liv_N2O-emission']"""
 
     # Sub-matrix for FEED
     dm_ssr_feed = DM_livestock['ots']['ssr-feed-pro']
@@ -84,6 +84,8 @@ def read_data(DM_livestock, lever_setting):
     dm_alt_protein = DM_ots_fts['alt-protein']
     dm_ruminant_feed = DM_ots_fts['ruminant-feed']
     dm_fxa_cal_demand_feed = DM_livestock['fxa']['cal_agr_demand_feed']
+    dm_cal_import_feed_pro = DM_livestock['fxa']['cal_agr_imports-feed-pro_total']
+    dm_split_import_feed_pro = DM_livestock['fxa']['split-import-feed-pro']
 
 
     # Aggregate Data Matrix - LIVESTOCK PROD & POP
@@ -103,7 +105,7 @@ def read_data(DM_livestock, lever_setting):
     }
 
     # Aggregated Data Matrix - LIVESTOCK MANURE MANAGEMENT & GHG EMISSIONS
-    DM_manure = {
+    """DM_manure = {
         'enteric_emission': dm_livestock_enteric_emissions,
         'manure': dm_livestock_manure,
         'cal_liv_CH4': dm_fxa_cal_liv_CH4,
@@ -111,7 +113,7 @@ def read_data(DM_livestock, lever_setting):
         'ef_liv_N2O': dm_fxa_ef_liv_N2O,
         'ef_liv_CH4_treated': dm_fxa_ef_liv_CH4_treated,
         'liv_n-stock': dm_fxa_liv_nstock
-    }
+    }"""
 
     # Aggregated Data Matrix - FEED
     DM_feed = {
@@ -119,12 +121,14 @@ def read_data(DM_livestock, lever_setting):
         'alt-protein': dm_alt_protein,
         'cal_agr_demand_feed': dm_fxa_cal_demand_feed,
         'ruminant-feed': dm_ruminant_feed,
-        'ssr-feed-pro': dm_ssr_feed
+        'ssr-feed-pro': dm_ssr_feed,
+        'cal_agr_imports-feed-pro' : dm_cal_import_feed_pro,
+        'split-import-feed-pro': dm_split_import_feed_pro
     }
 
     CDM_const = DM_livestock['constant']
 
-    return DM_ots_fts, DM_liv_prod, DM_manure, DM_feed, CDM_const
+    return DM_ots_fts, DM_liv_prod, DM_feed, CDM_const
 
 
 # SimulateInteractions
@@ -219,6 +223,8 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
                                                    'abp-processed-afat'])
 
     # Append dm_demand_pro_liv to DM_liv_prod['losses']
+    DM_liv_prod['losses'].filter({'Country':dm_production.col_labels['Country']},inplace=True)
+    dm_production.filter({'Country': DM_liv_prod['losses'].col_labels['Country']}, inplace=True)
     DM_liv_prod['losses'].append(dm_production, dim='Variables')
 
     # (CH only) Account for milk as Feed and Processed
@@ -256,12 +262,16 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
 
     # Livestock slaughtered [lsu] = ASF demand [kcal] / yield [kcal/lsu]
     dm_liv_slau = dm_liv_prod.filter({'Variables': ['agr_domestic_production_liv_afw']})
+    DM_liv_prod['yield'].filter({'Country':dm_liv_slau.col_labels['Country']},inplace=True)
+    dm_liv_slau.filter({'Country': DM_liv_prod['yield'].col_labels['Country']}, inplace=True)
     DM_liv_prod['yield'].append(dm_liv_slau, dim='Variables')  # Append cal_agr_domestic_production_liv_afw in yield
     DM_liv_prod['yield'].operation('agr_domestic_production_liv_afw', '/', 'agr_livestock_yield_total',
                                     dim="Variables", out_col='agr_liv_population_slau', unit='lsu')
 
     # Livestock population (stock) [lsu] = Livestock slaughtered [lsu] / slaughter rate [-]
     dm_liv_slau_egg_dairy = DM_liv_prod['yield'].filter({'Variables': ['agr_liv_population_slau']})
+    dm_liv_slau_egg_dairy.filter({'Country':DM_liv_prod['liv_slaughtered_rate'].col_labels['Country']},inplace=True)
+    DM_liv_prod['liv_slaughtered_rate'].filter({'Country': dm_liv_slau_egg_dairy.col_labels['Country']}, inplace=True)
     DM_liv_prod['liv_slaughtered_rate'].append(dm_liv_slau_egg_dairy, dim='Variables')
     DM_liv_prod['liv_slaughtered_rate'].operation('agr_liv_population_slau', '/',
                                                    'agr_livestock_slaughtered',
@@ -589,7 +599,7 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
                        'crop-processed-sugar', 'crop-processed-voil',
                        'crop-pulse', 'crop-rice', 'crop-starch', 'crop-sugarcrop',
                        'crop-veg', 'fish', 'liv-meat-meal']
-    cdm_kcal = cdm_kcal.filter({'Categories1': categories_feed})
+    cdm_kcal = cdm_kcal.filter({'Categories1': DM_feed['ration'].col_labels['Categories1']})
 
     # Sort
     DM_feed['ration'].sort('Categories1')
@@ -603,32 +613,36 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     #dm_supply = dm_supply.filter({'Variables': ['agr_demand_tpe', 'agr_demand']})
 
     # (CH only) Processed Feed pre-processing
-    list_crop_feed_processed = ['crop-processed-cake', 'crop-processed-sugar',
-                         'crop-processed-voil']
+    list_crop_feed_processed = ['crop-processed-cake',
+                                'crop-processed-sugar',
+                                'crop-processed-molasse',
+                                'crop-processed-voil']
     dm_feed_processed = DM_feed['ration'].filter({'Variables': ['agr_demand_feed'],'Categories1': list_crop_feed_processed})
-    dm_feed_processed.rename_col('crop-processed-cake', 'cake-to-oilcrop', dim='Categories1')
+    #dm_feed_processed.rename_col('crop-processed-cake', 'cake-to-oilcrop', dim='Categories1')
     #dm_feed_processed.rename_col('crop-processed-molasse', 'molasse-to-sugarcrop', dim='Categories1')
-    dm_feed_processed.rename_col('crop-processed-sugar', 'sugar-to-sugarcrop', dim='Categories1')
-    dm_feed_processed.rename_col('crop-processed-voil', 'voil-to-oilcrop', dim='Categories1')
+    #dm_feed_processed.rename_col('crop-processed-sugar', 'sugar-to-sugarcrop', dim='Categories1')
+    #dm_feed_processed.rename_col('crop-processed-voil', 'voil-to-oilcrop', dim='Categories1')
 
     # (CH only) Unprocessed Feed pre-processing
-    list_crop_feed_unprocessed = ['crop-cereal', 'crop-fruit', 'crop-pulse', 'crop-rice', 'crop-starch', 'crop-veg']
+    list_crop_feed_unprocessed = ['crop-cereal', 'crop-fruit', 'crop-pulse', 'crop-starch', 'crop-veg']
     dm_feed_unprocessed = DM_feed['ration'].filter(
         {'Variables': ['agr_demand_feed'],'Categories1': list_crop_feed_unprocessed})
     # Adding dummy columns filled with nan for total feed demand calculations
     dm_feed_unprocessed.add(0.0, dummy=True, col_label='crop-oilcrop', dim='Categories1', unit='kcal')
     dm_feed_unprocessed.add(0.0, dummy=True, col_label='crop-sugarcrop', dim='Categories1', unit='kcal')
+    dm_feed_unprocessed.add(0.0, dummy=True, col_label='crop-rice',dim='Categories1', unit='kcal')
 
     # Step Imports Processed Feed -------------------------------------------------------------
     # Domestic production [kcal] = Processed Feed-demand [kcal] * ssr [-]
     dm_ssr_feed_pro = DM_feed['ssr-feed-pro'].filter(
         {'Variables': ['agr_ssr'], 'Categories1': ['pro-crop-processed-cake',
                                                    'pro-crop-processed-sugar',
+                                                   'pro-crop-processed-molasse',
                                                    'pro-crop-processed-voil']}).copy()
-    dm_ssr_feed_pro.rename_col('pro-crop-processed-cake', 'cake-to-oilcrop', dim='Categories1')
-    #dm_ssr_feed_pro.rename_col('pro-crop-processed-molasse', 'molasse-to-sugarcrop', dim='Categories1')
-    dm_ssr_feed_pro.rename_col('pro-crop-processed-sugar', 'sugar-to-sugarcrop', dim='Categories1')
-    dm_ssr_feed_pro.rename_col('pro-crop-processed-voil', 'voil-to-oilcrop', dim='Categories1')
+    dm_ssr_feed_pro.rename_col('pro-crop-processed-cake', 'crop-processed-cake', dim='Categories1')
+    dm_ssr_feed_pro.rename_col('pro-crop-processed-molasse', 'crop-processed-molasse', dim='Categories1')
+    dm_ssr_feed_pro.rename_col('pro-crop-processed-sugar', 'crop-processed-sugar', dim='Categories1')
+    dm_ssr_feed_pro.rename_col('pro-crop-processed-voil', 'crop-processed-voil', dim='Categories1')
     dm_feed_processed.append(dm_ssr_feed_pro, dim='Variables')
     dm_feed_processed.operation('agr_demand_feed', '*', 'agr_ssr',
                                 out_col='agr_domestic_production_feed_pro',
@@ -636,9 +650,9 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
 
 
     # Summing sugar & sweets together
-    dm_feed_processed.groupby({'sugar-to-sugarcrop': '.*-to-sugarcrop'}, dim='Categories1',
-                              regex=True,
-                              inplace=True)
+    #dm_feed_processed.groupby({'sugar-to-sugarcrop': '.*-to-sugarcrop'}, dim='Categories1',
+    #                          regex=True,
+    #                          inplace=True)
 
     # Step Imports Processed Feed -------------------------------------------------------------
     # Imports processed feed [kcal] = demand bev processed feed[kcal] - domestic production processed feed[kcal]
@@ -647,52 +661,44 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
                                 unit='kcal')
 
     # Calibration imports (processed beverages)
-    dm_cal_rates_bev = calibration_rates(dm_feed_processed.filter({'Variables': ['agr_imported_production_feed_pro_raw']}), DM_alc_bev['cal_bev_imports'], calibration_start_year=2000,
+    DM_feed['cal_agr_imports-feed-pro'].add(0.0, dummy=True, col_label='pro-crop-processed-voil', dim='Categories1', unit='kcal')
+    DM_feed['cal_agr_imports-feed-pro'].add(0.0, dummy=True, col_label='pro-crop-processed-sugar',dim='Categories1', unit='kcal')
+    DM_feed['cal_agr_imports-feed-pro'].rename_col_regex(str1="pro-", str2="", dim="Categories1")
+    dm_cal_rates_feed = calibration_rates(dm_feed_processed.filter({'Variables': ['agr_imported_production_feed_pro_raw']}), DM_feed['cal_agr_imports-feed-pro'], calibration_start_year=1990,
                                           calibration_end_year=2023, years_setting=years_setting)
-    dm_demand_bev.append(dm_cal_rates_bev, dim='Variables')
-    dm_demand_bev.operation('agr_imported_production_raw', '*', 'cal_rate', dim='Variables',
-                          out_col='agr_imported_production', unit='kcal')
-    dm_demand_bev.filter({'Variables': ['agr_demand','agr_domestic_production','agr_imported_production']}, inplace=True)
+    dm_feed_processed.append(dm_cal_rates_feed, dim='Variables')
+    dm_feed_processed.operation('agr_imported_production_feed_pro_raw', '*', 'cal_rate', dim='Variables',
+                          out_col='agr_imported_production_feed_pro', unit='kcal')
+    dm_feed_processed.filter({'Variables': ['agr_demand_feed','agr_domestic_production_feed_pro','agr_imported_production_feed_pro']}, inplace=True)
+    dm_feed_processed.filter({'Categories1': ['crop-processed-molasse','crop-processed-cake']},
+                             inplace=True)
 
     # Imported production per region [kcal] = Imported production total [kcal] * split per region [-]
     #DM_alc_bev['split-import-asf'].filter_w_regex({'Categories1': 'crop-'},inplace=True)
-    dm_trade = DM_alc_bev['split-import-asf'].copy()
-    array_temp = dm_demand_bev[:, :, 'agr_imported_production', :] * \
+    dm_trade = DM_feed['split-import-feed-pro'].copy()
+    array_temp = dm_feed_processed[:, :, 'agr_imported_production_feed_pro', :] * \
                  dm_trade[:, :, 'agr_split-import', :]
-    DM_alc_bev['split-import-asf'].add(array_temp, dim='Variables',
+    DM_feed['split-import-feed-pro'].add(array_temp, dim='Variables',
                                      col_label='agr_domestic_production',
                                      unit='kcal')
 
-    # Raw crops [kcal] =  imported bev per country [kcal] * processing yield [input kcal/output kcal]
+    # Raw crops [kcal] =  imported feed per country [kcal] * processing yield [input kcal/output kcal]
+    cdm_feed = CDM_const['cdm_ibp_feed'].filter({'Categories1': ['crop-processed-molasse',
+                                                                 'crop-processed-cake']})
+
     # Create dummy variable to overwite
-    DM_alc_bev['split-import-asf'].add(0.0, dummy=True, col_label='agr_domestic_production_bev_raw',
+    DM_feed['split-import-feed-pro'].add(0.0, dummy=True, col_label='agr_domestic_production_feed-pro_raw',
                           dim='Variables', unit='kcal')
 
-    # Beer - Crop Cereal
-    array_temp = DM_alc_bev['split-import'][:, :, 'agr_domestic_production', 'pro-bev-beer'] \
-                                   * cdm_cp_ibp_bev_beer['cp_ibp_bev_beer_brf_crop_cereal']
-    DM_alc_bev['split-import'][:, :, 'agr_domestic_production_bev_raw', 'pro-bev-beer'] = array_temp
+    # Molasse to sugarcrop
+    array_temp = DM_feed['split-import-feed-pro'][:, :, 'agr_domestic_production', 'pro-crop-processed-molasse'] \
+                                   * cdm_feed['cp_ibp_processed','crop-processed-molasse']
+    DM_feed['split-import-feed-pro'][:, :, 'agr_domestic_production_feed-pro_raw', 'pro-crop-processed-molasse'] = array_temp
 
-    # Bev-fer - Crop cereal
-    array_temp = DM_alc_bev['split-import'][:, :, 'agr_domestic_production',
-                 'pro-bev-bev-fer'] \
-                 * cdm_cp_ibp_bev_fer['cp_ibp_bev_bev-fer_brf_crop_cereal']
-    DM_alc_bev['split-import'][:, :, 'agr_domestic_production_bev_raw',
-    'pro-bev-bev-fer'] = array_temp
-
-    # Bev-alc - Crop fruit
-    array_temp = DM_alc_bev['split-import'][:, :, 'agr_domestic_production',
-                 'pro-bev-bev-alc'] \
-                 * cdm_cp_ibp_bev_alc['cp_ibp_bev_bev-alc_brf_crop_fruit']
-    DM_alc_bev['split-import'][:, :, 'agr_domestic_production_bev_raw',
-    'pro-bev-bev-alc'] = array_temp
-
-
-    # Wine - Crop Grape (fruit)
-    dm_pro_yield_imports = DM_alc_bev['processing-yields'].filter({'Country': DM_alc_bev['split-import'].col_labels['Country']})
-    array_temp = dm_bev_wine[:, :, 'agr_domestic_production_wine'] \
-                                  * dm_pro_yield_imports[:,:, 'fxa_agr_processing-yield', 'wine-to-fruit']
-    DM_alc_bev['split-import'][:, :, 'agr_domestic_production_bev_raw','pro-bev-wine'] = array_temp
+    # Cake to oilcrop
+    array_temp = DM_feed['split-import-feed-pro'][:, :, 'agr_domestic_production', 'pro-crop-processed-cake'] \
+                                   * cdm_feed['cp_ibp_processed','crop-processed-cake']
+    DM_feed['split-import-feed-pro'][:, :, 'agr_domestic_production_feed-pro_raw', 'pro-crop-processed-cake'] = array_temp
 
     return DM_feed, dm_feed_req, dm_feed_demand, dm_feed_processed, dm_feed_unprocessed
 
@@ -776,7 +782,7 @@ def livestock_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario):
 def livestock(lever_setting, years_setting, DM_input, write_pickle, interface=Interface()):
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    DM_ots_fts, DM_liv_prod, DM_manure, DM_feed, CDM_const = read_data(DM_input, lever_setting)
+    DM_ots_fts, DM_liv_prod, DM_feed, CDM_const = read_data(DM_input, lever_setting)
     country_list = ['Switzerland']
 
     # INTERFACES IN ---------------------------------------------------------------------------------------------------
