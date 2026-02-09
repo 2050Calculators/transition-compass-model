@@ -1457,3 +1457,34 @@ def rename_cantons(dm):
   dm.rename_col(cantons_fr, cantons_en, dim='Country')
 
   return
+
+# March countries for imports
+
+def dm_match_countries(dm, dm_to_match, parameter):
+
+  if parameter=='add':
+    # Differences in countries
+    countries_diff = set(dm_to_match.col_labels['Country']) - set(
+      dm.col_labels['Country'])
+    # Add dummies
+    for country in countries_diff:
+      dm.add(0.0, dummy=True, col_label=[country], dim='Country')
+  elif parameter=='filter':
+    dm_to_match.filter({'Country': dm.col_labels['Country']}, inplace=True)
+  elif parameter == 'perfect match':
+    # Differences in countries
+    countries_diff_a = set(dm_to_match.col_labels['Country']) - set(
+      dm.col_labels['Country'])
+    # Add dummies
+    for country in countries_diff_a:
+      dm.add(0.0, dummy=True, col_label=[country], dim='Country')
+    # Differences in countries
+    countries_diff_b = set(dm.col_labels['Country']) - set(
+      dm_to_match.col_labels['Country'])
+    # Add dummies
+    for country in countries_diff_b:
+      dm_to_match.add(0.0, dummy=True, col_label=[country], dim='Country')
+  else:
+    print("Missing parameter 'add' or 'filter' or 'perfect match' ")
+
+  return

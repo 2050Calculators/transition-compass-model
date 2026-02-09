@@ -200,7 +200,9 @@ def trade_livestock_workflow(DM_liv_prod, dm_demand, years_setting):
     dm_production = DM_liv_prod['split-import-asf'].filter_w_regex({'Variables': 'agr_domestic_production_raw'})
 
     # Calibration - Imports per countries
-    dm_cal_imports_countries = DM_liv_prod['cal_imports-liv_countries']
+    dm_cal_imports_countries = DM_liv_prod['cal_imports-liv_countries'].copy()
+    dm_cal_imports_countries.drop(
+      dim='Country', col_label=['Switzerland'])
     dm_cal_rates_liv_imports_countries = calibration_rates(dm_production, dm_cal_imports_countries, calibration_start_year=1990,
                                               calibration_end_year=2023, years_setting=years_setting)
     dm_production.append(dm_cal_rates_liv_imports_countries, dim='Variables')
@@ -655,12 +657,12 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     #                          inplace=True)
 
     # Step Imports Processed Feed -------------------------------------------------------------
-    # Imports processed feed [kcal] = demand bev processed feed[kcal] - domestic production processed feed[kcal]
+    # Imports processed feed [kcal] = demand processed feed[kcal] - domestic production processed feed[kcal]
     dm_feed_processed.operation('agr_demand_feed', '-', 'agr_domestic_production_feed_pro',
                                 out_col='agr_imported_production_feed_pro_raw',
                                 unit='kcal')
 
-    # Calibration imports (processed beverages)
+    # Calibration imports (processed feed)
     DM_feed['cal_agr_imports-feed-pro'].add(0.0, dummy=True, col_label='pro-crop-processed-voil', dim='Categories1', unit='kcal')
     DM_feed['cal_agr_imports-feed-pro'].add(0.0, dummy=True, col_label='pro-crop-processed-sugar',dim='Categories1', unit='kcal')
     DM_feed['cal_agr_imports-feed-pro'].rename_col_regex(str1="pro-", str2="", dim="Categories1")
@@ -699,6 +701,9 @@ def feed_workflow(DM_feed, dm_liv_prod, dm_bev_ibp_cereal_feed, CDM_const, years
     array_temp = DM_feed['split-import-feed-pro'][:, :, 'agr_domestic_production', 'pro-crop-processed-cake'] \
                                    * cdm_feed['cp_ibp_processed','crop-processed-cake']
     DM_feed['split-import-feed-pro'][:, :, 'agr_domestic_production_feed-pro_raw', 'pro-crop-processed-cake'] = array_temp
+
+    # Drop Switzerland for imports
+    DM_feed['split-import-feed-pro'].drop(dim='Country', col_label='Switzerland')
 
     return DM_feed, dm_feed_req, dm_feed_demand, dm_feed_processed, dm_feed_unprocessed
 
@@ -851,7 +856,8 @@ def livestock(lever_setting, years_setting, DM_input, write_pickle, interface=In
 
     # livestock to crop module
     DM_livestock_to_crop = {'feed-processed': dm_feed_processed,
-                            'feed-unprocessed': dm_feed_unprocessed}
+                            'feed-unprocessed': dm_feed_unprocessed,
+                            'feed-processed-imports': DM_feed['split-import-feed-pro']}
     if write_pickle is True:
       current_file_directory = os.path.dirname(os.path.abspath(__file__))
       f = os.path.join(current_file_directory,

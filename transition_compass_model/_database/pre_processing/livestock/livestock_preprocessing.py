@@ -1,5 +1,5 @@
 import numpy as np
-from model.common.auxiliary_functions import interpolate_nans, add_missing_ots_years, linear_fitting_ots_db, linear_fitting, create_years_list
+from model.common.auxiliary_functions import interpolate_nans, add_missing_ots_years, linear_fitting_ots_db, linear_fitting, create_years_list, dm_match_countries
 #from _database.pre_processing.api_routines_CH import get_data_api_CH
 from scipy.stats import linregress
 import pandas as pd
@@ -3812,7 +3812,6 @@ dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk, dm_imports_fbs = self_suffici
 dm_fxa_ffr_milk = fxa_ffr_milk(df_ffr_milk)
 dm_liv_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = trade_origin_asf_processing(years_ots, list_countries_calc, file_dict)
 dm_feed_trade_origin, dm_cal_imports_feed_tot = trade_origin_feed_processing(years_ots, list_countries_calc, file_dict)
-#dm_bev_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = trade_origin_processing(years_ots, list_countries_calc, file_dict)
 dm_losses = livestock_losses()
 dm_cal_dom_prod, dm_cal_liv_pop, df_liv_pop = livestock_calibration(list_countries_calc, dm_losses)
 dm_prod_share, dm_cal_liv_pop_org = production_share(dm_cal_liv_pop)
@@ -3825,6 +3824,15 @@ dm_liv_yield, dm_slaughter_rates = yield_slaughter_rate(df_liv_pop, dm_prod_shar
 dm_fxa_exports = exports_processing(list_countries_calc,file_dict)
 dm_feed_alt_protein = livestock_protein_meals_processing(df_csl_feed)
 dm_fts = fts_processing()
+
+# Match countries for imports
+dm_match_countries(dm_cal_liv_pop, dm_losses, parameter='perfect match')
+dm_match_countries(dm_cal_dom_prod, dm_losses, parameter='perfect match')
+dm_match_countries(dm_cal_imports_countries, dm_losses, parameter='perfect match')
+dm_match_countries(dm_feed_trade_origin, dm_losses, parameter='perfect match')
+dm_match_countries(dm_liv_trade_origin, dm_losses, parameter='perfect match')
+dm_match_countries(dm_liv_yield, dm_losses, parameter='perfect match')
+dm_match_countries(dm_slaughter_rates, dm_losses, parameter='perfect match')
 
 # CalculationTree RUNNING PICKLE CREATION
 datamatrix_to_pickle(dm_fts)

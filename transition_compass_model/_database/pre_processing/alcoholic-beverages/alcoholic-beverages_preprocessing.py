@@ -1,5 +1,5 @@
 import numpy as np
-from model.common.auxiliary_functions import interpolate_nans, add_missing_ots_years, linear_fitting_ots_db, linear_fitting, create_years_list
+from model.common.auxiliary_functions import interpolate_nans, add_missing_ots_years, linear_fitting_ots_db, linear_fitting, create_years_list, dm_match_countries
 #from _database.pre_processing.api_routines_CH import get_data_api_CH
 from scipy.stats import linregress
 import pandas as pd
@@ -1291,10 +1291,14 @@ dm_ssr_bev = ssr_beverages_processing()
 dm_cal_dom_prod_bev = bev_calibration(list_countries_calc, dm_fxa_pro_yield, cdm_bev)
 dm_bev_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = trade_origin_processing(years_ots, list_countries_calc, file_dict)
 
-# Filter countries to match Food Balance Sheet
+# Match countries for imports
+dm_match_countries(dm_bev_trade_origin, dm_fxa_pro_yield, parameter='perfect match')
+dm_match_countries(dm_cal_imports_countries, dm_fxa_pro_yield, parameter='perfect match')
+
+'''# Filter countries to match Food Balance Sheet
 dm_bev_trade_origin.filter({'Country': dm_fxa_pro_yield.col_labels['Country']}, inplace=True)
 countries_filter = (['Switzerland'] + dm_fxa_pro_yield.col_labels['Country'])
-dm_fxa_pro_yield.filter({'Country': countries_filter}, inplace=True)
+dm_fxa_pro_yield.filter({'Country': countries_filter}, inplace=True)'''
 
 
 # CalculationTree RUNNING PICKLE CREATION

@@ -1,5 +1,5 @@
 import numpy as np
-from model.common.auxiliary_functions import interpolate_nans, add_missing_ots_years, linear_fitting_ots_db, linear_fitting, create_years_list
+from model.common.auxiliary_functions import interpolate_nans, add_missing_ots_years, linear_fitting_ots_db, linear_fitting, create_years_list, dm_match_countries
 #from _database.pre_processing.api_routines_CH import get_data_api_CH
 from scipy.stats import linregress
 import pandas as pd
@@ -50,7 +50,15 @@ def ensure_structure(df):
 def crop_losses():
   # FOOD BALANCE SHEETS (FBS) - For everything  -------------------------------------------------
   try:
-    df_losses = pd.read_csv(file_dict['losses'])
+    df_losses_FBS = pd.read_csv(file_dict['FBS_losses'])
+    df_losses_FBSH = pd.read_csv(file_dict['FBSH_losses'])
+    # Renaming rice to have same name with other df
+    df_losses_FBSH = df_losses_FBSH.copy()
+    df_losses_FBSH['Item'] = df_losses_FBSH['Item'].replace(
+      'Rice (Milled Equivalent)', 'Rice and products'
+    )
+    # Concat
+    df_losses = pd.concat([df_losses_FBS, df_losses_FBSH])
   except OSError:
     # List of elements
     list_elements = ['Losses', 'Production Quantity']
@@ -170,7 +178,7 @@ def crop_yield(dm_prod_share):
 
   # CROPS  (QCL) (for everything except lgn-energycrop, gas-energycrop, algae and insect)
   try:
-    df_yield = pd.read_csv(file_dict['yield'])
+    df_yield = pd.read_csv(file_dict['QCL_yield'])
   except OSError:
     # List of elements
     list_elements = ['Yield']
@@ -292,10 +300,10 @@ def crop_yield(dm_prod_share):
                                   level='all')
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
   dm_yield = DataMatrix.create_from_df(df_ots, num_cat=1)
+  dm_yield.filter({'Years': years_ots}, inplace=True)
 
-  # Yields for all countries without Switzerland
+  # Yields for all countries
   dm_yield_world = dm_yield.copy()
-  dm_yield_world.drop(dim='Country', col_label='Switzerland')
   linear_fitting(dm_yield_world, years_all)
 
   # Step CH: Yield evolution_o/i & _e/i (organic/extensive with respect to intensive) [-]
@@ -1610,7 +1618,7 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   # Prepend var name and unit
   df_trade_agg['variables'] = df_trade_agg['variables'].apply(lambda x: f"agr_split-import_{x}[-]")
 
-  # Aggregate by countries -----------------------------------------------------
+  '''# Aggregate by countries -----------------------------------------------------
 
   # Read csv
   df_countries = pd.read_csv('data/faostat/FAOSTAT_data_partner-countries-regions.csv')
@@ -1629,7 +1637,13 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
   df_trade_agg = df_trade_agg.groupby(['variables', 'Partner Country Group', 'Year'], as_index=False)['Value'].sum()
 
   df_trade_agg.rename(columns={'Partner Country Group': 'geoscale',
-                               'Year': 'timescale', 'Value':'value'}, inplace=True)
+                               'Year': 'timescale', 'Value':'value'}, inplace=True)'''
+
+  # Rename and format correctly
+  df_trade_agg = df_trade_agg[['Partner Countries','variables','Year','Value']]
+  df_trade_agg.rename(columns={'Partner Countries': 'geoscale',
+                               'Year': 'timescale', 'Value': 'value'},
+                      inplace=True)
 
   # Extrapolation for missing data
   lever = 'dummy'
@@ -1823,9 +1837,35 @@ def production_share():
 
 
 
-# CalculationLeaf CONSTANTS  ------------------------------
+# CalculationLeaf CONSTANTS
 
 def constant():
+
+  # FEED PROCESSING YIELD -------------------------------------------------------
+  # Read excel
+  df = pd.read_excel('data/crop_constants.xlsx',
+                            sheet_name='cp_ibp_processed')
+
+  # Filter columns
+  df = df[['variables', 'value']].copy()
+
+  # Turn the df in a dict
+  df["variables"] = df["variables"].str.removeprefix("cp_ibp_processed_")
+  dict_temp = dict(zip(df['variables'], df['value']))
+  categories1 = df['variables'].tolist()
+  categories1_cleaned = [x.replace('cp_ibp_processed_', '', 1) for x in categories1]
+
+  # Format as a cdm
+  cdm_cp_ibp = ConstantDataMatrix(col_labels={'Variables': ['cp_ibp_processed'],
+                                            'Categories1': categories1_cleaned})
+  arr = np.zeros((len(cdm_cp_ibp.col_labels['Variables']),
+                  len(cdm_cp_ibp.col_labels['Categories1'])))
+  cdm_cp_ibp.array = arr
+  idx = cdm_cp_ibp.idx
+  for cat, val in dict_temp.items():
+    cdm_cp_ibp.array[idx['cp_ibp_processed'], idx[cat]] = val
+  cdm_cp_ibp.units["cp_ibp_processed"] = "-"
+
   # Beverages processing yield and byproducts ----------------------------------
 
   # Read excel
@@ -1872,7 +1912,7 @@ def constant():
     cdm_kcal.array[idx['cp_kcal-per-t'], idx[cat]] = val
   cdm_kcal.units["cp_kcal-per-t"] = "kcal/t"
 
-  return cdm_kcal, cdm_bev
+  return cdm_kcal, cdm_bev, cdm_cp_ibp
 
 # CalculationLeaf FTS
 def fts_processing():
@@ -1908,7 +1948,8 @@ def datamatrix_to_pickle(dm_fts):
   dict_fxa = {}
 
   dict_fxa['processing-yield'] = dm_fxa_pro_yield
-  dict_fxa['split-import'] = dm_crop_trade_origin
+  dict_fxa['split-import-crop'] = dm_crop_trade_origin.filter_w_regex({'Categories1': 'crop.*'})
+  dict_fxa['split-import-crop-pro'] = dm_crop_trade_origin.filter_w_regex({'Categories1': 'pro-crop.*'})
   dict_fxa['share-export'] = dm_fxa_exports
   dict_fxa['yield-ch'] = dm_yield_ch
   dict_fxa['yield-imports'] = dm_yield_world
@@ -1919,6 +1960,7 @@ def datamatrix_to_pickle(dm_fts):
   dict_fxa['cal_agr_domestic-production_bev'] = dm_cal_dom_prod_bev
   dict_fxa['cal_agr_imports-crop_total'] = dm_cal_imports_tot
   dict_fxa['cal_agr_imports-crop_countries'] = dm_cal_imports_countries
+  dict_fxa['cal_agr_imports-crop-pro_total'] = dm_cal_imports_tot.filter_w_regex({'Categories1': 'pro-crop.*'})
   dict_fxa['cal_crop-share-area'] = dm_cal_crop_area
   dict_fxa['cal_cropland_total'] = dm_cal_cropland
 
@@ -2152,6 +2194,7 @@ def datamatrix_to_pickle(dm_fts):
     {'Variables': '.*bev-fer.*'})
   dict_const['cdm_cp_ibp_bev_bev-alc'] = cdm_bev.filter_w_regex(
     {'Variables': '.*bev-alc.*'})
+  dict_const['cdm_ibp_food'] = cdm_cp_ibp
 
   # Group all datamatrix in a single structure ---------------------------------
   DM_crop_pickle = {
@@ -2179,34 +2222,37 @@ if not os.path.exists('data/faostat'):
 
 list_countries_calc = ['Switzerland']
 list_partnerregions_trade = ['Switzerland',
-                         '-- Australia and New Zealand + (Total)',
-                         '-- Caribbean + (Total)',
-                         '-- Central America + (Total)',
-                         '-- Central Asia + (Total)',
-                         '-- Eastern Africa + (Total)',
-                         '-- Eastern Asia + (Total)',
-                         '-- Eastern Europe + (Total)',
-                         '-- Melanesia + (Total)',
-                         '-- Micronesia + (Total)',
-                         '-- Middle Africa + (Total)',
-                         '-- Northern Africa + (Total)',
-                         '-- Northern America + (Total)',
-                         '-- Northern Europe + (Total)',
-                         '-- Polynesia + (Total)',
-                         '-- South America + (Total)',
-                         '-- South-eastern Asia + (Total)',
-                         '-- Southern Africa + (Total)',
-                         '-- Southern Asia + (Total)',
-                         '-- Southern Europe + (Total)',
-                         '-- Western Africa + (Total)',
-                         '-- Western Asia + (Total)',
-                         '-- Western Europe + (Total)']
+                         '-- Australia and New Zealand > (List)',
+                         '-- Caribbean > (List)',
+                         '-- Central America > (List)',
+                         '-- Central Asia > (List)',
+                         '-- Eastern Africa > (List)',
+                         '-- Eastern Asia > (List)',
+                         '-- Eastern Europe > (List)',
+                         '-- Melanesia > (List)',
+                         '-- Micronesia > (List)',
+                         '-- Middle Africa > (List)',
+                         '-- Northern Africa > (List)',
+                         '-- Northern America > (List)',
+                         '-- Northern Europe > (List)',
+                         '-- Polynesia > (List)',
+                         '-- South America > (List)',
+                         '-- South-eastern Asia > (List)',
+                         '-- Southern Africa > (List)',
+                         '-- Southern Asia > (List)',
+                         '-- Southern Europe > (List)',
+                         '-- Western Africa > (List)',
+                         '-- Western Asia > (List)',
+                         '-- Western Europe > (List)']
 
 file_dict = {'losses': 'data/faostat/losses.csv',
+             'FBS_losses': 'data/faostat/FBS-H_csv/FBS_losses.csv',
+             'FBSH_losses': 'data/faostat/FBS-H_csv/FBSH_losses.csv',
              'cake': 'data/faostat/ssr_cake.csv',
              'feed-pro': 'data/faostat/ssr_feed_pro.csv',
              'molasse': 'data/faostat/ssr_2010_2021_molasse_cake.csv',
              'yield': 'data/faostat/yield.csv',
+             'QCL_yield':'data/faostat/QCL_csv/QCL_yield.csv',
              'ssr-crop': 'data/faostat/ssr-crop.csv',
              'dom-prod-crop': 'data/faostat/dom-prod-crop.csv',
              'trade-crop': 'data/faostat/trade-crop.csv',
@@ -2218,7 +2264,7 @@ file_dict = {'losses': 'data/faostat/losses.csv',
              'pesticide': 'data/faostat/pesticide.csv',
              'liming': 'data/faostat/liming.csv'}
 
-cdm_kcal, cdm_bev = constant()
+cdm_kcal, cdm_bev, cdm_cp_ibp = constant()
 dm_losses = crop_losses()
 dm_ssr_crop, df_processing_yield_fxa, dm_imports_fbs = self_sufficiency_processing(years_ots, list_countries_calc, file_dict)
 dm_fxa_pro_yield = fxa_processing_yield(df_processing_yield_fxa, cdm_kcal)
@@ -2230,7 +2276,13 @@ dm_yield_world, dm_yield_ch = crop_yield(dm_prod_share)
 dm_fxa_exports = exports_processing(list_countries_calc,file_dict)
 dm_fts = fts_processing()
 
+# Match countries for imports
+dm_match_countries(dm_losses, dm_yield_world, parameter='perfect match')
+dm_match_countries(dm_losses, dm_crop_trade_origin, parameter='perfect match')
+dm_match_countries(dm_losses, dm_cal_imports_countries, parameter='perfect match')
+
 # CalculationTree RUNNING PICKLE CREATION
 datamatrix_to_pickle(dm_fts)
+
 
 
