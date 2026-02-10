@@ -20,6 +20,22 @@ import os
 import numpy as np
 import time
 
+# SimulateInteractions crop to TCAF
+def simulate_crop_to_TCAF_input():
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    f = os.path.join(current_file_directory, "../_database/data/interface/crop_to_TCAF.pickle")
+    with open(f, 'rb') as handle:
+        dm_production = pickle.load(handle)
+    return dm_production
+
+# SimulateInteractions crop to TCAF
+def simulate_landuse_to_TCAF_input():
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    f = os.path.join(current_file_directory, "../_database/data/interface/landuse_to_TCAF.pickle")
+    with open(f, 'rb') as handle:
+        dm_cropland= pickle.load(handle)
+    return dm_cropland
+
 # CalculationLeaf TCAF MONETIZATION FACTORS
 def TCAF_MF_preprocessing():
 
@@ -32,7 +48,7 @@ def TCAF_MF_preprocessing():
   CDM_MF = ConstantDataMatrix.create_from_constant(df_data, num_cat=0)
   return CDM_MF
 
-# CalculationLeaf TCAF HEALTH DIET
+# CalculationLeaf TCAF - Health diet
 def TCAF_health_diet_preprocessing():
 
   # ----------------------------------------------------------------------------
@@ -178,6 +194,25 @@ def TCAF_health_diet_preprocessing():
 
   return DM_TCAF_health_diet_paf, dm_health_dalys
 
+
+# CalculationLeaf TCAF - Biodiversity
+
+def TCAF_biodiversity_preprocessing():
+  
+  # Read pickle from TCAF Datapool
+
+  # Read pickle from landuse_module to TCAF
+  dm_cropland = simulate_landuse_to_TCAF_input()
+
+  # Format country names to match the ones in dm_production
+
+  # Add missing countries with dummy values
+
+  # Format separately between Switzerland and other countries
+
+  
+  return 
+
 # CalculationLeaf CREATE PICKLE
 def database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet_paf, dm_health_dalys, CDM_MF):
 
@@ -271,6 +306,7 @@ years_ots = create_years_list(1990, 2023, 1)  # make list with years from 1990 t
 years_fts = create_years_list(2025, 2050, 5)
 years_all = years_ots + years_fts
 DM_TCAF_health_diet, dm_health_dalys = TCAF_health_diet_preprocessing()
+TCAF_biodiversity_preprocessing()
 CDM_MF = TCAF_MF_preprocessing()
 
 

@@ -788,6 +788,16 @@ def crop(lever_setting, years_setting, DM_input, write_pickle, interface=Interfa
         # Pour remplacer des valeurs dans la même structure. Accepete un pays différent
         #my_pickle_dump(DM_new=DM_TCAF_health_diet, local_pickle_file=f)
 
+    # crop to TCAF
+    DM_crop_to_TCAF = DM_crop_prod['crop'].filter({'Variables':['agr_domestic-production_afw']})
+    if write_pickle is True:
+      current_file_directory = os.path.dirname(os.path.abspath(__file__))
+      f = os.path.join(current_file_directory,
+                       '../_database/data/interface/crop_to_TCAF.pickle')
+      with open(f, 'wb') as handle:
+        pickle.dump(DM_crop_to_TCAF, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    interface.add_link(from_sector='crop', to_sector='TCAF', dm=DM_crop_to_TCAF)
+
 
     # TPE OUTPUT -------------------------------------------------------------------------------------------------------
     #results_run = livestock_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_food)

@@ -171,7 +171,6 @@ def cropland_workflow(dm_crop_prod, DM_cropland, years_setting):
 
   # Formatting
   dm_crop_imports = dm_crop_prod.filter({'Variables':['agr_domestic-production_afw']})
-  dm_crop_imports.drop(dim='Country', col_label='Switzerland')
 
   # Total cropland per crop type [ha] = domestic prod [kcal] / yield [kcal/ha]
   dm_crop_imports.append(DM_cropland['yield-imports'], dim='Variables')
@@ -191,7 +190,7 @@ def cropland_workflow(dm_crop_prod, DM_cropland, years_setting):
     {'Years': dm_cal_cropland.col_labels['Years']}, inplace=True)
   dm_cal_cropland_total_swiss.append(dm_cal_cropland, dim='Variables')
 
-  return
+  return dm_crop_imports
 
 # CalculationLeaf GRASSLAND
 
@@ -323,31 +322,24 @@ def crop(lever_setting, years_setting, DM_input, write_pickle, interface=Interfa
 
     # CalculationTree LANDUSE MODULE
 
-    cropland_workflow(dm_crop_prod, DM_cropland, years_setting)
+    dm_crop_imports = cropland_workflow(dm_crop_prod, DM_cropland, years_setting)
     grassland_workflow(DM_grassland, dm_liv_pop)
 
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 
-    # Livestock to TCAF
-    DM_TCAF_health_diet = livestock_TCAF_interface()
+    # land-use to TCAF
+    DM_landuse_to_TCAF = dm_crop_imports
     if write_pickle is True:
       current_file_directory = os.path.dirname(os.path.abspath(__file__))
       f = os.path.join(current_file_directory,
-                       '../_database/data/interface/livestock_to_TCAF.pickle')
+                       '../_database/data/interface/land-use_to_TCAF.pickle')
       with open(f, 'wb') as handle:
-        pickle.dump(DM_TCAF_health_diet, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    interface.add_link(from_sector='livestock', to_sector='TCAF',
-                           dm=DM_TCAF_health_diet)
-        # pour update un pickle qui existe déjà, par exemple pour gagner du temps au pre-processing,
-        # Pour remplacer des valeurs dans la même structure. Accepete un pays différent
-        #my_pickle_dump(DM_new=DM_TCAF_health_diet, local_pickle_file=f)
-
-    # Livestock to Crop module
-
+        pickle.dump(DM_landuse_to_TCAF, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    interface.add_link(from_sector='land-use', to_sector='TCAF', dm=DM_landuse_to_TCAF)
 
     # TPE OUTPUT -------------------------------------------------------------------------------------------------------
     #results_run = livestock_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_food)
-    results_run = DM_crop_prod
+    results_run = dm_crop_imports
 
     return results_run
 
