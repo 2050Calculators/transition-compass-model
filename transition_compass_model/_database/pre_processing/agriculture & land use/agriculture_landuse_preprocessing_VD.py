@@ -5,7 +5,6 @@ import faostat
 import os
 import re
 
-from fontTools.cu2qu.cu2qu import calc_intersect
 from model.common.data_matrix_class import DataMatrix
 from model.common.constant_data_matrix_class import ConstantDataMatrix
 from _database.pre_processing.api_routines_CH import get_data_api_CH
@@ -517,6 +516,11 @@ dm_demo = DM_lfs["ots"]["pop"]["lfs_demography_"].filter(
 data_file = "../../data/datamatrix/agriculture.pickle"
 with open(data_file, "rb") as handle:
     DM_agriculture = pickle.load(handle)
+
+# dm = DM_agriculture['constant']['cdm_cp_efficiency']
+# dm.units = {'cp_efficiency_liv': 'kg DM feed/kg EW'}
+# my_pickle_dump(DM_agriculture, data_file)
+
 filter_DM(DM_agriculture, {"Country": ["Switzerland"]})
 add_dummy_country_to_DM(DM_agriculture, "Vaud", "Switzerland")
 filter_DM(DM_agriculture, {"Country": ["Vaud"]})
@@ -556,7 +560,7 @@ dm_lsu.change_unit("agr_livestock", old_unit="animals", new_unit="lsu", factor=1
 # Slaughtered = Stock x slaughtered-rate
 dm_slaughtered_rate = DM_agriculture["ots"]["climate-smart-livestock"][
     "climate-smart-livestock_slaughtered"
-]
+].copy()
 dm_slaughtered_rate.filter_w_regex({"Categories1": "meat.*"}, inplace=True)
 dm_lsu_meat = dm_lsu.filter_w_regex({"Categories1": "meat.*"}, inplace=False)
 dm_lsu_other = dm_lsu.filter_w_regex({"Categories1": "abp.*"}, inplace=False)
@@ -577,7 +581,7 @@ dm_lsu.append(dm_lsu_meat, dim="Categories1")
 # Multiply dm_lsu by yield to obtain total kcal produced
 dm_yield = DM_agriculture["ots"]["climate-smart-livestock"][
     "climate-smart-livestock_yield"
-]
+].copy()
 if "meat-oth-animals" not in dm_yield.col_labels["Categories1"]:
     idx = dm_yield.idx
     arr_poultry = dm_yield.array[:, :, :, idx["meat-poultry"]]
@@ -600,7 +604,9 @@ file = "data/agr_crop_prod.pickle"
 # Production in *ha* / Land-Use
 dm_crop_land = get_crop_prod(table_id, file, years_ots)
 # Production in kcal = Production in ha x yield in kcal/ha
-dm_yield = DM_agriculture["ots"]["climate-smart-crop"]["climate-smart-crop_yield"]
+dm_yield = DM_agriculture["ots"]["climate-smart-crop"][
+    "climate-smart-crop_yield"
+].copy()
 linear_fitting(dm_yield, years_ots)
 # Wine production
 # The Federal Office of Agriculture, report the hl of wine produced and the ha of land dedicated to vineyards.
@@ -629,15 +635,17 @@ dm_prod.append(dm_crop_prod, dim="Categories1")
 # Demand = append( Consumer-diet,  )
 # Consumer-diet-other = ( kcal-req - sum(Consumer-diet) )*Share
 # Share
-dm_share = DM_agriculture["ots"]["diet"]["share"].normalise(
-    "Categories1", inplace=False
+dm_share = (
+    DM_agriculture["ots"]["diet"]["share"]
+    .normalise("Categories1", inplace=False)
+    .copy()
 )
 linear_fitting(dm_share, years_ots)
 # Consumer-diet
-dm_diet = DM_agriculture["ots"]["diet"]["lfs_consumers-diet"]
+dm_diet = DM_agriculture["ots"]["diet"]["lfs_consumers-diet"].copy()
 linear_fitting(dm_diet, years_ots)
 # kcal-req
-dm_kcal_req = DM_agriculture["ots"]["kcal-req"]
+dm_kcal_req = DM_agriculture["ots"]["kcal-req"].copy()
 linear_fitting(dm_kcal_req, years_ots)
 dm_kcal_req.append(dm_demo, dim="Variables")
 dm_kcal_req.operation(
@@ -666,7 +674,7 @@ dm_diet_other = dm_share.filter({"Variables": ["lfs_consumers-diet"]})
 dm_diet.append(dm_diet_other, "Categories1")
 
 # Supply = Waste + Demand
-dm_waste = DM_agriculture["ots"]["fwaste"]
+dm_waste = DM_agriculture["ots"]["fwaste"].copy()
 linear_fitting(dm_waste, years_ots)
 dm_supply = dm_waste
 # if 'rice' not in dm_supply.col_labels['Categories1']:
@@ -681,7 +689,7 @@ dm_supply.operation(
 )
 
 # Net-import = Production/Suppy ( = production/(production + import - export))
-dm_netimport_dummy = DM_agriculture["ots"]["food-net-import"]
+dm_netimport_dummy = DM_agriculture["ots"]["food-net-import"].copy()
 dm_supply.change_unit(
     "lfs_supply", old_unit="kcal/cap/day", new_unit="kcal/cap", factor=365
 )
@@ -842,7 +850,7 @@ DM_agriculture["fxa"]["cal_agr_domestic-production_food"] = dm_prod_crop
 
 ## Feed Demand
 ### Extracting DM
-dm_fcr = DM_agriculture["constant"]["cdm_cp_efficiency"]
+dm_fcr = DM_agriculture["constant"]["cdm_cp_efficiency"].copy()
 dm_pasture = DM_agriculture["ots"]["ruminant-feed"]["ruminant-feed"].copy()
 dm_feed_split = DM_agriculture["ots"]["climate-smart-livestock"][
     "climate-smart-livestock_ration"
@@ -971,9 +979,9 @@ DM_agriculture["fxa"]["cal_agr_lus_land"] = cal_agr_lus_land
 ## Fertilizer Emissions (N2O)
 dm_nitrogen = DM_agriculture["ots"]["climate-smart-crop"][
     "climate-smart-crop_input-use"
-]
+].copy()
 dm_nitrogen.filter({"Categories1": ["nitrogen"]}, inplace=True)
-dm_ef_nitrogen = DM_agriculture["fxa"]["agr_emission_fertilizer"]
+dm_ef_nitrogen = DM_agriculture["fxa"]["agr_emission_fertilizer"].copy()
 dm_ef_nitrogen.filter({"Years": years_ots}, inplace=True)
 dm_land = cal_agr_lus_land.copy()
 dm_land.groupby(
@@ -999,6 +1007,13 @@ dm_nitrogen.rename_col(
     dim="Variables",
 )
 
+dm_nitrogen.change_unit(
+    "cal_agr_crop_emission_N2O-emission_fertilizer",
+    old_unit="t/ha",
+    new_unit="Mt",
+    factor=0.000001,
+)
+
 DM_agriculture["fxa"]["cal_agr_crop_emission_N2O-emission_fertilizer"] = dm_nitrogen
 
 
@@ -1007,5 +1022,5 @@ print("Hello")
 ################################################################################
 # Pickle overwriting
 ################################################################################
-
-# my_pickle_dump(DM_agriculture, f)
+f = "../../data/datamatrix/agriculture.pickle"
+my_pickle_dump(DM_agriculture, f)
