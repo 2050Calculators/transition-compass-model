@@ -13,6 +13,9 @@ import pickle
 from scipy.stats import linregress
 import requests
 import deepl
+import pycountry
+import unicodedata
+from rapidfuzz import process
 
 def add_missing_ots_years(dm, startyear, baseyear):
     
@@ -1488,3 +1491,42 @@ def dm_match_countries(dm, dm_to_match, parameter):
     print("Missing parameter 'add' or 'filter' or 'perfect match' ")
 
   return
+
+# -----------------------------
+# Convert country name to ISO3
+# -----------------------------
+def country_to_iso3(name):
+  try:
+    return pycountry.countries.lookup(name).alpha_3
+  except LookupError:
+    return None
+
+# -----------------------------
+# Map source list to target ISO3 list
+# -----------------------------
+def harmonize_countries(source_list, target_list):
+  """
+  Harmonize source_list of countries to target_list using ISO3 codes.
+
+  Returns a dict: {source_name: matched_target_name or None}
+  """
+  # Convert target list to ISO3
+  target_iso3_map = {c: country_to_iso3(c) for c in target_list}
+  iso_to_target = {v: k for k, v in target_iso3_map.items() if v is not None}
+
+  mapping = {}
+  unmatched = []
+  for country in source_list:
+    iso3 = country_to_iso3(country)
+    if iso3 and iso3 in iso_to_target:
+      mapping[country] = iso_to_target[iso3]
+    else:
+      # fallback: fuzzy match to target_list
+      result = process.extractOne(country, target_list)
+      if result is not None:
+        match, score, _ = result
+        mapping[country] = match if score > 80 else None
+      else:
+        mapping[country] = None
+        unmatched.append(country)
+  return mapping, unmatched

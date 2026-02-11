@@ -401,6 +401,91 @@ def database_to_df(df_db, lever, level='all'):
     return df_ots, df_fts
 
 
+def database_to_df_robust(df_db, lever, level='all'):
+  # --- 1️⃣ Normalize column names ---
+  rename_map = {}
+
+  if 'Country' in df_db.columns:
+    rename_map['Country'] = 'geoscale'
+  if 'Years' in df_db.columns:
+    rename_map['Years'] = 'timescale'
+  if 'Variables' in df_db.columns:
+    rename_map['Variables'] = 'variables'
+  if 'Variable' in df_db.columns:
+    rename_map['Variable'] = 'variables'
+  if 'Value' in df_db.columns:
+    rename_map['Value'] = 'value'
+
+  df_db = df_db.rename(columns=rename_map)
+
+  # --- 2️⃣ Ensure required columns exist ---
+  required_cols = ['geoscale', 'timescale', 'variables', 'value']
+  for col in required_cols:
+    if col not in df_db.columns:
+      raise ValueError(f"Missing required column: {col}")
+
+  # If level/lever missing (for CSV version), create defaults
+  if 'level' not in df_db.columns:
+    df_db['level'] = 0
+  if 'lever' not in df_db.columns:
+    df_db['lever'] = lever
+
+  # --- 3️⃣ Enforce types ---
+  df_db['timescale'] = df_db['timescale'].astype(int)
+  df_db['level'] = df_db['level'].astype(int)
+  df_db['value'] = df_db['value'].astype(float)
+  df_db['geoscale'] = df_db['geoscale'].astype(str)
+  df_db['lever'] = df_db['lever'].astype(str)
+  df_db['variables'] = df_db['variables'].astype(str)
+
+  # --- 4️⃣ Remove duplicates ---
+  len_init = len(df_db)
+  df_db = df_db.drop_duplicates(
+    subset=['geoscale', 'timescale', 'level', 'variables'])
+  if len(df_db) - len_init < 0:
+    print("Duplicates found, use .duplicated() to inspect")
+
+  # --- 5️⃣ Extract OTS ---
+  df_db_ots = df_db.loc[
+    (df_db["level"] == 0) & (df_db['lever'] == lever)
+    ].copy()
+
+  # --- 6️⃣ Extract FTS ---
+  if level == 'all':
+    df_db_fts = df_db.loc[
+      (df_db["level"] != 0) & (df_db['lever'] == lever)
+      ].copy()
+  else:
+    df_db_fts = df_db.loc[
+      (df_db["level"] == level) & (df_db['lever'] == lever)
+      ].copy()
+
+  # --- 7️⃣ Pivot ---
+  df_ots = df_db_ots.pivot(
+    index=['geoscale', 'timescale', 'level'],
+    columns="variables",
+    values='value'
+  ).reset_index()
+
+  df_fts = df_db_fts.pivot(
+    index=['geoscale', 'timescale', 'level'],
+    columns="variables",
+    values='value'
+  ).reset_index()
+
+  # --- 8️⃣ Rename back to user-friendly format ---
+  rename_cols = {
+    'geoscale': "Country",
+    'timescale': 'Years',
+    'level': lever
+  }
+
+  df_ots.rename(columns=rename_cols, inplace=True)
+  df_fts.rename(columns=rename_cols, inplace=True)
+
+  return df_ots, df_fts
+
+
 def database_to_dm(df_db, lever, num_cat, baseyear, years, level='all'):
     # Given a dataframe in database format, it extracts the ots and the fts dictionaries
     # e.g.  dict_ots = {lever: dm_ots}

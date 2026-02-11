@@ -1,24 +1,75 @@
 import numpy as np
-from model.common.auxiliary_functions import interpolate_nans, add_missing_ots_years, linear_fitting_ots_db, linear_fitting, create_years_list
+from model.common.auxiliary_functions import interpolate_nans, add_missing_ots_years, linear_fitting_ots_db, linear_fitting, create_years_list, dm_match_countries
 #from _database.pre_processing.api_routines_CH import get_data_api_CH
 from scipy.stats import linregress
 import pandas as pd
+import pycountry
+import unicodedata
+from rapidfuzz import process
 import faostat
+import copy
+from _database.pre_processing.api_routines_CH import get_data_api_CH
 import os
 import re
 from model.common.data_matrix_class import DataMatrix
 from model.common.constant_data_matrix_class import ConstantDataMatrix
-from model.common.io_database import read_database, read_database_fxa, edit_database, database_to_df, dm_to_database, database_to_dm
+from model.common.io_database import read_database, read_database_fxa, edit_database, database_to_df, dm_to_database, database_to_dm, database_to_df_robust
 from model.common.io_database import read_database_to_ots_fts_dict, read_database_to_ots_fts_dict_w_groups, read_database_to_dm
 from model.common.interface_class import Interface
-from model.common.auxiliary_functions import compute_stock,  filter_geoscale, calibration_rates, filter_DM, add_dummy_country_to_DM
-from model.common.auxiliary_functions import read_level_data, simulate_input
+from model.common.auxiliary_functions import compute_stock,  filter_geoscale, calibration_rates, filter_DM, add_dummy_country_to_DM, my_pickle_dump
+from model.common.auxiliary_functions import read_level_data, simulate_input, harmonize_countries, country_to_iso3
 from scipy.optimize import linprog
 import pickle
 import json
 import os
 import numpy as np
 import time
+
+# CalculationLeaf other functions
+
+
+def normalize(name):
+    """Remove accents and normalize string."""
+    name = name.strip()
+    name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return name
+
+
+def name_to_iso3(name):
+    """Convert country name to ISO3 code."""
+    try:
+        return pycountry.countries.lookup(name).alpha_3
+    except LookupError:
+        return None
+
+
+def match_countries_iso3(list_faostat, list_biodiversity):
+    """
+    Convert both country lists to ISO3 codes
+    and return mapping biodiversity_name -> faostat_name
+    """
+
+    # --- Convert FAOSTAT countries to ISO3 ---
+    faostat_iso = {}
+    for country in list_faostat:
+        iso = name_to_iso3(normalize(country))
+        if iso:
+            faostat_iso[iso] = country
+
+    # --- Convert biodiversity countries to ISO3 and match ---
+    mapping = {}
+    unmatched = []
+
+    for country in list_biodiversity:
+        iso = name_to_iso3(normalize(country))
+
+        if iso and iso in faostat_iso:
+            mapping[country] = faostat_iso[iso]
+        else:
+            mapping[country] = None
+            unmatched.append(country)
+
+    return mapping, unmatched
 
 # SimulateInteractions crop to TCAF
 def simulate_crop_to_TCAF_input():
@@ -28,10 +79,14 @@ def simulate_crop_to_TCAF_input():
         dm_production = pickle.load(handle)
     return dm_production
 
-# SimulateInteractions crop to TCAF
+# SimulateInteractions land-use to TCAF
 def simulate_landuse_to_TCAF_input():
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    f = os.path.join(current_file_directory, "../_database/data/interface/landuse_to_TCAF.pickle")
+
+    f = os.path.normpath(
+      os.path.join(current_file_directory,
+                  "../../data/interface/land-use_to_TCAF.pickle")
+    )
     with open(f, 'rb') as handle:
         dm_cropland= pickle.load(handle)
     return dm_cropland
@@ -198,23 +253,112 @@ def TCAF_health_diet_preprocessing():
 # CalculationLeaf TCAF - Biodiversity
 
 def TCAF_biodiversity_preprocessing():
+  import sys
+  import model.common.data_matrix_class as dmc
+
+  sys.modules["common.data_matrix_class"] = dmc
   
-  # Read pickle from TCAF Datapool
+  # Read biodiversity_world.csv from TCAF Datapool
+  current_file_directory = os.path.dirname(os.path.abspath(__file__))
+  f = os.path.join(
+    current_file_directory,
+    "data/data_pool/biodiversity_world.csv"
+  )
+  df_biodiversity_world = pd.read_csv(f)
+
+  # Read biodiversity_switzerland.csv from TCAF Datapool
+  current_file_directory = os.path.dirname(os.path.abspath(__file__))
+  f = os.path.join(
+    current_file_directory,
+    "data/data_pool/biodiversity_switzerland.csv"
+  )
+  df_biodiversity_ch = pd.read_csv(f)
+
+  # Format as Datamatrix (CH)
+  lever = 'dummy'
+  df_biodiversity_ch['lever'] = lever
+  df_ots, df_fts = database_to_df_robust(df_biodiversity_ch, lever, level='all')
+  df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+  dm_biodiversity_ch = DataMatrix.create_from_df(df_ots, num_cat=2)
+
+  # Format as Datamatrix (world)
+  lever = 'dummy'
+  df_biodiversity_ch['lever'] = lever
+  df_ots, df_fts = database_to_df_robust(df_biodiversity_world, lever, level='all')
+  df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+  dm_biodiversity_world = DataMatrix.create_from_df(df_ots, num_cat=0)
+
+  # Group same country when necessary using mean values
+  dm_biodiversity_world.groupby({'united states of america': 'united states.*'}, dim='Country', aggregation='mean', regex=True, inplace=True)
+  dm_biodiversity_world.groupby({'indonesia': 'indonesia.*'},dim='Country', aggregation='mean', regex=True, inplace=True)
+
+  # Create copies for to divide  "baltic states" in ["Estonia", "Latvia", "Lithuania"]
+  for country_baltic in ["Estonia", "Latvia", "Lithuania"]:
+    dm_biodiversity_world.add(0.0, dummy=True, col_label=country_baltic,dim='Country')
+    dm_biodiversity_world[country_baltic,:,:] = dm_biodiversity_world['baltic states',:,:]
+  dm_biodiversity_world.drop(dim='Country', col_label='baltic states')
 
   # Read pickle from landuse_module to TCAF
   dm_cropland = simulate_landuse_to_TCAF_input()
 
   # Format country names to match the ones in dm_production
 
+  # Manual fixes for typos & alternative names
+  # -----------------------------
+  mapping_manual = {
+    "hungaria": "Hungary",
+    "sri lanca": "Sri Lanka",
+    "mauretania": "Mauritania",
+    "tunesia": "Tunisia",
+    "ivory coast": "Côte d'Ivoire",
+    "zaire": "Democratic Republic of the Congo",
+    "south korea": "Democratic People's Republic of Korea",
+    # if you mean DPRK; otherwise see below
+    "north korea": "Democratic People's Republic of Korea",
+    "russia": "Russian Federation",
+    "bolivia": "Bolivia",
+    "netherlands": "Netherlands (kingdom of the)",
+    # depending on your ISO mapping, could be "Bolivia (Plurinational State of)"
+    "iran": "Iran",
+    "venezuela": "Venezuela (Bolivarian Republic of)",
+    "turkey": "Türkiye",
+    "us": "United States of America",
+    "uk": "United Kingdom of Great Britain and Northern Ireland",
+    "dominican rep": "Dominican Republic",
+    "greenland": "Greenland",
+    "new guinea": "Papua New Guinea",
+    "surinam": "Suriname",
+    "china": "China, mainland"
+  }
+
+  # Rename with manual fixes
+  for key in mapping_manual.keys():
+    dm_biodiversity_world.rename_col(key, mapping_manual[key], 'Country')
+
+  list_faostat = dm_cropland.col_labels['Country']
+  list_biodiversity = dm_biodiversity_world.col_labels['Country']
+
+  mapping, unmatched = harmonize_countries(list_biodiversity, list_faostat)
+
+  # Format country names to match the ones in dm_production
+  for key in mapping.keys():
+    if mapping[key] is not None:
+      dm_biodiversity_world.rename_col(key, mapping[key], 'Country')
+
   # Add missing countries with dummy values
+  dm_match_countries(dm_biodiversity_world, dm_cropland, parameter='perfect match')
 
   # Format separately between Switzerland and other countries
+  dm_biodiversity_world.drop(dim='Country', col_label='Switzerland')
+  DM_TCAF_biodiversity = {
+    'TCAF-biodiversity-CH': dm_biodiversity_ch,
+    'TCAF-biodiversity-world': dm_biodiversity_world
+  }
 
-  
-  return 
+  return DM_TCAF_biodiversity
 
 # CalculationLeaf CREATE PICKLE
-def database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet_paf, dm_health_dalys, CDM_MF):
+def database_from_csv_to_datamatrix(years_ots, years_fts):
 
   # Make list with years from 2020 to 2050 (steps of 5 years)
   years_all = years_ots + years_fts
@@ -225,8 +369,9 @@ def database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet_pa
   dict_fxa = {}
 
   # Add in fxa
-  dict_fxa['health-diet_paf'] = DM_TCAF_health_diet_paf
+  dict_fxa['health-diet_paf'] = DM_TCAF_health_diet
   dict_fxa['health-diet_dalys'] = dm_health_dalys
+  dict_fxa['biodiversity'] = DM_TCAF_biodiversity
 
   # CalibrationDataToDatamatrix ------------------------------------------------
 
@@ -306,9 +451,9 @@ years_ots = create_years_list(1990, 2023, 1)  # make list with years from 1990 t
 years_fts = create_years_list(2025, 2050, 5)
 years_all = years_ots + years_fts
 DM_TCAF_health_diet, dm_health_dalys = TCAF_health_diet_preprocessing()
-TCAF_biodiversity_preprocessing()
+DM_TCAF_biodiversity = TCAF_biodiversity_preprocessing()
 CDM_MF = TCAF_MF_preprocessing()
 
 
 # CalculationTree RUNNING PICKLE CREATION --------------------------------------
-database_from_csv_to_datamatrix(years_ots, years_fts, DM_TCAF_health_diet, dm_health_dalys, CDM_MF)
+database_from_csv_to_datamatrix(years_ots, years_fts)
