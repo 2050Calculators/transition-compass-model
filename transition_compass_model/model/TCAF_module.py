@@ -4,12 +4,14 @@ from model.common.data_matrix_class import DataMatrix
 from model.common.constant_data_matrix_class import ConstantDataMatrix
 from model.common.io_database import dm_to_database
 from model.common.interface_class import Interface
-from model.common.auxiliary_functions import  calibration_rates, create_years_list
+from model.common.auxiliary_functions import calibration_rates, \
+  create_years_list, linear_fitting
 from model.common.auxiliary_functions import read_level_data, filter_country_and_load_data_from_pickles
 import pickle
 import json
 import os
 import numpy as np
+from collections import Counter
 import time
 
 
@@ -22,7 +24,7 @@ def init_years_lever():
 
 
 # CalculationLeaf READ PICKLE
-def read_data(DM_TCAF, lever_setting):
+def read_data(DM_TCAF, lever_setting, years_all):
 
     # Read fts based on lever_setting
     #DM_ots_fts = read_level_data(DM_TCAF, lever_setting)
@@ -36,13 +38,23 @@ def read_data(DM_TCAF, lever_setting):
         'health-diet_paf': dm_tcaf_paf,
         'health-diet_dalys': dm_tcaf_dalys
     }
+
+    # Aggregate Data Matrix - BIODIVERSITY
+    DM_TCAF_biodiversity = {
+        'biodiversity-ch': DM_TCAF['fxa']['biodiversity']['TCAF-biodiversity-CH'],
+        'biodiversity-world': DM_TCAF['fxa']['biodiversity']['TCAF-biodiversity-world']
+    }
+    for key in DM_TCAF_biodiversity.keys():
+      linear_fitting(DM_TCAF_biodiversity[key], years_all)
+      DM_TCAF_biodiversity[key].filter({'Years':years_all}, inplace=True)
+
     # Constants
     CDM_MF = {}
     # For health-diet
     cdm_temp = DM_TCAF['constant'].filter_w_regex({'Variables': 'tcaf_mf_health-diet.*'})
     CDM_MF['health-diet'] = cdm_temp
 
-    return DM_TCAF_health_diet, CDM_MF
+    return DM_TCAF_health_diet, DM_TCAF_biodiversity, CDM_MF
 
 # SimulateInteractions
 
@@ -52,6 +64,17 @@ def simulate_diet_to_TCAF_input():
     with open(f, 'rb') as handle:
         DM_diet = pickle.load(handle)
     return DM_diet
+
+def simulate_landuse_to_TCAF_input():
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+
+    f = os.path.normpath(
+      os.path.join(current_file_directory,
+                  "../_database/data/interface/land-use_to_TCAF.pickle")
+    )
+    with open(f, 'rb') as handle:
+        dm_cropland= pickle.load(handle)
+    return dm_cropland
 
 # CalculationLeaf TCAF HEALTH DIET
 def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
@@ -175,6 +198,58 @@ def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
 
   return dm_paf, dm_dalys_tot
 
+
+# CalculationLeaf TCAF BIODIVERSITY
+
+def TCAF_biodiversity_workflow(DM_TCAF_biodiversity, DM_landuse_to_TCAF):
+  DM_TCAF_biodiversity = DM_TCAF_biodiversity.copy()
+
+  # Step Biodiversity Switzerland
+  # Drop treenut cat because not in cropland
+  DM_TCAF_biodiversity['biodiversity-ch'].drop(dim='Categories2', col_label='treenut')
+  # Add mean value for starch missing in biodiv
+  dm_temp = DM_TCAF_biodiversity['biodiversity-ch'].groupby({'starch': '.*'},
+                      dim='Categories2',
+                      aggregation='mean',
+                      regex=True, inplace=False)
+  DM_TCAF_biodiversity['biodiversity-ch'].append(dm_temp, dim='Categories2')
+  # Append cropland to biodiversity for relevant geoscale
+  DM_TCAF_biodiversity['biodiversity-ch'].append(DM_landuse_to_TCAF['cropland-ch'], dim='Variables')
+
+  # Biodiversity costs [CHF/ha] = cropland [ha] * eco-costs [CHF/ha]
+  DM_TCAF_biodiversity['biodiversity-ch'].operation('agr_cropland', '*', 'eco-cost',
+             dim='Variables',
+             out_col='tcaf_biodiversity',
+             unit='CHF')
+
+  # Step Biodiversity World
+  # Drop Switzerland and differing countries if any
+  DM_landuse_to_TCAF['cropland-world'].drop(dim='Country',col_label='Switzerland')
+  set_countries = set(DM_TCAF_biodiversity['biodiversity-world'].col_labels['Country']) - set(DM_landuse_to_TCAF['cropland-world'].col_labels['Country'])
+  DM_TCAF_biodiversity['biodiversity-world'].drop(dim='Country', col_label=list(set_countries))
+  # Sort countries
+  DM_TCAF_biodiversity['biodiversity-world'].sort(dim='Country')
+  DM_landuse_to_TCAF['cropland-world'].sort(dim='Country')
+
+  # Sum total cropland
+  DM_landuse_to_TCAF['cropland-world'].groupby({'total': '.*'},
+                      dim='Categories1',
+                      aggregation='sum',
+                      regex=True, inplace=True)
+  DM_landuse_to_TCAF['cropland-world'] = DM_landuse_to_TCAF['cropland-world'].flatten()
+  DM_landuse_to_TCAF['cropland-world'].rename_col_regex(str1="agr_cropland_total_total", str2="agr_cropland", dim="Variables")
+
+  # Append cropland to biodiversity for relevant geoscale
+  DM_TCAF_biodiversity['biodiversity-world'].append(DM_landuse_to_TCAF['cropland-world'], dim='Variables')
+
+  # Biodiversity costs [EUR2024/ha] = cropland [ha] * eco-costs [EUR2024/ha]
+  DM_TCAF_biodiversity['biodiversity-world'].operation('agr_cropland', '*', 'eco-cost',
+             dim='Variables',
+             out_col='tcaf_biodiversity',
+             unit='EUR2024')
+
+  return DM_TCAF_biodiversity
+
 # CalculationLeaf TPE INTERFACE
 def TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot):
 
@@ -191,9 +266,14 @@ def TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot):
 
 def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
 
+    years_ots = create_years_list(years_setting[0], years_setting[1],1)  # make list with years from 1990 to 2015
+    years_fts = create_years_list(years_setting[2], years_setting[3], years_setting[4])
+    years_all = years_ots + years_fts
+
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    DM_TCAF_health_diet, CDM_MF = read_data(DM_input, lever_setting)
+    DM_TCAF_health_diet, DM_TCAF_biodiversity, CDM_MF = read_data(DM_input, lever_setting, years_all)
     country_list = ['Switzerland']
+
 
     # INTERFACES IN ---------------------------------------------------------------------------------------------------
 
@@ -208,9 +288,19 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
       for key in DM_diet.keys():
         DM_diet[key].filter({'Country': country_list}, inplace=True)
 
+    # land-use
+    if interface.has_link(from_sector='land-use', to_sector='TCAF'):
+      DM_landuse_to_TCAF = interface.get_link(from_sector='land-use', to_sector='TCAF')
+    else:
+      if len(interface.list_link()) != 0:
+        print('You are missing land-use to TCAF interface')
+      DM_landuse_to_TCAF = simulate_landuse_to_TCAF_input()
+
+
 
     # CalculationTree ---------------------------------------------------------------------------------------------------
     dm_health_diet_detailed, dm_health_diet_tot = TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF)
+    DM_TCAF_biodiversity = TCAF_biodiversity_workflow(DM_TCAF_biodiversity, DM_landuse_to_TCAF)
     # CalculationTree TPE OUTPUT -------------------------------------------------------------------------------------------------------
     results_run = TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot)
 
@@ -227,7 +317,7 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
 def TCAF_module_local_run():
   country_list = ['Switzerland']
   DM_input = filter_country_and_load_data_from_pickles \
-    (country_list= country_list, modules_list = 'TCAF')
+    (country_list= country_list, modules_list = 'TCAF', filter_country=False)
   years_setting, lever_setting = init_years_lever()
   TCAF(lever_setting, years_setting, DM_input['TCAF'])
   return

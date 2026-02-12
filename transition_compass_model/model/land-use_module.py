@@ -146,6 +146,8 @@ def cropland_workflow(dm_crop_prod, DM_cropland, years_setting):
     calibration_start_year=1990,
     calibration_end_year=2022,
     years_setting=years_setting)
+  # Add extensive to cal rates = 1 because missing as both 0
+  dm_cal_rates_crop_share_area[:,:,:,'extensive',:] = 1.0
   DM_cropland['crop-share'].append(dm_cal_rates_crop_share_area, dim='Variables')
   DM_cropland['crop-share'].operation('agr_cropland_raw', '*',
                                          'cal_rate',
@@ -190,7 +192,7 @@ def cropland_workflow(dm_crop_prod, DM_cropland, years_setting):
     {'Years': dm_cal_cropland.col_labels['Years']}, inplace=True)
   dm_cal_cropland_total_swiss.append(dm_cal_cropland, dim='Variables')
 
-  return dm_crop_imports
+  return dm_crop_imports, DM_cropland
 
 # CalculationLeaf GRASSLAND
 
@@ -322,13 +324,14 @@ def crop(lever_setting, years_setting, DM_input, write_pickle, interface=Interfa
 
     # CalculationTree LANDUSE MODULE
 
-    dm_crop_imports = cropland_workflow(dm_crop_prod, DM_cropland, years_setting)
+    dm_crop_imports, DM_cropland = cropland_workflow(dm_crop_prod, DM_cropland, years_setting)
     grassland_workflow(DM_grassland, dm_liv_pop)
 
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 
     # land-use to TCAF
-    DM_landuse_to_TCAF = dm_crop_imports
+    DM_landuse_to_TCAF = {'cropland-world': dm_crop_imports.filter({'Variables': ['agr_cropland_total']}),
+                          'cropland-ch': DM_cropland['crop-share'].filter({'Variables': ['agr_cropland']})}
     if write_pickle is True:
       current_file_directory = os.path.dirname(os.path.abspath(__file__))
       f = os.path.join(current_file_directory,

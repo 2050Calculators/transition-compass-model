@@ -88,8 +88,8 @@ def simulate_landuse_to_TCAF_input():
                   "../../data/interface/land-use_to_TCAF.pickle")
     )
     with open(f, 'rb') as handle:
-        dm_cropland= pickle.load(handle)
-    return dm_cropland
+        DM_landuse_to_TCAF = pickle.load(handle)
+    return DM_landuse_to_TCAF
 
 # CalculationLeaf TCAF MONETIZATION FACTORS
 def TCAF_MF_preprocessing():
@@ -280,6 +280,8 @@ def TCAF_biodiversity_preprocessing():
   df_ots, df_fts = database_to_df_robust(df_biodiversity_ch, lever, level='all')
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
   dm_biodiversity_ch = DataMatrix.create_from_df(df_ots, num_cat=2)
+  dm_biodiversity_ch.switch_categories_order(cat1='Categories2', cat2='Categories1')
+  dm_biodiversity_ch.rename_col_regex('crop-', '', dim='Categories2')
 
   # Format as Datamatrix (world)
   lever = 'dummy'
@@ -288,9 +290,7 @@ def TCAF_biodiversity_preprocessing():
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
   dm_biodiversity_world = DataMatrix.create_from_df(df_ots, num_cat=0)
 
-  # Group same country when necessary using mean values
-  dm_biodiversity_world.groupby({'united states of america': 'united states.*'}, dim='Country', aggregation='mean', regex=True, inplace=True)
-  dm_biodiversity_world.groupby({'indonesia': 'indonesia.*'},dim='Country', aggregation='mean', regex=True, inplace=True)
+  # Fixme change unit eco-cost EUR2024 to CHF
 
   # Create copies for to divide  "baltic states" in ["Estonia", "Latvia", "Lithuania"]
   for country_baltic in ["Estonia", "Latvia", "Lithuania"]:
@@ -299,7 +299,8 @@ def TCAF_biodiversity_preprocessing():
   dm_biodiversity_world.drop(dim='Country', col_label='baltic states')
 
   # Read pickle from landuse_module to TCAF
-  dm_cropland = simulate_landuse_to_TCAF_input()
+  DM_landuse_to_TCAF = simulate_landuse_to_TCAF_input()
+  dm_cropland = DM_landuse_to_TCAF['cropland-world']
 
   # Format country names to match the ones in dm_production
 
@@ -312,8 +313,7 @@ def TCAF_biodiversity_preprocessing():
     "tunesia": "Tunisia",
     "ivory coast": "Côte d'Ivoire",
     "zaire": "Democratic Republic of the Congo",
-    "south korea": "Democratic People's Republic of Korea",
-    # if you mean DPRK; otherwise see below
+    "south korea": "Republic of Korea",
     "north korea": "Democratic People's Republic of Korea",
     "russia": "Russian Federation",
     "bolivia": "Bolivia",
@@ -338,7 +338,12 @@ def TCAF_biodiversity_preprocessing():
   list_faostat = dm_cropland.col_labels['Country']
   list_biodiversity = dm_biodiversity_world.col_labels['Country']
 
+  # Rename with ISO3 codes
   mapping, unmatched = harmonize_countries(list_biodiversity, list_faostat)
+
+  # Group same country when necessary using mean values
+  dm_biodiversity_world.groupby({'united states of america': 'united states.*'}, dim='Country', aggregation='mean', regex=True, inplace=True)
+  dm_biodiversity_world.groupby({'indonesia': 'indonesia.*'},dim='Country', aggregation='mean', regex=True, inplace=True)
 
   # Format country names to match the ones in dm_production
   for key in mapping.keys():
@@ -354,6 +359,11 @@ def TCAF_biodiversity_preprocessing():
     'TCAF-biodiversity-CH': dm_biodiversity_ch,
     'TCAF-biodiversity-world': dm_biodiversity_world
   }
+
+  # Change unti from money/m2 to money/ha
+  for key in DM_TCAF_biodiversity.keys():
+    old_unit = DM_TCAF_biodiversity[key].units['eco-cost']
+    DM_TCAF_biodiversity[key].change_unit('eco-cost', old_unit=old_unit, new_unit='CHF/ha', factor=10**(4))
 
   return DM_TCAF_biodiversity
 
