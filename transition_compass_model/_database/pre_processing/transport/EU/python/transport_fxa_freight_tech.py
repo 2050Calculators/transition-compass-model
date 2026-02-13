@@ -357,6 +357,11 @@ dm_fleet.sort("Country")
 # substitute zero values with missing
 dm_fleet.array[dm_fleet.array==0] = np.nan
 
+# save raw data for check on fleet
+f = os.path.join(current_file_directory, '../data/datamatrix/intermediate_files/jrc_freight_fleet_calib.pickle')
+with open(f, 'wb') as handle:
+    pickle.dump(dm_fleet, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
 ###################
 ##### FIX OTS #####
 ###################
