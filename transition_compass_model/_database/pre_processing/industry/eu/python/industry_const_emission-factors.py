@@ -354,7 +354,10 @@ df.sort_values(by=["variable"],inplace=True)
 # source: https://www.ipcc-nggip.iges.or.jp/public/2006gl/pdf/3_Volume3/V3_3_Ch3_Chemical_Industry.pdf
 # Table 3.3 page 3.23
 
-value = np.mean(np.array([2, 2.5, 5, 7, 9])/1000)
+# review
+# ammonia N2O: set ~0 (avoid misplacing nitric acid emissions on ammonia output)
+# value = np.mean(np.array([2, 2.5, 5, 7, 9])/1000)
+value = 0
 df_N2O = pd.DataFrame({"variable" : ["process-emissions_ammonia-tech_N2O[Mt/Mt]"],
                            "value" : [value]})
 
@@ -366,7 +369,13 @@ df_N2O = pd.DataFrame({"variable" : ["process-emissions_ammonia-tech_N2O[Mt/Mt]"
 # which for the moment is mostly types of plastics, which do not have much of N2O emissions,
 # aside from PVC, but at this stage it would be difficult to do the split, so
 # we assign 0 N2O process emissions to chemicals.
-value = 0
+
+# review:
+# process N2O for aggregated chemicals: compromise constant EF
+# chosen to give kt-scale N2O for countries with ~0.1–1 Mt chemical output,
+# without applying nitric-acid-specific factors to all chemicals.
+# you can consider 0.003–0.004 which may be best constants for years 2000-2021
+value = 0.005  # Mt N2O per Mt chemical output (= 5 kg/t)
 df_temp = pd.DataFrame({"variable" : ["process-emissions_chem-chem-tech_N2O[Mt/Mt]",
                                       "process-emissions_chem-sec_N2O[Mt/Mt]"], # I assume post consumer it's the same for process emissions N2O
                         "value" : [value, value]})
