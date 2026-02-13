@@ -796,6 +796,7 @@ dm_manure_n2o.switch_categories_order("Categories2", "Categories1")
 dm_manure_n2o.filter({"Variables": ["cal_agr_liv_N2O-emission"]}, inplace=True)
 DM_agriculture["fxa"]["cal_agr_liv_N2O-emission"] = dm_manure_n2o
 
+
 ## Livestock emission CH4 (enteric & treated)
 dm_enteric_ch4 = DM_agriculture["ots"]["climate-smart-livestock"][
     "climate-smart-livestock_enteric"
