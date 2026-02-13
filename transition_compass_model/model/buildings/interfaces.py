@@ -1,4 +1,5 @@
 import os
+import numpy as np
 from model.common.data_matrix_class import DataMatrix
 
 def bld_power_interface(dm_appliances, dm_energy, dm_fuel, dm_light_heat):
@@ -45,35 +46,60 @@ def bld_emissions_interface(dm_appliances, DM_energy):
     return dm_emissions_fuel
 
 
-def bld_industry_interface(DM_floor, dm_appliances, dm_pipes):
-    # Renovated wall + new floor area constructed
-    groupby_dict = {'floor-area-reno-residential': ['single-family-households', 'multi-family-households'],
-                    'floor-area-reno-non-residential': ['education', 'health', 'hotels', 'offices', 'other', 'trade']}
-    dm_reno = DM_floor['renovated-wall'].group_all(dim='Categories2', inplace=False)
-    dm_reno.groupby(groupby_dict, dim='Categories1', inplace=True, regex=False)
-    dm_reno.rename_col('bld_renovated-surface-area', 'bld_product-demand', dim='Variables')
+# def bld_industry_interface(DM_floor, dm_appliances, dm_pipes):
+#     # Renovated wall + new floor area constructed
+#     groupby_dict = {'floor-area-reno-residential': ['single-family-households', 'multi-family-households'],
+#                     'floor-area-reno-non-residential': ['education', 'health', 'hotels', 'offices', 'other', 'trade']}
+#     dm_reno = DM_floor['renovated-wall'].group_all(dim='Categories2', inplace=False)
+#     dm_reno.groupby(groupby_dict, dim='Categories1', inplace=True, regex=False)
+#     dm_reno.rename_col('bld_renovated-surface-area', 'bld_product-demand', dim='Variables')
 
-    groupby_dict = {'floor-area-new-residential': ['single-family-households', 'multi-family-households'],
-                    'floor-area-new-non-residential': ['education', 'health', 'hotels', 'offices', 'other', 'trade']}
-    dm_constructed = DM_floor['constructed-area']
-    dm_constructed.groupby(groupby_dict, dim='Categories1', inplace=True, regex=False)
-    dm_constructed.rename_col('bld_floor-area-constructed', 'bld_product-demand', dim='Variables')
+#     groupby_dict = {'floor-area-new-residential': ['single-family-households', 'multi-family-households'],
+#                     'floor-area-new-non-residential': ['education', 'health', 'hotels', 'offices', 'other', 'trade']}
+#     dm_constructed = DM_floor['constructed-area']
+#     dm_constructed.groupby(groupby_dict, dim='Categories1', inplace=True, regex=False)
+#     dm_constructed.rename_col('bld_floor-area-constructed', 'bld_product-demand', dim='Variables')
 
-    dm_constructed.append(dm_reno, dim='Categories1')
+#     dm_constructed.append(dm_reno, dim='Categories1')
 
-    # Pipes
-    dm_pipes.rename_col('bld_district-heating_new-pipe-need', 'bld_product-demand_new-dhg-pipe', dim='Variables')
-    dm_pipes.deepen()
+#     # Pipes
+#     dm_pipes.rename_col('bld_district-heating_new-pipe-need', 'bld_product-demand_new-dhg-pipe', dim='Variables')
+#     dm_pipes.deepen()
 
-    # Appliances
-    dm_appliances.rename_col('bld_appliance-new', 'bld_product-demand', dim='Variables')
-    dm_appliances.rename_col('comp', 'computer', dim='Categories1')
+#     # Appliances
+#     dm_appliances.rename_col('bld_appliance-new', 'bld_product-demand', dim='Variables')
+#     dm_appliances.rename_col('comp', 'computer', dim='Categories1')
+
+#     DM_industry = {
+#         'bld-pipe': dm_pipes,
+#         'bld-floor': dm_constructed,
+#         'bld-domapp': dm_appliances
+#     }
+
+#     return DM_industry
+
+def bld_industry_interface(DM_floor, dm_appliances):
+    
+    dm_domapp = dm_appliances.filter({"Categories1" : ['dishwasher', 'tumble-dryer', 'freezer', 'refrigerator', 'washing-machine']})
+    dm_domapp.rename_col_regex("appliances","domapp","Variables")
+    dm_domapp.rename_col("tumble-dryer","dryer","Categories1")
+    dm_domapp.rename_col("refrigerator","fridge","Categories1")
+    dm_domapp.rename_col("washing-machine","wmachine","Categories1")
+    dm_domapp.sort("Categories1")
+    
+    dm_ele = dm_appliances.filter({"Categories1" : ['PC', 'laptop', 'TV']})
+    dm_ele.groupby({"PC" : ["PC","laptop"]}, "Categories1", inplace=True)
+    dm_ele.rename_col(['PC', 'TV'], ['computer', 'tv'], "Categories1")
+    dm_ele.add(np.nan, "Categories1", "phone", dummy=True)
+    dm_ele.rename_col_regex("appliances","electronics","Variables")
 
     DM_industry = {
-        'bld-pipe': dm_pipes,
-        'bld-floor': dm_constructed,
-        'bld-domapp': dm_appliances
+        "floor-area": DM_floor["floor-area"].copy(),
+        "domapp" : dm_domapp,
+        "electronics" : dm_ele
     }
+    
+    # {'floor-area': DataMatrix with shape (1, 40, 4, 1), variables ['bld_floor-area_stock', 'bld_floor-area_waste', 'bld_floor-area_renovated', 'bld_floor-area_new'] and categories1 ['residential'], 'domapp': DataMatrix with shape (1, 40, 3, 5), variables ['bld_domapp_stock', 'bld_domapp_waste', 'bld_domapp_new'] and categories1 ['dishwasher', 'dryer', 'freezer', 'fridge', 'wmachine'], 'electronics': DataMatrix with shape (1, 40, 3, 3), variables ['bld_electronics_stock', 'bld_electronics_waste', 'bld_electronics_new'] and categories1 ['computer', 'phone', 'tv']}
 
     return DM_industry
 
