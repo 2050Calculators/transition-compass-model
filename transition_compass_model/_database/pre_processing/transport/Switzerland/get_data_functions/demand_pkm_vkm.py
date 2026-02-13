@@ -4,6 +4,9 @@ import pandas as pd
 from _database.pre_processing.transport.Switzerland.get_data_functions import utils
 import numpy as np
 from model.common.data_matrix_class import DataMatrix
+import pickle
+import os
+import zipfile
 
 def get_transport_demand_pkm(file_url, local_filename, years_ots):
 
@@ -159,4 +162,84 @@ def get_travel_demand_region_microrecencement(file_url=None, local_filename="", 
 
     return dm
 
+def extract_EP2050_transport_vkm_demand(file_url, zip_name, file_pickle):
 
+  try:
+    with open(file_pickle, 'rb') as handle:
+      dm = pickle.load(handle)
+
+  except OSError:
+
+    extract_dir = os.path.splitext(zip_name)[0]  # 'data/EP2050_sectors'
+    if not os.path.exists(extract_dir):
+      save_url_to_file(file_url, zip_name)
+
+      # Extract the file
+      os.makedirs(extract_dir, exist_ok=True)
+      with zipfile.ZipFile(zip_name, 'r') as zip_ref:
+        zip_ref.extractall(extract_dir)
+
+    file_tra = extract_dir + '/EP2050+_Szenarienergebnisse_Details_Nachfragesektoren/EP2050+_Detailergebnisse 2020-2060_Verkehrssektor_alle Szenarien_2022-04-12.xlsx'
+    df = pd.read_excel(file_tra, sheet_name='03 Fahrleistung')
+
+    df.drop(columns=[df.columns[0], df.columns[3]], inplace=True)
+
+    table_title = 'Tabelle 03-01: Entwicklung der Fahrleistung von Strassenfahrzeugen im Szenario ZERO Basis'
+    start_table_row = df.index[df['Unnamed: 1'] == table_title].tolist()[1]
+    df.columns = df.iloc[start_table_row + 2]
+
+    df = df.iloc[start_table_row + 3:start_table_row + 37]
+
+    # Years as int
+    col_mode_name = df.columns[0]
+    col_tech_name = df.columns[1]
+    df.set_index([col_mode_name, col_tech_name], inplace=True)
+    df.columns = df.columns.astype(int)
+    df.reset_index(inplace=True)
+
+    # Change variables names
+    full_name = ['tra_vkm_demand_' + var for var in
+                 df[col_mode_name]]
+    df[col_mode_name] = full_name
+    df['Full_name'] = df[col_mode_name] + '_' + df[col_tech_name] + ['[mio-vkm]']
+    df.drop(columns = [col_mode_name, col_tech_name], inplace=True)
+    # Move "Full_name" column at the beginning
+    first = df['Full_name']
+    df.drop(labels=['Full_name'], axis=1, inplace=True)
+    df.insert(0, 'Full_name', first)
+    df["Full_name"] = df["Full_name"].str.replace("(", "", regex=False)
+    df["Full_name"] = df["Full_name"].str.replace(")", "", regex=False)
+
+    # Pivot
+    df_T = df.T
+    df_T.columns = df_T.iloc[0]
+    df_T = df_T.iloc[1:]
+    df_T.reset_index(inplace=True)
+    df_T.rename(columns={18: 'Years'}, inplace=True)
+    df_T['Country'] = 'Switzerland'
+
+    dm = DataMatrix.create_from_df(df_T, num_cat=2)
+
+    # Rename mode of transport
+    dm.rename_col(['HGV', 'LCV', 'motorcycle', 'pass. car'],
+                  ['HDVH', 'HDVL',  '2W', 'LDV'], dim='Categories1')
+    dm.groupby({'bus': ['coach', 'urban bus']}, dim='Categories1', inplace=True)
+    # Rename tech transport
+    dm.groupby({'BEV': ['electricity'],
+                'ICE-gas': ['CNG', 'LNG', 'bifuel CNG/petrol'], 
+                'ICE-gasoline': ['petrol 2S', 'petrol 4S', 'bifuel LPG/petrol','flex-fuel E85'],
+                'PHEV-diesel' : ['Plug-in Hybrid diesel/electric'], 
+                'PHEV-gasoline' : ['Plug-in Hybrid petrol/electric'],
+                'FCEV': ['FuelCell'], 
+                'ICE-diesel': ['diesel']}, dim='Categories2', inplace=True)
+    
+    # ['BEV', 'CEV', 'FCEV', 'H2', 'ICE-diesel', 'ICE-gas', 'ICE-gasoline', 'PHEV-diesel', 'PHEV-gasoline', 'kerosene', 'mt']
+
+    with open(file_pickle, 'wb') as handle:
+      pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+  dm.sort('Categories1')
+  dm.sort('Categories2')
+  dm.change_unit('tra_vkm_demand', old_unit='mio-vkm', new_unit='vkm', factor=1e6, operator='*')
+
+  return dm
