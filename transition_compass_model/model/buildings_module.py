@@ -151,18 +151,20 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     interface.add_link(from_sector='buildings', to_sector='energy', dm=DM_inter_energy)
     
     # this_dir = os.path.dirname(os.path.abspath(__file__))
-    # file = os.path.join(this_dir, '../_database/data/interface/buildings_to_lca.pickle')
+    # file = os.path.join(this_dir, '../_database/data/interface/buildings_to_industry.pickle')
     # with open(file, "wb") as handle:
-    #     pickle.dump(DM_floor_out['industry'], handle, protocol=pickle.HIGHEST_PROTOCOL )
+    #     pickle.dump(DM_industry, handle, protocol=pickle.HIGHEST_PROTOCOL )
 
     interface.add_link(from_sector='buildings', to_sector='emissions', dm=DM_energy_out['TPE']['emissions'])
-
-    interface.add_link(from_sector='buildings', to_sector='industry', dm=DM_floor_out['industry'])
+    
+    # industry interface
+    DM_industry = inter.bld_industry_interface(DM_floor_out['industry'], DM_appliances_out["industry"])
+    interface.add_link(from_sector='buildings', to_sector='industry', dm=DM_industry)
     # TODO: probably add non residential (offices) to interface to industry
 
     # interface.add_link(from_sector='buildings', to_sector='minerals', dm=DM_floor_out['industry'])
     
-    interface.add_link(from_sector='buildings', to_sector='lca', dm=DM_floor_out['industry'])
+    interface.add_link(from_sector='buildings', to_sector='lca', dm=DM_industry)
 
     #interface.add_link(from_sector='buildings', to_sector='agriculture', dm=DM_energy_out['agriculture'])
 
