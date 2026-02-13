@@ -519,8 +519,19 @@ with open(data_file, "rb") as handle:
 with open(data_file, "rb") as handle:
     DM_CH = pickle.load(handle)
 filter_DM(DM_CH, {"Country": ["Switzerland"]})
-# dm = DM_agriculture['constant']['cdm_cp_efficiency']
-# dm.units = {'cp_efficiency_liv': 'kg DM feed/kg EW'}
+
+#################################################################################
+# Fix DM[Agriculture]
+#
+#################################################################################
+
+# Fix Infinite Other animals
+# dm_fix = DM_agriculture["fxa"]["ef_liv_N2O-emission"]
+# dm_fix.switch_categories_order("Categories2", "Categories1")
+# dm_fix.drop(col_label='meat-oth-animals', dim="Categories2")
+# dm_fix.add(0.02254, "Categories2", "meat-oth-animals", dummy=True)
+# dm_fix.switch_categories_order("Categories2", "Categories1")
+
 # my_pickle_dump(DM_agriculture, data_file)
 
 filter_DM(DM_agriculture, {"Country": ["Switzerland"]})
