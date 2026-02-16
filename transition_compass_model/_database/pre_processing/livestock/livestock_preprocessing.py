@@ -1417,13 +1417,13 @@ def calibration_formatting(df_diet_calibration):
 
 
 # CalculationLeaf LIVESTOCK EMISSIONS
-def livestock_emissions():
+def livestock_emissions(file_dict):
   # ----------------------------------------------------------------------------------------------------------------------
   # ENTERIC EMISSIONS ----------------------------------------------------------------------------------------------------
   # ----------------------------------------------------------------------------------------------------------------------
 
   try:
-    df_enteric = pd.read_csv(file_dict['GLE_enteric'])
+    df_enteric = pd.read_csv(file_dict['GLE_CH4_Switzerland'])
 
   except OSError:
 
@@ -1583,76 +1583,80 @@ def livestock_emissions():
   # ----------------------------------------------------------------------------------------------------------------------
   # MANURE EMISSIONS (APPLIED, PASTURE & TREATED) ------------------------------------------------------------------------
   # ----------------------------------------------------------------------------------------------------------------------
-  list_elements = ['Amount excreted in manure (N content)',
-                   'Manure left on pasture (N content)',
-                   'Manure applied to soils (N content)',
-                   'Losses from manure treated (N content)']
+  try:
+    df_manure_n = pd.read_csv(file_dict['EMN_N_Switzerland'])
 
-  list_items = ['All Animals > (List)']
+  except OSError:
+    list_elements = ['Amount excreted in manure (N content)',
+                     'Manure left on pasture (N content)',
+                     'Manure applied to soils (N content)',
+                     'Manure management (manure treated, N content)']
 
-  # 1990 - 2022
-  code = 'EMN'
-  my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
-  my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
-  my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
-  list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997',
-                '1998', '1999', '2000', '2001',
-                '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009',
-                '2010', '2011', '2012', '2013',
-                '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021',
-                '2022']
-  my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+    list_items = ['All Animals > (List)']
 
-  my_pars = {
-    'area': my_countries,
-    'element': my_elements,
-    'item': my_items,
-    'year': my_years
-  }
-  df_manure_1990_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
+    # 1990 - 2022
+    code = 'EMN'
+    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
+    my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+    my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+    list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997',
+                  '1998', '1999', '2000', '2001',
+                  '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009',
+                  '2010', '2011', '2012', '2013',
+                  '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021',
+                  '2022']
+    my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+
+    my_pars = {
+      'area': my_countries,
+      'element': my_elements,
+      'item': my_items,
+      'year': my_years
+    }
+    df_manure_n = faostat.get_data_df(code, pars=my_pars, strval=False)
 
   # Renaming item as the same animal
-  df_manure_1990_2021.loc[
-    df_manure_1990_2021['Item'].str.contains('Cattle, dairy', case=False,
+  df_manure_n.loc[
+    df_manure_n['Item'].str.contains('Cattle, dairy', case=False,
                                              na=False), 'Item'] = 'Dairy cows'
-  df_manure_1990_2021.loc[
-    df_manure_1990_2021['Item'].str.contains('Cattle, non-dairy', case=False,
+  df_manure_n.loc[
+    df_manure_n['Item'].str.contains('Cattle, non-dairy', case=False,
                                              na=False), 'Item'] = 'Cattle'
-  df_manure_1990_2021.loc[
-    df_manure_1990_2021['Item'].str.contains('Goat', case=False,
+  df_manure_n.loc[
+    df_manure_n['Item'].str.contains('Goat', case=False,
                                              na=False), 'Item'] = 'Goat'
-  df_manure_1990_2021.loc[
-    df_manure_1990_2021['Item'].str.contains('Chickens, broilers', case=False,
+  df_manure_n.loc[
+    df_manure_n['Item'].str.contains('Chickens, broilers', case=False,
                                              na=False), 'Item'] = 'Chicken'
-  df_manure_1990_2021.loc[
-    df_manure_1990_2021['Item'].str.contains('Chickens, layers', case=False,
+  df_manure_n.loc[
+    df_manure_n['Item'].str.contains('Chickens, layers', case=False,
                                              na=False), 'Item'] = 'Chicken laying hens'
-  df_manure_1990_2021.loc[
-    df_manure_1990_2021['Item'].str.contains('Duck', case=False,
+  df_manure_n.loc[
+    df_manure_n['Item'].str.contains('Duck', case=False,
                                              na=False), 'Item'] = 'Duck'
-  df_manure_1990_2021.loc[
-    df_manure_1990_2021['Item'].str.contains('Horse', case=False,
+  df_manure_n.loc[
+    df_manure_n['Item'].str.contains('Horse', case=False,
                                              na=False), 'Item'] = 'Horse'
-  df_manure_1990_2021.loc[
-    df_manure_1990_2021['Item'].str.contains('Sheep', case=False,
+  df_manure_n.loc[
+    df_manure_n['Item'].str.contains('Sheep', case=False,
                                              na=False), 'Item'] = 'Sheep'
-  df_manure_1990_2021.loc[
-    df_manure_1990_2021['Item'].str.contains('Swine', case=False,
+  df_manure_n.loc[
+    df_manure_n['Item'].str.contains('Swine', case=False,
                                              na=False), 'Item'] = 'Pig'
-  df_manure_1990_2021.loc[
-    df_manure_1990_2021['Item'].str.contains('Turkey', case=False,
+  df_manure_n.loc[
+    df_manure_n['Item'].str.contains('Turkey', case=False,
                                              na=False), 'Item'] = 'Turkey'
-  df_manure_1990_2021.loc[
-    df_manure_1990_2021['Item'].str.contains('Asse', case=False,
+  df_manure_n.loc[
+    df_manure_n['Item'].str.contains('Asse', case=False,
                                              na=False), 'Item'] = 'Asse'
-  df_manure_1990_2021.loc[
-    df_manure_1990_2021['Item'].str.contains('Buffalo', case=False,
+  df_manure_n.loc[
+    df_manure_n['Item'].str.contains('Buffalo', case=False,
                                              na=False), 'Item'] = 'Buffalo'
-  df_manure_1990_2021.loc[
-    df_manure_1990_2021['Item'].str.contains('Mule', case=False,
+  df_manure_n.loc[
+    df_manure_n['Item'].str.contains('Mule', case=False,
                                              na=False), 'Item'] = 'Mule'
-  df_manure_1990_2021.loc[
-    df_manure_1990_2021['Item'].str.contains('Camel', case=False,
+  df_manure_n.loc[
+    df_manure_n['Item'].str.contains('Camel', case=False,
                                              na=False), 'Item'] = 'Other non-specified'
 
   # Reading excel lsu equivalent (for aggregation)
@@ -1660,16 +1664,16 @@ def livestock_emissions():
     'dictionaries/lsu_equivalent.xlsx',
     sheet_name='lsu_equivalent')
   # Merging
-  df_manure_1990_2021 = pd.merge(df_manure_1990_2021, df_lsu, on='Item')
+  df_manure_n = pd.merge(df_manure_n, df_lsu, on='Item')
 
   # Aggregating
-  df_manure_1990_2021 = \
-    df_manure_1990_2021.groupby(
+  df_manure_n = \
+    df_manure_n.groupby(
       ['Aggregation', 'Area', 'Year', 'Element', 'Unit'], as_index=False)[
       'Value'].sum()
 
   # Pivot the df
-  pivot_df = df_manure_1990_2021.pivot_table(
+  pivot_df = df_manure_n.pivot_table(
     index=['Area', 'Year', 'Aggregation'], columns='Element',
     values='Value').reset_index()
 
@@ -1704,7 +1708,7 @@ def livestock_emissions():
                                    pivot_df[
                                      'Amount excreted in manure (N content)']
   pivot_df['Manure treated [%]'] = pivot_df[
-                                     'Losses from manure treated (N content)'] / \
+                                     'Manure management (manure treated, N content)'] / \
                                    pivot_df[
                                      'Amount excreted in manure (N content)']
   pivot_df['Manure pasture [%]'] = pivot_df[
@@ -1720,7 +1724,7 @@ def livestock_emissions():
 
   # Drop the columns
   pivot_df = pivot_df.drop(columns=['Manure applied to soils (N content)',
-                                    'Losses from manure treated (N content)',
+                                    'Manure management (manure treated, N content)',
                                     'Manure left on pasture (N content)',
                                     'Amount excreted in manure (N content)',
                                     'Value', 'Item'])
@@ -1802,6 +1806,7 @@ def livestock_emissions():
                                   level='all')
   df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
   dm_fxa_manure_yield = DataMatrix.create_from_df(df_ots, num_cat=1)
+
 
   return dm_manure, dm_enteric, dm_fxa_manure_yield, df_manure_ch4_fxa, df_manure_n_fxa
 
@@ -2844,70 +2849,77 @@ def livestock_calibration(list_countries_calc, dm_losses):
 
 # CalculationLeaf CAL - LIVESTOCK MANURE -----------------------------------------------------------------------------------
 
-def manure_calibration(list_countries_calc):
-    # ----------------------------------------------------------------------------------------------------------------------
-    # MANURE EMISSIONS ---------------------------------------------------------------------------------------------------
-    # ----------------------------------------------------------------------------------------------------------------------
+def manure_calibration(list_countries_calc, file_dict):
 
-    # Read data ------------------------------------------------------------------------------------------------------------
+    try:
+      df_liv_emissions = pd.read_csv(file_dict['GLE_emissions_most'])
+      df_liv_emissions_poultry = pd.read_csv(file_dict['GLE_emissions_poultry'])
+      df_liv_emissions_others = pd.read_csv(file_dict['GLE_emissions_others'])
 
-    # Common for all
+    except OSError:
+      # ----------------------------------------------------------------------------------------------------------------------
+      # MANURE EMISSIONS ---------------------------------------------------------------------------------------------------
+      # ----------------------------------------------------------------------------------------------------------------------
 
-    # EMISSIONS FROM LIVESTOCK (GLE) - -------------------------------------------------
-    # List of elements
-    list_elements = ['Enteric fermentation (Emissions CH4)', 'Manure management (Emissions CH4)',
-                     'Manure management (Emissions N2O)', 'Manure left on pasture (Emissions N2O)',
-                     'Emissions (N2O) (Manure applied)']
+      # Read data ------------------------------------------------------------------------------------------------------------
 
-    list_items = ['Swine + (Total)','Sheep and Goats + (Total)', 'Cattle, dairy', 'Cattle, non-dairy', 'Chickens, layers']
+      # Common for all
 
-    list_items_poultry = ['Chickens, broilers', 'Ducks', 'Turkeys']
+      # EMISSIONS FROM LIVESTOCK (GLE) - -------------------------------------------------
+      # List of elements
+      list_elements = ['Enteric fermentation (Emissions CH4)', 'Manure management (Emissions CH4)',
+                       'Manure management (Emissions N2O)', 'Manure left on pasture (Emissions N2O)',
+                       'Emissions (N2O) (Manure applied)']
 
-    list_items_others = ['Asses', 'Buffalo','Camels', 'Horses', 'Llamas', 'Mules and hinnies']
-    list_sources = ['FAO TIER 1']
+      list_items = ['Swine + (Total)','Sheep and Goats + (Total)', 'Cattle, dairy', 'Cattle, non-dairy', 'Chickens, layers']
 
-    # 1990 - 2022
-    ld = faostat.list_datasets()
-    code = 'GLE'
-    pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
-    my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
-    my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
-    my_sources = [faostat.get_par(code, 'sources')[i] for i in list_sources]
-    list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
-                  '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013',
-                  '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023']
-    my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+      list_items_poultry = ['Chickens, broilers', 'Ducks', 'Turkeys']
 
-    my_pars = {
-        'area': my_countries,
-        'element': my_elements,
-        'item': my_items,
-        'year': my_years,
-        'source': my_sources
-    }
+      list_items_others = ['Asses', 'Buffalo','Camels', 'Horses', 'Llamas', 'Mules and hinnies']
+      list_sources = ['FAO TIER 1']
 
-    df_liv_emissions = faostat.get_data_df(code, pars=my_pars, strval=False)
+      # 1990 - 2022
+      ld = faostat.list_datasets()
+      code = 'GLE'
+      pars = faostat.list_pars(code)
+      my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries_calc]
+      my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+      my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+      my_sources = [faostat.get_par(code, 'sources')[i] for i in list_sources]
+      list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
+                    '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013',
+                    '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023']
+      my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
-    my_items_poultry = [faostat.get_par(code, 'item')[i] for i in list_items_poultry]
-    my_pars_poultry = {
-        'area': my_countries,
-        'element': my_elements,
-        'item': my_items_poultry,
-        'year': my_years,
-        'source': my_sources
-    }
-    df_liv_emissions_poultry = faostat.get_data_df(code, pars=my_pars_poultry, strval=False)
+      my_pars = {
+          'area': my_countries,
+          'element': my_elements,
+          'item': my_items,
+          'year': my_years,
+          'source': my_sources
+      }
 
-    my_items_others = [faostat.get_par(code, 'item')[i] for i in list_items_others]
-    my_pars_others = {
-        'area': my_countries,
-        'element': my_elements,
-        'item': my_items_others,
-        'year': my_years,
-        'source': my_sources
-    }
-    df_liv_emissions_others = faostat.get_data_df(code, pars=my_pars_others, strval=False)
+      df_liv_emissions = faostat.get_data_df(code, pars=my_pars, strval=False)
+
+      my_items_poultry = [faostat.get_par(code, 'item')[i] for i in list_items_poultry]
+      my_pars_poultry = {
+          'area': my_countries,
+          'element': my_elements,
+          'item': my_items_poultry,
+          'year': my_years,
+          'source': my_sources
+      }
+      df_liv_emissions_poultry = faostat.get_data_df(code, pars=my_pars_poultry, strval=False)
+
+      my_items_others = [faostat.get_par(code, 'item')[i] for i in list_items_others]
+      my_pars_others = {
+          'area': my_countries,
+          'element': my_elements,
+          'item': my_items_others,
+          'year': my_years,
+          'source': my_sources
+      }
+      df_liv_emissions_others = faostat.get_data_df(code, pars=my_pars_others, strval=False)
 
     # Filtering to keep wanted columns
     columns_to_filter = ['Area', 'Element', 'Item', 'Year', 'Value']
@@ -3043,10 +3055,10 @@ def manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure
    # N2O EMISSIONS -------------------------------------------------------------
    # Filter & Rename
    df_manure_n_fxa = df_manure_n_fxa[['Area', 'Year', 'Aggregation','Manure left on pasture (N content)',
-                     'Manure applied to soils (N content)', 'Losses from manure treated (N content)']]
+                     'Manure applied to soils (N content)', 'Manure management (manure treated, N content)']]
    df_manure_n_fxa = df_manure_n_fxa.rename(columns={'Manure left on pasture (N content)':'N2O Pasture',
                                    'Manure applied to soils (N content)':'N2O Applied',
-                                   'Losses from manure treated (N content)':'N2O Treated'})
+                                   'Manure management (manure treated, N content)':'N2O Treated'})
 
    # Melt df
    df_melted = pd.melt(df_manure_n_fxa, id_vars=['Area', 'Year', 'Aggregation'],
@@ -3796,6 +3808,11 @@ file_dict = {'ssr': 'data/faostat/ssr.csv',
              'GLE_liv-pop':'data/faostat/GLE_csv/GLE_liv-pop.csv',
              'GLE_liv-pop_poultry':'data/faostat/GLE_csv/GLE_liv-pop_poultry.csv',
              'GLE_liv-pop_others':'data/faostat/GLE_csv/GLE_liv-pop_others.csv',
+             'GLE_CH4_Switzerland':'data/faostat/GLE_csv/GLE_CH4_Switzerland.csv',
+             'GLE_emissions_most': 'data/faostat/GLE_csv/GLE_emissions_most.csv',
+             'GLE_emissions_poultry': 'data/faostat/GLE_csv/GLE_emissions_poultry.csv',
+             'GLE_emissions_others': 'data/faostat/GLE_csv/GLE_emissions_others.csv',
+             'EMN_N_Switzerland':'data/faostat/EMN_csv/EMN_nitrogen_Switzerland.csv',
              'FBS_feed':'data/faostat/FBS-H_csv/FBS_feed.csv',
              'FBSH_feed':'data/faostat/FBS-H_csv/FBSH_feed.csv',
              'SCL_molasse_cake':'data/faostat/SCL_csv/SCL_feed_molasse_cake.csv',
@@ -3815,12 +3832,12 @@ dm_feed_trade_origin, dm_cal_imports_feed_tot = trade_origin_feed_processing(yea
 dm_losses = livestock_losses()
 dm_cal_dom_prod, dm_cal_liv_pop, df_liv_pop = livestock_calibration(list_countries_calc, dm_losses)
 dm_prod_share, dm_cal_liv_pop_org = production_share(dm_cal_liv_pop)
-#dm_manure, dm_enteric, dm_fxa_manure_yield, df_manure_ch4_fxa, df_manure_n_fxa = livestock_emissions()
+dm_manure, dm_enteric, dm_fxa_manure_yield, df_manure_ch4_fxa, df_manure_n_fxa = livestock_emissions(file_dict)
 dm_cal_feed, df_feed_ration = feed_calibration(list_countries_calc)
 dm_feed_ration, dm_grass = feed_ration(df_feed_ration, cdm_efficiency, cdm_kcal)
 dm_liv_yield, dm_slaughter_rates = yield_slaughter_rate(df_liv_pop, dm_prod_share)
-#dm_cal_liv_emissions, df_liv_emissions = manure_calibration(list_countries_calc)
-#dm_fxa_CH4, dm_fxa_N2O = manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa)
+dm_cal_liv_emissions, df_liv_emissions = manure_calibration(list_countries_calc, file_dict)
+dm_fxa_CH4, dm_fxa_N2O = manure_fxa(list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa)
 dm_fxa_exports = exports_processing(list_countries_calc,file_dict)
 dm_feed_alt_protein = livestock_protein_meals_processing(df_csl_feed)
 dm_fts = fts_processing()

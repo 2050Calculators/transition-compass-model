@@ -6,6 +6,7 @@ from model.common.constant_data_matrix_class import ConstantDataMatrix
 import pandas as pd
 import os
 import re
+import sklearn
 import json
 from os import listdir
 from os.path import isfile, join
@@ -1530,3 +1531,100 @@ def harmonize_countries(source_list, target_list):
         mapping[country] = None
         unmatched.append(country)
   return mapping, unmatched
+
+def filter_unreliable_country_category(
+    dm_hist,
+    dm_fitted,
+    years_all,
+    min_obs=5,
+    min_r2=0.3,
+    hist_end_year=2023,
+    set_nan=True
+  ):
+  """
+  Filters unreliable (Country × Category) combinations based on:
+      - Minimum historical observations
+      - Negative extrapolated values
+      - Minimum R² of historical linear fit
+
+  Parameters
+  ----------
+  dm : DataMatrix
+      Yield matrix after extrapolation.
+  years_all : list[int]
+      All model years.
+  min_obs : int
+      Minimum number of historical non-NaN observations.
+  min_r2 : float
+      Minimum acceptable R² value.
+  hist_end_year : int
+       Last historical year.
+  set_nan : bool
+      If True → sets unreliable pairs to NaN.
+      If False → returns list only.
+
+  Returns
+  -------
+  list of (country, category) flagged as unreliable
+  """
+  import numpy as np
+  from sklearn.linear_model import LinearRegression
+  from sklearn.metrics import r2_score
+
+  historical_years = [y for y in years_all if y <= hist_end_year]
+  future_years = [y for y in years_all if y > hist_end_year]
+
+  flagged_pairs = []
+
+  for country in dm_hist.col_labels['Country']:
+    dm_country_hist = dm_hist.filter({'Country': [country]})
+    dm_country_fitted = dm_fitted.filter({'Country': [country]})
+    for category in dm_country_hist.col_labels['Categories1']:
+      dm_slice_hist = dm_country_hist.filter({'Categories1': [category]})
+
+      # -------------------------
+      # Extract historical values
+      # -------------------------
+      hist = dm_slice_hist[:, :, :, :]
+      hist = hist.flatten()
+      valid_mask = ~np.isnan(hist)
+
+      # Rule 1 — Too few observations
+      if valid_mask.sum() < min_obs:
+        flagged_pairs.append((country, category))
+        continue
+
+      # -------------------------
+      # Rule 2 — Negative extrapolation
+      # -------------------------
+      if future_years:
+        future = dm_country_fitted[:, :, :, category]
+        if (future < 0).any():
+          flagged_pairs.append((country, category))
+          continue
+
+      # -------------------------
+      # Rule 3 — Poor regression fit
+      # -------------------------
+      y = hist[valid_mask]
+      X = np.array(historical_years)[valid_mask].reshape(-1, 1)
+
+      if len(y) < 2:
+        flagged_pairs.append((country, category))
+        continue
+
+      model = LinearRegression().fit(X, y)
+      r2 = r2_score(y, model.predict(X))
+
+      if r2 < min_r2:
+        flagged_pairs.append((country, category))
+
+  # -------------------------
+  # Apply filtering
+  # -------------------------
+  if set_nan:
+    for country, category in flagged_pairs:
+      dm_fitted[country,:,:,category] = np.nan
+
+  return flagged_pairs
+

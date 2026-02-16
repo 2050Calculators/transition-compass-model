@@ -1,5 +1,6 @@
 import numpy as np
 from model.common.auxiliary_functions import interpolate_nans, add_missing_ots_years, linear_fitting_ots_db, linear_fitting, create_years_list, dm_match_countries
+from model.common.auxiliary_functions import filter_unreliable_country_category
 #from _database.pre_processing.api_routines_CH import get_data_api_CH
 from scipy.stats import linregress
 import pandas as pd
@@ -178,6 +179,18 @@ def crop_yield(dm_prod_share):
   # Yields for all countries
   dm_yield_world = dm_yield.copy()
   linear_fitting(dm_yield_world, years_all)
+
+  # Find data where the is not enough for a good linear fitting
+  flagged = filter_unreliable_country_category(
+    dm_yield,
+    dm_yield_world,
+    years_all,
+    min_obs=5,
+    min_r2=0.3,
+    hist_end_year=2023,
+    set_nan=True
+  )
+
 
   # Step CH: Yield evolution_o/i & _e/i (organic/extensive with respect to intensive) [-]
   # fixme Source: find correct source

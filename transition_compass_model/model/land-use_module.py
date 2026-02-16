@@ -4,7 +4,8 @@ from model.common.data_matrix_class import DataMatrix
 from model.common.constant_data_matrix_class import ConstantDataMatrix
 from model.common.io_database import dm_to_database
 from model.common.interface_class import Interface
-from model.common.auxiliary_functions import  calibration_rates, create_years_list, linear_forecast_BAU
+from model.common.auxiliary_functions import calibration_rates, \
+  create_years_list, linear_forecast_BAU, dm_match_countries
 from model.common.auxiliary_functions import read_level_data, filter_country_and_load_data_from_pickles, my_pickle_dump
 import pickle
 import json
@@ -175,6 +176,7 @@ def cropland_workflow(dm_crop_prod, DM_cropland, years_setting):
   dm_crop_imports = dm_crop_prod.filter({'Variables':['agr_domestic-production_afw']})
 
   # Total cropland per crop type [ha] = domestic prod [kcal] / yield [kcal/ha]
+  dm_match_countries(dm_crop_imports, DM_cropland['yield-imports'], parameter='perfect match')
   dm_crop_imports.append(DM_cropland['yield-imports'], dim='Variables')
   dm_crop_imports.operation('agr_domestic-production_afw', '/', 'agr_crop_yield',
                                  dim='Variables',
