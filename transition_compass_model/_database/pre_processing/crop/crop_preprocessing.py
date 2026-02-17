@@ -1147,6 +1147,10 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
                  * cdm_kcal_temp[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
     dm_imports_fbs[:, :, 'agr_ssr', :] = array_temp
 
+    # Rename variable and change unit accordingly
+    dm_imports_fbs.rename_col_regex(str1="agr_ssr", str2="cal_agr_imported_production_total", dim="Variables")
+    dm_imports_fbs.change_unit('cal_agr_imported_production_total', 1.0, '-', 'kcal', '*')
+
     return dm_ssr_crop, df_processing_yield_fxa, dm_imports_fbs
 
 
@@ -1959,6 +1963,7 @@ def datamatrix_to_pickle(dm_fts):
   dict_fxa['cal_agr_domestic-production_food'] = dm_cal_dom_prod_crop
   dict_fxa['cal_agr_domestic-production_bev'] = dm_cal_dom_prod_bev
   dict_fxa['cal_agr_imports-crop_total'] = dm_cal_imports_tot
+  dict_fxa['cal_agr_imports-crop_total'] = dm_imports_fbs
   dict_fxa['cal_agr_imports-crop_countries'] = dm_cal_imports_countries
   dict_fxa['cal_agr_imports-crop-pro_total'] = dm_cal_imports_tot.filter_w_regex({'Categories1': 'pro-crop.*'})
   dict_fxa['cal_crop-share-area'] = dm_cal_crop_area

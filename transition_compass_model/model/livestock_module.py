@@ -60,10 +60,6 @@ def read_data(DM_livestock, lever_setting):
     dm_livestock_ssr_merged = None
 
     for lever_name, dm_split in dm_livestock_ssr.items():
-      # ensure each variable label is unique
-      dm_split.col_labels['Variables'] = ['lfs_consumers-diet']
-      #dm_split.rename_col([lever_name], 'lfs_consumers-diet', 'Variables')
-
       if dm_livestock_ssr_merged is None:
         dm_livestock_ssr_merged = dm_split
       else:
@@ -194,12 +190,12 @@ def trade_livestock_workflow(DM_liv_prod, dm_demand, years_setting):
     dm_trade = DM_liv_prod['split-import-asf'].copy()
     array_temp = dm_demand_liv[:,:,'agr_imported_production_total',:] * \
                  dm_trade[:,:,'agr_split-import',:]
-    DM_liv_prod['split-import-asf'].add(array_temp, dim='Variables', col_label='agr_domestic_production_raw', unit='kcal')
+    DM_liv_prod['split-import-asf'].add(array_temp, dim='Variables', col_label='agr_domestic_production', unit='kcal')
 
     # Filter to only have imported production per countries
-    dm_production = DM_liv_prod['split-import-asf'].filter_w_regex({'Variables': 'agr_domestic_production_raw'})
+    dm_production = DM_liv_prod['split-import-asf'].filter_w_regex({'Variables': 'agr_domestic_production'})
 
-    # Calibration - Imports per countries
+    '''# Calibration - Imports per countries
     dm_cal_imports_countries = DM_liv_prod['cal_imports-liv_countries'].copy()
     dm_cal_imports_countries.drop(
       dim='Country', col_label=['Switzerland'])
@@ -207,8 +203,7 @@ def trade_livestock_workflow(DM_liv_prod, dm_demand, years_setting):
                                               calibration_end_year=2023, years_setting=years_setting)
     dm_production.append(dm_cal_rates_liv_imports_countries, dim='Variables')
     dm_production.operation('agr_domestic_production_raw', '*', 'cal_rate', dim='Variables',
-                          out_col='agr_domestic_production', unit='kcal')
-
+                          out_col='agr_domestic_production', unit='kcal')'''
 
     # Append domestic production Switzerland + other countries
     dm_production.filter({'Variables': ['agr_domestic_production']}, inplace=True)

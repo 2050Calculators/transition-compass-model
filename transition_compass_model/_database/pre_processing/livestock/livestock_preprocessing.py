@@ -434,6 +434,7 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     # Unit conversion: [kt] => [kcal]
     cdm_kcal_temp = cdm_kcal.copy()
     cdm_kcal_temp.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
+    dm_imports_fbs.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
     cdm_kcal_temp = cdm_kcal_temp.filter(
       {'Categories1': ['abp-dairy-milk', 'abp-hens-egg',
                        'meat-bovine', 'meat-oth-animal',
@@ -444,6 +445,10 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     array_temp = 1000 * dm_imports_fbs[:, :, 'agr_ssr', :] \
                  * cdm_kcal_temp[np.newaxis, np.newaxis, 'cp_kcal-per-t', :]
     dm_imports_fbs[:, :, 'agr_ssr', :] = array_temp
+
+    # Rename variable and change unit accordingly
+    dm_imports_fbs.rename_col_regex(str1="agr_ssr", str2="cal_agr_imported_production_total", dim="Variables")
+    dm_imports_fbs.change_unit('cal_agr_imported_production_total', 1.0, '-', 'kcal', '*')
 
     return dm_ssr_liv, dm_ssr_feed, df_csl_feed, df_ffr_milk, dm_imports_fbs
 
@@ -3560,7 +3565,8 @@ def datamatrix_to_pickle(dm_fts):
   dict_fxa['cal_agr_liv-population_organic'] = dm_cal_liv_pop_org
   dict_fxa['cal_agr_domestic-production-liv'] = dm_cal_dom_prod
   dict_fxa['cal_agr_imports-liv_countries'] = dm_cal_imports_countries
-  dict_fxa['cal_agr_imports-liv_total'] = dm_cal_imports_tot
+  dict_fxa['cal_agr_imports-liv_total'] = dm_imports_fbs
+  #dict_fxa['cal_agr_imports-liv_total'] = dm_cal_imports_tot
   #dict_fxa['cal_agr_liv_CH4-emission'] = dm_cal_liv_emissions.filter({'Variables':['cal_agr_liv_CH4-emission']}, inplace=False)
   #dict_fxa['cal_agr_liv_N2O-emission'] = dm_cal_liv_emissions.filter({'Variables':['cal_agr_liv_N2O-emission']}, inplace=False)
   dict_fxa['cal_agr_demand_feed'] = dm_cal_feed
