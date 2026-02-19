@@ -3554,6 +3554,11 @@ def agriculture_ammonia_interface(dm_mineral_fertilizer, write_xls=False):
     dm_ammonia = dm_mineral_fertilizer.filter({"Variables": ["agr_input-use"]})
     dm_ammonia.rename_col("agr_input-use", "agr_product-demand", dim="Variables")
     dm_ammonia.rename_col("mineral", "fertilizer", dim="Categories1")
+    
+    # this_dir = os.path.dirname(os.path.abspath(__file__))
+    # file = os.path.join(this_dir, '../_database/data/interface/agriculture_to_ammonia.pickle')
+    # with open(file, "wb") as handle:
+    #     pickle.dump(dm_ammonia, handle, protocol=pickle.HIGHEST_PROTOCOL )
 
     # write
     """if write_xls is True:
