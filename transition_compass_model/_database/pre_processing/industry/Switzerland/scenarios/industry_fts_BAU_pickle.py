@@ -17,7 +17,7 @@ def make_fts(DM_industry, name, years_fts, based_on):
     
     return
 
-def run(DM_industry, country_list, years_ots, years_fts):
+def run(DM_industry, DM_ammonia, country_list, years_ots, years_fts):
     
     # directory
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
@@ -58,8 +58,35 @@ def run(DM_industry, country_list, years_ots, years_fts):
     my_pickle_dump(DM_new=DM_industry, local_pickle_file=pickle_file)
     sort_pickle(pickle_file)
     
+    # ammonia
     
-    return DM_industry
+    DM_ammonia["fts"] = {}
+    
+    # product net import
+    make_fts(DM_ammonia, "product-net-import", years_fts, based_on = [2023])
+    
+    # material net import
+    make_fts(DM_ammonia, "material-net-import", years_fts, based_on = [2023])
+    
+    # Load existing DM_industry
+    pickle_file = os.path.join(current_file_directory, '../../../../data/datamatrix/ammonia.pickle')
+    with open(pickle_file, 'rb') as handle:
+      DM_ammonia_current = pickle.load(handle)
+    
+    # make other levers same from EU
+    other_levers = ["material-efficiency",'eol-material-recovery', 'technology-development', 'cc', 'energy-carrier-mix']
+    for l in other_levers:
+        DM_ammonia["fts"][l] = {}
+        for level in list(range(1,4+1)):
+            dm_temp = DM_ammonia_current["fts"][l][1].filter({"Country" : ["EU27"]})
+            dm_temp.rename_col("EU27","Switzerland","Country")
+            DM_ammonia["fts"][l][level] = dm_temp.copy()
+
+    # save
+    my_pickle_dump(DM_new=DM_ammonia, local_pickle_file=pickle_file)
+    sort_pickle(pickle_file)
+    
+    return DM_industry, DM_ammonia
 
 if __name__ == "__main__":
     
@@ -75,6 +102,11 @@ if __name__ == "__main__":
         raise FileNotFoundError("You need to run ots_pickle_run() first")
     with open(filepath, "rb") as f:
         DM_industry = pickle.load(f)
+    filepath = os.path.join(current_file_directory, '../data/datamatrix/ammonia_ots.pickle')
+    if not os.path.exists(filepath):
+        raise FileNotFoundError("You need to run ots_pickle_run() first")
+    with open(filepath, "rb") as f:
+        DM_ammonia = pickle.load(f)
         
         
-    run(DM_industry, country_list, years_ots, years_fts)
+    run(DM_industry, DM_ammonia, country_list, years_ots, years_fts)

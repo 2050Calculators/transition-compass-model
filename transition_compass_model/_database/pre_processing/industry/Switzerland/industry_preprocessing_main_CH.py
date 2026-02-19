@@ -5,6 +5,7 @@ from processors.industry_lever_packaging_per_capita import run as packaging_per_
 from processors.industry_lever_waste_management import run as waste_management_run
 from processors.industry_calib_energy_demand import run as energy_demand_run
 from processors.industry_calib_emissions import run as emissions_run
+from processors.ammonia_levers_fxa import run as ammonia_run
 from processors.industry_pre_processing_save import run as save_industry_pre_processing_run
 from processors.industry_ots_pickle import run as ots_pickle_run
 from scenarios.industry_fts_BAU_pickle import run as fts_bau_pickle_run
@@ -37,6 +38,9 @@ dm_energy = energy_demand_run(years_ots, years_fts)
 print("Emissions")
 dm_emissions = emissions_run(years_ots, years_fts)
 
+# ammonia
+dm_amm_prod_net_import, dm_amm_mat_net_import, dm_amm_prod = ammonia_run(years_ots, years_fts)
+
 # save industry pre-processing
 DM_input = {"product-net-import" : dm_netimp_goods,
             "material-net-import" : dm_netimp_materials,
@@ -45,13 +49,16 @@ DM_input = {"product-net-import" : dm_netimp_goods,
             "packaging" : dm_pack,
             "waste-management" : dm_waste,
             "calib-emissions" : dm_emissions,
-            "calib-energy" : dm_energy}
+            "calib-energy" : dm_energy,
+            "fert-product-net-import" : dm_amm_prod_net_import,
+            "amm-material-net-import" : dm_amm_mat_net_import,
+            "calib-amm-material-production" : dm_amm_prod}
 save_industry_pre_processing_run(DM_input)
 
 # industry ots pickle
-DM_industry = ots_pickle_run(DM_input, years_ots)
+DM_industry, DM_ammonia = ots_pickle_run(DM_input, years_ots)
 
 # make fts bau
-DM_industry = fts_bau_pickle_run(DM_industry, country_list, years_ots, years_fts)
+DM_industry, DM_ammonia = fts_bau_pickle_run(DM_industry, DM_ammonia, country_list, years_ots, years_fts)
 
 

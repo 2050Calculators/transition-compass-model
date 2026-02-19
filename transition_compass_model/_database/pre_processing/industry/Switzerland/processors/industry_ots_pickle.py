@@ -56,8 +56,47 @@ def run(DM_input, years_ots):
     f = os.path.join(current_file_directory, '../data/datamatrix/industry_ots.pickle')
     with open(f, 'wb') as handle:
         pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        
+    # make ammonia
+    DM_amm = {'ots': dict(), 'fxa': dict(), 'calibration' : dict()}
     
-    return DM
+    DM_amm["ots"]['product-net-import'] = DM_input["fert-product-net-import"]
+    DM_amm["ots"]['material-net-import'] = DM_input["amm-material-net-import"]
+    
+    # Load existing DM_ammonia
+    pickle_file = os.path.join(current_file_directory, '../../../../data/datamatrix/ammonia.pickle')
+    with open(pickle_file, 'rb') as handle:
+      DM_amm_current = pickle.load(handle)
+     
+    # make other levers same from EU
+    other_levers = ['material-efficiency', 'eol-material-recovery', 'technology-development', 'cc', 'energy-carrier-mix']
+    for l in other_levers:
+        dm_temp = DM_amm_current["ots"][l].filter({"Country" : ["EU27"]})
+        dm_temp.rename_col("EU27","Switzerland","Country")
+        DM_amm["ots"][l] = dm_temp.copy()
+        
+    # make other fxa same from EU
+    other_fxa = ['cost-matprod', 'cost-CC']
+    for f in other_fxa:
+        dm_temp = DM_amm_current["fxa"][f].filter({"Country" : ["EU27"]})
+        dm_temp.rename_col("EU27","Switzerland","Country")
+        DM_amm["fxa"][f] = dm_temp.copy()
+        
+    # for calibration for now put all to nan (we have material production in case for later)
+    DM_amm["calibration"]["material-production"] = DM_input["calib-amm-material-production"].copy()
+    calibs = ["emissions"]
+    for c in calibs:
+        dm_temp = DM_amm_current["calibration"][c].filter({"Country" : ["EU27"]})
+        dm_temp.rename_col("EU27","Switzerland","Country")
+        dm_temp[...] = np.nan
+        DM_amm["calibration"][c] = dm_temp.copy()
+        
+    # save intermediate
+    f = os.path.join(current_file_directory, '../data/datamatrix/ammonia_ots.pickle')
+    with open(f, 'wb') as handle:
+        pickle.dump(DM_amm, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
+    return DM, DM_amm
 
 if __name__ == "__main__":
     
