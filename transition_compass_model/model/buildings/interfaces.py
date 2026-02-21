@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import pickle
 from model.common.data_matrix_class import DataMatrix
 
 def bld_power_interface(dm_appliances, dm_energy, dm_fuel, dm_light_heat):
@@ -25,25 +26,44 @@ def bld_power_interface(dm_appliances, dm_energy, dm_fuel, dm_light_heat):
     return DM_pow
 
 
-def bld_emissions_interface(dm_appliances, DM_energy):
-    dm_emissions_fuel = DM_energy['heat-emissions-by-fuel'].filter({"Categories1": ["gas-ff-natural", "heat-ambient",
-                                                                                    "heat-geothermal", "heat-solar",
-                                                                                    "liquid-ff-heatingoil", "solid-bio",
-                                                                                    "solid-ff-coal"]})
-    dm_emissions_fuel.rename_col('bld_CO2-emissions', 'bld_emissions-CO2', dim='Variables')
+def bld_emissions_interface(dm_emissions_heating, write_pickle = False):
+    
+    # TODO: we are missing appliances emissions
+    
+    dm_out = dm_emissions_heating.groupby({"CO2" : dm_emissions_heating.col_labels["Categories1"]}, "Categories1")
+    dm_out.rename_col("bld_CO2-emissions_heating","buildings-heating","Variables")
+    dm_out.add(0, "Categories1", ["CH4"], dummy=True)
+    dm_out.add(0, "Categories1", ["N2O"], dummy=True)
+    dm_out.sort("Categories1")
+    
+    # if write_pickle is True, write pickle
+    if write_pickle is True:
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(
+            current_file_directory,
+            "../../_database/data/interface/buildings_to_emissions.pickle",
+        )
+        with open(f, "wb") as handle:
+            pickle.dump(dm_out, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
+    # dm_emissions_fuel = DM_energy['heat-emissions-by-fuel'].filter({"Categories1": ["gas-ff-natural", "heat-ambient",
+    #                                                                                 "heat-geothermal", "heat-solar",
+    #                                                                                 "liquid-ff-heatingoil", "solid-bio",
+    #                                                                                 "solid-ff-coal"]})
+    # dm_emissions_fuel.rename_col('bld_CO2-emissions', 'bld_emissions-CO2', dim='Variables')
 
-    dm_appliances = dm_appliances.filter({"Categories1": ["non-residential"]})
-    dm_appliances.rename_col('bld_CO2-emissions_appliances', 'bld_emissions-CO2_appliances', dim='Variables')
-    # dm_appliances.rename_col('bld_CO2-emissions_appliances', 'bld_residential-emissions-CO2', dim='Variables')
-    # dm_appliances.rename_col('non-residential', 'non_appliances', dim='Categories1')
-    # dm_appliances.rename_col('residential', 'appliances', dim='Categories1')
+    # dm_appliances = dm_appliances.filter({"Categories1": ["non-residential"]})
+    # dm_appliances.rename_col('bld_CO2-emissions_appliances', 'bld_emissions-CO2_appliances', dim='Variables')
+    # # dm_appliances.rename_col('bld_CO2-emissions_appliances', 'bld_residential-emissions-CO2', dim='Variables')
+    # # dm_appliances.rename_col('non-residential', 'non_appliances', dim='Categories1')
+    # # dm_appliances.rename_col('residential', 'appliances', dim='Categories1')
 
-    dm_emissions_fuel = dm_emissions_fuel.flatten()
-    dm_appliances = dm_appliances.flatten()
+    # dm_emissions_fuel = dm_emissions_fuel.flatten()
+    # dm_appliances = dm_appliances.flatten()
 
-    dm_emissions_fuel.append(dm_appliances, dim='Variables')
+    # dm_emissions_fuel.append(dm_appliances, dim='Variables')
 
-    return dm_emissions_fuel
+    return dm_out
 
 
 # def bld_industry_interface(DM_floor, dm_appliances, dm_pipes):
