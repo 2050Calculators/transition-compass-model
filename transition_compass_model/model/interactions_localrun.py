@@ -6,16 +6,16 @@ from model.buildings_module import buildings
 from model.forestry_module import forestry
 # from model.minerals_module import minerals
 from model.common.interface_class import Interface
-from model.district_heating_module import district_heating
+# from model.district_heating_module import district_heating
 from model.agriculture_module import agriculture
 from model.emissions_module import emissions
 from model.climate_module import climate
 
 from model.ammonia_module import ammonia
 from model.industry_module import industry
-from model.power_module import power
-from model.landuse_module import land_use
-from model.oilrefinery_module import refinery
+# from model.power_module import power
+# from model.landuse_module import land_use
+# from model.oilrefinery_module import refinery
 from model.lca_module import lca
 
 from model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
@@ -58,10 +58,6 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
       start_time = time.time()
       TPE['industry'] = industry(lever_setting, years_setting, DM_input['industry'], interface)
       logger.info('Execution time Industry: {0:.3g} s'.format(time.time() - start_time))
-    if 'forestry' in sectors:
-      start_time = time.time()
-      TPE['forestry'] = forestry(lever_setting, years_setting, DM_input['forestry'], interface)
-      logger.info('Execution time Forestry: {0:.3g} s'.format(time.time() - start_time))
     if 'agriculture' in sectors:
       start_time = time.time()
       TPE['agriculture'] = agriculture(lever_setting, years_setting, DM_input['agriculture'], interface)
@@ -70,6 +66,14 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
         start_time = time.time()
         TPE['ammonia'] = ammonia(lever_setting, years_setting, DM_input['ammonia'], interface)
         logger.info('Execution time Ammonia: {0:.3g} s'.format(time.time() - start_time))
+    if 'emissions' in sectors:
+        start_time = time.time()
+        TPE['emissions'] = emissions(years_setting, interface)
+        logger.info('Execution time Emissions: {0:.3g} s'.format(time.time() - start_time))
+    if 'forestry' in sectors:
+        start_time = time.time()
+        TPE['forestry'] = forestry(lever_setting, years_setting, DM_input['forestry'], interface)
+        logger.info('Execution time Forestry: {0:.3g} s'.format(time.time() - start_time))
     if 'lca' in sectors:
         start_time = time.time()
         TPE['lca'] = lca(lever_setting, years_setting, DM_input['lca'], interface)
@@ -116,9 +120,14 @@ def local_interactions_run():
     lever_setting = json.load(f)[0]
     years_setting = [1990, 2023, 2025, 2050, 5]
 
-    country_list = ["Switzerland","EU27","Vaud"]
+    # country_list = ["Switzerland","EU27","Vaud"]
+    country_list = ["Switzerland"]
 
-    sectors = ['climate', 'lifestyles', 'buildings', 'transport', 'industry', 'forestry', 'agriculture', 'ammonia', 'lca']
+    sectors = ['climate', 'lifestyles', 'transport', 'buildings', 'industry', 
+               'agriculture', 'ammonia', 
+               # 'landuse', 'energy', 
+               'emissions', 
+               'forestry', 'lca']
     # Filter geoscale
     # from database/data/datamatrix/.* reads the pickles, filters the geoscale, and loads them
     DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = sectors)
