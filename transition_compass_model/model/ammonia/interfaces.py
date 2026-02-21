@@ -20,6 +20,78 @@ def get_interface(current_file_directory, interface, from_sector, to_sector, cou
             DM.filter({'Country': country_list}, inplace=True)
     return DM
 
+# def variables_for_tpe(dm_material_production_bymat, dm_ind_material_production, dm_energy_demand_bymat,
+#                       dm_ind_energy_demand, dm_energy_demand_bymatcarr):
+    
+#     # production of chemicals (chem in ind + chem in ammonia)
+#     dm_tpe = dm_material_production_bymat.copy()
+#     dm_tpe.change_unit('material-production', factor=1e-3, old_unit='kt', new_unit='Mt')
+#     dm_tpe.append(dm_ind_material_production.copy(), "Categories1")
+#     dm_tpe.group_all("Categories1")
+#     dm_tpe.rename_col("material-production", "ind_material-production_chemicals", "Variables")
+    
+#     # energy demand chemicals
+#     dm_temp = dm_energy_demand_bymat.copy()
+#     dm_temp.append(dm_ind_energy_demand.group_all("Categories2", inplace=False), "Categories1")
+#     dm_temp.group_all("Categories1")
+#     dm_temp.rename_col("energy-demand", "ind_energy-demand_chemicals", "Variables")
+#     dm_tpe.append(dm_temp, "Variables")
+    
+#     # energy demand chemicals by energy carriers
+#     dm_temp = dm_energy_demand_bymatcarr.copy()
+#     dm_temp.append(dm_ind_energy_demand, "Categories1")
+#     dm_temp.group_all("Categories1")
+#     dm_temp.rename_col("energy-demand", "ind_energy-demand_chemicals", "Variables")
+#     dm_tpe.append(dm_temp.flatten(), "Variables")
+    
+#     # # NOTE: FOR THE MOMENT THE CODE BELOW IS COMMENTED OUT, TO KEEP UNTIL WE FINALIZE THE TPE
+#     # # adjust variables' names
+#     # DM_cost["material-production_capex"].rename_col_regex("capex", "investment", "Variables")
+#     # DM_cost["material-production_capex"].rename_col('ammonia-amm-tech','amm-tech',"Categories1")
+#     # DM_cost["CO2-capt-w-cc_capex"].rename_col_regex("capex", "investment_CC", "Variables")
+#     # DM_cost["CO2-capt-w-cc_capex"].rename_col_regex("ammonia-amm-tech", "amm-tech", "Categories1")
+#     # DM_cost["material-production_opex"].rename_col_regex("opex", "operating-costs", "Variables")
+#     # DM_cost["material-production_opex"].rename_col('ammonia-amm-tech','amm-tech',"Categories1")
+#     # DM_cost["CO2-capt-w-cc_opex"].rename_col_regex("opex", "operating-costs_CC", "Variables")
+#     # DM_cost["CO2-capt-w-cc_opex"].rename_col_regex("ammonia-amm-tech", "amm-tech", "Categories1")
+#     # DM_emissions["bygas"] = DM_emissions["bygas"].flatten()
+#     # DM_emissions["bygas"].rename_col_regex("_","-","Variables")
+#     # variables = DM_material_production["bytech"].col_labels["Categories1"]
+#     # variables_new = [rename_tech_fordeepen(i) for i in variables]
+#     # for i in range(len(variables)):
+#     #     DM_material_production["bytech"].rename_col(variables[i], variables_new[i], dim = "Categories1")
+#     # DM_material_production["bymat"].array = DM_material_production["bymat"].array / 1000
+#     # DM_material_production["bymat"].units["material-production"] = "Mt"
+
+#     # # dm_tpe
+#     # dm_tpe = DM_emissions["bygas"].copy()
+#     # dm_tpe.append(DM_energy_demand["bymat"].flatten(), "Variables")
+#     # dm_tpe.append(DM_energy_demand["bycarr"].flatten(), "Variables")
+#     # dm_tpe.append(DM_cost["CO2-capt-w-cc_capex"].filter({"Variables" : ["investment_CC"]}).flatten(), "Variables")
+#     # dm_tpe.append(DM_cost["material-production_capex"].filter({"Variables" : ["investment"]}).flatten(), "Variables")
+#     # dm_tpe.append(DM_cost["CO2-capt-w-cc_opex"].filter({"Variables" : ["operating-costs_CC"]}).flatten(), "Variables")
+#     # dm_tpe.append(DM_cost["material-production_opex"].filter({"Variables" : ["operating-costs"]}).flatten(), "Variables")
+#     # dm_tpe.append(DM_material_production["bymat"].flatten(), "Variables")
+#     # variables = dm_tpe.col_labels["Variables"]
+#     # for i in variables:
+#     #     dm_tpe.rename_col(i, "amm_" + i, "Variables")
+#     # variables = ['amm_investment_CC_amm-tech', 'amm_investment_amm-tech', 
+#     #              'amm_operating-costs_CC_amm-tech', 'amm_operating-costs_amm-tech']
+#     # variables_new = ['ind_investment_CC_amm-tech', 'ind_investment_amm-tech', 
+#     #                  'ind_operating-costs_CC_amm-tech', 'ind_operating-costs_amm-tech']
+#     # for i in range(len(variables)):
+#     #     dm_tpe.rename_col(variables[i], variables_new[i], "Variables")
+#     # dm_tpe.sort("Variables")
+    
+#     return dm_tpe
+
+def variables_for_tpe(dm_matprod, dm_emi_bygas):
+    
+    dm_out = dm_matprod.flatten()
+    dm_out.append(dm_emi_bygas.flatten(), "Variables")
+    
+    return dm_out
+
 def ammonia_energy_interface(dm_energy_demand_by_carr, cdm_split, cdm_eneff, write_pickle = False):
     
     # split between electricity and lighting
@@ -106,22 +178,35 @@ def ammonia_energy_interface(dm_energy_demand_by_carr, cdm_split, cdm_eneff, wri
 
 def ammonia_emissions_interface(DM_emissions, write_pickle = False):
     
-    # adjust variables' names
-    dm_temp = DM_emissions["bygasmat"].flatten().flatten()
+    # emissions by gas
+    dm_ems = DM_emissions["bygas"].copy()
+    dm_ems.rename_col("emissions","ammonia","Variables")
+    
+    # negative emissions
+    # TODO: invert here if positive
+    dm_temp = DM_emissions["capt_w_cc_bytech"].group_all("Categories1", inplace=False)
+    dm_temp.rename_col("CO2-capt-w-cc","ammonia-captured-emissions_CO2", "Variables")
     dm_temp.deepen()
-    dm_temp.rename_col_regex("_","-","Variables")
+    dm_temp.add(0, "Categories1", "CH4", dummy=True)
+    dm_temp.add(0, "Categories1", "N2O", dummy=True)
+    dm_ems.append(dm_temp, "Variables")
+    
+    # # adjust variables' names
+    # dm_temp = DM_emissions["bygasmat"].flatten().flatten()
+    # dm_temp.deepen()
+    # dm_temp.rename_col_regex("_","-","Variables")
 
-    # dm_cli
-    dm_ems = dm_temp.flatten()
-    variables = dm_ems.col_labels["Variables"]
-    for i in variables:
-        dm_ems.rename_col(i, "amm_" + i, "Variables")
-    dm_ems.sort("Variables")
+    # # dm_cli
+    # dm_ems = dm_temp.flatten()
+    # variables = dm_ems.col_labels["Variables"]
+    # for i in variables:
+    #     dm_ems.rename_col(i, "amm_" + i, "Variables")
+    # dm_ems.sort("Variables")
 
     # write
     if write_pickle is True:
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, '../_database/data/interface/ammonia_to_emissions.pickle')
+        f = os.path.join(current_file_directory, '../../_database/data/interface/ammonia_to_emissions.pickle')
         with open(f, 'wb') as handle:
             pickle.dump(dm_ems, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
