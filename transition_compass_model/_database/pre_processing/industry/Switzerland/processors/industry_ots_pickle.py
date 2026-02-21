@@ -20,6 +20,7 @@ def run(DM_input, years_ots):
     DM["fxa"]["prod"] = DM_input["material-production-not-modelled"]
     DM["fxa"]["demand"] = DM_input["material-demand-wpp"]
     
+    DM["calibration"]["material-production"] = DM_input["calib-matprod"]
     DM["calibration"]["emissions"] = DM_input["calib-emissions"]
     DM["calibration"]["energy-demand"] = DM_input["calib-energy"]
     # ['energy-demand', 'material-production', 'emissions']
