@@ -172,6 +172,7 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     # interface.add_link(from_sector='transport', to_sector='minerals', dm=DM_minerals)
 
     # Emissions
+    # TODO: for the moment I am passing only passenger emissions
     dm_emissions = inter.tra_emissions_interface(DM_passenger_out["emissions"], DM_freight_out["emissions"])
     interface.add_link(from_sector="transport", to_sector="emissions", dm=dm_emissions.copy())
 
@@ -188,7 +189,7 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
         dm_emissions.array[:, :, :, :, idx["N2O"]] * N2O_to_CO2
     )
     dm_emissions.rename_col(
-        "tra_emissions_passenger", "tra_emissions-CO2e_passenger", dim="Variables"
+        "tra_passenger_emissions", "tra_emissions-CO2e_passenger", dim="Variables"
     )
     dm_emissions.group_all("Categories2")
 

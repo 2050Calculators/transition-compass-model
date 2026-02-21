@@ -48,6 +48,7 @@ def tra_industry_interface(
         set(dm_veh.col_labels["Categories2"]) - set(dm_fre.col_labels["Categories2"])
     )
     dm_veh.add(0, dummy=True, dim="Categories2", col_label=["ICE"])
+    # dm_fre[...] = 0
     dm_veh.append(dm_fre, "Categories1")
     # Rename kerosene and H2 as ICE
     dm_veh.rename_col("ICE", "ICE_old", "Categories2")
@@ -464,17 +465,36 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out):
 def tra_emissions_interface(
     dm_pass_emissions, dm_freight_emissions, write_pickle=False
 ):
+    
+    dm_emi_aviation = dm_pass_emissions.filter({"Categories1" : ["aviation"]})
+    dm_emi_aviation.group_all("Categories1")
+    dm_emi_aviation.rename_col("tra_passenger_emissions","aviation","Variables")
+    dm_emi = dm_pass_emissions.filter({"Categories1" : ['2W', 'LDV', 'bus', 'metrotram', 'rail']}).group_all("Categories1",inplace=False)
+    dm_emi.groupby({"transport-wo-aviation" : ['tra_passenger_emissions']}, "Variables", inplace=True)
+    dm_emi.append(dm_emi_aviation, "Variables")
+    
+    # # get aviation as separate (as we have both national and international)
+    # dm_emi_aviation = dm_pass_emissions.filter({"Categories1" : ["aviation"]})
+    # dm_emi_aviation.append(dm_freight_emissions.filter({"Categories1" : ["aviation"]}), "Variables")
+    # dm_emi_aviation.groupby({"aviation" : ['tra_passenger_emissions', 'tra_freight_emissions']}, "Variables", inplace=True)
+    # dm_emi_aviation.group_all("Categories1")
+    
+    # # make rest
+    # dm_emi = dm_pass_emissions.filter({"Categories1" : ['2W', 'LDV', 'bus', 'metrotram', 'rail']}).group_all("Categories1",inplace=False)
+    # dm_emi.append(dm_freight_emissions.filter({"Categories1" : ['HDVH', 'HDVL', 'HDVM', 'IWW', 'marine', 'rail']}).group_all("Categories1",inplace=False), "Variables")
+    # dm_emi.groupby({"transport-wo-aviation" : ['tra_passenger_emissions', 'tra_freight_emissions']}, "Variables", inplace=True)
+    # dm_emi.append(dm_emi_aviation, "Variables")
+    
+    # dm_pass_emissions.rename_col(
+    #     "tra_passenger_emissions", "tra_emissions_passenger", dim="Variables"
+    # )
+    # dm_pass_emissions = dm_pass_emissions.flatten().flatten()
+    # dm_freight_emissions.rename_col(
+    #     "tra_freight_emissions", "tra_emissions_freight", dim="Variables"
+    # )
+    # dm_freight_emissions = dm_freight_emissions.flatten().flatten()
 
-    dm_pass_emissions.rename_col(
-        "tra_passenger_emissions", "tra_emissions_passenger", dim="Variables"
-    )
-    dm_pass_emissions = dm_pass_emissions.flatten().flatten()
-    dm_freight_emissions.rename_col(
-        "tra_freight_emissions", "tra_emissions_freight", dim="Variables"
-    )
-    dm_freight_emissions = dm_freight_emissions.flatten().flatten()
-
-    dm_pass_emissions.append(dm_freight_emissions, dim="Variables")
+    # dm_pass_emissions.append(dm_freight_emissions, dim="Variables")
 
     # if write_pickle is True, write pickle
     if write_pickle is True:
@@ -484,9 +504,9 @@ def tra_emissions_interface(
             "../../_database/data/interface/transport_to_emissions.pickle",
         )
         with open(f, "wb") as handle:
-            pickle.dump(dm_pass_emissions, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(dm_emi, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    return dm_pass_emissions
+    return dm_emi
 
 
 def tra_agriculture_interface(
