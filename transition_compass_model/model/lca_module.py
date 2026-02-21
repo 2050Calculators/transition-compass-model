@@ -36,7 +36,7 @@ def lca(lever_setting, years_setting, DM_input, interface = Interface(), calibra
     cntr_list = DM_ots_fts["footprint"]["materials"].col_labels['Country']
     DM_transport = inter.get_interface(current_file_directory, interface, "transport", "lca", cntr_list)
     DM_buildings = inter.get_interface(current_file_directory, interface, "buildings", "lca", cntr_list)
-    DM_industry = inter.get_interface(current_file_directory, interface, "industry", "lca", cntr_list)
+    # DM_industry = inter.get_interface(current_file_directory, interface, "industry", "lca", cntr_list)
     
     # split footrpint by product group
     DM_footprint = wkf.get_footprint_by_group(DM_ots_fts["footprint"])
