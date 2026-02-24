@@ -1,8 +1,7 @@
 import re
 import numpy as np
-import copy
 import pandas as pd
-from model.common.io_database import read_database
+from ..common.io_database import read_database
 
 # ConstantDataMatrix is a class used to deal with constants in a way that is similar to DataMatrix class.
 # The main difference if that ConstantDataMatrix has no Country or Years dimensions.
@@ -32,7 +31,7 @@ class ConstantDataMatrix:
 
         for i in range(len(col_labels) - 1):
             cat_num = str(i + 1)
-            self.dim_labels.append('Categories' + cat_num)
+            self.dim_labels.append("Categories" + cat_num)
 
         for k, v in col_labels.items():
             self.col_labels[k] = v.copy()  # dictionary with dim_labels[i] as key
@@ -50,7 +49,7 @@ class ConstantDataMatrix:
         return
 
     def __repr__(self):
-        
+
         if len(self.col_labels) == 1:
             return f'ConstantDataMatrix with shape {self.array.shape} and variables {self.col_labels["Variables"]}'
         if len(self.col_labels) == 2:
@@ -80,14 +79,14 @@ class ConstantDataMatrix:
         array[:] = np.nan
 
         # Iterate over the dataframe columns & extract the string _xxx[ as category and the rest as variable
-        for (col_i, col) in enumerate(constant['name']):
-            last_bracket_index = col.rfind('[')
+        for col_i, col in enumerate(constant["name"]):
+            last_bracket_index = col.rfind("[")
             v = col[:last_bracket_index]
-            data = constant['value'][col_i]
+            data = constant["value"][col_i]
             c = {}
             for i in range(num_cat):
-                last_underscore_index = v.rfind('_')
-                c[i] = v[last_underscore_index + 1:]
+                last_underscore_index = v.rfind("_")
+                c[i] = v[last_underscore_index + 1 :]
                 v = col[:last_underscore_index]
             if num_cat == 0:
                 array[self.idx[v]] = data
@@ -96,61 +95,65 @@ class ConstantDataMatrix:
             if num_cat == 2:
                 array[self.idx[v], self.idx[c[1]], self.idx[c[0]]] = data
             if num_cat == 3:
-                array[self.idx[v], self.idx[c[2]], self.idx[c[1]], self.idx[c[0]]] = data
+                array[self.idx[v], self.idx[c[2]], self.idx[c[1]], self.idx[c[0]]] = (
+                    data
+                )
 
         self.array = array
         return
 
     def extract_structure(self, constant, num_cat=1):
-            # It reads a dataframe and it extracts its columns as variables and categories
-            # it also extracts the Countries and the Years (sorted)
-            # These become elements of the class
-            if num_cat > 3:
-                raise Exception("You can only set maximum 3 categories")
+        # It reads a dataframe and it extracts its columns as variables and categories
+        # it also extracts the Countries and the Years (sorted)
+        # These become elements of the class
+        if num_cat > 3:
+            raise Exception("You can only set maximum 3 categories")
 
-            # Add categories dimension if not there before
+        # Add categories dimension if not there before
+        for i in range(num_cat):
+            i = i + 1
+            cat_str = "Categories" + str(i)
+            if cat_str not in self.dim_labels:
+                self.dim_labels.append(cat_str)
+
+        categories = {}
+        variables = []
+        units = dict()
+        i = 1
+        for col in constant["name"]:
+            unit = re.search(r"\[(.*?)\]", col).group(1)
+            col_tmp = col.replace(f"[{unit}]", "")
             for i in range(num_cat):
                 i = i + 1
-                cat_str = "Categories" + str(i)
-                if cat_str not in self.dim_labels:
-                    self.dim_labels.append(cat_str)
-
-            categories = {}
-            variables = []
-            units = dict()
-            i = 1
-            for col in constant['name']:
-                unit = re.search(r'\[(.*?)\]', col).group(1)
-                col_tmp = col.replace(f'[{unit}]', '')
-                for i in range(num_cat):
-                    i = i + 1
-                    last_underscore_index = col_tmp.rfind('_')
-                    cat = col_tmp[last_underscore_index + 1:]
-                    if i not in categories.keys():
-                        categories[i] = [cat]
-                    else:
-                        if cat not in categories[i]:
-                            categories[i].append(cat)
-                    col_tmp = col_tmp.replace(f'_{cat}', '')
-                var = col_tmp
-                if var not in variables:
-                    variables.append(var)
-                if var in units.keys():
-                    if unit != units[var]:
-                        print("Variables " + var + " has two different units, change its name")
+                last_underscore_index = col_tmp.rfind("_")
+                cat = col_tmp[last_underscore_index + 1 :]
+                if i not in categories.keys():
+                    categories[i] = [cat]
                 else:
-                    units[var] = unit
+                    if cat not in categories[i]:
+                        categories[i].append(cat)
+                col_tmp = col_tmp.replace(f"_{cat}", "")
+            var = col_tmp
+            if var not in variables:
+                variables.append(var)
+            if var in units.keys():
+                if unit != units[var]:
+                    print(
+                        "Variables " + var + " has two different units, change its name"
+                    )
+            else:
+                units[var] = unit
 
-            self.col_labels["Variables"] = sorted(variables)
-            for i in range(num_cat):
-                i = i + 1
-                dim_str = "Categories" + str(num_cat - i + 1)
-                self.col_labels[dim_str] = sorted(categories[i])
+        self.col_labels["Variables"] = sorted(variables)
+        for i in range(num_cat):
+            i = i + 1
+            dim_str = "Categories" + str(num_cat - i + 1)
+            self.col_labels[dim_str] = sorted(categories[i])
 
-            self.idx = self.index_all()
-            self.units = units
+        self.idx = self.index_all()
+        self.units = units
 
-            return
+        return
 
     @classmethod
     def create_from_constant(cls, constant, num_cat):
@@ -166,22 +169,26 @@ class ConstantDataMatrix:
         # it uses the class method 'crate from constant
         def constant_filter(constant, pattern):
             re_pattern = re.compile(pattern)
-            labels = constant['name']
-            keep_l_i = [(l, i) for (i, l) in enumerate(labels) if re.match(re_pattern, l)]
+            labels = constant["name"]
+            keep_l_i = [
+                (l, i) for (i, l) in enumerate(labels) if re.match(re_pattern, l)
+            ]
             keep = {
-                'name': [t[0] for t in keep_l_i],
-                'value': [constant['value'][t[1]] for t in keep_l_i],
-                'idx': [t[0] for t in keep_l_i],
-                'units': [constant['units'][t[0]] for t in keep_l_i]
+                "name": [t[0] for t in keep_l_i],
+                "value": [constant["value"][t[1]] for t in keep_l_i],
+                "idx": [t[0] for t in keep_l_i],
+                "units": [constant["units"][t[0]] for t in keep_l_i],
             }
             return keep
 
-        db_const = read_database(const_file, lever='none', db_format=True)
+        db_const = read_database(const_file, lever="none", db_format=True)
         const = {
-            'name': list(db_const['eucalc-name']),
-            'value': list(db_const['value']),
-            'idx': dict(zip(list(db_const['eucalc-name']), range(len(db_const['eucalc-name'])))),
-            'units': dict(zip(list(db_const['eucalc-name']), list(db_const['unit'])))
+            "name": list(db_const["eucalc-name"]),
+            "value": list(db_const["value"]),
+            "idx": dict(
+                zip(list(db_const["eucalc-name"]), range(len(db_const["eucalc-name"])))
+            ),
+            "units": dict(zip(list(db_const["eucalc-name"]), list(db_const["unit"]))),
         }
         tmp = constant_filter(const, pattern)
         cdm_const = ConstantDataMatrix.create_from_constant(tmp, num_cat=num_cat)
@@ -189,8 +196,8 @@ class ConstantDataMatrix:
 
     def index_all(self):
         idx = {}
-        for (di, d) in enumerate(self.dim_labels):
-            for (ci, c) in enumerate(self.col_labels[d]):
+        for di, d in enumerate(self.dim_labels):
+            for ci, c in enumerate(self.col_labels[d]):
                 idx[c] = ci
         return idx
 
@@ -209,10 +216,12 @@ class ConstantDataMatrix:
     def sort(self, dim):
         sort_index = np.argsort(np.array(self.col_labels[dim]))
         self.col_labels[dim] = sorted(self.col_labels[dim])  # sort labels
-        for (ci, c) in enumerate(self.col_labels[dim]):  # sort indexes
+        for ci, c in enumerate(self.col_labels[dim]):  # sort indexes
             self.idx[c] = ci
         a = self.dim_labels.index(dim)
-        self.array = np.take(self.array, sort_index, axis=a)  # re-orders the array according to sort_index
+        self.array = np.take(
+            self.array, sort_index, axis=a
+        )  # re-orders the array according to sort_index
         return
 
     def copy(self):
@@ -226,7 +235,7 @@ class ConstantDataMatrix:
         cdm.idx = idx
         cdm.array = array
         return cdm
-    
+
     def filter(self, selected_cols):
         # Sort the subset list based on the order of elements in list1
         sorted_cols = {}
@@ -235,7 +244,9 @@ class ConstantDataMatrix:
                 if selected_cols[d] == "all":
                     sorted_cols[d] = self.col_labels[d].copy()
                 else:
-                    sorted_cols[d] = sorted(selected_cols[d], key=lambda x: self.col_labels[d].index(x))
+                    sorted_cols[d] = sorted(
+                        selected_cols[d], key=lambda x: self.col_labels[d].index(x)
+                    )
             else:
                 sorted_cols[d] = self.col_labels[d].copy()
         out = ConstantDataMatrix(col_labels=sorted_cols)
@@ -250,7 +261,7 @@ class ConstantDataMatrix:
         if len(sorted_cols) > 3:
             out.idx = out.index_all()
         return out
-    
+
     def filter_w_regex(self, dict_dim_pattern):
         # Return only a portion of the DataMatrix based on a dict_dim_patter
         # E.g. if we wanted to only keep Austria and France, the dict_dim_pattern would be {'Country':'France|Austria'}
@@ -260,29 +271,31 @@ class ConstantDataMatrix:
                 pattern = re.compile(dict_dim_pattern[d])
                 keep[d] = [col for col in self.col_labels[d] if re.match(pattern, col)]
             else:
-                keep[d] = 'all'
+                keep[d] = "all"
         dm_keep = self.filter(keep)
         return dm_keep
-    
+
     def deepen(self, sep="_", based_on=None):
         # Adds a category to the datamatrix based on the "Variables" names
         idx_old = self.index_all()
 
         # Add one category to the dim_labels list depending on the current structure
         if self.dim_labels[-1] == "Variables":
-            new_dim = 'Categories1'
-            root_dim = 'Variables'
+            new_dim = "Categories1"
+            root_dim = "Variables"
             self.dim_labels.append(new_dim)
-        elif self.dim_labels[-1] == 'Categories1':
-            new_dim = 'Categories2'
-            root_dim = 'Categories1'
+        elif self.dim_labels[-1] == "Categories1":
+            new_dim = "Categories2"
+            root_dim = "Categories1"
             self.dim_labels.append(new_dim)
-        elif self.dim_labels[-1] == 'Categories2':
-            new_dim = 'Categories3'
-            root_dim = 'Categories2'
+        elif self.dim_labels[-1] == "Categories2":
+            new_dim = "Categories3"
+            root_dim = "Categories2"
             self.dim_labels.append(new_dim)
         else:
-            raise Exception('You cannot deepen (aka add a dimension) to a datamatrix with already 3 categories')
+            raise Exception(
+                "You cannot deepen (aka add a dimension) to a datamatrix with already 3 categories"
+            )
 
         if based_on is not None:
             root_dim = based_on
@@ -296,8 +309,8 @@ class ConstantDataMatrix:
         for col in self.col_labels[root_dim]:
             last_underscore_index = col.rfind(sep)
             if last_underscore_index == -1:
-                raise Exception('No separator _ could be found in the last category')
-            new_cat = col[last_underscore_index + 1:]
+                raise Exception("No separator _ could be found in the last category")
+            new_cat = col[last_underscore_index + 1 :]
             root_cat = col[:last_underscore_index]
             rename_mapping[col] = [root_cat, new_cat]
             # crates col_labels list for the new dimension
@@ -307,7 +320,7 @@ class ConstantDataMatrix:
             if root_cat not in root_cols:
                 root_cols.append(root_cat)
             # renames units dict
-            if root_dim == 'Variables':
+            if root_dim == "Variables":
                 if root_cat not in self.units.keys():
                     self.units[root_cat] = self.units[col]
                 self.units.pop(col)
@@ -329,12 +342,14 @@ class ConstantDataMatrix:
             array_old = np.moveaxis(array_old, a_root, -1)
         for col in rename_mapping.keys():
             [root_cat, new_cat] = rename_mapping[col]
-            array_new[..., idx_new[root_cat], idx_new[new_cat]] = array_old[..., idx_old[col]]
+            array_new[..., idx_new[root_cat], idx_new[new_cat]] = array_old[
+                ..., idx_old[col]
+            ]
         if based_on is not None:
             array_new = np.moveaxis(array_new, -2, a_root)
         self.array = array_new
         return
-    
+
     def deepen_twice(self):
         # Adds two dimensions to the datamatrix based on the last dimension column names
         root_dim = self.dim_labels[-1]
@@ -342,27 +357,27 @@ class ConstantDataMatrix:
 
         for col in self.col_labels[root_dim]:
             last_index = col.rfind("_")
-            new_col = col[:last_index] + '?' + col[last_index+1:]
+            new_col = col[:last_index] + "?" + col[last_index + 1 :]
             tmp_cols.append(new_col)
-            if root_dim == 'Variables':
+            if root_dim == "Variables":
                 self.units[new_col] = self.units[col]
                 self.units.pop(col)
         self.col_labels[root_dim] = tmp_cols
 
-        self.deepen(sep='_')
+        self.deepen(sep="_")
 
         tmp_cols = []
         root_dim = self.dim_labels[-1]
         for col in self.col_labels[root_dim]:
             last_index = col.rfind("?")
-            new_col = col[:last_index] + '_' + col[last_index+1:]
+            new_col = col[:last_index] + "_" + col[last_index + 1 :]
             tmp_cols.append(new_col)
-            if root_dim == 'Variables':
+            if root_dim == "Variables":
                 self.units[new_col] = self.units[col]
                 self.units.pop(col)
         self.col_labels[root_dim] = tmp_cols
 
-        self.deepen(sep='_')
+        self.deepen(sep="_")
 
         return
 
@@ -382,7 +397,7 @@ class ConstantDataMatrix:
             # Rename idx
             self.idx[col_out[i]] = self.idx[col_in[i]]
             self.idx.pop(col_in[i])
-    
+
         return
 
     def rename_col_regex(self, str1, str2, dim):
@@ -391,10 +406,10 @@ class ConstantDataMatrix:
         col_out = [word.replace(str1, str2) for word in col_in]
         self.rename_col(col_in, col_out, dim=dim)
         return
-    
-    def switch_categories_order(self, cat1='Categories1', cat2='Categories2'):
-        if 'Categories' not in cat1 or 'Categories' not in cat2:
-            raise ValueError(' You can only switch the order of two Categories')
+
+    def switch_categories_order(self, cat1="Categories1", cat2="Categories2"):
+        if "Categories" not in cat1 or "Categories" not in cat2:
+            raise ValueError(" You can only switch the order of two Categories")
         # Extract axis of cat1, cat2
         a1 = self.dim_labels.index(cat1)
         a2 = self.dim_labels.index(cat2)
@@ -406,7 +421,7 @@ class ConstantDataMatrix:
         self.col_labels[cat1] = col2
         self.col_labels[cat2] = col1
         return
-    
+
     def add(self, new_array, dim, col_label, unit=None, dummy=False):
         # Adds the numpy array new_array to the datamatrix over dimension dim.
         # The label associated with the array is in defined by the string col_label
@@ -431,22 +446,25 @@ class ConstantDataMatrix:
             new_array = np.moveaxis(new_array, -1, a)
         # Else check that the new array dimension is correct
         if new_array.shape != new_shape and dummy is False:
-            raise AttributeError(f'The new_array should have dimension {new_shape} instead of {new_array.shape}, '
-                                 f'unless you want to add dummy dimensions, then you should add dummy = True and new_array should be a float')
+            raise AttributeError(
+                f"The new_array should have dimension {new_shape} instead of {new_array.shape}, "
+                f"unless you want to add dummy dimensions, then you should add dummy = True and new_array should be a float"
+            )
         for col in col_label:
             self.col_labels[dim].append(col)
             i_v = self.single_index(col, dim)
             if col not in list(self.idx.keys()):
                 self.idx[col] = i_v[col]
             else:
-                raise ValueError(f"You are trying to append data under the label {col_label} which already exists")
-        if dim == 'Variables':
+                raise ValueError(
+                    f"You are trying to append data under the label {col_label} which already exists"
+                )
+        if dim == "Variables":
             for i, col in enumerate(col_label):
                 self.units[col] = unit[i]
         self.array = np.concatenate((self.array, new_array), axis=a)
 
         return
-
 
     def drop(self, dim, col_label):
         # It removes the column col_label along dimension dim
@@ -478,7 +496,7 @@ class ConstantDataMatrix:
                 self.units.pop(col_label)
         return
 
-    def flatten(self, sep='_'):
+    def flatten(self, sep="_"):
         # you can flatten only if you have at least one category
         assert len(self.dim_labels) > 1
         d_2 = self.dim_labels[-1]
@@ -502,24 +520,24 @@ class ConstantDataMatrix:
             for c2 in cols_2:
                 col_value = self.array[..., self.idx[c1], self.idx[c2], np.newaxis]
                 if not np.isnan(col_value).all():
-                    new_cols.append(f'{c1}{sep}{c2}')
+                    new_cols.append(f"{c1}{sep}{c2}")
                     if i == 0:
-                        i = i+1
+                        i = i + 1
                         new_array = col_value
                     else:
                         new_array = np.concatenate([new_array, col_value], axis=-1)
-                    if d_1 == 'Variables':
-                        new_units[f'{c1}{sep}{c2}'] = self.units[c1]
-    
+                    if d_1 == "Variables":
+                        new_units[f"{c1}{sep}{c2}"] = self.units[c1]
+
         new_col_labels[d_1] = new_cols
-        if d_1 == 'Variables':
+        if d_1 == "Variables":
             dm_new = ConstantDataMatrix(col_labels=new_col_labels, units=new_units)
         else:
             dm_new = ConstantDataMatrix(col_labels=new_col_labels, units=self.units)
         dm_new.array = new_array
         dm_new.idx = dm_new.index_all()
         return dm_new
-    
+
     def append(self, data2, dim):
         # appends DataMatrix data2 to self in dimension dim.
         # The pre-requisite is that all other dimensions match
@@ -532,17 +550,22 @@ class ConstantDataMatrix:
                 self.sort(dim=d)
                 data2.sort(dim=d)
                 if self.col_labels[d] != data2.col_labels[d]:
-                    raise ValueError(f'columns {self.col_labels[d]} do not match columns {data2.col_labels[d]}')
+                    raise ValueError(
+                        f"columns {self.col_labels[d]} do not match columns {data2.col_labels[d]}"
+                    )
         # Check that units are the same
-        if dim != 'Variables':
+        if dim != "Variables":
             if self.units != data2.units:
-                raise ValueError(f'The units should be the same')
+                raise ValueError("The units should be the same")
         # Check that across the dimension where you want to append the labels are different
         cols1 = set(self.col_labels[dim])
         cols2 = set(data2.col_labels[dim])
         same_col = cols2.intersection(cols1)
         if len(same_col) != 0:
-            raise Exception("The DataMatrix that you are trying to append contains the same labels across dimension ", dim)
+            raise Exception(
+                "The DataMatrix that you are trying to append contains the same labels across dimension ",
+                dim,
+            )
 
         # Concatenate the two arrays
         a = self.dim_labels.index(dim)
@@ -550,12 +573,12 @@ class ConstantDataMatrix:
         # Concatenate the two lists of labels across dimension dim
         self.col_labels[dim] = self.col_labels[dim] + data2.col_labels[dim]
         # Re initialise the indexes
-        for (ci, c) in enumerate(self.col_labels[dim]):  # sort indexes
+        for ci, c in enumerate(self.col_labels[dim]):  # sort indexes
             self.idx[c] = ci
         # Add the units if you are appending over "Variables"
         if dim == "Variables":
             self.units = self.units | data2.units
-            
+
     def write_df(self):
         dm = self.copy()
         # years = dm.col_labels["Years"]
@@ -592,7 +615,7 @@ class ConstantDataMatrix:
                     if not np.isnan(col_value).all():
                         df[col_name] = col_value
         return df
-    
+
     def groupby(
         self, group_cols={}, dim=str, aggregation="sum", regex=False, inplace=False
     ):
@@ -647,14 +670,14 @@ class ConstantDataMatrix:
         else:
             dm_out.sort(dim=dim)
             return dm_out
-    
-    def group_all(self, dim=str, inplace=True, aggregation = "sum"):
+
+    def group_all(self, dim=str, inplace=True, aggregation="sum"):
         # Function to drop a dimension by summing all categories
         # Call example: dm_to_group.group_all(dim='Categories2', inplace=True)
         # or dm_grouped = dm_to_group.group_all(dim='Categories1', inplace=False)
         # when inplace = False dm_to_group remains unchanged and the grouped dm is return as output
-        if 'Categories' not in dim:
-            raise ValueError(f'You can only use group_all() on Categories')
+        if "Categories" not in dim:
+            raise ValueError("You can only use group_all() on Categories")
         if inplace:
             dm = self
         else:
@@ -668,11 +691,11 @@ class ConstantDataMatrix:
         for col in dm.col_labels[dim]:
             dm.idx.pop(col)
         # Rename categories
-        categories_to_rename = [cat for cat in dm.dim_labels if 'Categories' in cat]
+        categories_to_rename = [cat for cat in dm.dim_labels if "Categories" in cat]
         categories_to_rename.remove(dim)
         i = 1
         for old_cat in categories_to_rename:
-            new_cat = 'Categories' + str(i)
+            new_cat = "Categories" + str(i)
             dm.col_labels[new_cat] = dm.col_labels[old_cat]
             i = i + 1
         # Remove last category and dimension

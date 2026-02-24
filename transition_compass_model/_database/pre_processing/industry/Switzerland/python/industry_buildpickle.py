@@ -1,20 +1,16 @@
-
 # packages
-from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import my_pickle_dump
-import pandas as pd
+from ......model.common.auxiliary_functions import my_pickle_dump
 import pickle
 import os
 import numpy as np
 
 # from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 
-import plotly.express as px
 import plotly.io as pio
-import re
-pio.renderers.default='browser'
-import subprocess
+
+pio.renderers.default = "browser"
 import warnings
+
 warnings.simplefilter("ignore")
 
 # directories
@@ -35,7 +31,7 @@ current_file_directory = os.getcwd()
 ###############################################################################
 
 # files
-files_directory = os.path.join(current_file_directory, '../data/datamatrix')
+files_directory = os.path.join(current_file_directory, "../data/datamatrix")
 files = os.listdir(files_directory)
 
 # create DM_industry
@@ -55,33 +51,43 @@ DM_cal_amm = {}
 DM_ammonia = {}
 
 # load europe and make copies for switzerland that are missing
-filepath = os.path.join(current_file_directory,  '../../../../data/datamatrix/industry.pickle')
-with open(filepath, 'rb') as handle:
+filepath = os.path.join(
+    current_file_directory, "../../../../data/datamatrix/industry.pickle"
+)
+with open(filepath, "rb") as handle:
     DM_industry_copies = pickle.load(handle)
 for key in DM_industry_copies["ots"].keys():
-    DM_industry_copies["ots"][key].filter({"Country" : ["EU27"]}, inplace=True)
-    DM_industry_copies["ots"][key].rename_col("EU27","Switzerland","Country")
+    DM_industry_copies["ots"][key].filter({"Country": ["EU27"]}, inplace=True)
+    DM_industry_copies["ots"][key].rename_col("EU27", "Switzerland", "Country")
 for key in DM_industry_copies["fts"].keys():
-    for level in list(range(1,4+1)):
-        DM_industry_copies["fts"][key][level].filter({"Country" : ["EU27"]}, inplace=True)
-        DM_industry_copies["fts"][key][level].rename_col("EU27","Switzerland","Country")
+    for level in list(range(1, 4 + 1)):
+        DM_industry_copies["fts"][key][level].filter(
+            {"Country": ["EU27"]}, inplace=True
+        )
+        DM_industry_copies["fts"][key][level].rename_col(
+            "EU27", "Switzerland", "Country"
+        )
 for key in DM_industry_copies["fxa"].keys():
-    DM_industry_copies["fxa"][key].filter({"Country" : ["EU27"]}, inplace=True)
-    DM_industry_copies["fxa"][key].rename_col("EU27","Switzerland","Country")
+    DM_industry_copies["fxa"][key].filter({"Country": ["EU27"]}, inplace=True)
+    DM_industry_copies["fxa"][key].rename_col("EU27", "Switzerland", "Country")
 
-filepath = os.path.join(current_file_directory,  '../../../../data/datamatrix/ammonia.pickle')
-with open(filepath, 'rb') as handle:
+filepath = os.path.join(
+    current_file_directory, "../../../../data/datamatrix/ammonia.pickle"
+)
+with open(filepath, "rb") as handle:
     DM_ammonia_copies = pickle.load(handle)
 for key in DM_ammonia_copies["ots"].keys():
-    DM_ammonia_copies["ots"][key].filter({"Country" : ["EU27"]}, inplace=True)
-    DM_ammonia_copies["ots"][key].rename_col("EU27","Switzerland","Country")
+    DM_ammonia_copies["ots"][key].filter({"Country": ["EU27"]}, inplace=True)
+    DM_ammonia_copies["ots"][key].rename_col("EU27", "Switzerland", "Country")
 for key in DM_ammonia_copies["fts"].keys():
-    for level in list(range(1,4+1)):
-        DM_ammonia_copies["fts"][key][level].filter({"Country" : ["EU27"]}, inplace=True)
-        DM_ammonia_copies["fts"][key][level].rename_col("EU27","Switzerland","Country")
+    for level in list(range(1, 4 + 1)):
+        DM_ammonia_copies["fts"][key][level].filter({"Country": ["EU27"]}, inplace=True)
+        DM_ammonia_copies["fts"][key][level].rename_col(
+            "EU27", "Switzerland", "Country"
+        )
 for key in DM_ammonia_copies["fxa"].keys():
-    DM_ammonia_copies["fxa"][key].filter({"Country" : ["EU27"]}, inplace=True)
-    DM_ammonia_copies["fxa"][key].rename_col("EU27","Switzerland","Country")
+    DM_ammonia_copies["fxa"][key].filter({"Country": ["EU27"]}, inplace=True)
+    DM_ammonia_copies["fxa"][key].rename_col("EU27", "Switzerland", "Country")
 
 
 ##################
@@ -89,23 +95,29 @@ for key in DM_ammonia_copies["fxa"].keys():
 ##################
 
 # list(np.array(files)[[bool(re.search("lever", i)) for i in files]])
-lever_files = ['lever_product-net-import.pickle',
-               'lever_material-net-import.pickle',
-               'lever_paperpack.pickle',
-               'lever_waste-management.pickle']
-lever_names = ['product-net-import',
-               'material-net-import',
-               'paperpack',
-               'eol-waste-management']
+lever_files = [
+    "lever_product-net-import.pickle",
+    "lever_material-net-import.pickle",
+    "lever_paperpack.pickle",
+    "lever_waste-management.pickle",
+]
+lever_names = [
+    "product-net-import",
+    "material-net-import",
+    "paperpack",
+    "eol-waste-management",
+]
 
 # load dms
 for i in range(0, len(lever_files)):
-    filepath = os.path.join(current_file_directory, '../data/datamatrix/' + lever_files[i])
-    with open(filepath, 'rb') as handle:
+    filepath = os.path.join(
+        current_file_directory, "../data/datamatrix/" + lever_files[i]
+    )
+    with open(filepath, "rb") as handle:
         DM = pickle.load(handle)
     DM_ots[lever_names[i]] = DM["ots"]
     DM_fts[lever_names[i]] = DM["fts"]
-    
+
 # add missing, copying from europe
 present = list(DM_ots)
 europe = list(DM_industry_copies["ots"])
@@ -117,13 +129,16 @@ DM_ots = {key: DM_ots[key] for key in europe}
 DM_fts = {key: DM_fts[key] for key in europe}
 
 # make ammonia
-lever_files = ['lever_product-net-import_ammonia.pickle',
-               'lever_material-net-import_ammonia.pickle']
-lever_names = ['product-net-import',
-               'material-net-import']
+lever_files = [
+    "lever_product-net-import_ammonia.pickle",
+    "lever_material-net-import_ammonia.pickle",
+]
+lever_names = ["product-net-import", "material-net-import"]
 for i in range(0, len(lever_files)):
-    filepath = os.path.join(current_file_directory, '../data/datamatrix/' + lever_files[i])
-    with open(filepath, 'rb') as handle:
+    filepath = os.path.join(
+        current_file_directory, "../data/datamatrix/" + lever_files[i]
+    )
+    with open(filepath, "rb") as handle:
         DM = pickle.load(handle)
     DM_ots_amm[lever_names[i]] = DM["ots"]
     DM_fts_amm[lever_names[i]] = DM["fts"]
@@ -142,53 +157,71 @@ DM_fts_amm = {key: DM_fts_amm[key] for key in europe}
 #############################
 
 # material production
-filepath = os.path.join(current_file_directory, '../data/datamatrix/' + 'fxa_material-production.pickle')
-with open(filepath, 'rb') as handle:
+filepath = os.path.join(
+    current_file_directory, "../data/datamatrix/" + "fxa_material-production.pickle"
+)
+with open(filepath, "rb") as handle:
     DM = pickle.load(handle)
 DM_fxa["prod"] = DM
 
 # material demand
-filepath = os.path.join(current_file_directory, '../data/datamatrix/' + 'fxa_material-demand.pickle')
-with open(filepath, 'rb') as handle:
+filepath = os.path.join(
+    current_file_directory, "../data/datamatrix/" + "fxa_material-demand.pickle"
+)
+with open(filepath, "rb") as handle:
     DM = pickle.load(handle)
 DM_fxa["demand"] = DM
 
 # costs
-filepath = os.path.join(current_file_directory, '../data/datamatrix/' + 'fxa_costs.pickle')
-with open(filepath, 'rb') as handle:
+filepath = os.path.join(
+    current_file_directory, "../data/datamatrix/" + "fxa_costs.pickle"
+)
+with open(filepath, "rb") as handle:
     DM = pickle.load(handle)
 DM_fxa["cost-matprod"] = DM["costs"]
 DM_fxa["cost-CC"] = DM["costs-cc"]
 
 # drop ammonia-tech
-DM_fxa_amm["cost-matprod"] = DM_fxa["cost-matprod"].filter({"Categories1" : ["ammonia-tech"]})
-DM_fxa["cost-matprod"].drop("Categories1","ammonia-tech")
-DM_fxa_amm["cost-CC"] = DM_fxa["cost-CC"].filter({"Categories1" : ["ammonia-tech"]})
-DM_fxa["cost-CC"].drop("Categories1","ammonia-tech")
+DM_fxa_amm["cost-matprod"] = DM_fxa["cost-matprod"].filter(
+    {"Categories1": ["ammonia-tech"]}
+)
+DM_fxa["cost-matprod"].drop("Categories1", "ammonia-tech")
+DM_fxa_amm["cost-CC"] = DM_fxa["cost-CC"].filter({"Categories1": ["ammonia-tech"]})
+DM_fxa["cost-CC"].drop("Categories1", "ammonia-tech")
 
 #######################
 ##### CALIBRATION #####
 #######################
 
-files_temp = ['calibration_energy-demand.pickle', 'calibration_material-production.pickle',
-              'calibration_emissions.pickle']
-names_temp = ['energy-demand', 'material-production',
-              'emissions']
+files_temp = [
+    "calibration_energy-demand.pickle",
+    "calibration_material-production.pickle",
+    "calibration_emissions.pickle",
+]
+names_temp = ["energy-demand", "material-production", "emissions"]
 
 for i in range(0, len(files_temp)):
-    filepath = os.path.join(current_file_directory, '../data/datamatrix/' + files_temp[i])
-    with open(filepath, 'rb') as handle:
+    filepath = os.path.join(
+        current_file_directory, "../data/datamatrix/" + files_temp[i]
+    )
+    with open(filepath, "rb") as handle:
         dm = pickle.load(handle)
     DM_cal[names_temp[i]] = dm.copy()
 
 # ammonia
-filepath = os.path.join(current_file_directory, '../data/datamatrix/' + "calibration_material-production_ammonia.pickle")
-with open(filepath, 'rb') as handle:
+filepath = os.path.join(
+    current_file_directory,
+    "../data/datamatrix/" + "calibration_material-production_ammonia.pickle",
+)
+with open(filepath, "rb") as handle:
     dm = pickle.load(handle)
 DM_cal_amm["material-production"] = dm.copy()
 
-filepath = os.path.join(current_file_directory, '../data/datamatrix/' + "calibration_emissions_ammonia.pickle")
-with open(filepath, 'rb') as handle:
+filepath = os.path.join(
+    current_file_directory,
+    "../data/datamatrix/" + "calibration_emissions_ammonia.pickle",
+)
+with open(filepath, "rb") as handle:
     dm = pickle.load(handle)
 DM_cal_amm["emissions"] = dm.copy()
 
@@ -205,18 +238,18 @@ DM_cal_amm["emissions"] = dm.copy()
 ########################
 
 DM_industry = {
-    'fxa': DM_fxa,
-    'fts': DM_fts,
-    'ots': DM_ots,
-    'calibration': DM_cal,
+    "fxa": DM_fxa,
+    "fts": DM_fts,
+    "ots": DM_ots,
+    "calibration": DM_cal,
     # "constant" : CDM_const
 }
 
 DM_ammonia = {
-    'fxa': DM_fxa_amm,
-    'fts': DM_fts_amm,
-    'ots': DM_ots_amm,
-    'calibration': DM_cal_amm,
+    "fxa": DM_fxa_amm,
+    "fts": DM_fts_amm,
+    "ots": DM_ots_amm,
+    "calibration": DM_cal_amm,
     # "constant" : CDM_const_amm
 }
 
@@ -224,27 +257,29 @@ DM_ammonia = {
 ###### GENERATE FAKE VAUD ######
 ################################
 
+
 def make_fake_country(DM, country):
 
-    for key in ['fxa', 'ots', 'calibration']:
+    for key in ["fxa", "ots", "calibration"]:
         dm_names = list(DM[key])
         for name in dm_names:
             dm_temp = DM[key][name]
             if country not in dm_temp.col_labels["Country"]:
                 idx = dm_temp.idx
-                arr_temp = dm_temp.array[idx["Switzerland"],...]
-                dm_temp.add(arr_temp[np.newaxis,...], "Country", country)
+                arr_temp = dm_temp.array[idx["Switzerland"], ...]
+                dm_temp.add(arr_temp[np.newaxis, ...], "Country", country)
                 dm_temp.sort("Country")
-                
+
     dm_names = list(DM["fts"])
     for name in dm_names:
-        for i in range(1,4+1):
+        for i in range(1, 4 + 1):
             dm_temp = DM["fts"][name][i]
             if country not in dm_temp.col_labels["Country"]:
                 idx = dm_temp.idx
-                arr_temp = dm_temp.array[idx["Switzerland"],...]
-                dm_temp.add(arr_temp[np.newaxis,...], "Country", country)
+                arr_temp = dm_temp.array[idx["Switzerland"], ...]
+                dm_temp.add(arr_temp[np.newaxis, ...], "Country", country)
                 dm_temp.sort("Country")
+
 
 make_fake_country(DM_industry, "Vaud")
 make_fake_country(DM_ammonia, "Vaud")
@@ -254,17 +289,8 @@ make_fake_country(DM_ammonia, "Vaud")
 ################
 
 # save
-f = os.path.join(current_file_directory, '../../../../data/datamatrix/industry.pickle')
+f = os.path.join(current_file_directory, "../../../../data/datamatrix/industry.pickle")
 my_pickle_dump(DM_industry, f)
 
-f = os.path.join(current_file_directory, '../../../../data/datamatrix/ammonia.pickle')
+f = os.path.join(current_file_directory, "../../../../data/datamatrix/ammonia.pickle")
 my_pickle_dump(DM_ammonia, f)
-
-
-
-
-
-
-
-
-

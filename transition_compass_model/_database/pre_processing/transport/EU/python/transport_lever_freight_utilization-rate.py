@@ -1,30 +1,32 @@
-
 # packages
-from model.common.auxiliary_functions import linear_fitting
+from ......model.common.auxiliary_functions import linear_fitting
 from _database.pre_processing.routine_JRC import get_jrc_data
-from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
+from ......model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
 import pickle
 import os
 import numpy as np
 import warnings
+
 warnings.simplefilter("ignore")
 
 # directories
 current_file_directory = os.getcwd()
 
 # load current transport pickle
-filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
-with open(filepath, 'rb') as handle:
+filepath = os.path.join(
+    current_file_directory, "../../../../data/datamatrix/transport.pickle"
+)
+with open(filepath, "rb") as handle:
     DM_tra = pickle.load(handle)
-    
+
 # Set years range
 years_setting = [1989, 2023, 2050, 5]
 startyear = years_setting[0]
 baseyear = years_setting[1]
 lastyear = years_setting[2]
 step_fts = years_setting[3]
-years_ots = list(range(startyear, baseyear+1, 1))
-years_fts = list(range(baseyear+2, lastyear+1, step_fts))
+years_ots = list(range(startyear, baseyear + 1, 1))
+years_fts = list(range(baseyear + 2, lastyear + 1, step_fts))
 years_all = years_ots + years_fts
 
 ###############################################################################
@@ -41,7 +43,7 @@ DM_tra["ots"]["freight_utilization-rate"].units
 
 # get iso codes
 dict_iso2 = eurostat_iso2_dict()
-dict_iso2.pop('CH')  # Remove Switzerland
+dict_iso2.pop("CH")  # Remove Switzerland
 dict_iso2_jrc = jrc_iso2_dict()
 
 ###############
@@ -49,17 +51,18 @@ dict_iso2_jrc = jrc_iso2_dict()
 ###############
 
 # get data
-dict_extract = {"database" : "Transport",
-                "sheet" : "TrRoad_act",
-                "variable" : "Vehicle-km driven (mio km)",
-                "sheet_last_row" : "Heavy goods vehicles",
-                "sub_variables" : ["Light commercial vehicles",
-                                    "Heavy goods vehicles"],
-                "calc_names" : ["HDVL","HDVH"]}
+dict_extract = {
+    "database": "Transport",
+    "sheet": "TrRoad_act",
+    "variable": "Vehicle-km driven (mio km)",
+    "sheet_last_row": "Heavy goods vehicles",
+    "sub_variables": ["Light commercial vehicles", "Heavy goods vehicles"],
+    "calc_names": ["HDVL", "HDVH"],
+}
 dm_hdvl = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 
 # # make hdvm as average between hdvh and hdvl (as it's vkm, the medium ones should carry around the average)
-# dm_temp = dm_hdvl.groupby({"HDVM" : ["HDVL","HDVH"]}, 
+# dm_temp = dm_hdvl.groupby({"HDVM" : ["HDVL","HDVH"]},
 #                           dim='Variables', aggregation = "mean", regex=False, inplace=False)
 # dm_hdvl.append(dm_temp, "Variables")
 # dm_hdvl.sort("Variables")
@@ -71,9 +74,9 @@ dm_hdvl = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 # | **HDVL** (light)        | 3.5–7.5 t | ~40%               |
 # | **HDVM** (medium)       | 7.5–16 t  | ~45%               |
 # | **HDVH* (heavy rigid)** | >16 t     | ~15%               |
-arr_medium = dm_hdvl[:,:,"HDVL"] * 0.6
-arr_light = dm_hdvl[:,:,"HDVL"] * 0.4
-dm_hdvl[:,:,"HDVL"] = arr_light
+arr_medium = dm_hdvl[:, :, "HDVL"] * 0.6
+arr_light = dm_hdvl[:, :, "HDVL"] * 0.4
+dm_hdvl[:, :, "HDVL"] = arr_light
 dm_hdvl.add(arr_medium, "Variables", "HDVM", "vehicles")
 dm_hdvl.sort("Variables")
 
@@ -157,32 +160,52 @@ dm_vkm = linear_fitting(dm_vkm, years_ots)
 ##### MAKE FTS #####
 ####################
 
+
 # make function to fill in missing years fts for EU27 with linear fitting
-def make_fts(dm, variable, year_start, year_end, country = "EU27", dim = "Categories1", 
-             min_t0=0, min_tb=0, years_fts = years_fts): # I put minimum to 1 so it does not go to zero
+def make_fts(
+    dm,
+    variable,
+    year_start,
+    year_end,
+    country="EU27",
+    dim="Categories1",
+    min_t0=0,
+    min_tb=0,
+    years_fts=years_fts,
+):  # I put minimum to 1 so it does not go to zero
     dm = dm.copy()
     idx = dm.idx
     based_on_yars = list(range(year_start, year_end + 1, 1))
-    dm_temp = linear_fitting(dm.filter({"Country" : [country], dim : [variable]}), 
-                             years_ots = years_fts, min_t0=min_t0, min_tb=min_tb, based_on = based_on_yars)
+    dm_temp = linear_fitting(
+        dm.filter({"Country": [country], dim: [variable]}),
+        years_ots=years_fts,
+        min_t0=min_t0,
+        min_tb=min_tb,
+        based_on=based_on_yars,
+    )
     idx_temp = dm_temp.idx
     if dim == "Variables":
-        dm.array[idx[country],:,idx[variable],...] = \
-            np.round(dm_temp.array[idx_temp[country],:,idx_temp[variable],...],0)
+        dm.array[idx[country], :, idx[variable], ...] = np.round(
+            dm_temp.array[idx_temp[country], :, idx_temp[variable], ...], 0
+        )
     if dim == "Categories1":
-        dm.array[idx[country],:,:,idx[variable]] = \
-            np.round(dm_temp.array[idx_temp[country],:,:,idx_temp[variable]], 0)
+        dm.array[idx[country], :, :, idx[variable]] = np.round(
+            dm_temp.array[idx_temp[country], :, :, idx_temp[variable]], 0
+        )
     if dim == "Categories2":
-        dm.array[idx[country],:,:,:,idx[variable]] = \
-            np.round(dm_temp.array[idx_temp[country],:,:,:,idx_temp[variable]], 0)
+        dm.array[idx[country], :, :, :, idx[variable]] = np.round(
+            dm_temp.array[idx_temp[country], :, :, :, idx_temp[variable]], 0
+        )
     if dim == "Categories3":
-        dm.array[idx[country],:,:,:,:,idx[variable]] = \
-            np.round(dm_temp.array[idx_temp[country],:,:,:,:,idx_temp[variable]], 0)
-    
+        dm.array[idx[country], :, :, :, :, idx[variable]] = np.round(
+            dm_temp.array[idx_temp[country], :, :, :, :, idx_temp[variable]], 0
+        )
+
     return dm
 
+
 # add missing years fts
-dm_vkm.add(np.nan, col_label=years_fts, dummy=True, dim='Years')
+dm_vkm.add(np.nan, col_label=years_fts, dummy=True, dim="Years")
 
 # set default time window for linear trend
 baseyear_start = 2000
@@ -194,13 +217,13 @@ baseyear_end = 2023
 #   datamatrix_plot(selected_cols={"Country" : ["EU27"], "Variables" : [product]}))
 
 # make fts
-dm_vkm = make_fts(dm_vkm, "HDVH", baseyear_start, baseyear_end, dim = "Variables")
-dm_vkm = make_fts(dm_vkm, "HDVL", baseyear_start, baseyear_end, dim = "Variables")
-dm_vkm = make_fts(dm_vkm, "HDVM", baseyear_start, baseyear_end, dim = "Variables")
+dm_vkm = make_fts(dm_vkm, "HDVH", baseyear_start, baseyear_end, dim="Variables")
+dm_vkm = make_fts(dm_vkm, "HDVL", baseyear_start, baseyear_end, dim="Variables")
+dm_vkm = make_fts(dm_vkm, "HDVM", baseyear_start, baseyear_end, dim="Variables")
 
 # rename and deepen
 for v in dm_vkm.col_labels["Variables"]:
-    dm_vkm.rename_col(v,"vkm_" + v, "Variables")
+    dm_vkm.rename_col(v, "vkm_" + v, "Variables")
 dm_vkm.deepen()
 
 # get it in vkm
@@ -216,19 +239,24 @@ dm_vkm.change_unit("vkm", 1e6, "mio vkm", "vkm")
 DM_tra["ots"]["freight_utilization-rate"].units
 
 # load tkm
-filepath = os.path.join(current_file_directory, '../data/datamatrix/intermediate_files/freight_tkm.pickle')
-with open(filepath, 'rb') as handle:
+filepath = os.path.join(
+    current_file_directory, "../data/datamatrix/intermediate_files/freight_tkm.pickle"
+)
+with open(filepath, "rb") as handle:
     DM_tkm = pickle.load(handle)
-dm_tkm = DM_tkm["ots"]["freight_tkm"].filter({"Categories1" : ['HDVH', 'HDVL', 'HDVM']})
-dm_tkm.append(DM_tkm["fts"]["freight_tkm"][1].filter({"Categories1" : ['HDVH', 'HDVL', 'HDVM']}),"Years")
+dm_tkm = DM_tkm["ots"]["freight_tkm"].filter({"Categories1": ["HDVH", "HDVL", "HDVM"]})
+dm_tkm.append(
+    DM_tkm["fts"]["freight_tkm"][1].filter({"Categories1": ["HDVH", "HDVL", "HDVM"]}),
+    "Years",
+)
 dm_tkm.sort("Years")
-dm_vkm.drop("Years",startyear)
+dm_vkm.drop("Years", startyear)
 
 # make tkm/vkm
 dm_uti = dm_tkm.copy()
 dm_uti.array = dm_uti.array / dm_vkm.array
 dm_uti.units["tra_freight_tkm"] = "tkm/vkm"
-dm_uti.rename_col("tra_freight_tkm","tra_freight_load-factor","Variables")
+dm_uti.rename_col("tra_freight_tkm", "tra_freight_load-factor", "Variables")
 
 ###############################################################################
 ############################### UTILIZATION RATE ##############################
@@ -241,19 +269,25 @@ DM_tra["ots"]["freight_utilization-rate"].units
 ###############
 
 # get data
-dict_extract = {"database" : "Transport",
-                "sheet" : "TrRoad_act",
-                "variable" : "Vehicle-km driven per vehicle annum (km/vehicle)",
-                "sheet_last_row" : "Heavy goods vehicles",
-                "sub_variables" : ["Light commercial vehicles",
-                                    "Heavy goods vehicles"],
-                "calc_names" : ["HDVL","HDVH"]}
+dict_extract = {
+    "database": "Transport",
+    "sheet": "TrRoad_act",
+    "variable": "Vehicle-km driven per vehicle annum (km/vehicle)",
+    "sheet_last_row": "Heavy goods vehicles",
+    "sub_variables": ["Light commercial vehicles", "Heavy goods vehicles"],
+    "calc_names": ["HDVL", "HDVH"],
+}
 dm_hdv = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 # df_check = dm_hdv.write_df()
 
 # make hdvm as average between hdvh and hdvl (as it's vkm, the medium ones should carry around the average)
-dm_temp = dm_hdv.groupby({"HDVM" : ["HDVL","HDVH"]}, 
-                          dim='Variables', aggregation = "mean", regex=False, inplace=False)
+dm_temp = dm_hdv.groupby(
+    {"HDVM": ["HDVL", "HDVH"]},
+    dim="Variables",
+    aggregation="mean",
+    regex=False,
+    inplace=False,
+)
 dm_hdv.append(dm_temp, "Variables")
 dm_hdv.sort("Variables")
 
@@ -270,41 +304,61 @@ dm_hdv = linear_fitting(dm_hdv, years_ots)
 ##### MAKE FTS #####
 ####################
 
+
 # make function to fill in missing years fts for EU27 with linear fitting
-def make_fts(dm, variable, year_start, year_end, country = "EU27", dim = "Categories1", 
-             min_t0=0, min_tb=0, years_fts = years_fts): # I put minimum to 1 so it does not go to zero
+def make_fts(
+    dm,
+    variable,
+    year_start,
+    year_end,
+    country="EU27",
+    dim="Categories1",
+    min_t0=0,
+    min_tb=0,
+    years_fts=years_fts,
+):  # I put minimum to 1 so it does not go to zero
     dm = dm.copy()
     idx = dm.idx
     based_on_yars = list(range(year_start, year_end + 1, 1))
-    dm_temp = linear_fitting(dm.filter({"Country" : [country], dim : [variable]}), 
-                             years_ots = years_fts, min_t0=min_t0, min_tb=min_tb, based_on = based_on_yars)
+    dm_temp = linear_fitting(
+        dm.filter({"Country": [country], dim: [variable]}),
+        years_ots=years_fts,
+        min_t0=min_t0,
+        min_tb=min_tb,
+        based_on=based_on_yars,
+    )
     idx_temp = dm_temp.idx
     if dim == "Variables":
-        dm.array[idx[country],:,idx[variable],...] = \
-            np.round(dm_temp.array[idx_temp[country],:,idx_temp[variable],...],0)
+        dm.array[idx[country], :, idx[variable], ...] = np.round(
+            dm_temp.array[idx_temp[country], :, idx_temp[variable], ...], 0
+        )
     if dim == "Categories1":
-        dm.array[idx[country],:,:,idx[variable]] = \
-            np.round(dm_temp.array[idx_temp[country],:,:,idx_temp[variable]], 0)
+        dm.array[idx[country], :, :, idx[variable]] = np.round(
+            dm_temp.array[idx_temp[country], :, :, idx_temp[variable]], 0
+        )
     if dim == "Categories2":
-        dm.array[idx[country],:,:,:,idx[variable]] = \
-            np.round(dm_temp.array[idx_temp[country],:,:,:,idx_temp[variable]], 0)
+        dm.array[idx[country], :, :, :, idx[variable]] = np.round(
+            dm_temp.array[idx_temp[country], :, :, :, idx_temp[variable]], 0
+        )
     if dim == "Categories3":
-        dm.array[idx[country],:,:,:,:,idx[variable]] = \
-            np.round(dm_temp.array[idx_temp[country],:,:,:,:,idx_temp[variable]], 0)
-    
+        dm.array[idx[country], :, :, :, :, idx[variable]] = np.round(
+            dm_temp.array[idx_temp[country], :, :, :, :, idx_temp[variable]], 0
+        )
+
     return dm
 
+
 # add missing years fts
-dm_hdv.add(np.nan, col_label=years_fts, dummy=True, dim='Years')
+dm_hdv.add(np.nan, col_label=years_fts, dummy=True, dim="Years")
 
 # set default time window for linear trend
 baseyear_start = 2000
 baseyear_end = 2023
 
 # make fts
-dm_hdv = make_fts(dm_hdv, "HDVH", baseyear_start, baseyear_end, dim = "Variables")
-dm_hdv = make_fts(dm_hdv, "HDVL", baseyear_start, baseyear_end, dim = "Variables")
-dm_hdv = make_fts(dm_hdv, "HDVM", baseyear_start, baseyear_end, dim = "Variables")
+dm_hdv = make_fts(dm_hdv, "HDVH", baseyear_start, baseyear_end, dim="Variables")
+dm_hdv = make_fts(dm_hdv, "HDVL", baseyear_start, baseyear_end, dim="Variables")
+dm_hdv = make_fts(dm_hdv, "HDVM", baseyear_start, baseyear_end, dim="Variables")
 
 ########################
 ##### PUT TOGETHER #####
@@ -312,10 +366,10 @@ dm_hdv = make_fts(dm_hdv, "HDVM", baseyear_start, baseyear_end, dim = "Variables
 
 # rename and deepen
 for v in dm_hdv.col_labels["Variables"]:
-    dm_hdv.rename_col(v,"tra_freight_utilisation-rate_" + v, "Variables")
+    dm_hdv.rename_col(v, "tra_freight_utilisation-rate_" + v, "Variables")
 dm_hdv.deepen()
 dm_hdv.units["tra_freight_utilisation-rate"] = "vkm/year"
-dm_hdv.drop("Years",startyear)
+dm_hdv.drop("Years", startyear)
 
 # check
 # dm_hdv.filter({"Country" : ["EU27"]}).datamatrix_plot()
@@ -325,46 +379,19 @@ dm_uti.append(dm_hdv, "Variables")
 # dm_uti.filter({"Country":["EU27"]}).write_df().to_csv("/Users/echiarot/Desktop/check.csv")
 
 # split ots and fts
-DM_uti = {"ots": {"freight_utilization-rate" : []}, "fts": {"freight_utilization-rate" : dict()}}
-DM_uti["ots"]["freight_utilization-rate"] = dm_uti.filter({"Years" : list(range(1990,baseyear+1))})
-for i in range(1,4+1):
-    DM_uti["fts"]["freight_utilization-rate"][i] = dm_uti.filter({"Years" : years_fts})
+DM_uti = {
+    "ots": {"freight_utilization-rate": []},
+    "fts": {"freight_utilization-rate": dict()},
+}
+DM_uti["ots"]["freight_utilization-rate"] = dm_uti.filter(
+    {"Years": list(range(1990, baseyear + 1))}
+)
+for i in range(1, 4 + 1):
+    DM_uti["fts"]["freight_utilization-rate"][i] = dm_uti.filter({"Years": years_fts})
 
 # save
-f = os.path.join(current_file_directory, '../data/datamatrix/lever_freight_utilization-rate.pickle')
-with open(f, 'wb') as handle:
+f = os.path.join(
+    current_file_directory, "../data/datamatrix/lever_freight_utilization-rate.pickle"
+)
+with open(f, "wb") as handle:
     pickle.dump(DM_uti, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

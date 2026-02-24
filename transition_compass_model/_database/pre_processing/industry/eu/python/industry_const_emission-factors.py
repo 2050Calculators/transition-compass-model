@@ -1,4 +1,3 @@
-
 # packages
 import pandas as pd
 import pickle
@@ -6,6 +5,7 @@ import os
 import numpy as np
 import warnings
 import re
+
 warnings.simplefilter("ignore")
 
 # directories
@@ -19,46 +19,54 @@ current_file_directory = os.getcwd()
 # Table 2.3 page 2.18
 
 # filepath
-filepath = os.path.join(current_file_directory, '../data/Literature/literature_review_ghg_emission_factors.xlsx')
+filepath = os.path.join(
+    current_file_directory,
+    "../data/Literature/literature_review_ghg_emission_factors.xlsx",
+)
 df = pd.read_excel(filepath)
 
 # order
 df = df.sort_values("carrier_calc")
 
 # melt
-df = pd.melt(df, id_vars = ["carrier_calc"], var_name='gas')
+df = pd.melt(df, id_vars=["carrier_calc"], var_name="gas")
 
 # make variable
-df["variable"] = [ec + "_" + gas + "[TWh/Mt]" for ec, gas in zip(df["carrier_calc"], df["gas"])]
+df["variable"] = [
+    ec + "_" + gas + "[TWh/Mt]" for ec, gas in zip(df["carrier_calc"], df["gas"])
+]
 
 # subset
-df = df.loc[:,["variable","value"]]
+df = df.loc[:, ["variable", "value"]]
 
 # make cdm
-from model.common.constant_data_matrix_class import ConstantDataMatrix
+from ......model.common.constant_data_matrix_class import ConstantDataMatrix
+
+
 def create_constant(df, variables):
-    
-    df_temp = df.loc[df["variable"].isin(variables),:]
-    
+
+    df_temp = df.loc[df["variable"].isin(variables), :]
+
     # put unit
     df_temp["unit"] = [i.split("[")[1].split("]")[0] for i in df_temp["variable"]]
-    
+
     const = {
-        'name': list(df_temp['variable']),
-        'value': list(df_temp['value']),
-        'idx': dict(zip(list(df_temp['variable']), range(len(df_temp['variable'])))),
-        'units': dict(zip(list(df_temp['variable']), list(df_temp['unit'])))
+        "name": list(df_temp["variable"]),
+        "value": list(df_temp["value"]),
+        "idx": dict(zip(list(df_temp["variable"]), range(len(df_temp["variable"])))),
+        "units": dict(zip(list(df_temp["variable"]), list(df_temp["unit"]))),
     }
-    
+
     # return
     return const
+
 
 tmp = create_constant(df, df["variable"])
 cdm = ConstantDataMatrix.create_from_constant(tmp, 0)
 cdm.deepen()
 
 # store
-CDM_emissions = {"combustion-emissions" : cdm}
+CDM_emissions = {"combustion-emissions": cdm}
 
 # df = cdm.write_df()
 # df["country"] = "all"
@@ -111,10 +119,14 @@ CDM_emissions = {"combustion-emissions" : cdm}
 # get year of selection
 year_start = 2021
 year_end = 2021
-years = list(range(year_start,year_end+1))
+years = list(range(year_start, year_end + 1))
 
 # filepath
-filepath = os.path.join(current_file_directory, '../data/JRC-IDEES-2021/EU27/JRC-IDEES-2021_Industry_EU27.xlsx')
+filepath = os.path.join(
+    current_file_directory,
+    "../data/JRC-IDEES-2021/EU27/JRC-IDEES-2021_Industry_EU27.xlsx",
+)
+
 
 # def my search
 def my_search(search, x):
@@ -123,118 +135,143 @@ def my_search(search, x):
     else:
         return bool(re.search(search, x, re.IGNORECASE))
 
+
 def get_data(filepath, tech_code, tech, tech_calc, years):
-    
+
     # get df
     df = pd.read_excel(filepath, tech_code + "_emi")
 
     # get data
-    ls_temp = [my_search(tech, i) for i in df.iloc[:,0]]
+    ls_temp = [my_search(tech, i) for i in df.iloc[:, 0]]
     index_row_start = [i for i, x in enumerate(ls_temp) if x][0]
-    df_temp = df.iloc[range(index_row_start, len(df)),:]
-    ls_temp = [my_search("process emissions", i) for i in df_temp.iloc[:,0]]
+    df_temp = df.iloc[range(index_row_start, len(df)), :]
+    ls_temp = [my_search("process emissions", i) for i in df_temp.iloc[:, 0]]
     if not any(ls_temp):
-        df_pe = pd.DataFrame({"variable" : ["process-emissions_" + tech_calc + "_CO2[Mt/Mt]"], "value" : [0], 
-                              "process-emissions": [0], "production" : [np.nan]})
+        df_pe = pd.DataFrame(
+            {
+                "variable": ["process-emissions_" + tech_calc + "_CO2[Mt/Mt]"],
+                "value": [0],
+                "process-emissions": [0],
+                "production": [np.nan],
+            }
+        )
         return df_pe
-    
+
     else:
         index_row_end = [i for i, x in enumerate(ls_temp) if x][0]
-        df_temp = df_temp.iloc[[0, index_row_end],:]
-    
+        df_temp = df_temp.iloc[[0, index_row_end], :]
+
         # melt
         id_var = df_temp.columns[0]
-        ls_temp = [my_search("Process emissions", i) for i in df_temp.loc[:,id_var]]
-        df_temp = df_temp.loc[ls_temp,[id_var] + years]
-        df_temp = pd.melt(df_temp, id_vars = [id_var], var_name='year')
-        df_temp = df_temp.groupby([id_var], as_index=False)['value'].agg(np.mean)
-        df_temp.columns = ["tech","value"]
+        ls_temp = [my_search("Process emissions", i) for i in df_temp.loc[:, id_var]]
+        df_temp = df_temp.loc[ls_temp, [id_var] + years]
+        df_temp = pd.melt(df_temp, id_vars=[id_var], var_name="year")
+        df_temp = df_temp.groupby([id_var], as_index=False)["value"].agg(np.mean)
+        df_temp.columns = ["tech", "value"]
         df_temp["tech"] = tech
         df_pe = df_temp.copy()
-    
+
         # physical output
         df = pd.read_excel(filepath, tech_code)
-    
+
         # get data
-        ls_temp = [my_search("physical output", i) for i in df.iloc[:,0]]
+        ls_temp = [my_search("physical output", i) for i in df.iloc[:, 0]]
         index_row_start = [i for i, x in enumerate(ls_temp) if x][0]
-        df_temp = df.loc[range(index_row_start,len(df)),:]
-        ls_temp = [my_search(tech, i) for i in df_temp.iloc[:,0]]
+        df_temp = df.loc[range(index_row_start, len(df)), :]
+        ls_temp = [my_search(tech, i) for i in df_temp.iloc[:, 0]]
         index_row_end = [i for i, x in enumerate(ls_temp) if x][0]
-        df_temp = df_temp.iloc[[0,index_row_end],:]
-        ls_temp = [my_search(tech, i) for i in df_temp.iloc[:,0]]
-        df_temp = df_temp.loc[ls_temp,:]
-    
+        df_temp = df_temp.iloc[[0, index_row_end], :]
+        ls_temp = [my_search(tech, i) for i in df_temp.iloc[:, 0]]
+        df_temp = df_temp.loc[ls_temp, :]
+
         # melt
         id_var = df_temp.columns[0]
-        df_temp = df_temp.loc[:,[id_var] + years]
-        df_temp = pd.melt(df_temp, id_vars = [id_var], var_name='year')
-        df_temp = df_temp.groupby([id_var], as_index=False)['value'].agg(np.mean)
-        df_temp.columns = ["tech","production"]
+        df_temp = df_temp.loc[:, [id_var] + years]
+        df_temp = pd.melt(df_temp, id_vars=[id_var], var_name="year")
+        df_temp = df_temp.groupby([id_var], as_index=False)["value"].agg(np.mean)
+        df_temp.columns = ["tech", "production"]
         df_temp["tech"] = tech
-    
+
         # merge
         df_pe = pd.merge(df_pe, df_temp, how="left", on=["tech"])
-        df_pe.loc[df_pe["tech"] == tech,"tech"] = tech_calc
+        df_pe.loc[df_pe["tech"] == tech, "tech"] = tech_calc
         df_check = df_pe.copy()
-    
+
         # convert units
-        df_pe["value"] = df_pe["value"]/1000
-        df_pe["production"] = df_pe["production"]/1000
-    
+        df_pe["value"] = df_pe["value"] / 1000
+        df_pe["production"] = df_pe["production"] / 1000
+
         # get emission factors
-        df_pe["value"] = df_pe["value"]/df_pe["production"]
-    
+        df_pe["value"] = df_pe["value"] / df_pe["production"]
+
         # clean
-        df_pe = df_pe.loc[:,["tech","value"]]
-        df_check.columns = ["tech","process-emissions","production"]
+        df_pe = df_pe.loc[:, ["tech", "value"]]
+        df_check.columns = ["tech", "process-emissions", "production"]
         df_pe = pd.merge(df_pe, df_check, how="left", on=["tech"])
-        df_pe.columns = ["variable","value","process-emissions","production"]
-        df_pe["variable"] = ["process-emissions_" + v + "_CO2[Mt/Mt]" for v in df_pe["variable"]]
-        
+        df_pe.columns = ["variable", "value", "process-emissions", "production"]
+        df_pe["variable"] = [
+            "process-emissions_" + v + "_CO2[Mt/Mt]" for v in df_pe["variable"]
+        ]
+
         # return
         return df_pe
 
 
-dict_input = {"Integrated steelworks" : ["ISI", "steel-BF-BOF"],
-              "Electric arc" : ["ISI", 'steel-scrap-EAF'],
-              "Cement" : ["NMM", "cement"],
-              "Glass production": ["NMM", "glass-glass-tech"],
-              "Basic chemicals": ['CHI','chem-chem-tech'],
-              "Pulp production": ['PPA','pulp-tech'],
-              "Paper production": ['PPA','paper-tech'],
-              "Aluminium - primary production" : ["NFM","aluminium-prim"],
-              "Aluminium - secondary production": ["NFM","aluminium-sec"],
-              "Other non-ferrous metals" : ["NFM","copper-tech"],
-              "Food, beverages and tobacco": ["FBT", "fbt-tech"],
-              "Machinery equipment": ["MAE", "mae-tech"],
-              "Other industrial sectors": ["OIS","ois-tech"],
-              "Textiles and leather" : ["TEL","textiles-tech"],
-              "Transport equipment" : ["TRE","tra-equip-tech"],
-              "Wood and wood products" : ["WWP", "wwp-tech"]}
+dict_input = {
+    "Integrated steelworks": ["ISI", "steel-BF-BOF"],
+    "Electric arc": ["ISI", "steel-scrap-EAF"],
+    "Cement": ["NMM", "cement"],
+    "Glass production": ["NMM", "glass-glass-tech"],
+    "Basic chemicals": ["CHI", "chem-chem-tech"],
+    "Pulp production": ["PPA", "pulp-tech"],
+    "Paper production": ["PPA", "paper-tech"],
+    "Aluminium - primary production": ["NFM", "aluminium-prim"],
+    "Aluminium - secondary production": ["NFM", "aluminium-sec"],
+    "Other non-ferrous metals": ["NFM", "copper-tech"],
+    "Food, beverages and tobacco": ["FBT", "fbt-tech"],
+    "Machinery equipment": ["MAE", "mae-tech"],
+    "Other industrial sectors": ["OIS", "ois-tech"],
+    "Textiles and leather": ["TEL", "textiles-tech"],
+    "Transport equipment": ["TRE", "tra-equip-tech"],
+    "Wood and wood products": ["WWP", "wwp-tech"],
+}
 
-df = pd.concat([get_data(filepath, dict_input[key][0], key, dict_input[key][1], years) for key in dict_input.keys()])
+df = pd.concat(
+    [
+        get_data(filepath, dict_input[key][0], key, dict_input[key][1], years)
+        for key in dict_input.keys()
+    ]
+)
 # OK values are good
 
 # clean
-df = df.loc[:,["variable","value"]]
-df.sort_values(by=["variable"],inplace=True)
+df = df.loc[:, ["variable", "value"]]
+df.sort_values(by=["variable"], inplace=True)
 
 # assign same process emissions to cement wet-kiln and dry-kiln, and 0 to cement-gepolym
-value = np.array(df.loc[df["variable"] == "process-emissions_cement_CO2[Mt/Mt]","value"])[0]
-df_temp = pd.DataFrame({"variable" : ["process-emissions_cement-dry-kiln_CO2[Mt/Mt]",
-                                      "process-emissions_cement-wet-kiln_CO2[Mt/Mt]",
-                                      "process-emissions_cement-geopolym_CO2[Mt/Mt]"],
-                        "value" : [value,value,0]})
+value = np.array(
+    df.loc[df["variable"] == "process-emissions_cement_CO2[Mt/Mt]", "value"]
+)[0]
+df_temp = pd.DataFrame(
+    {
+        "variable": [
+            "process-emissions_cement-dry-kiln_CO2[Mt/Mt]",
+            "process-emissions_cement-wet-kiln_CO2[Mt/Mt]",
+            "process-emissions_cement-geopolym_CO2[Mt/Mt]",
+        ],
+        "value": [value, value, 0],
+    }
+)
 df = pd.concat([df, df_temp])
-df = df.loc[df["variable"] != "process-emissions_cement_CO2[Mt/Mt]",:]
+df = df.loc[df["variable"] != "process-emissions_cement_CO2[Mt/Mt]", :]
 
 # ammonia
 # source: https://dechema.de/dechema_media/Downloads/Positionspapiere/Technology_study_Low_carbon_energy_and_feedstock_for_the_European_chemical_industry.pdf
 # page 57 Table 11
 value = 0.5
-df_temp = pd.DataFrame({"variable" : ["process-emissions_ammonia-tech_CO2[Mt/Mt]"],
-                        "value" : [value]})
+df_temp = pd.DataFrame(
+    {"variable": ["process-emissions_ammonia-tech_CO2[Mt/Mt]"], "value": [value]}
+)
 df = pd.concat([df, df_temp])
 
 # lime
@@ -244,28 +281,33 @@ quicklime = 0.751
 dolime = 0.807
 sintered_dolime = 0.913
 value = np.mean([quicklime, dolime, sintered_dolime])
-df_temp = pd.DataFrame({"variable" : ["process-emissions_lime-lime_CO2[Mt/Mt]"],
-                        "value" : [value]})
+df_temp = pd.DataFrame(
+    {"variable": ["process-emissions_lime-lime_CO2[Mt/Mt]"], "value": [value]}
+)
 df = pd.concat([df, df_temp])
-df.sort_values(by=["variable"],inplace=True)
+df.sort_values(by=["variable"], inplace=True)
 
 # steel dri
 # source: https://www.ipcc-nggip.iges.or.jp/public/2006gl/pdf/3_Volume3/V3_4_Ch4_Metal_Industry.pdf
 # page 4.25
 # assumption: process emissions of hydrogen DRI are the same of DRI
 value = 0.7
-df_temp = pd.DataFrame({"variable" : ["process-emissions_steel-hydrog-DRI_CO2[Mt/Mt]"],
-                        "value" : [value]})
+df_temp = pd.DataFrame(
+    {"variable": ["process-emissions_steel-hydrog-DRI_CO2[Mt/Mt]"], "value": [value]}
+)
 df = pd.concat([df, df_temp])
-df.sort_values(by=["variable"],inplace=True)
+df.sort_values(by=["variable"], inplace=True)
 
 # steel hisarna
 # assumption: 20% less than BF-BOF
-value = np.array(df.loc[df["variable"] == "process-emissions_steel-BF-BOF_CO2[Mt/Mt]","value"])[0]*(1-0.2)
-df_temp = pd.DataFrame({"variable" : ["process-emissions_steel-hisarna_CO2[Mt/Mt]"],
-                        "value" : [value]})
+value = np.array(
+    df.loc[df["variable"] == "process-emissions_steel-BF-BOF_CO2[Mt/Mt]", "value"]
+)[0] * (1 - 0.2)
+df_temp = pd.DataFrame(
+    {"variable": ["process-emissions_steel-hisarna_CO2[Mt/Mt]"], "value": [value]}
+)
 df = pd.concat([df, df_temp])
-df.sort_values(by=["variable"],inplace=True)
+df.sort_values(by=["variable"], inplace=True)
 
 # # aluminium-sec-post-consumer
 # # assumption: same of alluminium sec
@@ -280,9 +322,9 @@ df.sort_values(by=["variable"],inplace=True)
 # assuming that this is translated to process emissions (which make up for a large part of emissions from clinker)
 # I make an average between 0% and 80%
 # TODO: check the literature and re-do this
-ec_perc_less = np.mean(np.array([0,0.8]))
-df_temp = df.loc[df["variable"] == "process-emissions_cement-dry-kiln_CO2[Mt/Mt]",:]
-df_temp["value"] = df_temp["value"]*(1-ec_perc_less)
+ec_perc_less = np.mean(np.array([0, 0.8]))
+df_temp = df.loc[df["variable"] == "process-emissions_cement-dry-kiln_CO2[Mt/Mt]", :]
+df_temp["value"] = df_temp["value"] * (1 - ec_perc_less)
 df_temp["variable"] = "process-emissions_cement-sec_CO2[Mt/Mt]"
 df = pd.concat([df, df_temp])
 
@@ -290,7 +332,7 @@ df = pd.concat([df, df_temp])
 # it seems that energy consumption and emissions in post consumer recycling can differ a lot from chemical to chemial
 # so for the moment I will put it the same of chemicals primary
 # TODO: check the literature and re-do this
-df_temp = df.loc[df["variable"] == "process-emissions_chem-chem-tech_CO2[Mt/Mt]",:]
+df_temp = df.loc[df["variable"] == "process-emissions_chem-chem-tech_CO2[Mt/Mt]", :]
 df_temp["variable"] = "process-emissions_chem-sec_CO2[Mt/Mt]"
 df = pd.concat([df, df_temp])
 
@@ -300,7 +342,7 @@ df = pd.concat([df, df_temp])
 # is just due to the lower energy demand to make secondary copper. So process emissions
 # I will assign the same of process emissions for primary copper
 # TODO: check the literature and re-do this
-df_temp = df.loc[df["variable"] == "process-emissions_copper-tech_CO2[Mt/Mt]",:]
+df_temp = df.loc[df["variable"] == "process-emissions_copper-tech_CO2[Mt/Mt]", :]
 df_temp["variable"] = "process-emissions_copper-sec_CO2[Mt/Mt]"
 df = pd.concat([df, df_temp])
 
@@ -311,7 +353,7 @@ df = pd.concat([df, df_temp])
 # https://www.agc-glass.eu/en/sustainability/decarbonisation/recycling
 # no clear answer, so I will put the same of glass production for now
 # TODO: check the literature and re-do this
-df_temp = df.loc[df["variable"] == "process-emissions_glass-glass-tech_CO2[Mt/Mt]",:]
+df_temp = df.loc[df["variable"] == "process-emissions_glass-glass-tech_CO2[Mt/Mt]", :]
 df_temp["variable"] = "process-emissions_glass-sec_CO2[Mt/Mt]"
 df = pd.concat([df, df_temp])
 
@@ -333,18 +375,18 @@ df = pd.concat([df, df_temp])
 
 # ois-sec
 # assuming same of wwp-tech
-df_temp = df.loc[df["variable"] == "process-emissions_ois-tech_CO2[Mt/Mt]",:]
+df_temp = df.loc[df["variable"] == "process-emissions_ois-tech_CO2[Mt/Mt]", :]
 df_temp["variable"] = "process-emissions_ois-sec_CO2[Mt/Mt]"
 df = pd.concat([df, df_temp])
 
 # wwp-sec-post-consumer
 # assuming same of wwp-tech
-df_temp = df.loc[df["variable"] == "process-emissions_wwp-tech_CO2[Mt/Mt]",:]
+df_temp = df.loc[df["variable"] == "process-emissions_wwp-tech_CO2[Mt/Mt]", :]
 df_temp["variable"] = "process-emissions_wwp-sec_CO2[Mt/Mt]"
 df = pd.concat([df, df_temp])
 
 # sort
-df.sort_values(by=["variable"],inplace=True)
+df.sort_values(by=["variable"], inplace=True)
 
 ###############
 ##### N2O #####
@@ -354,33 +396,40 @@ df.sort_values(by=["variable"],inplace=True)
 # source: https://www.ipcc-nggip.iges.or.jp/public/2006gl/pdf/3_Volume3/V3_3_Ch3_Chemical_Industry.pdf
 # Table 3.3 page 3.23
 
-value = np.mean(np.array([2, 2.5, 5, 7, 9])/1000)
-df_N2O = pd.DataFrame({"variable" : ["process-emissions_ammonia-tech_N2O[Mt/Mt]"],
-                           "value" : [value]})
+value = np.mean(np.array([2, 2.5, 5, 7, 9]) / 1000)
+df_N2O = pd.DataFrame(
+    {"variable": ["process-emissions_ammonia-tech_N2O[Mt/Mt]"], "value": [value]}
+)
 
 # chemicals
 # source: https://www.ipcc-nggip.iges.or.jp/public/2006gl/pdf/3_Volume3/V3_3_Ch3_Chemical_Industry.pdf
 # Table 3.4 page 3.30
 # value = 300/1000
-# note: the 300/1000 is for nitrict acid, which is very high, and we have chemicals in general, 
+# note: the 300/1000 is for nitrict acid, which is very high, and we have chemicals in general,
 # which for the moment is mostly types of plastics, which do not have much of N2O emissions,
 # aside from PVC, but at this stage it would be difficult to do the split, so
 # we assign 0 N2O process emissions to chemicals.
 value = 0
-df_temp = pd.DataFrame({"variable" : ["process-emissions_chem-chem-tech_N2O[Mt/Mt]",
-                                      "process-emissions_chem-sec_N2O[Mt/Mt]"], # I assume post consumer it's the same for process emissions N2O
-                        "value" : [value, value]})
+df_temp = pd.DataFrame(
+    {
+        "variable": [
+            "process-emissions_chem-chem-tech_N2O[Mt/Mt]",
+            "process-emissions_chem-sec_N2O[Mt/Mt]",
+        ],  # I assume post consumer it's the same for process emissions N2O
+        "value": [value, value],
+    }
+)
 df_N2O = pd.concat([df_N2O, df_temp])
 
 # assign 0 to others
 techs = [i.split("_")[1].split("_")[0] for i in df["variable"]]
-drops = ["ammonia-tech","chem-chem-tech","chem-sec"]
+drops = ["ammonia-tech", "chem-chem-tech", "chem-sec"]
 idx = [i not in drops for i in techs]
 techs = list(np.array(techs)[idx])
 variabs = ["process-emissions_" + t + "_N2O[Mt/Mt]" for t in techs]
-df_temp = pd.DataFrame({"variable" : variabs, "value" : 0})
+df_temp = pd.DataFrame({"variable": variabs, "value": 0})
 df_N2O = pd.concat([df_N2O, df_temp])
-df_N2O.sort_values(by=["variable"],inplace=True)
+df_N2O.sort_values(by=["variable"], inplace=True)
 
 # put together
 df = pd.concat([df, df_N2O])
@@ -405,33 +454,35 @@ df = pd.concat([df, df_N2O])
 # so for the moment I assign 0 to all
 techs = set([i.split("_")[1].split("_")[0] for i in df["variable"]])
 variabs = ["process-emissions_" + t + "_CH4[Mt/Mt]" for t in techs]
-df_temp = pd.DataFrame({"variable" : variabs, "value" : 0})
+df_temp = pd.DataFrame({"variable": variabs, "value": 0})
 df = pd.concat([df, df_temp])
-df.sort_values(by=["variable"],inplace=True)
+df.sort_values(by=["variable"], inplace=True)
 
 ###########################################################
 ############# CONVERT TO CONSTANT DATA MATRIX #############
 ###########################################################
 
-from model.common.constant_data_matrix_class import ConstantDataMatrix
+from ......model.common.constant_data_matrix_class import ConstantDataMatrix
+
 
 # create dms
 def create_constant(df, variables):
-    
-    df_temp = df.loc[df["variable"].isin(variables),:]
-    
+
+    df_temp = df.loc[df["variable"].isin(variables), :]
+
     # put unit
     df_temp["unit"] = [i.split("[")[1].split("]")[0] for i in df_temp["variable"]]
-    
+
     const = {
-        'name': list(df_temp['variable']),
-        'value': list(df_temp['value']),
-        'idx': dict(zip(list(df_temp['variable']), range(len(df_temp['variable'])))),
-        'units': dict(zip(list(df_temp['variable']), list(df_temp['unit'])))
+        "name": list(df_temp["variable"]),
+        "value": list(df_temp["value"]),
+        "idx": dict(zip(list(df_temp["variable"]), range(len(df_temp["variable"])))),
+        "units": dict(zip(list(df_temp["variable"]), list(df_temp["unit"]))),
     }
-    
+
     # return
     return const
+
 
 # excluding feedstock
 tmp = create_constant(df, df["variable"])
@@ -442,8 +493,10 @@ cdm.deepen_twice()
 CDM_emissions["process-emissions"] = cdm
 
 # save
-f = os.path.join(current_file_directory, '../data/datamatrix/const_emissions-factors.pickle')
-with open(f, 'wb') as handle:
+f = os.path.join(
+    current_file_directory, "../data/datamatrix/const_emissions-factors.pickle"
+)
+with open(f, "wb") as handle:
     pickle.dump(CDM_emissions, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
@@ -452,24 +505,3 @@ with open(f, 'wb') as handle:
 # df_temp = pd.melt(df, id_vars = ['country'], var_name='variable')
 # name = "temp.xlsx"
 # df_temp.to_excel("~/Desktop/" + name)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

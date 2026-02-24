@@ -1,7 +1,8 @@
-from model.common.data_matrix_class import DataMatrix
+from ..common.data_matrix_class import DataMatrix
 import numpy as np
-import model.transport.utils as utils
-from model.common.auxiliary_functions import compute_stock
+from . import utils
+from ..common.auxiliary_functions import compute_stock
+
 
 def passenger_fleet_energy(DM_passenger, dm_lfs, DM_other, cdm_const, years_setting):
     # SECTION Passenger - Demand-pkm by mode
@@ -205,7 +206,14 @@ def passenger_fleet_energy(DM_passenger, dm_lfs, DM_other, cdm_const, years_sett
     idx_e = dm_energy_EV.idx
     arr = (
         dm_energy_EV.array[:, :, idx_e["tra_passenger_energy-demand"], :, :, np.newaxis]
-        * dm_fact.array[:, :, idx_f["tra_emission-factor"], np.newaxis, np.newaxis,:,idx_f["electricity"],
+        * dm_fact.array[
+            :,
+            :,
+            idx_f["tra_emission-factor"],
+            np.newaxis,
+            np.newaxis,
+            :,
+            idx_f["electricity"],
         ]
     )
     dm_emissions_elec = DataMatrix.based_on(
@@ -322,18 +330,39 @@ def passenger_fleet_energy(DM_passenger, dm_lfs, DM_other, cdm_const, years_sett
     dm_electricity.change_unit("tra_power-demand", 1e3, old_unit="TWh", new_unit="GWh")
 
     # Energy output for EnergyScope
-    arr_pkm = dm_mode[:, :, 'tra_passenger_occupancy', :, np.newaxis] \
-              * dm_tech[:, :, 'tra_passenger_transport-demand-vkm', :, :]
-    dm_tech.add(arr_pkm, dim='Variables', col_label='tra_passenger_transport-demand', unit='pkm')
-    dm_tech.operation('tra_passenger_energy-demand', '/', 'tra_passenger_transport-demand',
-                      out_col='tra_passenger_energy-intensity', unit='MJ/pkm')
-    dm_tech.change_unit('tra_passenger_energy-intensity', factor=3.6, old_unit='MJ/pkm', new_unit='kWh/pkm', operator='/')
-    dm_energyscope = dm_tech.filter({'Variables':  ['tra_passenger_transport-demand','tra_passenger_energy-intensity']})
+    arr_pkm = (
+        dm_mode[:, :, "tra_passenger_occupancy", :, np.newaxis]
+        * dm_tech[:, :, "tra_passenger_transport-demand-vkm", :, :]
+    )
+    dm_tech.add(
+        arr_pkm, dim="Variables", col_label="tra_passenger_transport-demand", unit="pkm"
+    )
+    dm_tech.operation(
+        "tra_passenger_energy-demand",
+        "/",
+        "tra_passenger_transport-demand",
+        out_col="tra_passenger_energy-intensity",
+        unit="MJ/pkm",
+    )
+    dm_tech.change_unit(
+        "tra_passenger_energy-intensity",
+        factor=3.6,
+        old_unit="MJ/pkm",
+        new_unit="kWh/pkm",
+        operator="/",
+    )
+    dm_energyscope = dm_tech.filter(
+        {
+            "Variables": [
+                "tra_passenger_transport-demand",
+                "tra_passenger_energy-intensity",
+            ]
+        }
+    )
 
     DM_passenger_out = {
-        'power': dm_energyscope,
+        "power": dm_energyscope,
     }
-
 
     # Power output (tra_power_demand _ hydrogen)
     dm_pow_hydrogen = dm_energy.filter({"Categories1": ["hydrogen"]})
@@ -598,20 +627,49 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     dm_electricity.change_unit("tra_power-demand", 1e3, old_unit="TWh", new_unit="GWh")
 
     # Energy output for EnergyScope
-    dm_demand_tkm = dm_mode_other.filter({'Variables': ['tra_freight_transport-demand']})
-    dm_demand_tkm.append(dm_mode_road.filter({'Variables': ['tra_freight_transport-demand']}), dim='Categories1')
-    dm_demand_tkm.sort('Categories1')
-        #.add(dm_mode_road, dim='Variables')
-    arr_pkm = dm_demand_tkm[:, :, 'tra_freight_transport-demand', :, np.newaxis] \
-              * dm_tech[:, :, 'tra_freight_technology-share_fleet', :, :]
-    dm_tech.add(arr_pkm, dim='Variables', col_label='tra_freight_transport-demand-tkm', unit='tkm')
-    dm_tech.operation('tra_freight_energy-demand', '/', 'tra_freight_transport-demand-tkm',
-                      out_col='tra_freight_energy-intensity', unit='MJ/tkm')
-    dm_tech.change_unit('tra_freight_energy-intensity', factor=2.77778e-1, old_unit='MJ/tkm', new_unit='kWh/tkm')
-    dm_energyscope = dm_tech.filter({'Variables': ['tra_freight_transport-demand-tkm', 'tra_freight_energy-intensity']})
+    dm_demand_tkm = dm_mode_other.filter(
+        {"Variables": ["tra_freight_transport-demand"]}
+    )
+    dm_demand_tkm.append(
+        dm_mode_road.filter({"Variables": ["tra_freight_transport-demand"]}),
+        dim="Categories1",
+    )
+    dm_demand_tkm.sort("Categories1")
+    # .add(dm_mode_road, dim='Variables')
+    arr_pkm = (
+        dm_demand_tkm[:, :, "tra_freight_transport-demand", :, np.newaxis]
+        * dm_tech[:, :, "tra_freight_technology-share_fleet", :, :]
+    )
+    dm_tech.add(
+        arr_pkm,
+        dim="Variables",
+        col_label="tra_freight_transport-demand-tkm",
+        unit="tkm",
+    )
+    dm_tech.operation(
+        "tra_freight_energy-demand",
+        "/",
+        "tra_freight_transport-demand-tkm",
+        out_col="tra_freight_energy-intensity",
+        unit="MJ/tkm",
+    )
+    dm_tech.change_unit(
+        "tra_freight_energy-intensity",
+        factor=2.77778e-1,
+        old_unit="MJ/tkm",
+        new_unit="kWh/tkm",
+    )
+    dm_energyscope = dm_tech.filter(
+        {
+            "Variables": [
+                "tra_freight_transport-demand-tkm",
+                "tra_freight_energy-intensity",
+            ]
+        }
+    )
 
     DM_freight_out = {
-        'power': dm_energyscope,
+        "power": dm_energyscope,
     }
 
     ## end
@@ -677,12 +735,14 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     missing_cat_road = list(set(all_modes) - set(dm_energy.col_labels["Categories1"]))
     dm_energy.add(np.nan, dummy=True, dim="Categories1", col_label=missing_cat_road)
 
-    dm_energy.append(dm_energy_marine, dim='Categories2')
-    dm_energy.append(dm_energy_aviation, dim='Categories2')
+    dm_energy.append(dm_energy_marine, dim="Categories2")
+    dm_energy.append(dm_energy_aviation, dim="Categories2")
 
     # Group together by fuel type, drop mode
-    dm_total_energy = dm_energy.group_all('Categories1', inplace=False)
-    dm_total_energy.rename_col('tra_freight_energy-demand', 'tra_freight_total-energy', dim='Variables')
+    dm_total_energy = dm_energy.group_all("Categories1", inplace=False)
+    dm_total_energy.rename_col(
+        "tra_freight_energy-demand", "tra_freight_total-energy", dim="Variables"
+    )
 
     # Output to power:
     dm_pow_hydrogen = dm_total_energy.filter({"Categories1": ["hydrogen"]})
@@ -735,19 +795,30 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     del dm_energy_em, tmp, col_labels, unit
 
     # Compute emissions by mode
-    dm_energy_em = dm_energy.filter({'Categories2': cdm_const.col_labels['Categories2']})
-    dm_energy_em.sort(dim='Categories2')
-    cdm_const.sort(dim='Categories2')
+    dm_energy_em = dm_energy.filter(
+        {"Categories2": cdm_const.col_labels["Categories2"]}
+    )
+    dm_energy_em.sort(dim="Categories2")
+    cdm_const.sort(dim="Categories2")
     idx_e = dm_energy_em.idx
     idx_c = cdm_const.idx
-    tmp = dm_energy_em.array[:, :, idx_e['tra_freight_energy-demand'], :, np.newaxis, :] \
-          * cdm_const.array[np.newaxis, np.newaxis, idx_c['cp_tra_emission-factor'], np.newaxis, :, :]
+    tmp = (
+        dm_energy_em.array[:, :, idx_e["tra_freight_energy-demand"], :, np.newaxis, :]
+        * cdm_const.array[
+            np.newaxis, np.newaxis, idx_c["cp_tra_emission-factor"], np.newaxis, :, :
+        ]
+    )
     tmp = np.nansum(tmp, axis=-1)  # Remove split by fuel
     tmp = tmp[:, :, np.newaxis, :, :]
-    dm_emissions_by_mode = DataMatrix.based_on(tmp, format=dm_energy_em,
-                                               change={'Variables': ['tra_freight_emissions'],
-                                                       'Categories2': cdm_const.col_labels['Categories1']},
-                                               units={'tra_freight_emissions': 'Mt'})
+    dm_emissions_by_mode = DataMatrix.based_on(
+        tmp,
+        format=dm_energy_em,
+        change={
+            "Variables": ["tra_freight_emissions"],
+            "Categories2": cdm_const.col_labels["Categories1"],
+        },
+        units={"tra_freight_emissions": "Mt"},
+    )
 
     del tmp, idx_e, idx_c, dm_energy_em
 
@@ -760,13 +831,17 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     dm_emissions_by_GHG.array = tmp[:, :, np.newaxis, :]
     del tmp, unit, col_labels
 
-    dm_tech.rename_col('tra_freight_technology-share_fleet', 'tra_freight_technology-share-fleet', dim='Variables')
+    dm_tech.rename_col(
+        "tra_freight_technology-share_fleet",
+        "tra_freight_technology-share-fleet",
+        dim="Variables",
+    )
 
-    DM_freight_out['mode'] = dm_mode
-    DM_freight_out['tech'] = dm_tech
-    DM_freight_out['energy'] = dm_total_energy
-    DM_freight_out['agriculture'] = dm_biogas
-    DM_freight_out['emissions'] = dm_emissions_by_mode
+    DM_freight_out["mode"] = dm_mode
+    DM_freight_out["tech"] = dm_tech
+    DM_freight_out["energy"] = dm_total_energy
+    DM_freight_out["agriculture"] = dm_biogas
+    DM_freight_out["emissions"] = dm_emissions_by_mode
 
     return DM_freight_out
 
@@ -816,4 +891,12 @@ def dummy_tra_infrastructure_workflow(dm_pop):
         new_col="tra_new_infrastructure",
     )
 
-    return dm_infra.filter({"Variables": ["tra_new_infrastructure","tra_infrastructure_waste","tra_tot-infrastructure"]})
+    return dm_infra.filter(
+        {
+            "Variables": [
+                "tra_new_infrastructure",
+                "tra_infrastructure_waste",
+                "tra_tot-infrastructure",
+            ]
+        }
+    )

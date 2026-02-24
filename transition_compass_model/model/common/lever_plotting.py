@@ -21,7 +21,7 @@ def get_lever_data_to_plot(lever_name, DM_input):
         !FIXME: multiply by 100 when %
         !FIXME: add switch-case when there are multiple sublever, return sublever if there is a single one
     """
-    from model.common.auxiliary_functions import return_lever_data
+    from ..common.auxiliary_functions import return_lever_data
 
     DM_lever = return_lever_data(lever_name, DM_input)
     DM_clean = dict()

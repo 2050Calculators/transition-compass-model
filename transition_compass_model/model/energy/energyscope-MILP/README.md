@@ -1,20 +1,20 @@
 # Acknowledging authorship
 
-In the academic spirit of collaboration, the source code should be appropriately acknowledged in the resulting scientific disseminations.  
+In the academic spirit of collaboration, the source code should be appropriately acknowledged in the resulting scientific disseminations.
 You may cite it as follows:
 
 - [1], for reference to the origins of the EnergyScope project or to the first online version of the calculator energyscope.ch
 - [2], for reference to the energyscope MILP modeling framework
 - [3], for reference to this specific release of the model (v1 monthly MILP)
 
-You are welcome to report any bugs related to the code to the following:  
+You are welcome to report any bugs related to the code to the following:
 moret.stefano@gmail.com
 
 # Content
 
-This folder contains the first release (v1, monthly MILP) of the EnergyScope (ES) model.  
-More recent releases are available @ the energyscope project repository: https://github.com/energyscope/EnergyScope  
-This version of the model corresponds to the one documented in [3], Chapter 1.  
+This folder contains the first release (v1, monthly MILP) of the EnergyScope (ES) model.
+More recent releases are available @ the energyscope project repository: https://github.com/energyscope/EnergyScope
+This version of the model corresponds to the one documented in [3], Chapter 1.
 The data used in this version of the model are fully documented in [3], Appendix A.
 
 # How to run the model
@@ -31,11 +31,11 @@ b) on Mac Os X (Option 2)/Linux:
 - Download the latest version of GLPK from: http://www.gnu.org/software/glpk/#downloading
 - Install GLPK from the command line
 
-$ cd ~/Downloads  
-$ tar -xzf glpk-4.63.tar.gz  
-$ cd glpk-4.63 [or newer version]  
-$ ./configure --prefix=/usr/local  
-$ make  
+$ cd ~/Downloads
+$ tar -xzf glpk-4.63.tar.gz
+$ cd glpk-4.63 [or newer version]
+$ ./configure --prefix=/usr/local
+$ make
 $ sudo make install
 
 See if your system recognises it:
@@ -75,7 +75,7 @@ If the command at point (3) did not run, it might be that glpsol is not on your 
 
 The model was originally developed in AMPL. Compatible solvers are CPLEX, Gurobi, etc. Running the model in AMPL requires the licences of AMPL and of at least one MILP solver.
 
-References:  
-[1] V. Codina Gironès, S. Moret, F. Maréchal, D. Favrat (2015). Strategic energy planning for large-scale energy systems: A modelling framework to aid decision-making. Energy, 90(PA1), 173–186. https://doi.org/10.1016/j.energy.2015.06.008  
-[2] S. Moret, M. Bierlaire, F. Maréchal (2016). Strategic Energy Planning under Uncertainty: a Mixed-Integer Linear Programming Modeling Framework for Large-Scale Energy Systems. https://doi.org/10.1016/B978-0-444-63428-3.50321-0  
+References:
+[1] V. Codina Gironès, S. Moret, F. Maréchal, D. Favrat (2015). Strategic energy planning for large-scale energy systems: A modelling framework to aid decision-making. Energy, 90(PA1), 173–186. https://doi.org/10.1016/j.energy.2015.06.008
+[2] S. Moret, M. Bierlaire, F. Maréchal (2016). Strategic Energy Planning under Uncertainty: a Mixed-Integer Linear Programming Modeling Framework for Large-Scale Energy Systems. https://doi.org/10.1016/B978-0-444-63428-3.50321-0
 [3] S. Moret (2017). Strategic Energy Planning under Uncertainty. PhD Thesis n. 7961, EPFL, Switzerland. http://dx.doi.org/10.5075/epfl-thesis-7961

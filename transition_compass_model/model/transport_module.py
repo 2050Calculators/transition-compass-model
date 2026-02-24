@@ -1,16 +1,15 @@
+from .common.interface_class import Interface
 
-from model.common.interface_class import Interface
-
-from model.common.auxiliary_functions import (
+from .common.auxiliary_functions import (
     read_level_data,
-  filter_country_and_load_data_from_pickles,
+    filter_country_and_load_data_from_pickles,
 )
 import pickle
 import json
 import os
 
-import model.transport.interfaces as inter
-import model.transport.workflows as wkf
+from .transport import interfaces as inter
+from .transport import workflows as wkf
 
 
 def read_data(DM_transport, lever_setting):
@@ -115,8 +114,10 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
         DM_freight, DM_other, cdm_const_freight, years_setting
     )
 
-    DM_power = inter.tra_energy_interface(DM_passenger_out['power'], DM_freight_out['power'], write_pickle=False)
-    interface.add_link(from_sector='transport', to_sector='energy', dm=DM_power)
+    DM_power = inter.tra_energy_interface(
+        DM_passenger_out["power"], DM_freight_out["power"], write_pickle=False
+    )
+    interface.add_link(from_sector="transport", to_sector="energy", dm=DM_power)
     # df = dm_power.write_df()
     # df.to_excel('transport-to-power.xlsx', index=False)
 
@@ -156,7 +157,9 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
         }
     )
     dm_infrastructure = wkf.dummy_tra_infrastructure_workflow(dm_lfs)
-    DM_industry = inter.tra_industry_interface(dm_freight_veh.copy(), dm_passenger_veh.copy(), dm_infrastructure)
+    DM_industry = inter.tra_industry_interface(
+        dm_freight_veh.copy(), dm_passenger_veh.copy(), dm_infrastructure
+    )
     # DM_minerals = tra_minerals_interface(dm_freight_veh, dm_passenger_veh, DM_industry, dm_infrastructure, write_xls=False)
     # !FIXME: add km infrastructure data, using compute_stock with tot_km and renovation rate as input.
     #  data for ch ok, data for eu, backcalculation? dummy based on swiss pop?
@@ -165,8 +168,12 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     # interface.add_link(from_sector='transport', to_sector='minerals', dm=DM_minerals)
 
     # Emissions
-    dm_emissions = inter.tra_emissions_interface(DM_passenger_out["emissions"], DM_freight_out["emissions"])
-    interface.add_link(from_sector="transport", to_sector="emissions", dm=dm_emissions.copy())
+    dm_emissions = inter.tra_emissions_interface(
+        DM_passenger_out["emissions"], DM_freight_out["emissions"]
+    )
+    interface.add_link(
+        from_sector="transport", to_sector="emissions", dm=dm_emissions.copy()
+    )
 
     # Local transport emissions
     N2O_to_CO2 = 265
@@ -197,10 +204,12 @@ def local_transport_run():
     lever_setting = json.load(f)[0]
 
     # get geoscale
-    country_list = ['EU27', 'Switzerland', 'Vaud']
-    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'transport')
+    country_list = ["EU27", "Switzerland", "Vaud"]
+    DM_input = filter_country_and_load_data_from_pickles(
+        country_list=country_list, modules_list="transport"
+    )
 
-    results_run = transport(lever_setting, years_setting, DM_input['transport'])
+    results_run = transport(lever_setting, years_setting, DM_input["transport"])
 
     return results_run
 
@@ -210,4 +219,4 @@ def local_transport_run():
 # print('Apply technology shares before computing the stock')
 # print('For the efficiency, use the new methodology developped for Building (see overleaf on U-value)')
 if __name__ == "__main__":
-  results_run = local_transport_run()
+    results_run = local_transport_run()

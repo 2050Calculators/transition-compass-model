@@ -9,7 +9,9 @@ class Interface:
         # Prevent reverse direction connections
         reverse_key = (to_sector, from_sector)
         if reverse_key in self.link:
-            raise ValueError(f"Connection from {to_sector} to {from_sector} already exists. Can't add reverse.")
+            raise ValueError(
+                f"Connection from {to_sector} to {from_sector} already exists. Can't add reverse."
+            )
 
         # Add the new connection
         self.link[key] = dm

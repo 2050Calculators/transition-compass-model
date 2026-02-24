@@ -1,6 +1,6 @@
 import numpy as np
-from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import (
+from ..common.data_matrix_class import DataMatrix
+from ..common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
     moving_average,
@@ -1250,7 +1250,7 @@ def bld_emissions_appliances_workflow(DM_cooking_cooling, dm_hot_water, cdm_cons
         )
         assert (
             cdm_const_tmp.col_labels["Categories1"] == dm_tmp.col_labels["Categories1"]
-        ), f"Fuels categories do not match"
+        ), "Fuels categories do not match"
         # Multiply energy * emissions-factors
         arr_emission = (
             dm_tmp.array[:, :, 0, ...]

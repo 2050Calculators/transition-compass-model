@@ -1,4 +1,11 @@
-from . import data
-from . import pre_processing
+""" Database module."""
 
-__all__ = ["data", "pre_processing"]
+from . import data
+
+# Note: pre_processing contains standalone scripts that execute at import time
+# from . import pre_processing
+
+__all__ = [
+    "data",
+    # "pre_processing",  # Excluded - contains standalone preprocessing scripts
+]
