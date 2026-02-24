@@ -28,7 +28,7 @@ def make_co2_equivalent(dm_emi):
     GWP_CH4 = 28
     
     dm_out[...,"N2O"] = dm_out[...,"N2O"] * GWP_N2O
-    dm_out[...,"CH4"] = dm_out[...,"N2O"] * GWP_CH4
+    dm_out[...,"CH4"] = dm_out[...,"CH4"] * GWP_CH4
     
     dm_out.group_all("Categories2")
     
