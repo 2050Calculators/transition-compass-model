@@ -3,6 +3,7 @@
 ########################################
 
 import numpy as np
+from model.common.auxiliary_functions import dm_add_missing_variables
 
 
 def compute_renewal_rate_and_adjust(dm, var_names, max_rr):
@@ -129,16 +130,17 @@ def run(dm_private_fleet, dm_public_fleet):
 
     # SECTION Renewal-rate % - New vehicles - vehicles Waste (bus, rail, metrotram) ots
     # Use renewal-rate (1/lifetime) to compute the new public fleet
-    missing_cat = set(dm_public_fleet.col_labels["Categories2"]) - set(
-        dm_renewal_rate.col_labels["Categories2"]
+    # Complete
+    from model.common.auxiliary_functions import dm_add_missing_variables
+
+    dm_add_missing_variables(
+        dm_renewal_rate,
+        {
+            "Categories1": dm_public_fleet.col_labels["Categories1"],
+            "Categories2": dm_public_fleet.col_labels["Categories2"],
+        },
     )
-    dm_renewal_rate.add(np.nan, dim="Categories2", col_label=missing_cat, dummy=True)
-    dm_renewal_rate.add(
-        np.nan,
-        dim="Categories1",
-        col_label=dm_public_fleet.col_labels["Categories1"],
-        dummy=True,
-    )
+
     idx = dm_renewal_rate.idx
     idx_cat2_public = [idx[cat] for cat in dm_public_fleet.col_labels["Categories2"]]
     dm_renewal_rate.array[
