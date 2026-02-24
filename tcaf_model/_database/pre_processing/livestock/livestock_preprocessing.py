@@ -2188,7 +2188,10 @@ def livestock_emissions(file_dict):
     # MANURE EMISSIONS (APPLIED, PASTURE & TREATED) ------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
     try:
-        df_manure_n = pd.read_csv(file_dict["EMN_N_Switzerland"])
+        # df_manure_n = pd.read_csv(file_dict['EMN_N_Switzerland'])
+        df_manure_n_a = pd.read_csv(file_dict["EMN_N_Europe_part-1"])
+        df_manure_n_b = pd.read_csv(file_dict["EMN_N_Europe_part-2"])
+        df_manure_n = pd.concat([df_manure_n_a, df_manure_n_b])
 
     except OSError:
         list_elements = [
@@ -2442,6 +2445,10 @@ def livestock_emissions(file_dict):
     df_manure_pathwaycalc = df_manure_pathwaycalc[
         ~df_manure_pathwaycalc["variables"].str.contains("fxa", case=False, na=False)
     ]
+
+    # Ensure structure
+    df_manure_pathwaycalc = ensure_structure(df_manure_pathwaycalc)
+    df_fxa_manure_yield = ensure_structure(df_fxa_manure_yield)
 
     # Format as datamatrix
     lever = "dummy"
@@ -4268,6 +4275,8 @@ def manure_fxa(
         columns={"Area": "geoscale", "Year": "timescale"}, inplace=True
     )
 
+    df_manure_fxa.to_csv("data/manure_fxa.csv")
+
     # Adding the columns module, lever, level and string-pivot at the correct places
     df_manure_fxa["module"] = "agriculture"
     lever = "dummy"
@@ -4278,17 +4287,6 @@ def manure_fxa(
     cols.insert(cols.index("value"), cols.pop(cols.index("lever")))
     cols.insert(cols.index("value"), cols.pop(cols.index("level")))
     df_manure_fxa = df_manure_fxa[cols]
-
-    # Rename countries to Pathaywcalc name
-    df_manure_fxa["geoscale"] = df_manure_fxa["geoscale"].replace(
-        "United Kingdom of Great Britain and Northern Ireland", "United Kingdom"
-    )
-    df_manure_fxa["geoscale"] = df_manure_fxa["geoscale"].replace(
-        "Netherlands (Kingdom of the)", "Netherlands"
-    )
-    df_manure_fxa["geoscale"] = df_manure_fxa["geoscale"].replace(
-        "Czechia", "Czech Republic"
-    )
 
     # Extrapolating
     df_manure_fxa = ensure_structure(df_manure_fxa)
@@ -5142,6 +5140,8 @@ file_dict = {
     "GLE_emissions_poultry": "data/faostat/GLE_csv/GLE_emissions_poultry.csv",
     "GLE_emissions_others": "data/faostat/GLE_csv/GLE_emissions_others.csv",
     "EMN_N_Switzerland": "data/faostat/EMN_csv/EMN_nitrogen_Switzerland.csv",
+    "EMN_N_Europe_part-1": "data/faostat/EMN_csv/EMN_nitrogen_Europe_part-1.csv",
+    "EMN_N_Europe_part-2": "data/faostat/EMN_csv/EMN_nitrogen_Europe_part-2.csv",
     "FBS_feed": "data/faostat/FBS-H_csv/FBS_feed.csv",
     "FBSH_feed": "data/faostat/FBS-H_csv/FBSH_feed.csv",
     "SCL_molasse_cake": "data/faostat/SCL_csv/SCL_feed_molasse_cake.csv",
