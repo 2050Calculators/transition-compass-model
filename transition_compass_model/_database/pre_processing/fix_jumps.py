@@ -1,6 +1,7 @@
 from statsmodels.robust.scale import mad
 import numpy as np
 
+
 # fix jumps
 def fix_jumps(ts, mad_multiple=3, consec_do_nothing=False, consec_fill_with_nan=False):
     # MAD is median absolute deviation
@@ -32,7 +33,9 @@ def fix_jumps(ts, mad_multiple=3, consec_do_nothing=False, consec_fill_with_nan=
 
         # get deviation from median
         deviation_from_median = np.abs(ts_nonzero - np.nanmedian(ts_nonzero))
-        mad_threshold = mad_multiple * mad(ts_nonzero)  # Use a threshold multiple of MAD
+        mad_threshold = mad_multiple * mad(
+            ts_nonzero
+        )  # Use a threshold multiple of MAD
         jumps = np.where(deviation_from_median > mad_threshold)[0]
 
         # correct jumps with mean between before and after
@@ -48,10 +51,16 @@ def fix_jumps(ts, mad_multiple=3, consec_do_nothing=False, consec_fill_with_nan=
                         # if there is a consecutive jump after
                         if jumps[i + 1] == jumps[i] + 1 and consec_do_nothing == True:
                             # either do nothing
-                            if consec_do_nothing == True and consec_fill_with_nan == False:
+                            if (
+                                consec_do_nothing == True
+                                and consec_fill_with_nan == False
+                            ):
                                 corrected_ts[jumps[i]] = corrected_ts[jumps[i]]
                             # or fill with nan
-                            if consec_do_nothing == True and consec_fill_with_nan == True:
+                            if (
+                                consec_do_nothing == True
+                                and consec_fill_with_nan == True
+                            ):
                                 corrected_ts[jumps[i]] = np.nan
                         # otherwise just fill with the following number
                         else:
@@ -65,10 +74,16 @@ def fix_jumps(ts, mad_multiple=3, consec_do_nothing=False, consec_fill_with_nan=
                         # if there is a consecutive jump before
                         if jumps[i] - 1 == jumps[i - 1] and consec_do_nothing == True:
                             # either do nothing
-                            if consec_do_nothing == True and consec_fill_with_nan == False:
+                            if (
+                                consec_do_nothing == True
+                                and consec_fill_with_nan == False
+                            ):
                                 corrected_ts[jumps[i]] = corrected_ts[jumps[i]]
                             # or fill with nan
-                            if consec_do_nothing == True and consec_fill_with_nan == True:
+                            if (
+                                consec_do_nothing == True
+                                and consec_fill_with_nan == True
+                            ):
                                 corrected_ts[jumps[i]] = np.nan
                         # otherwise just fill with the previous number
                         else:
@@ -81,22 +96,36 @@ def fix_jumps(ts, mad_multiple=3, consec_do_nothing=False, consec_fill_with_nan=
                     if len(jumps) > 1:
                         # if there is a consecutive jump before or after
                         if i + 1 == len(jumps):
-                            condition = (jumps[i] - 1 == jumps[i - 1]) and consec_do_nothing == True
+                            condition = (
+                                jumps[i] - 1 == jumps[i - 1]
+                            ) and consec_do_nothing == True
                         else:
-                            condition = (jumps[i] - 1 == jumps[i - 1] or jumps[i] + 1 == jumps[
-                                i + 1]) and consec_do_nothing == True
+                            condition = (
+                                jumps[i] - 1 == jumps[i - 1]
+                                or jumps[i] + 1 == jumps[i + 1]
+                            ) and consec_do_nothing == True
                         if condition:
                             # either do nothing:
-                            if consec_do_nothing == True and consec_fill_with_nan == False:
+                            if (
+                                consec_do_nothing == True
+                                and consec_fill_with_nan == False
+                            ):
                                 corrected_ts[jumps[i]] = corrected_ts[jumps[i]]
                             # or fill with nan
-                            if consec_do_nothing == True and consec_fill_with_nan == True:
+                            if (
+                                consec_do_nothing == True
+                                and consec_fill_with_nan == True
+                            ):
                                 corrected_ts[jumps[i]] = np.nan
                         # otherwise just fill with mean
                         else:
-                            corrected_ts[jumps[i]] = (corrected_ts[jumps[i] - 1] + corrected_ts[jumps[i] + 1]) / 2
+                            corrected_ts[jumps[i]] = (
+                                corrected_ts[jumps[i] - 1] + corrected_ts[jumps[i] + 1]
+                            ) / 2
                     else:
-                        corrected_ts[jumps[i]] = (corrected_ts[jumps[i] - 1] + corrected_ts[jumps[i] + 1]) / 2
+                        corrected_ts[jumps[i]] = (
+                            corrected_ts[jumps[i] - 1] + corrected_ts[jumps[i] + 1]
+                        ) / 2
         else:
             corrected_ts = ts_nonzero
 
@@ -110,7 +139,9 @@ def fix_jumps(ts, mad_multiple=3, consec_do_nothing=False, consec_fill_with_nan=
     return ts_new
 
 
-def fix_jumps_in_dm(dm, mad_multiple=3, consec_do_nothing=False, consec_fill_with_nan=False):
+def fix_jumps_in_dm(
+    dm, mad_multiple=3, consec_do_nothing=False, consec_fill_with_nan=False
+):
     # flatten
     if len(dm.dim_labels) == 3:
         dm_temp = dm.copy()
@@ -128,9 +159,12 @@ def fix_jumps_in_dm(dm, mad_multiple=3, consec_do_nothing=False, consec_fill_wit
     for c in countries:
         for v in variabs:
             ts = dm_temp.array[idx[c], :, idx[v]]
-            dm_temp.array[idx[c], :, idx[v]] = fix_jumps(ts, mad_multiple=mad_multiple,
-                                                         consec_do_nothing=consec_do_nothing,
-                                                         consec_fill_with_nan=consec_fill_with_nan)
+            dm_temp.array[idx[c], :, idx[v]] = fix_jumps(
+                ts,
+                mad_multiple=mad_multiple,
+                consec_do_nothing=consec_do_nothing,
+                consec_fill_with_nan=consec_fill_with_nan,
+            )
 
     # deepen
     if len(dm.dim_labels) == 4:

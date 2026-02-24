@@ -1,8 +1,7 @@
-from model.common.data_matrix_class import DataMatrix
 import os
 import numpy as np
 import pickle
-from model.common.auxiliary_functions import my_pickle_dump
+from ..common.auxiliary_functions import my_pickle_dump
 
 
 def tra_industry_interface(

@@ -5,7 +5,7 @@
 # Author: Stefano Moret
 # Date: 27.10.2017
 # Data documentation: Moret S. (2017). "Strategic Energy Planning under Uncertainty". PhD Thesis n. 7961, EPFL, Switzerland (Appendix A). (http://dx.doi.org/10.5075/epfl-thesis-7961)
-# For terms of use and how to cite this work please check the ReadMe file. 
+# For terms of use and how to cite this work please check the ReadMe file.
 #
 ######################################################
 
@@ -15,7 +15,7 @@
 
 ## SETS [Figure 1.3]
 set PERIODS := 1	2	3	4	5	6	7	8	9	10	11	12;
-set SECTORS := HOUSEHOLDS	SERVICES	INDUSTRY	TRANSPORTATION;	
+set SECTORS := HOUSEHOLDS	SERVICES	INDUSTRY	TRANSPORTATION;
 set END_USES_INPUT := ELECTRICITY	LIGHTING	HEAT_HIGH_T	HEAT_LOW_T_SH	HEAT_LOW_T_HW	MOBILITY_PASSENGER	MOBILITY_FREIGHT;
 set END_USES_CATEGORIES := ELECTRICITY	HEAT_HIGH_T	HEAT_LOW_T	MOBILITY_PASSENGER	MOBILITY_FREIGHT;
 set RESOURCES :=	ELECTRICITY	GASOLINE	DIESEL	BIOETHANOL	BIODIESEL	LFO	LNG	NG	NG_CCS	SNG	WOOD	COAL	COAL_CCS	URANIUM	WASTE	H2	ELEC_EXPORT;
@@ -84,7 +84,7 @@ param: 	t_op	lighting_month	heating_month	:=
 10	744	0.1048	0.0898
 11	720	0.1238	0.1383
 12	744	0.1318	0.2194
-;				
+;
 
 # f:[efficiencies in A.2-A.4]
 param layers_in_out:	ELECTRICITY	GASOLINE	DIESEL	LFO	LNG	NG	NG_CCS	WOOD	COAL	COAL_CCS	URANIUM	WASTE	H2	HEAT_HIGH_T	HEAT_LOW_T_DHN	HEAT_LOW_T_DECEN	MOB_PUBLIC	MOB_PRIVATE	MOB_FREIGHT_RAIL	MOB_FREIGHT_ROAD	:=

@@ -1,21 +1,25 @@
-
 # packages
 import pickle
 import os
 import warnings
+
 warnings.simplefilter("ignore")
 
 # directories
 current_file_directory = os.getcwd()
 
 # load current transport pickle
-filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
-with open(filepath, 'rb') as handle:
+filepath = os.path.join(
+    current_file_directory, "../../../../data/datamatrix/transport.pickle"
+)
+with open(filepath, "rb") as handle:
     DM_tra = pickle.load(handle)
-    
+
 # load tkm pickle
-filepath = os.path.join(current_file_directory, '../data/datamatrix/intermediate_files/freight_tkm.pickle')
-with open(filepath, 'rb') as handle:
+filepath = os.path.join(
+    current_file_directory, "../data/datamatrix/intermediate_files/freight_tkm.pickle"
+)
+with open(filepath, "rb") as handle:
     DM_tkm = pickle.load(handle)
 
 # Set years range
@@ -24,13 +28,13 @@ startyear = years_setting[0]
 baseyear = years_setting[1]
 lastyear = years_setting[2]
 step_fts = years_setting[3]
-years_ots = list(range(startyear, baseyear+1, 1))
-years_fts = list(range(baseyear+2, lastyear+1, step_fts))
+years_ots = list(range(startyear, baseyear + 1, 1))
+years_fts = list(range(baseyear + 2, lastyear + 1, step_fts))
 years_all = years_ots + years_fts
 
 # get total tkm
 dm_tkmtot = DM_tkm["ots"]["freight_tkm"].copy()
-dm_tkmtot.append(DM_tkm["fts"]["freight_tkm"][1],"Years")
+dm_tkmtot.append(DM_tkm["fts"]["freight_tkm"][1], "Years")
 dm_tkmtot.group_all("Categories1")
 
 # check
@@ -40,7 +44,7 @@ dm_tkmtot.group_all("Categories1")
 dm_tkmtot.change_unit("tra_freight_tkm", 1e-9, "tkm", "bn-tkm")
 
 # rename
-dm_tkmtot.rename_col("tra_freight_tkm","tra_freight_tkm-total-demand","Variables")
+dm_tkmtot.rename_col("tra_freight_tkm", "tra_freight_tkm-total-demand", "Variables")
 
 # check
 list(DM_tra["ots"])
@@ -49,20 +53,12 @@ DM_tra["ots"]["freight_tkm"].units
 dm_tkmtot.units
 
 # split between ots and fts
-DM_tkmtot = {"ots": {"freight_tkm" : []}, "fts": {"freight_tkm" : dict()}}
-DM_tkmtot ["ots"]["freight_tkm"] = dm_tkmtot.filter({"Years" : years_ots})
-for i in range(1,4+1):
-    DM_tkmtot["fts"]["freight_tkm"][i] = dm_tkmtot.filter({"Years" : years_fts})
+DM_tkmtot = {"ots": {"freight_tkm": []}, "fts": {"freight_tkm": dict()}}
+DM_tkmtot["ots"]["freight_tkm"] = dm_tkmtot.filter({"Years": years_ots})
+for i in range(1, 4 + 1):
+    DM_tkmtot["fts"]["freight_tkm"][i] = dm_tkmtot.filter({"Years": years_fts})
 
 # save
-f = os.path.join(current_file_directory, '../data/datamatrix/lever_freight_tkm.pickle')
-with open(f, 'wb') as handle:
+f = os.path.join(current_file_directory, "../data/datamatrix/lever_freight_tkm.pickle")
+with open(f, "wb") as handle:
     pickle.dump(DM_tkmtot, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-
-
-
-
-
-

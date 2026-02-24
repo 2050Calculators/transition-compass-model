@@ -1,24 +1,17 @@
 import numpy as np
 
 import pandas as pd
-import faostat
 import os
-import re
-from model.common.data_matrix_class import DataMatrix
-from model.common.constant_data_matrix_class import ConstantDataMatrix
+from ....model.common.data_matrix_class import DataMatrix
 from _database.pre_processing.api_routines_CH import get_data_api_CH
-from model.common.auxiliary_functions import (
+from ....model.common.auxiliary_functions import (
     create_years_list,
     linear_fitting,
     filter_DM,
     add_dummy_country_to_DM,
-    my_pickle_dump,
 )
 
 import pickle
-import json
-import os
-import numpy as np
 
 
 def get_livestock_all(table_id, file, years_ots):

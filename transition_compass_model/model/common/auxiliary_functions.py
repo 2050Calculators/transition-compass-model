@@ -1,17 +1,15 @@
 import numpy as np
-from model.common.data_matrix_class import DataMatrix
+from ..common.data_matrix_class import DataMatrix
 from scipy.interpolate import interp1d, CubicSpline
-from model.common.io_database import (
+from ..common.io_database import (
     read_database,
     update_database_from_db,
     database_to_dm,
     dm_to_database,
 )
-from model.common.constant_data_matrix_class import ConstantDataMatrix
 import pandas as pd
 import os
 import re
-import json
 from os import listdir
 from os.path import isfile, join
 import pickle
@@ -1277,7 +1275,7 @@ def my_pickle_dump(DM_new, local_pickle_file):
                 else:
                     try:
                         DM_old[key] = update_data(DM_old[key], DM_new[key])
-                    except Exception as e:
+                    except Exception:
                         raise RuntimeError(
                             f"Warning: Error occurred when trying to update {key}, in file {local_pickle_file}"
                         )
@@ -1411,7 +1409,7 @@ def filter_country_and_load_data_from_pickles(country_list, modules_list):
         # Only filter by country if the module has country data
         try:
             filter_DM(DM_input[module], {"Country": country_list})
-        except ValueError as e:
+        except ValueError:
             # If filtering returns empty datamatrix, module doesn't have country dimension
             # or doesn't have data for the specified countries - skip filtering
             pass

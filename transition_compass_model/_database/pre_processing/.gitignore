@@ -2,7 +2,7 @@
 ~$*.xlsx
 
 # discard csv, pickle and excel files (no data allowed)
-*.csv 
+*.csv
 *.xlsx
 *.pickle
 *.xls

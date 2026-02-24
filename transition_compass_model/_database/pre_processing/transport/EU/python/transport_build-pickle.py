@@ -1,18 +1,19 @@
-
 # packages
-from model.common.auxiliary_functions import my_pickle_dump, DataMatrix
-import numpy as np
+from ......model.common.auxiliary_functions import my_pickle_dump
 import pickle
 import os
 import warnings
+
 warnings.simplefilter("ignore")
 
 # current file directory
 current_file_directory = os.getcwd()
 
 # load current transport pickle
-filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
-with open(filepath, 'rb') as handle:
+filepath = os.path.join(
+    current_file_directory, "../../../../data/datamatrix/transport.pickle"
+)
+with open(filepath, "rb") as handle:
     DM_tra = pickle.load(handle)
 
 # # change freight kerosene
@@ -89,7 +90,7 @@ with open(filepath, 'rb') as handle:
 ###############################################################################
 
 # files
-files_directory = os.path.join(current_file_directory, '../data/datamatrix')
+files_directory = os.path.join(current_file_directory, "../data/datamatrix")
 files = os.listdir(files_directory)
 
 # create DM_transport
@@ -105,25 +106,43 @@ DM_transport = {}
 ##################
 
 # list(np.array(files)[[bool(re.search("lever", i)) for i in files]])
-lever_files = ['lever_passenger_aviation-pkm.pickle','lever_passenger_modal-share.pickle',
-               'lever_passenger_occupancy.pickle','lever_passenger_technology-share_new.pickle',
-               'lever_passenger_utilization-rate.pickle','lever_passenger_veh-efficiency_new.pickle',
-               'lever_pkm.pickle', 'lever_freight_vehicle-efficiency_new.pickle',
-               'lever_freight_utilization-rate.pickle','lever_freight_modal-share.pickle',
-               'lever_freight_technology-share_new.pickle','lever_freight_tkm.pickle',
-               'lever_fuel-mix.pickle']
-lever_names = ['passenger_aviation-pkm','passenger_modal-share',
-               'passenger_occupancy','passenger_technology-share_new',
-               'passenger_utilization-rate','passenger_veh-efficiency_new',
-               'pkm', 'freight_vehicle-efficiency_new',
-               'freight_utilization-rate', 'freight_modal-share',
-               'freight_technology-share_new','freight_tkm',
-               'fuel-mix']
+lever_files = [
+    "lever_passenger_aviation-pkm.pickle",
+    "lever_passenger_modal-share.pickle",
+    "lever_passenger_occupancy.pickle",
+    "lever_passenger_technology-share_new.pickle",
+    "lever_passenger_utilization-rate.pickle",
+    "lever_passenger_veh-efficiency_new.pickle",
+    "lever_pkm.pickle",
+    "lever_freight_vehicle-efficiency_new.pickle",
+    "lever_freight_utilization-rate.pickle",
+    "lever_freight_modal-share.pickle",
+    "lever_freight_technology-share_new.pickle",
+    "lever_freight_tkm.pickle",
+    "lever_fuel-mix.pickle",
+]
+lever_names = [
+    "passenger_aviation-pkm",
+    "passenger_modal-share",
+    "passenger_occupancy",
+    "passenger_technology-share_new",
+    "passenger_utilization-rate",
+    "passenger_veh-efficiency_new",
+    "pkm",
+    "freight_vehicle-efficiency_new",
+    "freight_utilization-rate",
+    "freight_modal-share",
+    "freight_technology-share_new",
+    "freight_tkm",
+    "fuel-mix",
+]
 
 # load dms
 for i in range(0, len(lever_files)):
-    filepath = os.path.join(current_file_directory, '../data/datamatrix/' + lever_files[i])
-    with open(filepath, 'rb') as handle:
+    filepath = os.path.join(
+        current_file_directory, "../data/datamatrix/" + lever_files[i]
+    )
+    with open(filepath, "rb") as handle:
         DM = pickle.load(handle)
     DM_ots[lever_names[i]] = DM["ots"][lever_names[i]]
     DM_fts[lever_names[i]] = DM["fts"][lever_names[i]]
@@ -137,21 +156,35 @@ DM_transport["fts"] = DM_fts.copy()
 #############################
 
 # list(np.array(files)[[bool(re.search("fxa", i)) for i in files]])
-fxa_files = ['fxa_passenger_tech.pickle','fxa_passenger_vehicle-lifetime.pickle',
-             'fxa_emission-factor-electricity.pickle','fxa_freight_tech.pickle',
-             'fxa_freight_mode_other.pickle','fxa_freight_mode_road.pickle',
-             'fxa_vehicles-max.pickle',
-             'fxa_share-local-emissions.pickle','fxa_fuel-mix-availability.pickle']
-fxa_names = ['passenger_tech','passenger_vehicle-lifetime',
-             'emission-factor-electricity','freight_tech',
-             'freight_mode_other','freight_mode_road',
-             'vehicles-max',
-             'share-local-emissions','fuel-mix-availability']
+fxa_files = [
+    "fxa_passenger_tech.pickle",
+    "fxa_passenger_vehicle-lifetime.pickle",
+    "fxa_emission-factor-electricity.pickle",
+    "fxa_freight_tech.pickle",
+    "fxa_freight_mode_other.pickle",
+    "fxa_freight_mode_road.pickle",
+    "fxa_vehicles-max.pickle",
+    "fxa_share-local-emissions.pickle",
+    "fxa_fuel-mix-availability.pickle",
+]
+fxa_names = [
+    "passenger_tech",
+    "passenger_vehicle-lifetime",
+    "emission-factor-electricity",
+    "freight_tech",
+    "freight_mode_other",
+    "freight_mode_road",
+    "vehicles-max",
+    "share-local-emissions",
+    "fuel-mix-availability",
+]
 
 # load dms
 for i in range(0, len(fxa_files)):
-    filepath = os.path.join(current_file_directory, '../data/datamatrix/' + fxa_files[i])
-    with open(filepath, 'rb') as handle:
+    filepath = os.path.join(
+        current_file_directory, "../data/datamatrix/" + fxa_files[i]
+    )
+    with open(filepath, "rb") as handle:
         dm = pickle.load(handle)
         DM_fxa[fxa_names[i]] = dm
 
@@ -163,12 +196,12 @@ DM_transport["fxa"] = DM_fxa.copy()
 ##########################
 
 for key in DM_transport["ots"].keys():
-    DM_transport["ots"][key].filter({"Country" : ["EU27"]},inplace=True)
+    DM_transport["ots"][key].filter({"Country": ["EU27"]}, inplace=True)
 for key in DM_transport["fts"].keys():
-    for level in list(range(1,4+1)):
-        DM_transport["fts"][key][level].filter({"Country" : ["EU27"]},inplace=True)
+    for level in list(range(1, 4 + 1)):
+        DM_transport["fts"][key][level].filter({"Country": ["EU27"]}, inplace=True)
 for key in DM_transport["fxa"].keys():
-    DM_transport["fxa"][key].filter({"Country" : ["EU27"]},inplace=True)
+    DM_transport["fxa"][key].filter({"Country": ["EU27"]}, inplace=True)
 
 # #############################################################
 # ##### PUT ZERO FOR FCEV IN FREIGHT (INSTEAD OF MISSING) #####
@@ -178,7 +211,7 @@ for key in DM_transport["fxa"].keys():
 # # gets blocked (as in EU27 there is no FCEV, so line 965 does not make FCV-hydrogen, and
 # # then hydrogen is not found at line 453)
 
-# levers = ["passenger_technology-share_new", "passenger_veh-efficiency_new", 
+# levers = ["passenger_technology-share_new", "passenger_veh-efficiency_new",
 #           'freight_vehicle-efficiency_new', 'freight_technology-share_new']
 # for lever in levers:
 #     idx = DM_transport["ots"][lever].idx
@@ -195,7 +228,7 @@ for key in DM_transport["fxa"].keys():
 ###############
 
 # save
-f = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
+f = os.path.join(current_file_directory, "../../../../data/datamatrix/transport.pickle")
 my_pickle_dump(DM_transport, f)
 
 # # check
@@ -233,7 +266,3 @@ my_pickle_dump(DM_transport, f)
 # dm_temp = DM_transport["ots"]["pkm"].copy()
 # dm_temp.append(DM_transport["fts"]["pkm"][level],"Years")
 # dm_temp.datamatrix_plot()
-
-
-
-

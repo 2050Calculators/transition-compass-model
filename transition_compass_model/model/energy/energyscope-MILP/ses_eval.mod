@@ -5,7 +5,7 @@
 # Author: Stefano Moret
 # Date: 27.10.2017
 # Model documentation: Moret S. (2017). "Strategic Energy Planning under Uncertainty". PhD Thesis n. 7961, EPFL, Switzerland (Chapter 1). (http://dx.doi.org/10.5075/epfl-thesis-7961)
-# For terms of use and how to cite this work please check the ReadMe file. 
+# For terms of use and how to cite this work please check the ReadMe file.
 #
 ######################################################
 
@@ -21,25 +21,25 @@ for {i in TECHNOLOGIES union RESOURCES diff STORAGE_TECH}{
 }
 
 ## Print cost breakdown to txt file.
-printf "%s\t%s\t%s\t%s\n", "Name", "C_inv", "C_maint", "C_op" > "energy/energyscope-MILP/output/cost_breakdown.txt"; 
+printf "%s\t%s\t%s\t%s\n", "Name", "C_inv", "C_maint", "C_op" > "energy/energyscope-MILP/output/cost_breakdown.txt";
 for {i in TECHNOLOGIES union RESOURCES}{
 	printf "%s\t%.6f\t%.6f\t%.6f\n", i, if i in TECHNOLOGIES then (tau [i] * C_inv [i]) else 0, if i in TECHNOLOGIES then C_maint [i] else 0, if i in RESOURCES then C_op [i] else 0 >> "energy/energyscope-MILP/output/cost_breakdown.txt";
 }
 
 ## Print GWP breakdown
-printf "%s\t%s\t%s\n", "Name", "GWP_constr", "GWP_op" > "energy/energyscope-MILP/output/gwp_breakdown.txt"; 
+printf "%s\t%s\t%s\n", "Name", "GWP_constr", "GWP_op" > "energy/energyscope-MILP/output/gwp_breakdown.txt";
 for {i in TECHNOLOGIES union RESOURCES}{
 	printf "%s\t%.6f\t%.6f\n", i, if i in TECHNOLOGIES then GWP_constr [i] / lifetime [i] else 0, if i in RESOURCES then GWP_op [i] else 0 >> "energy/energyscope-MILP/output/gwp_breakdown.txt";
 }
 
 ## Print F_Mult to txt file
-printf "%s\t%s\n", "Name", "Mult" > "energy/energyscope-MILP/output/f_mult.txt"; 
+printf "%s\t%s\n", "Name", "Mult" > "energy/energyscope-MILP/output/f_mult.txt";
 for {i in TECHNOLOGIES}{
 	printf "%s\t%.6f\n", i, F_Mult[i] >> "energy/energyscope-MILP/output/f_mult.txt";
 }
 
 ## Print F_Mult_t to txt file.
-printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "Name", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12" > "energy/energyscope-MILP/output/f_mult_t.txt"; 
+printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "Name", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12" > "energy/energyscope-MILP/output/f_mult_t.txt";
 for {i in TECHNOLOGIES union RESOURCES}{
 	printf "%s\t", i  >> "energy/energyscope-MILP/output/f_mult_t.txt";
 	for {t in PERIODS}{
@@ -49,7 +49,7 @@ for {i in TECHNOLOGIES union RESOURCES}{
 }
 
 ## Print End_Uses to txt file (with negative sign to close balance)
-printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "Name", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12" > "energy/energyscope-MILP/output/End_Uses.txt"; 
+printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "Name", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12" > "energy/energyscope-MILP/output/End_Uses.txt";
 for {i in LAYERS}{
 	printf "%s\t", i >> "energy/energyscope-MILP/output/End_Uses.txt";
 	for {t in PERIODS}{
@@ -60,7 +60,7 @@ for {i in LAYERS}{
 
 ## Print storage balance from/to layers (Storage_Out - Storage_In) to txt file.
 for {i in STORAGE_TECH}{
-	printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "Not accounting for efficiency", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12" > ("energy/energyscope-MILP/output/" & i & ".txt"); 
+	printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "Not accounting for efficiency", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12" > ("energy/energyscope-MILP/output/" & i & ".txt");
 	for {l in LAYERS}{
 		printf "%s\t", l >> ("energy/energyscope-MILP/output/" & i & ".txt");
 		for {t in PERIODS}{
@@ -85,7 +85,7 @@ for {i in END_USES_TYPES}{
 # Notes:
 # - workaround to write if-then-else statements in GLPK: https://en.wikibooks.org/wiki/GLPK/GMPL_Workarounds#If–then–else_conditional
 # - to visualize the Sankey, open the html file in any browser. If it does not work, try this: https://github.com/mrdoob/three.js/wiki/How-to-run-things-locally
- 
+
 printf "%s,%s,%s,%s,%s,%s\n", "source" , "target", "realValue", "layerID", "layerColor", "layerUnit" > "energy/energyscope-MILP/output/sankey/input2sankey.csv";
 ## Gasoline
 for{{0}: sum{t in PERIODS}(F_Mult_t ["GASOLINE", t] * t_op [t]) > 10}{
@@ -274,7 +274,7 @@ for{{0}: sum{t in PERIODS}((F_Mult_t ["DHN_BOILER_GAS",t] + F_Mult_t ["DHN_BOILE
 for{{0}: sum{t in PERIODS}((F_Mult_t ["IND_BOILER_GAS",t] + F_Mult_t ["IND_BOILER_WOOD",t] + F_Mult_t ["IND_BOILER_OIL",t] + F_Mult_t ["IND_BOILER_COAL",t] + F_Mult_t ["IND_BOILER_WASTE",t]) * t_op [t]) > 10}{
 	printf "%s,%s,%.2f,%s,%s,%s\n", "Boilers" , "Heat HT", sum{i in BOILERS, t in PERIODS}(layers_in_out[i,"HEAT_HIGH_T"] * F_Mult_t [i, t] * t_op [t]) / 1000 , "Heat HT", "#DC143C", "TWh" >> "energy/energyscope-MILP/output/sankey/input2sankey.csv";
 }
-# DHN 
+# DHN
 for{{0}: sum{t in PERIODS}(End_Uses ["HEAT_LOW_T_DHN", t] * t_op [t]) > 10}{
 	printf "%s,%s,%.2f,%s,%s,%s\n", "DHN" , "Heat LT DHN", sum{t in PERIODS}(sum {i in TECHNOLOGIES diff STORAGE_TECH} (layers_in_out[i, "HEAT_LOW_T_DHN"] * F_Mult_t [i, t] * t_op [t]) - Losses ["HEAT_LOW_T_DHN",t] * t_op [t]) / 1000 , "Heat LT", "#FA8072", "TWh" >> "energy/energyscope-MILP/output/sankey/input2sankey.csv";
 }

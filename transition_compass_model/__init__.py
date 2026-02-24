@@ -1,9 +1,9 @@
-"""Leure Transition Compass Model - Speed to Zero."""
+"""Leure Transition Compass Model module."""
 
-__version__ = "0.1.0"
-
-# Import main modules to make them easily accessible
-from . import model
 from . import _database
+from . import model
 
-__all__ = ["model", "_database"]
+__all__ = [
+    "_database",
+    "model",
+]

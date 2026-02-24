@@ -3,13 +3,11 @@ import pickle
 import pandas as pd
 import numpy as np
 
-from model.common.auxiliary_functions import filter_DM, my_pickle_dump
+from ....model.common.auxiliary_functions import filter_DM
 from _database.pre_processing.api_routines_CH import get_data_api_CH
-from model.common.auxiliary_functions import (
+from ....model.common.auxiliary_functions import (
     create_years_list,
     linear_fitting,
-    filter_DM,
-    add_dummy_country_to_DM,
 )
 
 

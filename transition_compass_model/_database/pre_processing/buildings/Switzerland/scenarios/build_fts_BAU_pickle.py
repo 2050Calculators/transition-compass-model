@@ -1,178 +1,199 @@
 import numpy as np
 import os
 
-from model.common.auxiliary_functions import linear_fitting, create_years_list, \
-  my_pickle_dump, filter_DM, sort_pickle
+from ......model.common.auxiliary_functions import (
+    linear_fitting,
+    create_years_list,
+    my_pickle_dump,
+    filter_DM,
+    sort_pickle,
+)
 
 
-def calculate_heating_eff_fts(dm_heating_eff, years_fts, maximum_eff, fuel_cat='Categories2'):
-  # Linear fitting of all efficiencies except based on the 2015-2023 period
-  # For all efficiencies except heat-pump, the efficiency is capped at 98%
-  dm_heat_pump = dm_heating_eff.filter({fuel_cat: ['heat-pump']})
-  dm_heating_eff.drop(dim=fuel_cat, col_label='heat-pump')
-  linear_fitting(dm_heating_eff, years_fts, based_on=list(range(2015, 2023)))
-  dm_heating_eff.array = np.minimum(dm_heating_eff.array, maximum_eff)
-  linear_fitting(dm_heat_pump, years_fts, based_on=list(range(2015, 2023)))
-  dm_heating_eff.append(dm_heat_pump, dim=fuel_cat)
-  dm_heating_eff_fts = dm_heating_eff.filter({'Years': years_fts})
+def calculate_heating_eff_fts(
+    dm_heating_eff, years_fts, maximum_eff, fuel_cat="Categories2"
+):
+    # Linear fitting of all efficiencies except based on the 2015-2023 period
+    # For all efficiencies except heat-pump, the efficiency is capped at 98%
+    dm_heat_pump = dm_heating_eff.filter({fuel_cat: ["heat-pump"]})
+    dm_heating_eff.drop(dim=fuel_cat, col_label="heat-pump")
+    linear_fitting(dm_heating_eff, years_fts, based_on=list(range(2015, 2023)))
+    dm_heating_eff.array = np.minimum(dm_heating_eff.array, maximum_eff)
+    linear_fitting(dm_heat_pump, years_fts, based_on=list(range(2015, 2023)))
+    dm_heating_eff.append(dm_heat_pump, dim=fuel_cat)
+    dm_heating_eff_fts = dm_heating_eff.filter({"Years": years_fts})
 
-  return dm_heating_eff_fts
+    return dm_heating_eff_fts
+
 
 def adjust_COP_based_on_envelope_cat(dm):
-  # This is taken from https://www.flumroc.ch/fileadmin/Dateiliste/flumroc/Bilder/400_steinwolle/Stromsparen-HSLU/d_250716_Kurzbericht_Studie_Flumroc_final.pdf
-  # Which is originally taken from  Döring & Richter, 2024
-  # And the information of the average energy demand per building category (SFH) from the archetype paper
-  # Pongelli, A.; Priore, Y.D.; Bacher, J.-P.; Jusselme, T. Definition of Building Archetypes Based on the Swiss Energy Performance Certificates Database. Buildings 2023, 13, 40. https://doi.org/10.3390/buildings13010040
-  avg_2023_COP = {'F': 2.3, 'E': 2.5, 'D': 3, 'C': 3.3, 'B': 3.6 }
-  for cat in dm.col_labels['Categories1']:
-    #corr_fact = avg_2023_COP[cat]/dm[:, 2023, np.newaxis, :, cat, 'heat-pump']
-    #dm[:, :, :, cat, 'heat-pump'] =  corr_fact * dm[:, :, :, cat, 'heat-pump']
-    dm[:, :, :, cat, 'heat-pump'] =  np.minimum(avg_2023_COP[cat] , dm[:, :, :, cat, 'heat-pump'])
+    # This is taken from https://www.flumroc.ch/fileadmin/Dateiliste/flumroc/Bilder/400_steinwolle/Stromsparen-HSLU/d_250716_Kurzbericht_Studie_Flumroc_final.pdf
+    # Which is originally taken from  Döring & Richter, 2024
+    # And the information of the average energy demand per building category (SFH) from the archetype paper
+    # Pongelli, A.; Priore, Y.D.; Bacher, J.-P.; Jusselme, T. Definition of Building Archetypes Based on the Swiss Energy Performance Certificates Database. Buildings 2023, 13, 40. https://doi.org/10.3390/buildings13010040
+    avg_2023_COP = {"F": 2.3, "E": 2.5, "D": 3, "C": 3.3, "B": 3.6}
+    for cat in dm.col_labels["Categories1"]:
+        # corr_fact = avg_2023_COP[cat]/dm[:, 2023, np.newaxis, :, cat, 'heat-pump']
+        # dm[:, :, :, cat, 'heat-pump'] =  corr_fact * dm[:, :, :, cat, 'heat-pump']
+        dm[:, :, :, cat, "heat-pump"] = np.minimum(
+            avg_2023_COP[cat], dm[:, :, :, cat, "heat-pump"]
+        )
 
-  return dm
+    return dm
 
 
 def run(DM_buildings, country_list, years_fts):
 
-  filter_DM(DM_buildings, {'Country': country_list})
+    filter_DM(DM_buildings, {"Country": country_list})
 
-  this_dir = os.path.dirname(os.path.abspath(__file__))
-  # !FIXME: use the actual values and not the calibration factor
-  file = os.path.join(this_dir, '../../../../data/datamatrix/buildings.pickle')
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    # !FIXME: use the actual values and not the calibration factor
+    file = os.path.join(this_dir, "../../../../data/datamatrix/buildings.pickle")
 
-  #########################################
-  #####  FLOOR INTENSITY - SPACE/CAP  #####
-  #########################################
-  dm_space_cap = DM_buildings['ots']['floor-intensity'].copy()
-  linear_fitting(dm_space_cap, years_fts)
-  DM_buildings['fts']['floor-intensity'] = dict()
-  for lev in range(4):
-    lev = lev + 1
-    DM_buildings['fts']['floor-intensity'][lev] = dm_space_cap.filter(
-      {'Years': years_fts})
+    #########################################
+    #####  FLOOR INTENSITY - SPACE/CAP  #####
+    #########################################
+    dm_space_cap = DM_buildings["ots"]["floor-intensity"].copy()
+    linear_fitting(dm_space_cap, years_fts)
+    DM_buildings["fts"]["floor-intensity"] = dict()
+    for lev in range(4):
+        lev = lev + 1
+        DM_buildings["fts"]["floor-intensity"][lev] = dm_space_cap.filter(
+            {"Years": years_fts}
+        )
 
-  #########################################
-  #####   HEATING-COOLING BEHAVIOUR   #####
-  #########################################
-  dm_Tint_heat = DM_buildings['ots']['heatcool-behaviour'].copy()
-  linear_fitting(dm_Tint_heat, years_fts)
-  DM_buildings['fts']['heatcool-behaviour'] = dict()
-  for lev in range(4):
-    lev = lev + 1
-    DM_buildings['fts']['heatcool-behaviour'][lev] = dm_Tint_heat.filter(
-      {'Years': years_fts})
+    #########################################
+    #####   HEATING-COOLING BEHAVIOUR   #####
+    #########################################
+    dm_Tint_heat = DM_buildings["ots"]["heatcool-behaviour"].copy()
+    linear_fitting(dm_Tint_heat, years_fts)
+    DM_buildings["fts"]["heatcool-behaviour"] = dict()
+    for lev in range(4):
+        lev = lev + 1
+        DM_buildings["fts"]["heatcool-behaviour"][lev] = dm_Tint_heat.filter(
+            {"Years": years_fts}
+        )
 
-  #########################################
-  #####        BUILDING MIX          ######
-  #########################################
-  dm_building_mix_new = DM_buildings['ots']['building-renovation-rate']['bld_building-mix'].copy()
-  dm_building_mix_new.add(np.nan, dim='Years', col_label=years_fts, dummy=True)
-  dm_building_mix_new.fill_nans('Years')
-  DM_buildings['fts']['building-renovation-rate'] = dict()
-  DM_buildings['fts']['building-renovation-rate']['bld_building-mix'] = dict()
-  for lev in range(4):
-    lev = lev + 1
-    DM_buildings['fts']['building-renovation-rate']['bld_building-mix'][
-      lev] = dm_building_mix_new.filter({'Years': years_fts})
+    #########################################
+    #####        BUILDING MIX          ######
+    #########################################
+    dm_building_mix_new = DM_buildings["ots"]["building-renovation-rate"][
+        "bld_building-mix"
+    ].copy()
+    dm_building_mix_new.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
+    dm_building_mix_new.fill_nans("Years")
+    DM_buildings["fts"]["building-renovation-rate"] = dict()
+    DM_buildings["fts"]["building-renovation-rate"]["bld_building-mix"] = dict()
+    for lev in range(4):
+        lev = lev + 1
+        DM_buildings["fts"]["building-renovation-rate"]["bld_building-mix"][lev] = (
+            dm_building_mix_new.filter({"Years": years_fts})
+        )
 
+    #########################################
+    #####       RENOVATION-RATE        ######
+    #########################################
+    dm_rr = DM_buildings["ots"]["building-renovation-rate"][
+        "bld_renovation-rate"
+    ].copy()
+    DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"] = dict()
+    dm_rr.add(np.nan, dim="Years", dummy=True, col_label=years_fts)
+    dm_rr.fill_nans(dim_to_interp="Years")
+    for lev in range(4):
+        lev = lev + 1
+        DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][lev] = (
+            dm_rr.filter({"Years": years_fts})
+        )
+    # Build a level 1 scenario with no renovation
+    DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][1][...] = 0
 
-  #########################################
-  #####       RENOVATION-RATE        ######
-  #########################################
-  dm_rr = DM_buildings['ots']['building-renovation-rate'][
-    'bld_renovation-rate'].copy()
-  DM_buildings['fts']['building-renovation-rate'][
-    'bld_renovation-rate'] = dict()
-  dm_rr.add(np.nan, dim='Years', dummy=True, col_label=years_fts)
-  dm_rr.fill_nans(dim_to_interp='Years')
-  for lev in range(4):
-    lev = lev + 1
-    DM_buildings['fts']['building-renovation-rate']['bld_renovation-rate'][
-      lev] = dm_rr.filter({'Years': years_fts})
-  # Build a level 1 scenario with no renovation
-  DM_buildings['fts']['building-renovation-rate']['bld_renovation-rate'][1][...] = 0
+    ###########################################
+    #####    RENOVATION-REDISTRIBUTION    #####
+    ###########################################
+    dm_renov_distr = DM_buildings["ots"]["building-renovation-rate"][
+        "bld_renovation-redistribution"
+    ].copy()
+    DM_buildings["fts"]["building-renovation-rate"][
+        "bld_renovation-redistribution"
+    ] = dict()
+    dm_renov_distr.add(np.nan, dim="Years", dummy=True, col_label=years_fts)
+    dm_renov_distr.fill_nans(dim_to_interp="Years")
+    for lev in range(4):
+        lev = lev + 1
+        DM_buildings["fts"]["building-renovation-rate"][
+            "bld_renovation-redistribution"
+        ][lev] = dm_renov_distr.filter({"Years": years_fts})
 
-  ###########################################
-  #####    RENOVATION-REDISTRIBUTION    #####
-  ###########################################
-  dm_renov_distr = DM_buildings['ots']['building-renovation-rate'][
-    'bld_renovation-redistribution'].copy()
-  DM_buildings['fts']['building-renovation-rate'][
-    'bld_renovation-redistribution'] = dict()
-  dm_renov_distr.add(np.nan, dim='Years', dummy=True, col_label=years_fts)
-  dm_renov_distr.fill_nans(dim_to_interp='Years')
-  for lev in range(4):
-    lev = lev + 1
-    DM_buildings['fts']['building-renovation-rate'][
-      'bld_renovation-redistribution'][lev] = \
-      dm_renov_distr.filter({'Years': years_fts})
+    #########################################
+    #####         DEMOLITION          #######
+    #########################################
 
-  #########################################
-  #####         DEMOLITION          #######
-  #########################################
+    dm_demolition_rate = DM_buildings["ots"]["building-renovation-rate"][
+        "bld_demolition-rate"
+    ].copy()
+    # Compute average demolition rate in the last 10 years and forecast to future
+    idx = dm_demolition_rate.idx
+    idx_yrs = [idx[yr] for yr in create_years_list(2012, 2023, 1)]
+    val_mean = np.mean(dm_demolition_rate.array[:, idx_yrs, ...], axis=1)
+    dm_demolition_rate.add(np.nan, dim="Years", dummy=True, col_label=years_fts)
+    for yr in years_fts:
+        dm_demolition_rate.array[:, idx[yr], ...] = val_mean
+    # FTS
+    DM_buildings["fts"]["building-renovation-rate"]["bld_demolition-rate"] = dict()
+    for lev in range(4):
+        lev = lev + 1
+        DM_buildings["fts"]["building-renovation-rate"]["bld_demolition-rate"][lev] = (
+            dm_demolition_rate.filter({"Years": years_fts})
+        )
 
-  dm_demolition_rate = DM_buildings['ots']['building-renovation-rate'][
-    'bld_demolition-rate'].copy()
-  # Compute average demolition rate in the last 10 years and forecast to future
-  idx = dm_demolition_rate.idx
-  idx_yrs = [idx[yr] for yr in create_years_list(2012, 2023, 1)]
-  val_mean = np.mean(dm_demolition_rate.array[:, idx_yrs, ...], axis=1)
-  dm_demolition_rate.add(np.nan, dim='Years', dummy=True, col_label=years_fts)
-  for yr in years_fts:
-    dm_demolition_rate.array[:, idx[yr], ...] = val_mean
-  # FTS
-  DM_buildings['fts']['building-renovation-rate'][
-    'bld_demolition-rate'] = dict()
-  for lev in range(4):
-    lev = lev + 1
-    DM_buildings['fts']['building-renovation-rate']['bld_demolition-rate'][lev] = \
-      dm_demolition_rate.filter({'Years': years_fts})
+    ###########################################
+    #####    HEATING TECHNOLOGY MIX     #######
+    ###########################################
+    dm_heating_cat = DM_buildings["ots"]["heating-technology-fuel"][
+        "bld_heating-technology"
+    ].copy()
+    dm_heating_cat.add(np.nan, dim="Years", dummy=True, col_label=years_fts)
+    # Obligation à enlever les chauffages electriques d'ici 2033-2038
+    # https://publication.vd.ch/publications/dgaic/aide-memoire/domaines-batiments/assainissement-des-chauffages-et-chauffe-eau-electriques
+    idx = dm_heating_cat.idx
+    dm_heating_cat["Vaud", idx[2035] :, :, :, "E", "electricity"] = 0
+    dm_heating_cat["Vaud", idx[2035] :, :, :, "F", "electricity"] = 0
+    dm_heating_cat["Vaud", idx[2040] :, :, :, "B", "electricity"] = 0
+    dm_heating_cat["Vaud", idx[2040] :, :, :, "C", "electricity"] = 0
+    dm_heating_cat["Vaud", idx[2040] :, :, :, "D", "electricity"] = 0
+    dm_heating_cat.fill_nans("Years")
+    DM_buildings["fts"]["heating-technology-fuel"] = dict()
+    DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"] = dict()
+    for lev in range(4):
+        lev = lev + 1
+        DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"][
+            lev
+        ] = dm_heating_cat.filter({"Years": years_fts})
 
-  ###########################################
-  #####    HEATING TECHNOLOGY MIX     #######
-  ###########################################
-  dm_heating_cat = DM_buildings['ots']['heating-technology-fuel']['bld_heating-technology'].copy()
-  dm_heating_cat.add(np.nan, dim='Years', dummy=True, col_label=years_fts)
-  # Obligation à enlever les chauffages electriques d'ici 2033-2038
-  # https://publication.vd.ch/publications/dgaic/aide-memoire/domaines-batiments/assainissement-des-chauffages-et-chauffe-eau-electriques
-  idx = dm_heating_cat.idx
-  dm_heating_cat['Vaud', idx[2035]:, :, :, 'E', 'electricity'] = 0
-  dm_heating_cat['Vaud', idx[2035]:, :, :, 'F', 'electricity'] = 0
-  dm_heating_cat['Vaud', idx[2040]:, :, :, 'B', 'electricity'] = 0
-  dm_heating_cat['Vaud', idx[2040]:, :, :, 'C', 'electricity'] = 0
-  dm_heating_cat['Vaud', idx[2040]:, :, :, 'D', 'electricity'] = 0
-  dm_heating_cat.fill_nans('Years')
-  DM_buildings['fts']['heating-technology-fuel'] = dict()
-  DM_buildings['fts']['heating-technology-fuel'][
-    'bld_heating-technology'] = dict()
-  for lev in range(4):
-    lev = lev + 1
-    DM_buildings['fts']['heating-technology-fuel']['bld_heating-technology'][
-      lev] = dm_heating_cat.filter({'Years': years_fts})
+    ############################################
+    ######       HEATING EFFICIENCY       ######
+    ############################################
+    dm_heating_eff = DM_buildings["ots"]["heating-efficiency"].copy()
+    dm_heating_eff_fts = calculate_heating_eff_fts(
+        dm_heating_eff.copy(), years_fts, maximum_eff=0.98
+    )
+    dm_heating_eff_fts = adjust_COP_based_on_envelope_cat(dm_heating_eff_fts)
+    dm_heating_eff_fts[:, :, "bld_heating-efficiency", :, "electricity"] = 1
+    DM_buildings["fts"]["heating-efficiency"] = dict()
+    for lev in range(4):
+        lev = lev + 1
+        DM_buildings["fts"]["heating-efficiency"][lev] = dm_heating_eff_fts.copy()
 
-  ############################################
-  ######       HEATING EFFICIENCY       ######
-  ############################################
-  dm_heating_eff = DM_buildings['ots']['heating-efficiency'].copy()
-  dm_heating_eff_fts = calculate_heating_eff_fts(dm_heating_eff.copy(),
-                                                 years_fts, maximum_eff=0.98)
-  dm_heating_eff_fts = adjust_COP_based_on_envelope_cat(dm_heating_eff_fts)
-  dm_heating_eff_fts[:, :, 'bld_heating-efficiency', :, 'electricity'] = 1
-  DM_buildings['fts']['heating-efficiency'] = dict()
-  for lev in range(4):
-    lev = lev + 1
-    DM_buildings['fts']['heating-efficiency'][lev] = dm_heating_eff_fts.copy()
-
-  '''dm_hw_eff = DM_buildings['ots']['heating-efficiency']['bld_hot-water-efficiency'].copy()
+    """dm_hw_eff = DM_buildings['ots']['heating-efficiency']['bld_hot-water-efficiency'].copy()
   dm_hw_eff_fts = calculate_heating_eff_fts(dm_hw_eff.copy(),years_fts, maximum_eff=0.98, fuel_cat='Categories1')
   dm_hw_eff_fts[:, :, 'bld_hot-water_efficiency', 'electricity'] = 1
 
   DM_buildings['fts']['heating-efficiency']['bld_hot-water-efficiency'] = dict()
   for lev in range(4):
     lev = lev + 1
-    DM_buildings['fts']['heating-efficiency']['bld_hot-water-efficiency'][lev] = dm_hw_eff_fts.copy()'''
+    DM_buildings['fts']['heating-efficiency']['bld_hot-water-efficiency'][lev] = dm_hw_eff_fts.copy()"""
 
-  my_pickle_dump(DM_buildings, file)
-  sort_pickle(file)
+    my_pickle_dump(DM_buildings, file)
+    sort_pickle(file)
 
-  return DM_buildings
+    return DM_buildings

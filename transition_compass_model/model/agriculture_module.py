@@ -1,11 +1,10 @@
 import pandas as pd
 
-from model.common.data_matrix_class import DataMatrix
-from model.common.constant_data_matrix_class import ConstantDataMatrix
-from model.common.io_database import dm_to_database
-from model.common.interface_class import Interface
-from model.common.auxiliary_functions import calibration_rates, create_years_list
-from model.common.auxiliary_functions import (
+from .common.data_matrix_class import DataMatrix
+from .common.io_database import dm_to_database
+from .common.interface_class import Interface
+from .common.auxiliary_functions import calibration_rates, create_years_list
+from .common.auxiliary_functions import (
     read_level_data,
     filter_country_and_load_data_from_pickles,
 )

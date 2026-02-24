@@ -31,3 +31,10 @@ dependencies = [
     "statsmodels>=0.14.0",
     "tqdm>=4.67.3",
 ]
+
+[tool.setuptools]
+package-dir = {"leure_transition_compass_model" = "leure-transition-compass-model"}
+packages = ["leure_transition_compass_model"]
+
+[tool.setuptools.package-data]
+"*" = ["**/*.pickle", "**/*.json", "**/*.csv", "**/*.xlsx", "**/*.mod"]

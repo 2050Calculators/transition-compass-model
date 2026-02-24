@@ -1,14 +1,16 @@
-
 # packages
-from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting, eurostat_iso2_dict, jrc_iso2_dict
-from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
+from ......model.common.data_matrix_class import DataMatrix
+from ......model.common.auxiliary_functions import (
+    linear_fitting,
+    eurostat_iso2_dict,
+    jrc_iso2_dict,
+)
 from _database.pre_processing.routine_JRC import get_jrc_data
 import pickle
 import os
 import numpy as np
 import warnings
-import eurostat
+
 # from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 warnings.simplefilter("ignore")
 import pandas as pd
@@ -19,8 +21,10 @@ import pandas as pd
 current_file_directory = os.getcwd()
 
 # load current transport pickle
-filepath = os.path.join(current_file_directory, '../../../../data/datamatrix/transport.pickle')
-with open(filepath, 'rb') as handle:
+filepath = os.path.join(
+    current_file_directory, "../../../../data/datamatrix/transport.pickle"
+)
+with open(filepath, "rb") as handle:
     DM = pickle.load(handle)
 
 # Set years range
@@ -29,8 +33,8 @@ startyear = years_setting[0]
 baseyear = years_setting[1]
 lastyear = years_setting[2]
 step_fts = years_setting[3]
-years_ots = list(range(startyear, baseyear+1, 1))
-years_fts = list(range(baseyear+2, lastyear+1, step_fts))
+years_ots = list(range(startyear, baseyear + 1, 1))
+years_fts = list(range(baseyear + 2, lastyear + 1, step_fts))
 years_all = years_ots + years_fts
 
 ################################################
@@ -41,7 +45,7 @@ DM["ots"]["freight_modal-share"].units
 
 # get iso codes
 dict_iso2 = eurostat_iso2_dict()
-dict_iso2.pop('CH')  # Remove Switzerland
+dict_iso2.pop("CH")  # Remove Switzerland
 dict_iso2_jrc = jrc_iso2_dict()
 
 ###############
@@ -49,18 +53,19 @@ dict_iso2_jrc = jrc_iso2_dict()
 ###############
 
 # get data
-dict_extract = {"database" : "Transport",
-                "sheet" : "TrRoad_act",
-                "variable" : "Freight transport (mio tkm)",
-                "sheet_last_row" : "Heavy goods vehicles",
-                "sub_variables" : ["Light commercial vehicles",
-                                    "Heavy goods vehicles"],
-                "calc_names" : ["HDVL","HDVH"]}
+dict_extract = {
+    "database": "Transport",
+    "sheet": "TrRoad_act",
+    "variable": "Freight transport (mio tkm)",
+    "sheet_last_row": "Heavy goods vehicles",
+    "sub_variables": ["Light commercial vehicles", "Heavy goods vehicles"],
+    "calc_names": ["HDVL", "HDVH"],
+}
 dm_hdvl = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 # df_check = dm_hdvl.write_df()
 
 # # make hdvm as average between hdvh and hdvl (as it's tkm, the medium ones should carry around the average)
-# dm_temp = dm_hdvl.groupby({"HDVM" : ["HDVL","HDVH"]}, 
+# dm_temp = dm_hdvl.groupby({"HDVM" : ["HDVL","HDVH"]},
 #                           dim='Variables', aggregation = "mean", regex=False, inplace=False)
 # dm_hdvl.append(dm_temp, "Variables")
 # dm_hdvl.sort("Variables")
@@ -72,9 +77,9 @@ dm_hdvl = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 # | **HDVL** (light)        | 3.5–7.5 t | ~40%               |
 # | **HDVM** (medium)       | 7.5–16 t  | ~45%               |
 # | **HDVH* (heavy rigid)** | >16 t     | ~15%               |
-arr_medium = dm_hdvl[:,:,"HDVL"] * 0.6
-arr_light = dm_hdvl[:,:,"HDVL"] * 0.4
-dm_hdvl[:,:,"HDVL"] = arr_light
+arr_medium = dm_hdvl[:, :, "HDVL"] * 0.6
+arr_light = dm_hdvl[:, :, "HDVL"] * 0.4
+dm_hdvl[:, :, "HDVL"] = arr_light
 dm_hdvl.add(arr_medium, "Variables", "HDVM", "vehicles")
 dm_hdvl.sort("Variables")
 
@@ -108,25 +113,49 @@ dm_hdvl.sort("Variables")
 # dm_iww = dm_iww.groupby({"IWW" : ['BAR_SP']}, "Variables")
 # # df = dm_iww_tkm.write_df()
 
+
 # get data on vkm from jrc
-def get_specific_jrc_data(country_code, country_name, row_start, row_end, unit, variable = "aviation_kerosene", 
-                          database = "JRC-IDEES-2021_x1990_Aviation_EU"):
-    
-    filepath_jrc = os.path.join(current_file_directory, f"../../../industry/eu/data/JRC-IDEES-2021/EU27/{database}.xlsx")
+def get_specific_jrc_data(
+    country_code,
+    country_name,
+    row_start,
+    row_end,
+    unit,
+    variable="aviation_kerosene",
+    database="JRC-IDEES-2021_x1990_Aviation_EU",
+):
+
+    filepath_jrc = os.path.join(
+        current_file_directory,
+        f"../../../industry/eu/data/JRC-IDEES-2021/EU27/{database}.xlsx",
+    )
     df_temp = pd.read_excel(filepath_jrc, sheet_name=country_code)
-    df_temp = df_temp.iloc[row_start:row_end,:]
+    df_temp = df_temp.iloc[row_start:row_end, :]
     indexes = df_temp.columns[0]
-    df_temp = pd.melt(df_temp, id_vars = indexes, var_name='year')
-    df_temp.columns = ["Country","Years",f"{variable}[{unit}]"]
+    df_temp = pd.melt(df_temp, id_vars=indexes, var_name="year")
+    df_temp.columns = ["Country", "Years", f"{variable}[{unit}]"]
     df_temp["Country"] = country_name
-    
+
     return df_temp
+
+
 country_codes = list(dict_iso2_jrc.keys())
 country_names = list(dict_iso2_jrc.values())
 df_iww = pd.concat(
-    [get_specific_jrc_data(code, name, 3, 4, "mio tkm", "IWW", "JRC-IDEES-2021_x1990_Navigation_Domestic") 
-     for code,name in zip(country_codes, country_names)],
-    ignore_index=True)
+    [
+        get_specific_jrc_data(
+            code,
+            name,
+            3,
+            4,
+            "mio tkm",
+            "IWW",
+            "JRC-IDEES-2021_x1990_Navigation_Domestic",
+        )
+        for code, name in zip(country_codes, country_names)
+    ],
+    ignore_index=True,
+)
 dm_iww = DataMatrix.create_from_df(df_iww, 0)
 
 # # add other countries as missing
@@ -156,9 +185,14 @@ dm_iww.array[dm_iww.array == 0] = np.nan
 
 # get data from jrc
 df_avi = pd.concat(
-    [get_specific_jrc_data(code, name, 6, 7, "mio tkm", "aviation", "JRC-IDEES-2021_x1990_Aviation_EU") 
-     for code,name in zip(country_codes, country_names)],
-    ignore_index=True)
+    [
+        get_specific_jrc_data(
+            code, name, 6, 7, "mio tkm", "aviation", "JRC-IDEES-2021_x1990_Aviation_EU"
+        )
+        for code, name in zip(country_codes, country_names)
+    ],
+    ignore_index=True,
+)
 dm_avi = DataMatrix.create_from_df(df_avi, 0)
 
 ####################
@@ -200,9 +234,20 @@ dm_avi = DataMatrix.create_from_df(df_avi, 0)
 
 # get data from jrc
 df_mar = pd.concat(
-    [get_specific_jrc_data(code, name, 1, 2, "mio tkm", "marine", "JRC-IDEES-2021_x1990_Navigation_International_EU") 
-     for code,name in zip(country_codes, country_names)],
-    ignore_index=True)
+    [
+        get_specific_jrc_data(
+            code,
+            name,
+            1,
+            2,
+            "mio tkm",
+            "marine",
+            "JRC-IDEES-2021_x1990_Navigation_International_EU",
+        )
+        for code, name in zip(country_codes, country_names)
+    ],
+    ignore_index=True,
+)
 dm_mar = DataMatrix.create_from_df(df_mar, 0)
 
 
@@ -211,12 +256,14 @@ dm_mar = DataMatrix.create_from_df(df_mar, 0)
 ################
 
 # get data
-dict_extract = {"database" : "Transport",
-                "sheet" : "TrRail_act",
-                "variable" : "Freight transport (mio tkm)",
-                "sheet_last_row" : "Freight transport (mio tkm)",
-                "sub_variables" : ["Freight transport (mio tkm)"],
-                "calc_names" : ["rail"]}
+dict_extract = {
+    "database": "Transport",
+    "sheet": "TrRail_act",
+    "variable": "Freight transport (mio tkm)",
+    "sheet_last_row": "Freight transport (mio tkm)",
+    "sub_variables": ["Freight transport (mio tkm)"],
+    "calc_names": ["rail"],
+}
 dm_tkm_rail = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 
 ########################
@@ -224,13 +271,13 @@ dm_tkm_rail = get_jrc_data(dict_extract, dict_iso2_jrc, current_file_directory)
 ########################
 
 dm_tkm = dm_hdvl.copy()
-dm_tkm.add(np.nan, "Years", list(range(1990,1999+1)), "number", True)
+dm_tkm.add(np.nan, "Years", list(range(1990, 1999 + 1)), "number", True)
 dm_tkm.sort("Years")
-dm_tkm.append(dm_iww,"Variables")
-dm_tkm.append(dm_avi,"Variables")
-dm_tkm.append(dm_mar,"Variables")
-dm_tkm_rail.add(np.nan, "Years", list(range(1990,1999+1)), "number", True)
-dm_tkm.append(dm_tkm_rail,"Variables")
+dm_tkm.append(dm_iww, "Variables")
+dm_tkm.append(dm_avi, "Variables")
+dm_tkm.append(dm_mar, "Variables")
+dm_tkm_rail.add(np.nan, "Years", list(range(1990, 1999 + 1)), "number", True)
+dm_tkm.append(dm_tkm_rail, "Variables")
 dm_tkm.sort("Variables")
 dm_tkm.sort("Country")
 dm_tkm.sort("Years")
@@ -251,32 +298,52 @@ dm_tkm = linear_fitting(dm_tkm, years_ots)
 ##### MAKE FTS #####
 ####################
 
+
 # make function to fill in missing years fts for EU27 with linear fitting
-def make_fts(dm, variable, year_start, year_end, country = "EU27", dim = "Categories1", 
-             min_t0=0, min_tb=0, years_fts = years_fts): # I put minimum to 1 so it does not go to zero
+def make_fts(
+    dm,
+    variable,
+    year_start,
+    year_end,
+    country="EU27",
+    dim="Categories1",
+    min_t0=0,
+    min_tb=0,
+    years_fts=years_fts,
+):  # I put minimum to 1 so it does not go to zero
     dm = dm.copy()
     idx = dm.idx
     based_on_yars = list(range(year_start, year_end + 1, 1))
-    dm_temp = linear_fitting(dm.filter({"Country" : [country], dim : [variable]}), 
-                             years_ots = years_fts, min_t0=min_t0, min_tb=min_tb, based_on = based_on_yars)
+    dm_temp = linear_fitting(
+        dm.filter({"Country": [country], dim: [variable]}),
+        years_ots=years_fts,
+        min_t0=min_t0,
+        min_tb=min_tb,
+        based_on=based_on_yars,
+    )
     idx_temp = dm_temp.idx
     if dim == "Variables":
-        dm.array[idx[country],:,idx[variable],...] = \
-            np.round(dm_temp.array[idx_temp[country],:,idx_temp[variable],...],0)
+        dm.array[idx[country], :, idx[variable], ...] = np.round(
+            dm_temp.array[idx_temp[country], :, idx_temp[variable], ...], 0
+        )
     if dim == "Categories1":
-        dm.array[idx[country],:,:,idx[variable]] = \
-            np.round(dm_temp.array[idx_temp[country],:,:,idx_temp[variable]], 0)
+        dm.array[idx[country], :, :, idx[variable]] = np.round(
+            dm_temp.array[idx_temp[country], :, :, idx_temp[variable]], 0
+        )
     if dim == "Categories2":
-        dm.array[idx[country],:,:,:,idx[variable]] = \
-            np.round(dm_temp.array[idx_temp[country],:,:,:,idx_temp[variable]], 0)
+        dm.array[idx[country], :, :, :, idx[variable]] = np.round(
+            dm_temp.array[idx_temp[country], :, :, :, idx_temp[variable]], 0
+        )
     if dim == "Categories3":
-        dm.array[idx[country],:,:,:,:,idx[variable]] = \
-            np.round(dm_temp.array[idx_temp[country],:,:,:,:,idx_temp[variable]], 0)
-    
+        dm.array[idx[country], :, :, :, :, idx[variable]] = np.round(
+            dm_temp.array[idx_temp[country], :, :, :, :, idx_temp[variable]], 0
+        )
+
     return dm
 
+
 # add missing years fts
-dm_tkm.add(np.nan, col_label=years_fts, dummy=True, dim='Years')
+dm_tkm.add(np.nan, col_label=years_fts, dummy=True, dim="Years")
 
 # set default time window for linear trend
 baseyear_start = 2000
@@ -288,13 +355,13 @@ baseyear_end = 2019
 #   datamatrix_plot(selected_cols={"Country" : ["EU27"], "Variables" : [product]}))
 
 # make fts
-dm_tkm = make_fts(dm_tkm, "HDVH", baseyear_start, baseyear_end, dim = "Variables")
-dm_tkm = make_fts(dm_tkm, "HDVL", baseyear_start, baseyear_end, dim = "Variables")
-dm_tkm = make_fts(dm_tkm, "HDVM", baseyear_start, baseyear_end, dim = "Variables")
-dm_tkm = make_fts(dm_tkm, "IWW", baseyear_start, baseyear_end, dim = "Variables")
-dm_tkm = make_fts(dm_tkm, "aviation", baseyear_start, baseyear_end, dim = "Variables")
-dm_tkm = make_fts(dm_tkm, "marine", baseyear_start, baseyear_end, dim = "Variables")
-dm_tkm = make_fts(dm_tkm, "rail", baseyear_start, baseyear_end, dim = "Variables")
+dm_tkm = make_fts(dm_tkm, "HDVH", baseyear_start, baseyear_end, dim="Variables")
+dm_tkm = make_fts(dm_tkm, "HDVL", baseyear_start, baseyear_end, dim="Variables")
+dm_tkm = make_fts(dm_tkm, "HDVM", baseyear_start, baseyear_end, dim="Variables")
+dm_tkm = make_fts(dm_tkm, "IWW", baseyear_start, baseyear_end, dim="Variables")
+dm_tkm = make_fts(dm_tkm, "aviation", baseyear_start, baseyear_end, dim="Variables")
+dm_tkm = make_fts(dm_tkm, "marine", baseyear_start, baseyear_end, dim="Variables")
+dm_tkm = make_fts(dm_tkm, "rail", baseyear_start, baseyear_end, dim="Variables")
 
 # check
 # dm_tkm.filter({"Country" : ["EU27"]}).datamatrix_plot()
@@ -307,7 +374,7 @@ DM["ots"]["freight_modal-share"]
 
 # rename and deepen
 for v in dm_tkm.col_labels["Variables"]:
-    dm_tkm.rename_col(v,"tra_freight_modal-share_" + v, "Variables")
+    dm_tkm.rename_col(v, "tra_freight_modal-share_" + v, "Variables")
 dm_tkm.deepen()
 
 # get it in tkm
@@ -315,7 +382,9 @@ dm_tkm.change_unit("tra_freight_modal-share", 1e6, "mio tkm", "tkm")
 
 # do the percentages
 dm_tkm_pc = dm_tkm.normalise("Categories1", inplace=False, keep_original=False)
-dm_tkm_pc.rename_col("tra_freight_modal-share_share","tra_freight_modal-share","Variables")
+dm_tkm_pc.rename_col(
+    "tra_freight_modal-share_share", "tra_freight_modal-share", "Variables"
+)
 
 # check
 # dm_tkm_pc.filter({"Country" : ["EU27"]}).datamatrix_plot(stacked=True)
@@ -326,26 +395,30 @@ dm_tkm_pc.rename_col("tra_freight_modal-share_share","tra_freight_modal-share","
 ################
 
 # split between ots and fts
-DM_mod = {"ots": {"freight_modal-share" : []}, "fts": {"freight_modal-share" : dict()}}
-DM_mod["ots"]["freight_modal-share"] = dm_tkm_pc.filter({"Years" : years_ots})
-DM_mod["ots"]["freight_modal-share"].drop("Years",startyear)
-for i in range(1,4+1):
-    DM_mod["fts"]["freight_modal-share"][i] = dm_tkm_pc.filter({"Years" : years_fts})
+DM_mod = {"ots": {"freight_modal-share": []}, "fts": {"freight_modal-share": dict()}}
+DM_mod["ots"]["freight_modal-share"] = dm_tkm_pc.filter({"Years": years_ots})
+DM_mod["ots"]["freight_modal-share"].drop("Years", startyear)
+for i in range(1, 4 + 1):
+    DM_mod["fts"]["freight_modal-share"][i] = dm_tkm_pc.filter({"Years": years_fts})
 
 # save
-f = os.path.join(current_file_directory, '../data/datamatrix/lever_freight_modal-share.pickle')
-with open(f, 'wb') as handle:
+f = os.path.join(
+    current_file_directory, "../data/datamatrix/lever_freight_modal-share.pickle"
+)
+with open(f, "wb") as handle:
     pickle.dump(DM_mod, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 # split between ots and fts
-dm_tkm.rename_col("tra_freight_modal-share","tra_freight_tkm","Variables")
-DM_tkm = {"ots": {"freight_tkm" : []}, "fts": {"freight_tkm" : dict()}}
-DM_tkm ["ots"]["freight_tkm"] = dm_tkm.filter({"Years" : years_ots})
-DM_tkm ["ots"]["freight_tkm"].drop("Years",startyear)
-for i in range(1,4+1):
-    DM_tkm["fts"]["freight_tkm"][i] = dm_tkm.filter({"Years" : years_fts})
-    
+dm_tkm.rename_col("tra_freight_modal-share", "tra_freight_tkm", "Variables")
+DM_tkm = {"ots": {"freight_tkm": []}, "fts": {"freight_tkm": dict()}}
+DM_tkm["ots"]["freight_tkm"] = dm_tkm.filter({"Years": years_ots})
+DM_tkm["ots"]["freight_tkm"].drop("Years", startyear)
+for i in range(1, 4 + 1):
+    DM_tkm["fts"]["freight_tkm"][i] = dm_tkm.filter({"Years": years_fts})
+
 # save
-f = os.path.join(current_file_directory, '../data/datamatrix/intermediate_files/freight_tkm.pickle')
-with open(f, 'wb') as handle:
+f = os.path.join(
+    current_file_directory, "../data/datamatrix/intermediate_files/freight_tkm.pickle"
+)
+with open(f, "wb") as handle:
     pickle.dump(DM_tkm, handle, protocol=pickle.HIGHEST_PROTOCOL)

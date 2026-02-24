@@ -1,28 +1,21 @@
-from model.transport_module import transport
-from model.lifestyles_module import lifestyles
-from model.buildings_module import buildings
+from .transport_module import transport
+from .lifestyles_module import lifestyles
+from .buildings_module import buildings
 
-from model.forestry_module import forestry
+from .forestry_module import forestry
 
-# from model.minerals_module import minerals
-from model.common.interface_class import Interface
-from model.district_heating_module import district_heating
-from model.agriculture_module import agriculture
-from model.emissions_module import emissions
-from model.climate_module import climate
+# from .minerals_module import minerals
+from .common.interface_class import Interface
+from .agriculture_module import agriculture
+from .climate_module import climate
 
-from model.ammonia_module import ammonia
-from model.industry_module import industry
-from model.energy_module import energy
-from model.power_module import power
-from model.landuse_module import land_use
-from model.oilrefinery_module import refinery
+from .ammonia_module import ammonia
+from .industry_module import industry
+from .energy_module import energy
 
 import math
 import copy
 import time
-import os
-import json
 
 
 def runner(lever_setting, years_setting, DM_in, sectors, logger):
