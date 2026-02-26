@@ -1,0 +1,16 @@
+name: Notify speed-to-zero on new tag
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.APP_REPO_TOKEN }}
+          repository: EPFL-ENAC/speed-to-zero
+          event-type: model-updated
+          client-payload: '{"tag": "${{ github.ref_name }}"}'
