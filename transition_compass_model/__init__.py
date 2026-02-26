@@ -1,4 +1,4 @@
-"""Leure Transition Compass Model module."""
+"""Transition Compass Model module."""
 
 from . import _database
 from . import model

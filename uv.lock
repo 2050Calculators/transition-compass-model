@@ -441,7 +441,7 @@ wheels = [
 ]
 
 [[package]]
-name = "leure-transition-compass-model"
+name = "transition-compass-model"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
