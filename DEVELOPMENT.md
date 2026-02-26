@@ -11,7 +11,7 @@ Local setup, dev workflow, and release process for `transition-compass-model`.
 ## Standalone install
 
 ```bash
-git clone https://github.com/EPFL-ENAC/transition-compass-model.git
+git clone https://github.com/2050Calculators/transition-compass-model.git
 cd transition-compass-model
 uv sync
 ```
@@ -39,7 +39,7 @@ parent-dir/
 ```bash
 # 1. Clone both repos as siblings
 git clone https://github.com/EPFL-ENAC/leure-speed-to-zero.git speed-to-zero
-git clone https://github.com/EPFL-ENAC/transition-compass-model.git transition-compass-model
+git clone https://github.com/2050Calculators/transition-compass-model.git transition-compass-model
 
 # 2. Install the app using the local model folder (editable install)
 cd speed-to-zero/backend

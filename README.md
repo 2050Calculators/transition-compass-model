@@ -46,13 +46,13 @@ Given a set of policy lever values (integers 1–4 representing ambition levels)
 ## Install as a package
 
 ```bash
-pip install git+https://github.com/EPFL-ENAC/transition-compass-model.git
+pip install git+https://github.com/2050Calculators/transition-compass-model.git
 ```
 
 Or with a specific tag:
 
 ```bash
-pip install git+https://github.com/EPFL-ENAC/transition-compass-model.git@v1.0.0
+pip install git+https://github.com/2050Calculators/transition-compass-model.git@v1.0.0
 ```
 
 ## Local development
