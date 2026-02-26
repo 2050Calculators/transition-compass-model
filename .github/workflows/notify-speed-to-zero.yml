@@ -11,6 +11,6 @@ jobs:
       - uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.APP_REPO_TOKEN }}
-          repository: EPFL-ENAC/speed-to-zero
+          repository: EPFL-ENAC/leure-speed-to-zero
           event-type: model-updated
           client-payload: '{"tag": "${{ github.ref_name }}"}'
