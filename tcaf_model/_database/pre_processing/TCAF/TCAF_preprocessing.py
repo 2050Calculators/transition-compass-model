@@ -397,6 +397,77 @@ def TCAF_biodiversity_preprocessing():
     return DM_TCAF_biodiversity
 
 
+# CalculationLeaf TCAF - LCA
+
+def TCAF_lca_preprocessing():
+
+  # Read data from TCAF Datapool
+  current_file_directory = os.path.dirname(os.path.abspath(__file__))
+  f = os.path.join(
+    current_file_directory,
+    "data/data_pool/lcia_animal_production_recipe.csv"
+  )
+  df_lcia_animal_production_recipe = pd.read_csv(f)
+  f = os.path.join(
+    current_file_directory,
+    "data/data_pool/lcia_plant_production_recipe.csv"
+  )
+  df_lcia_plant_production_recipe = pd.read_csv(f)
+
+  # For animal-production:
+  # drop the rows that contain 'co-product', 'by-product', 'edible part' (to keep only the entire animal)
+  exclude_keywords = ['co-product', 'by-product', 'edible part']
+  mask = df_lcia_animal_production_recipe['Process'].str.contains(
+    '|'.join(exclude_keywords), case=False, na=False
+  )
+  df_lcia_animal_production_recipe = df_lcia_animal_production_recipe[~mask].copy()
+  # If process contains egg, Category => avian-egg
+  df_lcia_animal_production_recipe.loc[
+    df_lcia_animal_production_recipe['Process'].str.contains('egg', case=False,na=False),'Category'
+  ] = 'avian-egg'
+
+  # Aggregate per product category (ex wheat + oat => cereals)
+  df_lcia_animal_production_recipe_agg = (df_lcia_animal_production_recipe
+                   .groupby(['Impact category', 'Category', 'Country', 'Production Method'],
+                            as_index=False)['Value']
+                   .mean())
+  df_lcia_plant_production_recipe_agg = (df_lcia_plant_production_recipe
+                   .groupby(['Impact category', 'Category', 'Country', 'Production Method'],
+                            as_index=False)['Value']
+                   .mean())
+
+  # Create variable name
+  def clean_process(process):
+    process = process.lower()
+    process = re.sub(r'[^a-z0-9\-]', '-', process)  # replace non alphanumeric/dash with -
+    process = re.sub(r'-+', '-', process)             # collapse multiple dashes
+    process = process.strip('-')                       # remove leading/trailing dashes
+    return process
+
+  df_lcia_animal_production_recipe_agg['variable'] = ('lca-impacts_'
+                        + df_lcia_animal_production_recipe_agg['Category'] + '_'
+                        + df_lcia_animal_production_recipe_agg['Process'].apply(clean_process) + '_'
+                        +df_lcia_animal_production_recipe_agg['Production Method'].apply(clean_process) + '_'
+                        + df_lcia_animal_production_recipe_agg['Impact category'])
+
+  df_lcia_plant_production_recipe['variable']_agg = ('lca-impacts_'
+                        + df_lcia_plant_production_recipe_agg['Category'] + '_'
+                        + df_lcia_plant_production_recipe_agg['Process'].apply(clean_process) + '_'
+                        +df_lcia_plant_production_recipe_agg['Production Method'].apply(clean_process) + '_'
+                        + df_lcia_plant_production_recipe_agg['Impact category'])
+
+  # Filter columns
+
+  # Format as DM
+
+  # Match countries with Faostat
+
+  # Deal with missing countries
+
+  DM_TCAF_lca = df_lcia_animal_production_recipe
+
+  return DM_TCAF_lca
+
 # CalculationLeaf CREATE PICKLE
 def database_from_csv_to_datamatrix(years_ots, years_fts):
 
@@ -489,8 +560,9 @@ def database_from_csv_to_datamatrix(years_ots, years_fts):
 years_ots = create_years_list(1990, 2023, 1)  # make list with years from 1990 to 2015
 years_fts = create_years_list(2025, 2050, 5)
 years_all = years_ots + years_fts
-DM_TCAF_health_diet, dm_health_dalys = TCAF_health_diet_preprocessing()
-DM_TCAF_biodiversity = TCAF_biodiversity_preprocessing()
+#DM_TCAF_health_diet, dm_health_dalys = TCAF_health_diet_preprocessing()
+#DM_TCAF_biodiversity = TCAF_biodiversity_preprocessing()
+DM_TCAF_lca = TCAF_lca_preprocessing()
 CDM_MF = TCAF_MF_preprocessing()
 
 
