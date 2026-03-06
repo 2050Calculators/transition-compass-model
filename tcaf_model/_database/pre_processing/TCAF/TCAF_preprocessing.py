@@ -1,5 +1,6 @@
 import os
 import pickle
+import re
 import unicodedata
 
 # from _database.pre_processing.api_routines_CH import get_data_api_CH
@@ -7,6 +8,7 @@ import pandas as pd
 import pycountry
 
 from tcaf_model.model.common.auxiliary_functions import (
+    add_and_fill_missing_countries_dm,
     create_years_list,
     dm_match_countries,
     harmonize_countries,
@@ -399,74 +401,447 @@ def TCAF_biodiversity_preprocessing():
 
 # CalculationLeaf TCAF - LCA
 
+
 def TCAF_lca_preprocessing():
+    # Read data from TCAF Datapool
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    f = os.path.join(
+        current_file_directory, "data/data_pool/lcia_animal_production_recipe.csv"
+    )
+    df_lcia_animal_production_recipe = pd.read_csv(f)
+    f = os.path.join(
+        current_file_directory, "data/data_pool/lcia_plant_production_recipe.csv"
+    )
+    df_lcia_plant_production_recipe = pd.read_csv(f)
 
-  # Read data from TCAF Datapool
-  current_file_directory = os.path.dirname(os.path.abspath(__file__))
-  f = os.path.join(
-    current_file_directory,
-    "data/data_pool/lcia_animal_production_recipe.csv"
-  )
-  df_lcia_animal_production_recipe = pd.read_csv(f)
-  f = os.path.join(
-    current_file_directory,
-    "data/data_pool/lcia_plant_production_recipe.csv"
-  )
-  df_lcia_plant_production_recipe = pd.read_csv(f)
+    # For animal-production:
+    # drop the rows that contain 'co-product', 'by-product', 'edible part' (to keep only the entire animal)
+    exclude_keywords = ["co-product", "by-product", "edible part"]
+    mask = df_lcia_animal_production_recipe["Process"].str.contains(
+        "|".join(exclude_keywords), case=False, na=False
+    )
+    df_lcia_animal_production_recipe = df_lcia_animal_production_recipe[~mask].copy()
+    # If process contains egg, Category => avian-egg
+    df_lcia_animal_production_recipe.loc[
+        df_lcia_animal_production_recipe["Process"].str.contains(
+            "egg", case=False, na=False
+        ),
+        "Category",
+    ] = "avian-egg"
 
-  # For animal-production:
-  # drop the rows that contain 'co-product', 'by-product', 'edible part' (to keep only the entire animal)
-  exclude_keywords = ['co-product', 'by-product', 'edible part']
-  mask = df_lcia_animal_production_recipe['Process'].str.contains(
-    '|'.join(exclude_keywords), case=False, na=False
-  )
-  df_lcia_animal_production_recipe = df_lcia_animal_production_recipe[~mask].copy()
-  # If process contains egg, Category => avian-egg
-  df_lcia_animal_production_recipe.loc[
-    df_lcia_animal_production_recipe['Process'].str.contains('egg', case=False,na=False),'Category'
-  ] = 'avian-egg'
+    # Convert values to numeric
+    df_lcia_animal_production_recipe["Value"] = pd.to_numeric(
+        df_lcia_animal_production_recipe["Value"], errors="coerce"
+    )
+    df_lcia_plant_production_recipe["Value"] = pd.to_numeric(
+        df_lcia_plant_production_recipe["Value"], errors="coerce"
+    )
 
-  # Aggregate per product category (ex wheat + oat => cereals)
-  df_lcia_animal_production_recipe_agg = (df_lcia_animal_production_recipe
-                   .groupby(['Impact category', 'Category', 'Country', 'Production Method'],
-                            as_index=False)['Value']
-                   .mean())
-  df_lcia_plant_production_recipe_agg = (df_lcia_plant_production_recipe
-                   .groupby(['Impact category', 'Category', 'Country', 'Production Method'],
-                            as_index=False)['Value']
-                   .mean())
+    # Aggregate per product category (ex wheat + oat => cereals)
+    df_lcia_animal_production_recipe_agg = df_lcia_animal_production_recipe.groupby(
+        ["Impact category", "Category", "Country", "Production Method"], as_index=False
+    )["Value"].mean()
+    df_lcia_plant_production_recipe_agg = df_lcia_plant_production_recipe.groupby(
+        ["Impact category", "Category", "Country", "Production Method"], as_index=False
+    )["Value"].mean()
 
-  # Create variable name
-  def clean_process(process):
-    process = process.lower()
-    process = re.sub(r'[^a-z0-9\-]', '-', process)  # replace non alphanumeric/dash with -
-    process = re.sub(r'-+', '-', process)             # collapse multiple dashes
-    process = process.strip('-')                       # remove leading/trailing dashes
-    return process
+    # Create variable name
+    def clean_process(process):
+        process = process.lower()
+        process = re.sub(
+            r"[^a-z0-9\-]", "-", process
+        )  # replace non alphanumeric/dash with -
+        process = re.sub(r"-+", "-", process)  # collapse multiple dashes
+        process = process.strip("-")  # remove leading/trailing dashes
+        return process
 
-  df_lcia_animal_production_recipe_agg['variable'] = ('lca-impacts_'
-                        + df_lcia_animal_production_recipe_agg['Category'] + '_'
-                        + df_lcia_animal_production_recipe_agg['Process'].apply(clean_process) + '_'
-                        +df_lcia_animal_production_recipe_agg['Production Method'].apply(clean_process) + '_'
-                        + df_lcia_animal_production_recipe_agg['Impact category'])
+    df_lcia_animal_production_recipe_agg["variables"] = (
+        "lca-impacts_"
+        + df_lcia_animal_production_recipe_agg["Category"].apply(clean_process)
+        + "_"
+        + df_lcia_animal_production_recipe_agg["Production Method"].apply(clean_process)
+        + "_"
+        + df_lcia_animal_production_recipe_agg["Impact category"]
+    )
 
-  df_lcia_plant_production_recipe['variable']_agg = ('lca-impacts_'
-                        + df_lcia_plant_production_recipe_agg['Category'] + '_'
-                        + df_lcia_plant_production_recipe_agg['Process'].apply(clean_process) + '_'
-                        +df_lcia_plant_production_recipe_agg['Production Method'].apply(clean_process) + '_'
-                        + df_lcia_plant_production_recipe_agg['Impact category'])
+    df_lcia_plant_production_recipe_agg["variables"] = (
+        "lca-impacts_"
+        + df_lcia_plant_production_recipe_agg["Category"].apply(clean_process)
+        + "_"
+        + df_lcia_plant_production_recipe_agg["Production Method"].apply(clean_process)
+        + "_"
+        + df_lcia_plant_production_recipe_agg["Impact category"]
+    )
 
-  # Filter columns
+    # Filter columns
+    cols_to_filter = ["variables", "Country", "Value"]
+    df_lcia_animal_production_recipe_agg = df_lcia_animal_production_recipe_agg[
+        cols_to_filter
+    ]
+    df_lcia_plant_production_recipe_agg = df_lcia_plant_production_recipe_agg[
+        cols_to_filter
+    ]
 
-  # Format as DM
+    # Append dfs
+    df_lcia_recipe_all = pd.concat(
+        [df_lcia_plant_production_recipe_agg, df_lcia_animal_production_recipe_agg],
+        ignore_index=True,
+    )
 
-  # Match countries with Faostat
+    # Add Years
+    df_lcia_recipe_all["Years"] = "2023"
 
-  # Deal with missing countries
+    # Step Datamatrix Formatting
+    # Format as DMs for Switzerland (with production methods)
+    lever = "dummy"
+    df_lcia_recipe_all["lever"] = lever
+    df_ots, df_fts = database_to_df_robust(df_lcia_recipe_all, lever, level="all")
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm_lcia_recipe_all_ch = DataMatrix.create_from_df(df_ots, num_cat=3)
 
-  DM_TCAF_lca = df_lcia_animal_production_recipe
+    # Group production method 'intensive', 'conventional' and 'not-specified' in the same 'intensive' category
+    dm_lcia_recipe_all_ch.groupby(
+        {"intensive": "conventional|intensive|not-specified"},
+        dim="Categories2",
+        aggregation="mean",
+        regex=True,
+        inplace=True,
+    )
 
-  return DM_TCAF_lca
+    # Format as DMs for world (without production methods)
+    lever = "dummy"
+    df_lcia_recipe_all["lever"] = lever
+    df_ots, df_fts = database_to_df_robust(df_lcia_recipe_all, lever, level="all")
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm_lcia_recipe_all_world = DataMatrix.create_from_df(df_ots, num_cat=3)
+
+    # Group all production methods by mean and delete col
+    dm_lcia_recipe_all_world.group_all(
+        dim="Categories2", inplace=True, aggregation="mean"
+    )
+
+    # Step Rename Categories with rest of TCAF-Calc
+    # Mapping from dm categories to target categories
+    mapping_lca = {
+        "crop-cereal": ["cereals"],
+        "crop-fruit": ["fruits"],
+        "crop-oilcrop": ["oilcrops"],
+        "crop-pulse": ["legumes"],
+        "crop-starch": ["starchyroots", "starchycrops"],
+        "crop-sugarcrop": ["sugarcrops"],
+        "crop-veg": ["vegetables"],
+        "liv-abp-hens-egg": ["avian-egg"],
+        "liv-meat-bovine": ["bovine"],
+        "liv-meat-poultry": ["avian"],
+        "liv-meat-pig": ["porcine"],
+        "liv-meat-sheep": ["ovine", "caprine"],
+        "liv-meat-oth-animal": ["others"],
+        "to-exclude": [
+            "roughage",
+            "intercrops",
+            "nuts",
+            "seafood",
+            "fish",
+            "fish-market",
+            "fish-transformation",
+        ],
+    }
+
+    dm_lcia_recipe_all_ch.groupby(
+        mapping_lca, dim="Categories1", aggregation="mean", inplace=True
+    )
+    dm_lcia_recipe_all_ch.drop("Categories1", "to-exclude")
+    dm_lcia_recipe_all_world.groupby(
+        mapping_lca, dim="Categories1", aggregation="mean", inplace=True
+    )
+    dm_lcia_recipe_all_world.drop("Categories1", "to-exclude")
+
+    # Step Linear fitting for all years
+    linear_fitting(dm_lcia_recipe_all_ch, years_all)
+    linear_fitting(dm_lcia_recipe_all_world, years_all)
+
+    # Step Proxies for existing countries
+
+    faostat_country_names = {
+        # Africa
+        "DZ": "Algeria",
+        "AO": "Angola",
+        "BJ": "Benin",
+        "BW": "Botswana",
+        "BF": "Burkina Faso",
+        "BI": "Burundi",
+        "CV": "Cabo Verde",
+        "CM": "Cameroon",
+        "CF": "Central African Republic",
+        "TD": "Chad",
+        "KM": "Comoros",
+        "CG": "Congo",
+        "CD": "Democratic Republic of the Congo",
+        "CI": "Côte d'Ivoire",
+        "DJ": "Djibouti",
+        "EG": "Egypt",
+        "GQ": "Equatorial Guinea",
+        "ER": "Eritrea",
+        "SZ": "Eswatini",
+        "ET": "Ethiopia",
+        "GA": "Gabon",
+        "GM": "Gambia",
+        "GH": "Ghana",
+        "GN": "Guinea",
+        "GW": "Guinea-Bissau",
+        "KE": "Kenya",
+        "LS": "Lesotho",
+        "LR": "Liberia",
+        "LY": "Libya",
+        "MG": "Madagascar",
+        "MW": "Malawi",
+        "ML": "Mali",
+        "MR": "Mauritania",
+        "MU": "Mauritius",
+        "MA": "Morocco",
+        "MZ": "Mozambique",
+        "NA": "Namibia",
+        "NE": "Niger",
+        "NG": "Nigeria",
+        "RE": "Réunion",
+        "RW": "Rwanda",
+        "ST": "Sao Tome and Principe",
+        "SN": "Senegal",
+        "SC": "Seychelles",
+        "SL": "Sierra Leone",
+        "SO": "Somalia",
+        "ZA": "South Africa",
+        "SS": "South Sudan",
+        "SD": "Sudan",
+        "TZ": "United Republic of Tanzania",
+        "TG": "Togo",
+        "TN": "Tunisia",
+        "UG": "Uganda",
+        "ZM": "Zambia",
+        "ZW": "Zimbabwe",
+        # Americas
+        "AR": "Argentina",
+        "BS": "Bahamas",
+        "BB": "Barbados",
+        "BZ": "Belize",
+        "BO": "Bolivia (Plurinational State of)",
+        "BR": "Brazil",
+        "CA": "Canada",
+        "CL": "Chile",
+        "CO": "Colombia",
+        "CR": "Costa Rica",
+        "CU": "Cuba",
+        "DM": "Dominica",
+        "DO": "Dominican Republic",
+        "EC": "Ecuador",
+        "SV": "El Salvador",
+        "GD": "Grenada",
+        "GT": "Guatemala",
+        "GY": "Guyana",
+        "HT": "Haiti",
+        "HN": "Honduras",
+        "JM": "Jamaica",
+        "MX": "Mexico",
+        "NI": "Nicaragua",
+        "PA": "Panama",
+        "PY": "Paraguay",
+        "PE": "Peru",
+        "KN": "Saint Kitts and Nevis",
+        "LC": "Saint Lucia",
+        "VC": "Saint Vincent and the Grenadines",
+        "SR": "Suriname",
+        "TT": "Trinidad and Tobago",
+        "US": "United States of America",
+        "UY": "Uruguay",
+        "VE": "Venezuela (Bolivarian Republic of)",
+        # Asia
+        "AF": "Afghanistan",
+        "AM": "Armenia",
+        "AZ": "Azerbaijan",
+        "BH": "Bahrain",
+        "BD": "Bangladesh",
+        "BT": "Bhutan",
+        "BN": "Brunei Darussalam",
+        "KH": "Cambodia",
+        "CN": "China",
+        "CY": "Cyprus",
+        "GE": "Georgia",
+        "IN": "India",
+        "ID": "Indonesia",
+        "IR": "Iran (Islamic Republic of)",
+        "IQ": "Iraq",
+        "IL": "Israel",
+        "JP": "Japan",
+        "JO": "Jordan",
+        "KZ": "Kazakhstan",
+        "KW": "Kuwait",
+        "KG": "Kyrgyzstan",
+        "LA": "Lao People's Democratic Republic",
+        "LB": "Lebanon",
+        "MY": "Malaysia",
+        "MV": "Maldives",
+        "MN": "Mongolia",
+        "MM": "Myanmar",
+        "NP": "Nepal",
+        "KP": "Democratic People's Republic of Korea",
+        "OM": "Oman",
+        "PK": "Pakistan",
+        "PH": "Philippines",
+        "QA": "Qatar",
+        "KR": "Republic of Korea",
+        "SA": "Saudi Arabia",
+        "SG": "Singapore",
+        "LK": "Sri Lanka",
+        "SY": "Syrian Arab Republic",
+        "TJ": "Tajikistan",
+        "TH": "Thailand",
+        "TL": "Timor-Leste",
+        "TR": "Türkiye",
+        "TM": "Turkmenistan",
+        "AE": "United Arab Emirates",
+        "UZ": "Uzbekistan",
+        "VN": "Viet Nam",
+        "YE": "Yemen",
+        # Europe
+        "AL": "Albania",
+        "AD": "Andorra",
+        "AT": "Austria",
+        "BY": "Belarus",
+        "BE": "Belgium",
+        "BA": "Bosnia and Herzegovina",
+        "BG": "Bulgaria",
+        "HR": "Croatia",
+        "CZ": "Czechia",
+        "DK": "Denmark",
+        "EE": "Estonia",
+        "FI": "Finland",
+        "FR": "France",
+        "DE": "Germany",
+        "GR": "Greece",
+        "HU": "Hungary",
+        "IS": "Iceland",
+        "IE": "Ireland",
+        "IT": "Italy",
+        "LV": "Latvia",
+        "LI": "Liechtenstein",
+        "LT": "Lithuania",
+        "LU": "Luxembourg",
+        "MT": "Malta",
+        "MD": "Republic of Moldova",
+        "MC": "Monaco",
+        "ME": "Montenegro",
+        "NL": "Netherlands",
+        "MK": "North Macedonia",
+        "NO": "Norway",
+        "PL": "Poland",
+        "PT": "Portugal",
+        "RO": "Romania",
+        "RU": "Russian Federation",
+        "SM": "San Marino",
+        "RS": "Serbia",
+        "SK": "Slovakia",
+        "SI": "Slovenia",
+        "ES": "Spain",
+        "SE": "Sweden",
+        "CH": "Switzerland",
+        "UA": "Ukraine",
+        "GB": "United Kingdom",
+        # Oceania
+        "AU": "Australia",
+        "FJ": "Fiji",
+        "KI": "Kiribati",
+        "MH": "Marshall Islands",
+        "FM": "Micronesia (Federated States of)",
+        "NR": "Nauru",
+        "NZ": "New Zealand",
+        "PW": "Palau",
+        "PG": "Papua New Guinea",
+        "WS": "Samoa",
+        "SB": "Solomon Islands",
+        "TO": "Tonga",
+        "TV": "Tuvalu",
+        "VU": "Vanuatu",
+        # Non-standard ecoinvent region codes
+        "GLO": "World",
+        "RoW": "Rest of World",
+        "RER": "Europe",
+        "RNA": "North America",
+        "RLA": "Latin America",
+        "WI": "West Indies",
+        "EU": "European Union",
+    }
+
+    # Specific country proxies
+    proxy_map = {
+        "CH": "FR",
+        "AT": "DE",
+        "BE": "FR",
+        "NL": "DE",
+        # European countries → RER
+        # Non-European → GLO or RoW
+    }
+
+    target_countries = list(faostat_country_names.keys())
+    add_and_fill_missing_countries_dm(
+        dm_lcia_recipe_all_ch, target_countries, proxy_map
+    )
+    add_and_fill_missing_countries_dm(
+        dm_lcia_recipe_all_world, target_countries, proxy_map
+    )
+
+    # Step Match countries names with Faostat
+
+    def convert_country_codes(dm):
+        """Rename country codes to FAOSTAT country names in a DataMatrix."""
+
+        col_in = []
+        col_out = []
+
+        for code in dm.col_labels["Country"]:
+            if code in faostat_country_names:
+                col_in.append(code)
+                col_out.append(faostat_country_names[code])
+            else:
+                print(f"  ⚠️ No FAOSTAT name found for: {code}")
+
+        dm.rename_col(col_in, col_out, dim="Country")
+        print(f"  ✓ Converted {len(col_in)} country codes to FAOSTAT names")
+
+    # Usage
+    convert_country_codes(dm_lcia_recipe_all_ch)
+    convert_country_codes(dm_lcia_recipe_all_world)
+
+    # Drop non-standard ecoinvent region codes
+    regions_to_drop = [
+        "World",
+        "Rest of World",
+        "Europe",
+        "North America",
+        "Latin America",
+        "West Indies",
+        "European Union",
+    ]
+
+    existing_to_drop = [
+        r for r in regions_to_drop if r in dm_lcia_recipe_all_ch.col_labels["Country"]
+    ]
+    dm_lcia_recipe_all_ch.drop(dim="Country", col_label=existing_to_drop)
+
+    existing_to_drop = [
+        r
+        for r in regions_to_drop
+        if r in dm_lcia_recipe_all_world.col_labels["Country"]
+    ]
+    dm_lcia_recipe_all_world.drop(dim="Country", col_label=existing_to_drop)
+
+    # Format as big DM
+    DM_TCAF_lca = {
+        "lca-switzerland": dm_lcia_recipe_all_ch.filter({"Country": ["Switzerland"]}),
+        "lca-world": dm_lcia_recipe_all_world,
+    }
+
+    return DM_TCAF_lca
+
 
 # CalculationLeaf CREATE PICKLE
 def database_from_csv_to_datamatrix(years_ots, years_fts):
@@ -483,6 +858,7 @@ def database_from_csv_to_datamatrix(years_ots, years_fts):
     dict_fxa["health-diet_paf"] = DM_TCAF_health_diet
     dict_fxa["health-diet_dalys"] = dm_health_dalys
     dict_fxa["biodiversity"] = DM_TCAF_biodiversity
+    dict_fxa["lca"] = DM_TCAF_lca
 
     # CalibrationDataToDatamatrix ------------------------------------------------
 
@@ -560,8 +936,8 @@ def database_from_csv_to_datamatrix(years_ots, years_fts):
 years_ots = create_years_list(1990, 2023, 1)  # make list with years from 1990 to 2015
 years_fts = create_years_list(2025, 2050, 5)
 years_all = years_ots + years_fts
-#DM_TCAF_health_diet, dm_health_dalys = TCAF_health_diet_preprocessing()
-#DM_TCAF_biodiversity = TCAF_biodiversity_preprocessing()
+DM_TCAF_health_diet, dm_health_dalys = TCAF_health_diet_preprocessing()
+DM_TCAF_biodiversity = TCAF_biodiversity_preprocessing()
 DM_TCAF_lca = TCAF_lca_preprocessing()
 CDM_MF = TCAF_MF_preprocessing()
 

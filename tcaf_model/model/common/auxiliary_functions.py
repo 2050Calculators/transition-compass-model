@@ -2097,3 +2097,154 @@ def filter_unreliable_country_category(
             dm_fitted[country, :, :, category] = np.nan
 
     return flagged_pairs
+
+
+def get_proxy_country(country, available_countries, proxy_map):
+    # Return best available proxy for a missing country.
+    european_countries = [
+        "AT",
+        "BE",
+        "BG",
+        "HR",
+        "CY",
+        "CZ",
+        "DK",
+        "EE",
+        "FI",
+        "FR",
+        "DE",
+        "GR",
+        "HU",
+        "IE",
+        "IT",
+        "LV",
+        "LT",
+        "LU",
+        "MT",
+        "NL",
+        "PL",
+        "PT",
+        "RO",
+        "SK",
+        "SI",
+        "ES",
+        "SE",
+        "CH",
+        "NO",
+        "IS",
+        "UK",
+        "GB",
+    ]
+
+    # 1. Check specific proxy map first
+    if country in proxy_map and proxy_map[country] in available_countries:
+        return proxy_map[country]
+
+    # 2. European countries → try RER first, then GLO, then RoW
+    if country in european_countries:
+        for fallback in ["RER", "GLO", "RoW"]:
+            if fallback in available_countries:
+                return fallback
+
+    # 3. Non-European → try GLO first, then RoW, then RER
+    for fallback in ["GLO", "RoW", "RER"]:
+        if fallback in available_countries:
+            return fallback
+
+    return None  # no proxy found
+
+
+def fill_missing_countries_dm(dm, target_countries):
+    # Fill missing country data in a DataMatrix using proxy countries
+
+    available_countries = dm.col_labels["Country"]
+
+    for country in target_countries:
+        if country in available_countries:
+            continue  # already exists, skip
+
+        proxy = get_proxy_country(country, available_countries, proxy_map)
+        if proxy is None:
+            print(f"  ⚠️ No proxy found for {country}")
+            continue
+
+        # Extract proxy country data and add it under the target country name
+        dm_proxy = dm.filter({"Country": [proxy]})
+        dm_proxy.rename_col(proxy, country, dim="Country")
+        dm.append(dm_proxy, dim="Country")
+        print(f"  ✓ {country} filled using proxy: {proxy}")
+
+    dm.sort(dim="Country")
+    return
+
+
+def fill_nan_countries_dm(dm, target_countries, proxy_map):
+    """Fill NaN values for countries using proxy countries."""
+
+    available_countries = dm.col_labels["Country"]
+    a = dm.dim_labels.index("Country")
+
+    for country in target_countries:
+        if country not in available_countries:
+            print(f"  ⚠️ {country} not in DataMatrix, skipping")
+            continue
+
+        proxy = get_proxy_country(country, available_countries, proxy_map)
+        if proxy is None:
+            print(f"  ⚠️ No proxy found for {country}")
+            continue
+
+        c_idx = dm.idx[country]
+        p_idx = dm.idx[proxy]
+
+        # Find where country has NaN and proxy has values
+        country_slice = dm.array[c_idx]
+        proxy_slice = dm.array[p_idx]
+
+        nan_mask = np.isnan(country_slice) & ~np.isnan(proxy_slice)
+
+        if nan_mask.any():
+            dm.array[c_idx][nan_mask] = proxy_slice[nan_mask]
+            print(
+                f"  ✓ {country}: filled {nan_mask.sum()} NaN values using proxy: {proxy}"
+            )
+        else:
+            print(f"  ✓ {country}: no NaN values to fill")
+
+
+def add_and_fill_missing_countries_dm(dm, target_countries, proxy_map):
+    # Add missing countries and fill NaN values using proxy countries."""
+
+    available_countries = dm.col_labels["Country"]
+
+    # Step 1: Add completely missing countries
+    for country in target_countries:
+        if country not in available_countries:
+            proxy = get_proxy_country(country, available_countries, proxy_map)
+            if proxy is None:
+                print(f"  ⚠️ No proxy found for {country}")
+                continue
+            dm_proxy = dm.filter({"Country": [proxy]})
+            dm_proxy.rename_col(proxy, country, dim="Country")
+            dm.append(dm_proxy, dim="Country")
+            print(f"  ✓ {country} added using proxy: {proxy}")
+
+    # Step 2: Fill NaN values for existing countries
+    available_countries = dm.col_labels["Country"]  # refresh after additions
+    for country in available_countries:
+        proxy = get_proxy_country(country, available_countries, proxy_map)
+        if proxy is None:
+            print(f"  ⚠️ No proxy found for {country}")
+            continue
+        c_idx = dm.idx[country]
+        p_idx = dm.idx[proxy]
+        country_slice = dm.array[c_idx]
+        proxy_slice = dm.array[p_idx]
+        nan_mask = np.isnan(country_slice) & ~np.isnan(proxy_slice)
+        if nan_mask.any():
+            dm.array[c_idx][nan_mask] = proxy_slice[nan_mask]
+            print(
+                f"  ✓ {country}: filled {nan_mask.sum()} NaN values using proxy: {proxy}"
+            )
+
+    dm.sort(dim="Country")
