@@ -1289,19 +1289,17 @@ def livestock(
         from_sector="livestock", to_sector="land-use", dm=dm_livestock_landuse
     )
 
-    """# Livestock to TCAF
+    # livestock to TCAF module
     DM_TCAF_livestock = livestock_TCAF_interface()
     if write_pickle is True:
-      current_file_directory = os.path.dirname(os.path.abspath(__file__))
-      f = os.path.join(current_file_directory,
-                       '../_database/data/interface/livestock_to_TCAF.pickle')
-      with open(f, 'wb') as handle:
-        pickle.dump(DM_TCAF_livestock, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    interface.add_link(from_sector='livestock', to_sector='TCAF',
-                           dm=DM_TCAF_livestock)"""
-    # pour update un pickle qui existe déjà, par exemple pour gagner du temps au pre-processing,
-    # Pour remplacer des valeurs dans la même structure. Accepete un pays différent
-    # my_pickle_dump(DM_new=DM_TCAF_health_diet, local_pickle_file=f)
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(
+            current_file_directory,
+            "../_database/data/interface/livestock_to_TCAF.pickle",
+        )
+        with open(f, "wb") as handle:
+            pickle.dump(DM_TCAF_livestock, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    interface.add_link(from_sector="livestock", to_sector="TCAF", dm=DM_TCAF_livestock)
 
     # livestock to crop module
     DM_livestock_to_crop = {

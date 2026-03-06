@@ -36,6 +36,12 @@ def read_data(DM_TCAF, lever_setting, years_all):
         "health-diet_dalys": dm_tcaf_dalys,
     }
 
+    # Aggregate Data Matrix - LCA
+    DM_TCAF_lca = {
+        "lca-switzerland": DM_TCAF["fxa"]["lca"]["lca-switzerland"],
+        "lca-world": DM_TCAF["fxa"]["lca"]["lca-world"],
+    }
+
     # Aggregate Data Matrix - BIODIVERSITY
     DM_TCAF_biodiversity = {
         "biodiversity-ch": DM_TCAF["fxa"]["biodiversity"]["TCAF-biodiversity-CH"],
@@ -53,7 +59,7 @@ def read_data(DM_TCAF, lever_setting, years_all):
     )
     CDM_MF["health-diet"] = cdm_temp
 
-    return DM_TCAF_health_diet, DM_TCAF_biodiversity, CDM_MF
+    return DM_TCAF_lca, DM_TCAF_health_diet, DM_TCAF_biodiversity, CDM_MF
 
 
 # SimulateInteractions
@@ -82,6 +88,29 @@ def simulate_landuse_to_TCAF_input():
     with open(f, "rb") as handle:
         dm_cropland = pickle.load(handle)
     return dm_cropland
+
+
+def simulate_crop_to_TCAF_input():
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    f = os.path.join(
+        current_file_directory, "../_database/data/interface/crop_to_TCAF.pickle"
+    )
+    with open(f, "rb") as handle:
+        DM_crop_to_TCAF = pickle.load(handle)
+    return DM_crop_to_TCAF
+
+
+# CalculationLeaf TCAF LCA
+def TCAF_lca_workflow(DM_TCAF_lca, DM_crop_to_TCAF):
+    # Append crop produced with
+
+    # Convert form kcal to kg
+
+    # Multiply with LCA impacts
+
+    # Multiply with Monetization Factors (MF)
+
+    return DM_TCAF_lca
 
 
 # CalculationLeaf TCAF HEALTH DIET
@@ -325,7 +354,7 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
     years_all = years_ots + years_fts
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    DM_TCAF_health_diet, DM_TCAF_biodiversity, CDM_MF = read_data(
+    DM_TCAF_lca, DM_TCAF_health_diet, DM_TCAF_biodiversity, CDM_MF = read_data(
         DM_input, lever_setting, years_all
     )
     country_list = ["Switzerland"]
@@ -353,7 +382,16 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
             print("You are missing land-use to TCAF interface")
         DM_landuse_to_TCAF = simulate_landuse_to_TCAF_input()
 
+    # crop
+    if interface.has_link(from_sector="crop", to_sector="TCAF"):
+        DM_crop_to_TCAF = interface.get_link(from_sector="crop", to_sector="TCAF")
+    else:
+        if len(interface.list_link()) != 0:
+            print("You are missing crop to TCAF interface")
+        DM_crop_to_TCAF = simulate_crop_to_TCAF_input()
+
     # CalculationTree ---------------------------------------------------------------------------------------------------
+    DM_TCAF_lca = TCAF_lca_workflow(DM_TCAF_lca, DM_crop_to_TCAF)
     dm_health_diet_detailed, dm_health_diet_tot = TCAF_health_diet_workflow(
         DM_diet, DM_TCAF_health_diet, CDM_MF
     )
