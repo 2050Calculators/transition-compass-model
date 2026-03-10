@@ -52,14 +52,19 @@ def read_data(DM_TCAF, lever_setting, years_all):
         DM_TCAF_biodiversity[key].filter({"Years": years_all}, inplace=True)
 
     # Constants
+    # Monetization factors
     CDM_MF = {}
     # For health-diet
-    cdm_temp = DM_TCAF["constant"].filter_w_regex(
+    cdm_temp = DM_TCAF["constant"]["monetization-factors"].filter_w_regex(
         {"Variables": "tcaf_mf_health-diet.*"}
     )
     CDM_MF["health-diet"] = cdm_temp
 
-    return DM_TCAF_lca, DM_TCAF_health_diet, DM_TCAF_biodiversity, CDM_MF
+    # Other constants
+    CDM_const = {}
+    CDM_const["cdm_kcal"] = DM_TCAF["constant"]["cdm_kcal"].copy()
+
+    return DM_TCAF_lca, DM_TCAF_health_diet, DM_TCAF_biodiversity, CDM_MF, CDM_const
 
 
 # SimulateInteractions
@@ -100,15 +105,137 @@ def simulate_crop_to_TCAF_input():
     return DM_crop_to_TCAF
 
 
-# CalculationLeaf TCAF LCA
-def TCAF_lca_workflow(DM_TCAF_lca, DM_crop_to_TCAF):
-    # Append crop produced with
+def simulate_livestock_to_TCAF_input():
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    f = os.path.join(
+        current_file_directory, "../_database/data/interface/livestock_to_TCAF.pickle"
+    )
+    with open(f, "rb") as handle:
+        DM_livestock_to_TCAF = pickle.load(handle)
+    return DM_livestock_to_TCAF
 
-    # Convert form kcal to kg
+
+# CalculationLeaf TCAF LCA
+def TCAF_lca_workflow(
+    DM_TCAF_lca, DM_crop_to_TCAF, DM_landuse_to_TCAF, DM_livestock_to_TCAF, CDM_const
+):
+    # Match countries
+    DM_livestock_to_TCAF["meat-world"].drop(
+        col_label=["Switzerland", "Tokelau"], dim="Country"
+    )
+    DM_livestock_to_TCAF["asf-world"].drop(
+        col_label=["Switzerland", "Tokelau"], dim="Country"
+    )
+    DM_crop_to_TCAF.drop(col_label=["Switzerland"], dim="Country")
+    # dm_match_countries(DM_crop_to_TCAF, DM_livestock_to_TCAF['asf-world'],
+    #                   parameter='perfect match')
+    # dm_match_countries(DM_livestock_to_TCAF['meat-world'], DM_livestock_to_TCAF['asf-world'], parameter='perfect match')
+
+    # (Switzerland & World) Crop - Unit convertion: [kcal] to [kg]
+    cdm_kcal = CDM_const["cdm_kcal"].copy()
+    cdm_kcal.rename_col_regex(str1="crop-", str2="", dim="Categories1")
+    cat = DM_crop_to_TCAF.col_labels["Categories1"]
+    cdm_kcal = cdm_kcal.filter({"Categories1": cat})
+    # Sort
+    DM_crop_to_TCAF.sort("Categories1")
+    cdm_kcal.sort("Categories1")
+    # Convert from [kcal] to [kg]
+    array_temp = (
+        10**3
+        * DM_crop_to_TCAF[:, :, "agr_domestic-production_afw", :]
+        / cdm_kcal[np.newaxis, np.newaxis, "cp_kcal-per-t", :]
+    )
+    DM_crop_to_TCAF.add(
+        array_temp,
+        dim="Variables",
+        col_label="agr_domestic-production_afw_kg",
+        unit="kg",
+    )
+    DM_landuse_to_TCAF["prod-ch"].add(
+        0.0, dummy=True, col_label="rice", dim="Categories2", unit="kcal"
+    )
+    array_temp = (
+        10**3
+        * DM_landuse_to_TCAF["prod-ch"][:, :, "agr_domestic-production_afw", :, :]
+        / cdm_kcal[np.newaxis, np.newaxis, "cp_kcal-per-t", np.newaxis, :]
+    )
+    DM_landuse_to_TCAF["prod-ch"].add(
+        array_temp,
+        dim="Variables",
+        col_label="agr_domestic-production_afw_kg",
+        unit="kg",
+    )
+
+    # FIXME cereals = cereals + rice
+    DM_landuse_to_TCAF["prod-ch"].groupby(
+        {"cereal": "cereal|rice"}, dim="Categories2", inplace=True, regex=True
+    )
+    DM_crop_to_TCAF.groupby(
+        {"cereal": "cereal|rice"}, dim="Categories1", inplace=True, regex=True
+    )
+
+    # FIXME drop extensive for crops CH for now
+    DM_landuse_to_TCAF["prod-ch"].drop(dim="Categories1", col_label="extensive")
+
+    # Rename variables to agr_production-tcaf
+    DM_landuse_to_TCAF["prod-ch"].rename_col(
+        "agr_domestic-production_afw_kg", "agr_production-lca", dim="Variables"
+    )
+    DM_crop_to_TCAF.rename_col(
+        "agr_domestic-production_afw_kg", "agr_production-lca", dim="Variables"
+    )
+    DM_livestock_to_TCAF["meat-ch"].rename_col(
+        "agr_domestic_production_liv_afw_kg", "agr_production-lca", dim="Variables"
+    )
+    DM_livestock_to_TCAF["meat-world"].rename_col(
+        "agr_domestic_production_liv_afw_kg", "agr_production-lca", dim="Variables"
+    )
+    DM_livestock_to_TCAF["asf-ch"].rename_col(
+        "agr_domestic_production_liv_afw_kg", "agr_production-lca", dim="Variables"
+    )
+    DM_livestock_to_TCAF["asf-world"].rename_col(
+        "agr_domestic_production_liv_afw_kg", "agr_production-lca", dim="Variables"
+    )
+
+    # Step World
+    # Append together:
+    # - kg crop produced
+    # - kg meat liveweight produced
+    # - kg asf produced
+    dm_lca_world = DM_livestock_to_TCAF["meat-world"].filter(
+        {"Variables": ["agr_production-lca"]}
+    )
+    dm_lca_world.append(
+        DM_livestock_to_TCAF["asf-world"].filter({"Variables": ["agr_production-lca"]}),
+        dim="Categories1",
+    )
+    dm_lca_world.append(
+        DM_crop_to_TCAF.filter({"Variables": ["agr_production-lca"]}), dim="Categories1"
+    )
 
     # Multiply with LCA impacts
 
     # Multiply with Monetization Factors (MF)
+
+    # Step Switzerland
+    # Append together:
+    # - kg crop produced
+    # - kg meat liveweight produced
+    # - kg asf produced
+    dm_lca_ch = DM_livestock_to_TCAF["meat-ch"].filter(
+        {"Variables": ["agr_production-lca"]}
+    )
+    dm_lca_ch.append(
+        DM_livestock_to_TCAF["asf-ch"].filter({"Variables": ["agr_production-lca"]}),
+        dim="Categories1",
+    )
+    DM_landuse_to_TCAF["prod-ch"].switch_categories_order(
+        cat1="Categories2", cat2="Categories1"
+    )
+    dm_lca_ch.append(
+        DM_landuse_to_TCAF["prod-ch"].filter({"Variables": ["agr_production-lca"]}),
+        dim="Categories1",
+    )
 
     return DM_TCAF_lca
 
@@ -354,8 +481,8 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
     years_all = years_ots + years_fts
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    DM_TCAF_lca, DM_TCAF_health_diet, DM_TCAF_biodiversity, CDM_MF = read_data(
-        DM_input, lever_setting, years_all
+    DM_TCAF_lca, DM_TCAF_health_diet, DM_TCAF_biodiversity, CDM_MF, CDM_const = (
+        read_data(DM_input, lever_setting, years_all)
     )
     country_list = ["Switzerland"]
 
@@ -390,8 +517,24 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
             print("You are missing crop to TCAF interface")
         DM_crop_to_TCAF = simulate_crop_to_TCAF_input()
 
+    # livestock
+    if interface.has_link(from_sector="livestock", to_sector="TCAF"):
+        DM_livestock_to_TCAF = interface.get_link(
+            from_sector="livestock", to_sector="TCAF"
+        )
+    else:
+        if len(interface.list_link()) != 0:
+            print("You are missing livestock to TCAF interface")
+        DM_livestock_to_TCAF = simulate_livestock_to_TCAF_input()
+
     # CalculationTree ---------------------------------------------------------------------------------------------------
-    DM_TCAF_lca = TCAF_lca_workflow(DM_TCAF_lca, DM_crop_to_TCAF)
+    DM_TCAF_lca = TCAF_lca_workflow(
+        DM_TCAF_lca,
+        DM_crop_to_TCAF,
+        DM_landuse_to_TCAF,
+        DM_livestock_to_TCAF,
+        CDM_const,
+    )
     dm_health_diet_detailed, dm_health_diet_tot = TCAF_health_diet_workflow(
         DM_diet, DM_TCAF_health_diet, CDM_MF
     )

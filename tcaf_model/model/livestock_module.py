@@ -87,6 +87,7 @@ def read_data(DM_livestock, lever_setting):
     dm_fxa_cal_demand_feed = DM_livestock["fxa"]["cal_agr_demand_feed"]
     dm_cal_import_feed_pro = DM_livestock["fxa"]["cal_agr_imports-feed-pro_total"]
     dm_split_import_feed_pro = DM_livestock["fxa"]["split-import-feed-pro"]
+    dm_fxa_ratio_weight = DM_livestock["fxa"]["ratio-weight"]
 
     # Aggregate Data Matrix - LIVESTOCK PROD & POP
     DM_liv_prod = {
@@ -102,6 +103,7 @@ def read_data(DM_livestock, lever_setting):
         "cal_imports-liv_tot": dm_fxa_cal_liv_imports_tot,
         "cal_liv_population": dm_fxa_cal_liv_pop,
         "ratio_milk": dm_fxa_ratio_milk,
+        "ratio-weight": dm_fxa_ratio_weight,
     }
 
     # Aggregated Data Matrix - LIVESTOCK MANURE MANAGEMENT & GHG EMISSIONS
@@ -471,7 +473,7 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
         unit="lsu",
     )
 
-    # LIVESTOCK BYPRODUCTS
+    # Step LIVESTOCK BYPRODUCTS
     # Filter ibp constants for offal
     cdm_cp_ibp_offal = CDM_const["cdm_ibp_offal"]
 
@@ -536,7 +538,122 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
     dm_ibp_fdk = dm_liv_ibp.filter({'Variables': ['agr_ibp_liv_fdk']})
     dm_liv_ibp.groupby({'total': '.*'}, dim='Categories1', regex=True, inplace=True)"""
 
-    return DM_liv_prod, dm_liv_ibp, dm_liv_prod, dm_liv_pop
+    # Step Meat / Live weight ratio
+
+    # Meat produced with production methods
+    # (Switzerland) Formatting
+    dm_asf_ch = DM_liv_prod["share-organic"].filter(
+        {"Variables": ["agr_liv_population_intensive", "agr_liv_population_organic"]},
+        inplace=False,
+    )
+    dm_yield_ch = DM_liv_prod["yield"].filter(
+        {
+            "Variables": [
+                "agr_livestock_yield_intensive",
+                "agr_livestock_yield_organic",
+            ],
+            "Country": ["Switzerland"],
+        },
+        inplace=False,
+    )
+    dm_slaughter_rate_ch = DM_liv_prod["liv_slaughtered_rate"].filter(
+        {"Variables": ["agr_livestock_slaughtered"], "Country": ["Switzerland"]},
+        inplace=False,
+    )
+    dm_asf_ch.append(dm_yield_ch, dim="Variables")
+    dm_asf_ch.deepen(based_on="Variables")
+
+    # (Switzerland) Livestock slaughtered [lsu] = Livestock population (stock) [lsu] * slaughter rate [-]
+    dm_asf_ch.add(
+        0.0,
+        dummy=True,
+        col_label="agr_liv_population_slaughtered",
+        dim="Variables",
+        unit="lsu",
+    )
+    dm_asf_ch[:, :, "agr_liv_population_slaughtered", :, :] = (
+        dm_asf_ch[:, :, "agr_liv_population", :, :]
+        * dm_slaughter_rate_ch[:, :, "agr_livestock_slaughtered", :, np.newaxis]
+    )
+
+    # (Switzerland) ASF demand [kcal] = Livestock slaughtered [lsu] * yield [kcal/lsu]
+    dm_asf_ch.operation(
+        "agr_liv_population_slaughtered",
+        "*",
+        "agr_livestock_yield",
+        dim="Variables",
+        out_col="agr_domestic_production_liv_afw",
+        unit="kcal",
+    )
+
+    # (Switzerland & World) Unit converion: [kcal] to [kg]
+    cdm_kcal_asf = CDM_const["cdm_kcal-per-t"].copy()
+    cdm_kcal_asf.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
+    cat = dm_asf_ch.col_labels["Categories1"]
+    cdm_kcal_asf = cdm_kcal_asf.filter({"Categories1": cat})
+    # Sort
+    dm_asf_ch.sort("Categories1")
+    cdm_kcal_asf.sort("Categories1")
+    # Convert from [kcal] to [t]
+    array_temp = (
+        10**3
+        * dm_asf_ch[:, :, "agr_domestic_production_liv_afw", :, :]
+        / cdm_kcal_asf[np.newaxis, np.newaxis, "cp_kcal-per-t", :, np.newaxis]
+    )
+    dm_asf_ch.add(
+        array_temp,
+        dim="Variables",
+        col_label="agr_domestic_production_liv_afw_kg",
+        unit="kg",
+    )
+    array_temp = (
+        10**3
+        * DM_liv_prod["losses"][:, :, "agr_domestic_production_liv_afw_raw", :]
+        / cdm_kcal_asf[np.newaxis, np.newaxis, "cp_kcal-per-t", :]
+    )
+    DM_liv_prod["losses"].add(
+        array_temp,
+        dim="Variables",
+        col_label="agr_domestic_production_liv_afw_kg",
+        unit="kg",
+    )
+
+    # (Switzerland) Live weight [kg] = meat produced [kg] / weight-ratio [kg boneless meat/kg liveweight]
+    dm_meat_ch = dm_asf_ch.filter_w_regex({"Categories1": "meat-"}, inplace=False)
+    dm_temp = DM_liv_prod["ratio-weight"].filter(
+        {"Country": ["Switzerland"]}, inplace=False
+    )
+    dm_meat_ch.add(
+        0.0, dummy=True, col_label="liveweight-production", dim="Variables", unit="kg"
+    )
+    dm_meat_ch[:, :, "liveweight-production", :, :] = (
+        dm_meat_ch[:, :, "agr_domestic_production_liv_afw_kg", :, :]
+        * dm_temp[:, :, "ratio-weight", :, np.newaxis]
+    )
+
+    # (World) Live weight [kg] = meat produced [kg] / weight-ratio [kg boneless meat/kg liveweight]
+    dm_meat_world = DM_liv_prod["losses"].filter_w_regex(
+        {"Categories1": "meat-", "Variables": "agr_domestic_production_liv_afw_kg"},
+        inplace=False,
+    )
+    dm_temp = DM_liv_prod["ratio-weight"].copy()
+    dm_meat_world.add(
+        0.0, dummy=True, col_label="liveweight-production", dim="Variables", unit="kg"
+    )
+    dm_meat_world[:, :, "liveweight-production", :] = (
+        dm_meat_world[:, :, "agr_domestic_production_liv_afw_kg", :]
+        * dm_temp[:, :, "ratio-weight", :]
+    )
+
+    return (
+        DM_liv_prod,
+        dm_liv_ibp,
+        dm_liv_prod,
+        dm_liv_pop,
+        dm_meat_world,
+        dm_meat_ch,
+        dm_asf_ch,
+    )
 
 
 # CalculationLeaf MANURE MANAGEMENT & GHG EMISSIONS ----------------------------------------------------------
@@ -1204,24 +1321,6 @@ def livestock_TPE_interface():
     return dm_tpe
 
 
-# CalculationLeaf INTERFACE OUT  --------------------------------------------------------------
-def livestock_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario):
-
-    # Filter
-    dm_diet_consumed_bau.filter({"Variables": ["lfs_consumers-diet"]}, inplace=True)
-    dm_diet_consumed_scenario.filter(
-        {"Variables": ["lfs_consumers-diet"]}, inplace=True
-    )
-
-    # Aggregate in DM
-    DM_TCAF_health_diet = {
-        "diet-consumed_bau": dm_diet_consumed_bau,
-        "diet-consumed_scenario": dm_diet_consumed_scenario,
-    }
-
-    return DM_TCAF_health_diet
-
-
 def livestock(
     lever_setting, years_setting, DM_input, write_pickle, interface=Interface()
 ):
@@ -1263,7 +1362,15 @@ def livestock(
     # CalculationTree LIVESTOCK MODULE
 
     dm_demand_liv = trade_livestock_workflow(DM_liv_prod, dm_demand, years_setting)
-    DM_liv_prod, dm_liv_ibp, dm_liv_prod, dm_liv_pop = livestock_production_workflow(
+    (
+        DM_liv_prod,
+        dm_liv_ibp,
+        dm_liv_prod,
+        dm_liv_pop,
+        dm_meat_world,
+        dm_meat_ch,
+        dm_asf_ch,
+    ) = livestock_production_workflow(
         DM_liv_prod, CDM_const, dm_demand_liv, years_setting
     )
     # dm_liv_N2O, dm_CH4, DM_manure = manure_workflow(DM_manure, dm_liv_pop, years_setting)
@@ -1290,7 +1397,12 @@ def livestock(
     )
 
     # livestock to TCAF module
-    DM_TCAF_livestock = livestock_TCAF_interface()
+    DM_TCAF_livestock = {
+        "meat-ch": dm_meat_ch,
+        "meat-world": dm_meat_world,
+        "asf-ch": dm_asf_ch.filter_w_regex({"Categories1": "abp-"}),
+        "asf-world": DM_liv_prod["losses"].filter_w_regex({"Categories1": "abp-"}),
+    }
     if write_pickle is True:
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(

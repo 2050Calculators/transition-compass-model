@@ -999,6 +999,17 @@ class DataMatrix:
         self.dim_labels[a1] = dim2
         self.dim_labels[a2] = dim1
 
+        # Update units: units always keys on Variables content
+        if dim1 == "Variables" or dim2 == "Variables":
+            old_unit_value = next(iter(self.units.values()), "-")
+            self.units = {
+                v: self.units.get(v, old_unit_value)
+                for v in self.col_labels["Variables"]
+            }
+
+        # Rebuild idx entirely to reflect new col_labels positions
+        self.index_all()
+
         return
 
     def groupby(

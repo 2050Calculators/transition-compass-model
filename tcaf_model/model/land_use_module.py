@@ -425,6 +425,9 @@ def crop(lever_setting, years_setting, DM_input, write_pickle, interface=Interfa
         "cropland-ch": DM_cropland["crop-share"].filter(
             {"Variables": ["agr_cropland"]}
         ),
+        "prod-ch": DM_cropland["crop-share"].filter(
+            {"Variables": ["agr_domestic-production_afw"]}
+        ),
     }
     if write_pickle is True:
         current_file_directory = os.path.dirname(os.path.abspath(__file__))

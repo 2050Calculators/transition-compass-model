@@ -4374,8 +4374,9 @@ def fxa_ratio_weight():
         "Other animal": "meat-oth-animal",
     }
     df_agg["variable"] = (
-        df_agg["group"].map(GROUP_TO_VARIABLE)
-        + "_ratio-weight[kg boneless meat/kg liveweight]"
+        "ratio-weight_"
+        + df_agg["group"].map(GROUP_TO_VARIABLE)
+        + "[kg boneless meat/kg liveweight]"
     )
 
     # Final format for database
@@ -4399,9 +4400,9 @@ def fxa_ratio_weight():
     df_ots, _ = database_to_df(df_agg, lever="dummy", level="all")
     df_ots = df_ots.drop(columns=["dummy"])
     dm_ratio_weight = DataMatrix.create_from_df(df_ots, num_cat=1)
-    dm_ratio_weight.switch_dimensions_order("Variables", "Categories1")
+    # dm_ratio_weight.switch_dimensions_order('Variables', 'Categories1')
 
-    # Linear fitting for fts
+    # Linear fitting for fts FIXME find better way for low data
     linear_fitting(dm_ratio_weight, years_all)
 
     return dm_ratio_weight
