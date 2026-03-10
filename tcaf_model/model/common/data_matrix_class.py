@@ -969,6 +969,38 @@ class DataMatrix:
         self.col_labels[cat2] = col1
         return
 
+    def switch_dimensions_order(self, dim1, dim2):
+        # Validate both dimensions exist
+        if dim1 not in self.dim_labels:
+            raise ValueError(
+                f"Dimension '{dim1}' not found in dim_labels: {self.dim_labels}"
+            )
+        if dim2 not in self.dim_labels:
+            raise ValueError(
+                f"Dimension '{dim2}' not found in dim_labels: {self.dim_labels}"
+            )
+        if dim1 == dim2:
+            raise ValueError("Cannot switch a dimension with itself")
+
+        # Extract axis indices
+        a1 = self.dim_labels.index(dim1)
+        a2 = self.dim_labels.index(dim2)
+
+        # Switch axes in array
+        self.array = np.swapaxes(self.array, a1, a2)
+
+        # Switch col_labels
+        col1 = self.col_labels[dim1]
+        col2 = self.col_labels[dim2]
+        self.col_labels[dim1] = col2
+        self.col_labels[dim2] = col1
+
+        # Switch dim_labels order
+        self.dim_labels[a1] = dim2
+        self.dim_labels[a2] = dim1
+
+        return
+
     def groupby(
         self, group_cols={}, dim=str, aggregation="sum", regex=False, inplace=False
     ):

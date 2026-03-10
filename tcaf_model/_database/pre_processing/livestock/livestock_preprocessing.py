@@ -5,6 +5,7 @@ import faostat
 import numpy as np
 import pandas as pd
 from _database.pre_processing.api_routines_CH import get_data_api_CH
+from _database.pre_processing.livestock.dressing_ratio import dressing_ratio
 
 # from _database.pre_processing.api_routines_CH import get_data_api_CH
 from tcaf_model.model.common.auxiliary_functions import (
@@ -4314,7 +4315,96 @@ def manure_fxa(
 
 
 def fxa_ratio_weight():
-    return
+    # Aggregation mapping: species -> aggregation group
+    SPECIES_TO_GROUP = {
+        "Cattle": "Bovine",
+        "Buffalo": "Bovine",
+        "Goat": "Sheep",
+        "Sheep": "Sheep",
+        "Pig": "Pig",
+        "Chicken": "Poultry",
+        "Duck": "Poultry",
+        "Goose": "Poultry",
+        "Turkey": "Poultry",
+        "Rabbit": "Other animal",
+        "Horse": "Other animal",
+        "Ass": "Other animal",
+        "Mule": "Other animal",
+        "Camel": "Other animal",  # not in your table but in your data
+    }
+
+    # Start from the full dressing ratio df (before filtering columns)
+    df_full = dressing_ratio()  # keep production_tonnes for weighting
+
+    # Map species to aggregation group
+    df_full["group"] = df_full["species"].map(SPECIES_TO_GROUP)
+
+    # Drop species not in mapping
+    df_full = df_full.dropna(
+        subset=["group", "kg_boneless_per_kg_liveweight", "production_tonnes"]
+    )
+
+    # Weighted average per country, year, group
+    def weighted_avg(df, value_col, weight_col):
+        weights = df[weight_col]
+        values = df[value_col]
+        total_weight = weights.sum()
+        if total_weight == 0:
+            return np.nan
+        return (values * weights).sum() / total_weight
+
+    df_agg = (
+        df_full.groupby(["country", "year", "group"])
+        .apply(
+            lambda x: weighted_avg(
+                x, "kg_boneless_per_kg_liveweight", "production_tonnes"
+            ),
+            include_groups=False,
+        )
+        .reset_index()
+        .rename(columns={0: "kg_boneless_per_kg_liveweight"})
+    )
+
+    # Rename group to match variable naming convention
+    GROUP_TO_VARIABLE = {
+        "Bovine": "meat-bovine",
+        "Sheep": "meat-sheep",
+        "Pig": "meat-pig",
+        "Poultry": "meat-poultry",
+        "Other animal": "meat-oth-animal",
+    }
+    df_agg["variable"] = (
+        df_agg["group"].map(GROUP_TO_VARIABLE)
+        + "_ratio-weight[kg boneless meat/kg liveweight]"
+    )
+
+    # Final format for database
+    df_agg = df_agg[["country", "year", "variable", "kg_boneless_per_kg_liveweight"]]
+    df_agg.rename(columns={"kg_boneless_per_kg_liveweight": "value"}, inplace=True)
+
+    # Rename to database format
+    df_agg = df_agg.rename(
+        columns={
+            "country": "geoscale",
+            "year": "timescale",
+            "variable": "variables",
+        }
+    )
+    df_agg["lever"] = "dummy"
+    df_agg["module"] = "dummy"
+    df_agg["level"] = 0
+
+    # To DataMatrix
+    df_agg = ensure_structure(df_agg)
+    df_ots, _ = database_to_df(df_agg, lever="dummy", level="all")
+    df_ots = df_ots.drop(columns=["dummy"])
+    dm_ratio_weight = DataMatrix.create_from_df(df_ots, num_cat=1)
+    dm_ratio_weight.switch_dimensions_order("Variables", "Categories1")
+
+    # Linear fitting for fts
+    linear_fitting(dm_ratio_weight, years_all)
+
+    return dm_ratio_weight
 
 
 # CalculationLeaf CAL - FEED DEMAND ----------------------------------------------------------------------------------
@@ -4840,6 +4930,7 @@ def datamatrix_to_pickle(dm_fts):
     dict_fxa["split-import-feed-pro"] = dm_feed_trade_origin
     dict_fxa["share-export"] = dm_fxa_exports
     dict_fxa["livestock-yield"] = dm_liv_yield
+    dict_fxa["ratio-weight"] = dm_ratio_weight
     # dict_fxa['ef_liv_N2O-emission'] = dm_fxa_N2O
     # dict_fxa['ef_liv_CH4-emission_treated'] = dm_fxa_CH4
     # dict_fxa['liv_manure_n-stock'] = dm_fxa_manure_yield
@@ -5193,7 +5284,7 @@ dm_fxa_CH4, dm_fxa_N2O = manure_fxa(
 )
 dm_fxa_exports = exports_processing(list_countries_calc, file_dict)
 dm_feed_alt_protein = livestock_protein_meals_processing(df_csl_feed)
-fxa_ratio_weight()
+dm_ratio_weight = fxa_ratio_weight()
 dm_fts = fts_processing()
 
 # Match countries for imports
@@ -5204,6 +5295,7 @@ dm_match_countries(dm_feed_trade_origin, dm_losses, parameter="perfect match")
 dm_match_countries(dm_liv_trade_origin, dm_losses, parameter="perfect match")
 dm_match_countries(dm_liv_yield, dm_losses, parameter="perfect match")
 dm_match_countries(dm_slaughter_rates, dm_losses, parameter="perfect match")
+dm_match_countries(dm_ratio_weight, dm_losses, parameter="perfect match")
 
 # CalculationTree RUNNING PICKLE CREATION
 datamatrix_to_pickle(dm_fts)

@@ -378,7 +378,7 @@ def aggregate_by_year(df, value_col):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def main():
+def dressing_ratio():
     # --- Parse TCF PDF ---
     df_tcf = parse_tcf_pdf(FILES["tcf_pdf"])
 
@@ -537,7 +537,3 @@ def main():
     print(f"  Countries covered: {df['country'].nunique()}")
 
     return df
-
-
-if __name__ == "__main__":
-    main()
