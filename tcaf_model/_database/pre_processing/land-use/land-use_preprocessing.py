@@ -232,27 +232,27 @@ def crop_yield(dm_prod_share):
     # Step CH: Yield evolution_o/i & _e/i (organic/extensive with respect to intensive) [-]
     # fixme Source: find correct source
     yield_evolution_o = {
-        "cereal": 1.0,
-        "sugarcrop": 1.0,
-        "oilcrop": 1.0,
-        "veg": 1.0,
-        "fruit": 1.0,
-        "starch": 1.0,
-        "pulse": 1.0,
+        "crop-cereal": 1.0,
+        "crop-sugarcrop": 1.0,
+        "crop-oilcrop": 1.0,
+        "crop-veg": 1.0,
+        "crop-fruit": 1.0,
+        "crop-starch": 1.0,
+        "crop-pulse": 1.0,
     }
     yield_evolution_e = {
-        "cereal": 1.0,
-        "sugarcrop": 1.0,
-        "oilcrop": 1.0,
-        "veg": 1.0,
-        "fruit": 1.0,
-        "starch": 1.0,
-        "pulse": 1.0,
+        "crop-cereal": 1.0,
+        "crop-sugarcrop": 1.0,
+        "crop-oilcrop": 1.0,
+        "crop-veg": 1.0,
+        "crop-fruit": 1.0,
+        "crop-starch": 1.0,
+        "crop-pulse": 1.0,
     }
 
     # Format
     dm_yield_ch = dm_yield.filter({"Country": ["Switzerland"]})
-    dm_yield_ch.drop(dim="Categories1", col_label="rice")
+    dm_yield_ch.drop(dim="Categories1", col_label="crop-rice")
 
     # Intensive yield_i [kcal/ha] = yield_T / [share_i + evol_o*share_o + evol_e*share_e]
     dm_yield_ch.rename_col("agr_crop_yield", "agr_crop_yield_total", dim="Variables")
@@ -499,7 +499,7 @@ def production_share():
         dm_crop_area.rename_col("Indéterminé", "extensive", "Categories2")
 
         cat_map = {
-            "cereal": [
+            "crop-cereal": [
                 "Blé",
                 "Orge",
                 "Avoine",
@@ -513,7 +513,7 @@ def production_share():
                 "Houblon",
                 "Céréales en général",
             ],
-            "fruit": [
+            "crop-fruit": [
                 "Baies annuelles",
                 "Cultures de baies sous abri",
                 "Cultures fruitières en général",
@@ -523,7 +523,7 @@ def production_share():
                 "Baies pluriannuelles",
                 "Vigne",
             ],
-            "oilcrop": [
+            "crop-oilcrop": [
                 "Colza pour matière première renouvelable",
                 "Tournesol pour matière première renouvelable",
                 "Lin",
@@ -532,16 +532,16 @@ def production_share():
                 "Tournesol pour huile comestible",
                 "Courge à huile",
             ],
-            "pulse": [
+            "crop-pulse": [
                 "Pois protéagineux",
                 "Féveroles",
                 "Légumineuses en général",
                 "Lupin fourrager",
                 "Soja",
             ],
-            "starch": ["Pommes de terre"],
-            "sugarcrop": ["Betteraves sucrières", "Betteraves fourragères"],
-            "veg": [
+            "crop-starch": ["Pommes de terre"],
+            "crop-sugarcrop": ["Betteraves sucrières", "Betteraves fourragères"],
+            "crop-veg": [
                 "Cultures maraîchères de plein champ",
                 "Cultures maraîchères sous abri",
                 "Asperges",

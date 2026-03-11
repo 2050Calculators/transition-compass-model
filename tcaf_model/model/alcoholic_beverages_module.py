@@ -193,7 +193,7 @@ def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs, years_setting):
         "agr_ibp_bev_beer_crop_cereal",
         "+",
         "agr_ibp_bev_bev-fer_crop_cereal",
-        out_col="agr_domestic-production_bev_raw_cereal",
+        out_col="agr_domestic-production_bev_raw_crop-cereal",
         unit="kcal",
     )
 
@@ -202,7 +202,7 @@ def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs, years_setting):
         "agr_ibp_bev_bev-alc_crop_fruit",
         "+",
         "agr_ibp_bev_wine_crop_fruit",
-        out_col="agr_domestic-production_bev_raw_fruit",
+        out_col="agr_domestic-production_bev_raw_crop-fruit",
         unit="kcal",
     )
 
@@ -210,8 +210,8 @@ def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs, years_setting):
     dm_bev_dom_prod = dm_bev_dom_prod.filter(
         {
             "Variables": [
-                "agr_domestic-production_bev_raw_cereal",
-                "agr_domestic-production_bev_raw_fruit",
+                "agr_domestic-production_bev_raw_crop-cereal",
+                "agr_domestic-production_bev_raw_crop-fruit",
             ]
         }
     )
