@@ -168,7 +168,7 @@ def run(country_list, years_ots, years_fts):
 
     arr_elec = np.zeros((2, 40, 1, 1))
     idx = dm_elec.idx
-    arr_elec[:, idx[1990] : idx[2023] + 1, 0, 0] = 112
+    arr_elec[:, idx[1990] : idx[2023] + 1, 0, 0] = 168.64
     arr_elec[:, idx[2025] : idx[2050], 0, 0] = np.nan
     arr_elec[:, idx[2050], 0, 0] = 0
     dm_elec.array = arr_elec
