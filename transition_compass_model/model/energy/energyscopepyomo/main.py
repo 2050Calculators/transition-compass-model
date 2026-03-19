@@ -10,10 +10,9 @@ res = solve(opt, m, warmstart=True)
 print(extract_results(m))
 
 # Scenario 2:
-#apply_scenario(m, {"f_max": {"PV": 1200.0, "WIND": 1500.0}})
-#solve(opt, m, warmstart=True)
-#print(extract_results(m))
+# apply_scenario(m, {"f_max": {"PV": 1200.0, "WIND": 1500.0}})
+# solve(opt, m, warmstart=True)
+# print(extract_results(m))
 
 
-
-print('Hello')
+print("Hello")

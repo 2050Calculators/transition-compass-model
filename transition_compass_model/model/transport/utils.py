@@ -1,6 +1,7 @@
 import numpy as np
 from model.common.data_matrix_class import DataMatrix
 
+
 def compute_pkm_demand(modal_split, urb_nonurb_demand):
     # It take the datamatrix with the modal split for urban and non urban
     # and it multiplies it with the demand from lifestyle to return the demand in pkm

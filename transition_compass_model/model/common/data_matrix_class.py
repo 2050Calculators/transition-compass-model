@@ -3,7 +3,6 @@ import re
 import pandas as pd
 import plotly.express as px
 
-
 # DataMatrix is the by-default class used by the calculator.
 # DataMatrix contains:
 #       - array: numpy array (can be 3D or more)
@@ -55,9 +54,8 @@ class DataMatrix:
             arr_shape = []
             for dim in self.dim_labels:
                 arr_shape.append(len(self.col_labels[dim]))
-            self.array = np.nan*np.ones(tuple(arr_shape))
+            self.array = np.nan * np.ones(tuple(arr_shape))
         return
-
 
     def __repr__(self):
 
@@ -212,7 +210,7 @@ class DataMatrix:
         # Note that df needs to have columns 'Country' and 'Years'
         # it returns a datamatrix
         if df.empty:
-            ValueError(f'You cannot create a datamatrix from an empty dataframe.')
+            ValueError(f"You cannot create a datamatrix from an empty dataframe.")
         dm = cls(empty=True)
         dm.extract_structure(df, num_cat)
         dm.read_data(df, num_cat)
@@ -334,8 +332,10 @@ class DataMatrix:
             if col not in list(self.idx.keys()):
                 self.idx[col] = i_v[col]
             else:
-                raise ValueError(f"You are trying to append data under the label {col_label} which already exists")
-        if dim == 'Variables':
+                raise ValueError(
+                    f"You are trying to append data under the label {col_label} which already exists"
+                )
+        if dim == "Variables":
             if unit is not None:
                 for i, col in enumerate(col_label):
                     self.units[col] = unit[i]
@@ -670,9 +670,9 @@ class DataMatrix:
             if col_in[i] != col_out[i]:
                 # Rename column labels
                 try:
-                  ci = self.idx[col_in[i]]
+                    ci = self.idx[col_in[i]]
                 except KeyError:
-                  continue
+                    continue
                 self.col_labels[dim][ci] = col_out[i]
                 # Rename key for units
                 if dim == "Variables":

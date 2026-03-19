@@ -15,7 +15,6 @@ import os
 import numpy as np
 import time
 
-
 # __file__ = "/Users/crosnier/Documents/PathwayCalc/training/transport_module_notebook.py"
 
 
@@ -3455,7 +3454,9 @@ def energy_ghg_workflow(
     )
 
 
-def agriculture_landuse_interface(DM_bioenergy, dm_lgn, dm_land_use, write_xls=False, write_pickle=False):
+def agriculture_landuse_interface(
+    DM_bioenergy, dm_lgn, dm_land_use, write_xls=False, write_pickle=False
+):
     dm_wood = DM_bioenergy["solid-mix"].filter(
         {
             "Variables": ["agr_bioenergy_biomass-demand_solid"],
@@ -3471,12 +3472,15 @@ def agriculture_landuse_interface(DM_bioenergy, dm_lgn, dm_land_use, write_xls=F
     dm_land_use = dm_land_use.filter({"Variables": ["agr_lus_land"]})
 
     DM_lus = {"wood": dm_wood, "lgn": dm_lgn, "landuse": dm_land_use}
-    
+
     # if write_pickle is True, write pickle
     if write_pickle is True:
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, '../_database/data/interface/agriculture_to_land-use.pickle')
-        with open(f, 'wb') as handle:
+        f = os.path.join(
+            current_file_directory,
+            "../_database/data/interface/agriculture_to_land-use.pickle",
+        )
+        with open(f, "wb") as handle:
             pickle.dump(DM_lus, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     # dm_dh
@@ -3526,71 +3530,104 @@ def agriculture_emissions_interface(
     dm_CH4_rice,
     dm_fertilizer_N2O,
     write_xls=False,
-    write_pickle=False
+    write_pickle=False,
 ):
-    
-    
+
     def agg_zeroes_for_missing_gases(dm):
-        
-        gases = ["CH4","CO2","N2O"]
+
+        gases = ["CH4", "CO2", "N2O"]
         gases_current = dm.col_labels["Categories1"]
-        gases_missing = np.array(gases)[[gas not in gases_current for gas in gases]].tolist()
+        gases_missing = np.array(gases)[
+            [gas not in gases_current for gas in gases]
+        ].tolist()
         for gas in gases_missing:
             dm.add(0, "Categories1", gas, dummy=True)
         dm.sort("Categories1")
-        
+
         return
-    
+
     # input use
-    dm_ems = dm_input_use_CO2.groupby({"input-use_CO2" : ['agr_input-use_emissions-CO2_fuel', 
-                                                      'agr_input-use_emissions-CO2_liming', 
-                                                      'agr_input-use_emissions-CO2_urea']},
-                                      "Variables")
+    dm_ems = dm_input_use_CO2.groupby(
+        {
+            "input-use_CO2": [
+                "agr_input-use_emissions-CO2_fuel",
+                "agr_input-use_emissions-CO2_liming",
+                "agr_input-use_emissions-CO2_urea",
+            ]
+        },
+        "Variables",
+    )
     dm_ems.deepen()
     agg_zeroes_for_missing_gases(dm_ems)
-    
+
     # liv
-    dm_temp = dm_CH4.filter({"Variables" : ["agr_liv_CH4-emission"]}).group_all("Categories2", inplace=False).group_all("Categories1", inplace=False)
-    dm_temp.rename_col("agr_liv_CH4-emission","liv_CH4","Variables")    
-    dm_temp2 = dm_N2O_liv.filter({"Variables" : ["agr_liv_N2O-emission"]}).group_all("Categories2", inplace=False).group_all("Categories1", inplace=False)
-    dm_temp2.rename_col("agr_liv_N2O-emission","liv_N2O","Variables")
+    dm_temp = (
+        dm_CH4.filter({"Variables": ["agr_liv_CH4-emission"]})
+        .group_all("Categories2", inplace=False)
+        .group_all("Categories1", inplace=False)
+    )
+    dm_temp.rename_col("agr_liv_CH4-emission", "liv_CH4", "Variables")
+    dm_temp2 = (
+        dm_N2O_liv.filter({"Variables": ["agr_liv_N2O-emission"]})
+        .group_all("Categories2", inplace=False)
+        .group_all("Categories1", inplace=False)
+    )
+    dm_temp2.rename_col("agr_liv_N2O-emission", "liv_N2O", "Variables")
     dm_temp.append(dm_temp2, "Variables")
     dm_temp.deepen()
     agg_zeroes_for_missing_gases(dm_temp)
-    dm_temp.change_unit("liv", factor=1e-6, old_unit='t', new_unit='Mt')
+    dm_temp.change_unit("liv", factor=1e-6, old_unit="t", new_unit="Mt")
     dm_ems.append(dm_temp, "Variables")
-    
+
     # crop residues
-    dm_temp = dm_crop_residues.groupby({"crop-resid_N2O" : ['agr_emissions-N2O_crop_burnt-residues', 'agr_emissions-N2O_crop_soil-residues']}, 
-                             "Variables")
-    dm_temp.rename_col('agr_emissions-CH4_crop_burnt-residues','crop-resid_CH4',"Variables")
+    dm_temp = dm_crop_residues.groupby(
+        {
+            "crop-resid_N2O": [
+                "agr_emissions-N2O_crop_burnt-residues",
+                "agr_emissions-N2O_crop_soil-residues",
+            ]
+        },
+        "Variables",
+    )
+    dm_temp.rename_col(
+        "agr_emissions-CH4_crop_burnt-residues", "crop-resid_CH4", "Variables"
+    )
     dm_temp.deepen()
     agg_zeroes_for_missing_gases(dm_temp)
     dm_ems.append(dm_temp, "Variables")
-    
+
     # ch4 rice
     dm_temp = dm_CH4_rice.copy()
-    dm_temp.rename_col("agr_emissions-CH4_crop_rice","rice_CH4","Variables")
+    dm_temp.rename_col("agr_emissions-CH4_crop_rice", "rice_CH4", "Variables")
     dm_temp.deepen()
     agg_zeroes_for_missing_gases(dm_temp)
     dm_ems.append(dm_temp, "Variables")
-    
+
     # fertlizer N2O
     dm_temp = dm_fertilizer_N2O.copy()
-    dm_temp.rename_col("agr_crop_emission_N2O-emission_fertilizer","fertilizer_N2O","Variables")
+    dm_temp.rename_col(
+        "agr_crop_emission_N2O-emission_fertilizer", "fertilizer_N2O", "Variables"
+    )
     dm_temp.deepen()
     agg_zeroes_for_missing_gases(dm_temp)
     dm_ems.append(dm_temp, "Variables")
-    
+
     # aggregate
-    dm_ems.groupby({"agriculture" : ['input-use', 'liv', 'crop-resid', 'rice', 'fertilizer']}, "Variables", inplace=True)
-    
+    dm_ems.groupby(
+        {"agriculture": ["input-use", "liv", "crop-resid", "rice", "fertilizer"]},
+        "Variables",
+        inplace=True,
+    )
+
     if write_pickle is True:
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, '../_database/data/interface/agriculture_to_emissions.pickle')
-        with open(f, 'wb') as handle:
+        f = os.path.join(
+            current_file_directory,
+            "../_database/data/interface/agriculture_to_emissions.pickle",
+        )
+        with open(f, "wb") as handle:
             pickle.dump(dm_ems, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    
+
     # # Append everything
     # dm_ems = dm_fertilizer_N2O.copy()
     # dm_ems.append(dm_input_use_CO2, dim="Variables")
@@ -3625,7 +3662,7 @@ def agriculture_ammonia_interface(dm_mineral_fertilizer, write_xls=False):
     dm_ammonia = dm_mineral_fertilizer.filter({"Variables": ["agr_input-use"]})
     dm_ammonia.rename_col("agr_input-use", "agr_product-demand", dim="Variables")
     dm_ammonia.rename_col("mineral", "fertilizer", dim="Categories1")
-    
+
     # this_dir = os.path.dirname(os.path.abspath(__file__))
     # file = os.path.join(this_dir, '../_database/data/interface/agriculture_to_ammonia.pickle')
     # with open(file, "wb") as handle:

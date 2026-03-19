@@ -1,9 +1,8 @@
-
 from model.common.interface_class import Interface
 
 from model.common.auxiliary_functions import (
     read_level_data,
-  filter_country_and_load_data_from_pickles,
+    filter_country_and_load_data_from_pickles,
 )
 import pickle
 import json
@@ -76,6 +75,7 @@ def read_data(DM_transport, lever_setting):
 
     return DM_passenger, DM_freight, DM_other, cdm_const
 
+
 def transport(lever_setting, years_setting, DM_input, interface=Interface()):
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
@@ -114,16 +114,22 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     DM_freight_out = wkf.freight_fleet_energy(
         DM_freight, DM_other, cdm_const_freight, years_setting
     )
-    
-    check_transport_eu = False
-    if check_transport_eu is True and cntr_list == ["EU27"]: 
-        DM_checks_EU = checks.check_transport_EU(current_file_directory, DM_passenger_out, DM_freight_out)
-    check_transport_ch = False
-    if check_transport_ch is True and cntr_list == ["Switzerland"]: 
-        DM_checks_CH = checks.check_transport_CH(current_file_directory, DM_passenger_out, DM_freight_out)
 
-    DM_power = inter.tra_energy_interface(DM_passenger_out['power'], DM_freight_out['power'], write_pickle=False)
-    interface.add_link(from_sector='transport', to_sector='energy', dm=DM_power)
+    check_transport_eu = False
+    if check_transport_eu is True and cntr_list == ["EU27"]:
+        DM_checks_EU = checks.check_transport_EU(
+            current_file_directory, DM_passenger_out, DM_freight_out
+        )
+    check_transport_ch = False
+    if check_transport_ch is True and cntr_list == ["Switzerland"]:
+        DM_checks_CH = checks.check_transport_CH(
+            current_file_directory, DM_passenger_out, DM_freight_out
+        )
+
+    DM_power = inter.tra_energy_interface(
+        DM_passenger_out["power"], DM_freight_out["power"], write_pickle=False
+    )
+    interface.add_link(from_sector="transport", to_sector="energy", dm=DM_power)
     # df = dm_power.write_df()
     # df.to_excel('transport-to-power.xlsx', index=False)
 
@@ -163,7 +169,9 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
         }
     )
     dm_infrastructure = wkf.dummy_tra_infrastructure_workflow(dm_lfs)
-    DM_industry = inter.tra_industry_interface(dm_freight_veh.copy(), dm_passenger_veh.copy(), dm_infrastructure)
+    DM_industry = inter.tra_industry_interface(
+        dm_freight_veh.copy(), dm_passenger_veh.copy(), dm_infrastructure
+    )
     # DM_minerals = tra_minerals_interface(dm_freight_veh, dm_passenger_veh, DM_industry, dm_infrastructure, write_xls=False)
     # !FIXME: add km infrastructure data, using compute_stock with tot_km and renovation rate as input.
     #  data for ch ok, data for eu, backcalculation? dummy based on swiss pop?
@@ -173,8 +181,12 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
 
     # Emissions
     # TODO: for the moment I am passing only passenger emissions
-    dm_emissions = inter.tra_emissions_interface(DM_passenger_out["emissions"], DM_freight_out["emissions"])
-    interface.add_link(from_sector="transport", to_sector="emissions", dm=dm_emissions.copy())
+    dm_emissions = inter.tra_emissions_interface(
+        DM_passenger_out["emissions"], DM_freight_out["emissions"]
+    )
+    interface.add_link(
+        from_sector="transport", to_sector="emissions", dm=dm_emissions.copy()
+    )
 
     # Local transport emissions
     N2O_to_CO2 = 265
@@ -205,10 +217,12 @@ def local_transport_run():
     lever_setting = json.load(f)[0]
 
     # get geoscale
-    country_list = ['Switzerland']
-    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = 'transport')
+    country_list = ["Switzerland"]
+    DM_input = filter_country_and_load_data_from_pickles(
+        country_list=country_list, modules_list="transport"
+    )
 
-    results_run = transport(lever_setting, years_setting, DM_input['transport'])
+    results_run = transport(lever_setting, years_setting, DM_input["transport"])
 
     return results_run
 
@@ -218,4 +232,4 @@ def local_transport_run():
 # print('Apply technology shares before computing the stock')
 # print('For the efficiency, use the new methodology developped for Building (see overleaf on U-value)')
 if __name__ == "__main__":
-  results_run = local_transport_run()
+    results_run = local_transport_run()

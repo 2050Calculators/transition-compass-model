@@ -473,8 +473,11 @@ def material_decomposition(dm, cdm):
 
     return dm_out
 
-def difference_with_data(dm_model, dm_data, year_start, year_end, years_show, category_operation = "Variables"):
-    
+
+def difference_with_data(
+    dm_model, dm_data, year_start, year_end, years_show, category_operation="Variables"
+):
+
     # if dm_model and dm_data do not have the same dimension return an error
     if len(dm_model.dim_labels) != len(dm_data.dim_labels):
         raise ValueError("dm_model and dm_data must have the same dimensions")
@@ -486,29 +489,41 @@ def difference_with_data(dm_model, dm_data, year_start, year_end, years_show, ca
     variab_data = dm_data.col_labels[category_operation][0]
     if dm_model.units[variab_model] != dm_data.units[variab_data]:
         raise ValueError("dm_model and dm_data must have the same unit")
-    
-    years = list(range(year_start,year_end+1))
-    dm_model_sub = dm_model.filter({"Years" : years})
-    dm_data_sub = dm_data.filter({"Years" : years})
-    
-    dm_model_sub.rename_col(variab_model,"model",category_operation)
-    dm_data_sub.rename_col(variab_data,"data",category_operation)
+
+    years = list(range(year_start, year_end + 1))
+    dm_model_sub = dm_model.filter({"Years": years})
+    dm_data_sub = dm_data.filter({"Years": years})
+
+    dm_model_sub.rename_col(variab_model, "model", category_operation)
+    dm_data_sub.rename_col(variab_data, "data", category_operation)
     dm_model_sub.append(dm_data_sub, category_operation)
-    dm_model_sub.array[dm_model_sub.array == 0] = np.nan # this is as groupbys done outside function can give zero when aggregating nans
+    dm_model_sub.array[dm_model_sub.array == 0] = (
+        np.nan
+    )  # this is as groupbys done outside function can give zero when aggregating nans
     dm_model_sub.operation("model", "-", "data", category_operation, "delta", "")
-    dm_model_sub.operation("delta", "/", "data", category_operation, "rate", "percentage", )
-    dm_model_sub.array = dm_model_sub.array*100
+    dm_model_sub.operation(
+        "delta",
+        "/",
+        "data",
+        category_operation,
+        "rate",
+        "percentage",
+    )
+    dm_model_sub.array = dm_model_sub.array * 100
     dm_model_sub.array = np.round(dm_model_sub.array, 0)
-    dm_model_sub = dm_model_sub.filter({category_operation : ["rate"]})
-    
-    df_output = pd.melt(dm_model_sub.filter({"Years" : years_show}).write_df(), ["Country","Years"])
-    
+    dm_model_sub = dm_model_sub.filter({category_operation: ["rate"]})
+
+    df_output = pd.melt(
+        dm_model_sub.filter({"Years": years_show}).write_df(), ["Country", "Years"]
+    )
+
     return df_output
 
+
 def difference_with_data_graph(dm_model, dm_data, title):
-    dm_model.filter({"Years" : dm_data.col_labels["Years"]}, inplace = True)
-    dm_model.rename_col(dm_model.col_labels["Variables"][0],'model',"Variables")
-    dm_data.rename_col(dm_data.col_labels["Variables"][0],'data',"Variables")
+    dm_model.filter({"Years": dm_data.col_labels["Years"]}, inplace=True)
+    dm_model.rename_col(dm_model.col_labels["Variables"][0], "model", "Variables")
+    dm_data.rename_col(dm_data.col_labels["Variables"][0], "data", "Variables")
     dm_graph = dm_model.copy()
     dm_graph.append(dm_data, "Variables")
     if len(dm_graph.dim_labels) == 4:
@@ -518,6 +533,7 @@ def difference_with_data_graph(dm_model, dm_data, title):
     if len(dm_graph.dim_labels) == 6:
         dm_graph.flatten().flatten().datamatrix_plot(title=title)
 
+
 def calibration_rates(
     dm, dm_cal, years_setting, calibration_start_year=1990, calibration_end_year=2023
 ):
@@ -525,12 +541,12 @@ def calibration_rates(
     # dm_cal is the datamatrix with the reference data
     # the function returns a datamatrix with the calibration rates
     # all datamartix should have the same shape
-    
+
     if np.all(np.isnan(dm_cal.array)):
-        
+
         dm_cal_sub = dm_cal.copy()
         dm_cal_sub.array[...] = 1
-        
+
     else:
 
         # if dm and dm_cal do not have the same dimension return an error
@@ -538,21 +554,21 @@ def calibration_rates(
             raise ValueError("dm and dm_cal must have the same dimensions")
         if len(dm.col_labels["Variables"]) > 1:
             raise ValueError("You can only calibrate one variable at the time")
-    
+
         # subset based on years of calibration
         years_sub = np.array(
             range(calibration_start_year, calibration_end_year + 1, 1)
         ).tolist()
         dm_sub = dm.filter({"Years": years_sub})
         dm_cal_sub = dm_cal.filter({"Years": years_sub})
-    
+
         # if dm_sub and dm_cal_sub have same variable name, rename dm_cal_sub
         variabs = dm_sub.col_labels["Variables"]
         variabs_cal = dm_cal_sub.col_labels["Variables"]
         if variabs == variabs_cal:
             for i in range(0, len(variabs)):
                 dm_cal_sub.rename_col(variabs_cal[i], "cal_" + variabs[i], "Variables")
-    
+
         # get calibration rates = (calib - variable)/variable
         dm_cal_sub.append(dm_sub, "Variables")
         var_raw = dm_sub.col_labels["Variables"][0]
@@ -564,13 +580,15 @@ def calibration_rates(
         dm_cal_sub.filter({"Variables": ["cal_rate"]}, inplace=True)
         # df_check = dm_cal_sub.write_df()
         # dm_cal_sub.datamatrix_plot()
-    
+
         # adjust missing years in dm_cal_sub
-    
+
         # get new years post calibration_end_year
         years = dm_cal_sub.col_labels["Years"]
         years_fts = list(
-            range(years_setting[2], years_setting[3] + years_setting[4], years_setting[4])
+            range(
+                years_setting[2], years_setting[3] + years_setting[4], years_setting[4]
+            )
         )
         if years_setting[1] in years:
             years_new_post = years_fts
@@ -579,16 +597,18 @@ def calibration_rates(
                 range(years[len(years) - 1] + 1, years_setting[1] + 1)
             )
             years_new_post = years_new_post_temp + years_fts
-    
+
         # get index of dm_cal_sub
         idx = dm_cal_sub.idx
-    
+
         # for missing years pre calibration_start_year, add them with value of first available year
-        years_new_pre = list(range(years_setting[0],calibration_start_year))
+        years_new_pre = list(range(years_setting[0], calibration_start_year))
         for y in years_new_pre:
-            dm_cal_sub.add(dm_cal_sub[:, calibration_start_year, ...], dim="Years", col_label=[y])
+            dm_cal_sub.add(
+                dm_cal_sub[:, calibration_start_year, ...], dim="Years", col_label=[y]
+            )
         dm_cal_sub.sort("Years")
-    
+
         # for missing years post calibration_end_year, add them with value of last available year
         for i in years_new_post:
             dm_cal_sub.add(
