@@ -129,7 +129,8 @@ def run(country_list, years_ots, years_fts):
     ####################################
     #####     EMISSION FACTORS    ######
     ####################################
-    # Obtained dividing emission by energy demand in file file = '../Europe/data/JRC-IDEES-2021_Residential_EU27.xlsx'
+    # Obtained from OFEV file https://www.bafu.admin.ch/dam/fr/sd-web/HnIzzj6OfDUU/EF_CO2_Berichterstattung_Kantone.pdf.
+    # Electricity and heating district are treated separately. There is no coal in vaudx'
     OFEV_emissions_fact = {
         "coal": 350,
         "heating-oil": 265.32,

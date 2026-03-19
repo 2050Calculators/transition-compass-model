@@ -719,7 +719,13 @@ def bld_appliances_workflow(DM_appliances, dm_pop):
     DM_appliance_out = {
         "power": dm_elec_tot,
         "industry": dm_appliance.filter(
-            {"Variables": ["bld_appliances_stock", "bld_appliances_new", "bld_appliances_waste"]}
+            {
+                "Variables": [
+                    "bld_appliances_stock",
+                    "bld_appliances_new",
+                    "bld_appliances_waste",
+                ]
+            }
         ),
     }
 
@@ -1327,7 +1333,7 @@ def compute_tech_fts_based_on_heat_tech(
         dm_heat_tech_norm[:, :, :, :] / dm_heat_tech_norm[:, baseyear, np.newaxis, :, :]
     )
 
-    # Normalised hot-water fts trends matchning heating trends
+    # Normalised hot-water fts trends matching heating trends
     idx = dm_heat_tech_norm.idx
     dm_heat_tech_norm[:, idx[years_fts[0]] :, var_name, :] = dm_heat_tech_norm[
         :, idx[years_fts[0]] :, "bld_heating", :
@@ -1416,7 +1422,43 @@ def compute_eff_fts_based_on_heat_eff(
     return dm_heat_eff
 
 
-def bld_hotwater_workflow(DM_hotwater, dm_heating, dm_lfs, years_ots, years_fts):
+def compute_emissions_per_fuel_type_from_energy(
+    cdm_const,
+    dm_energy_consumption,
+    energy_consumption_col,
+    fuel_category: str,
+    output_label="services_CO2-emissions_heating",
+):
+
+    # Filter fossil fuels
+    cdm_emission = cdm_const["emissions"]
+
+    dm_energy_consumption.add(np.nan, dummy=True, dim="Categories1", col_label="coal")
+    dm_emissions = dm_energy_consumption.filter(
+        {
+            fuel_category: cdm_emission.col_labels["Categories1"],
+            "Variables": [energy_consumption_col],
+        }
+    )
+
+    # Compute emissions fossil fuels
+    dm_emissions.sort(fuel_category)
+    cdm_emission.sort("Categories1")
+
+    arr = (
+        dm_emissions[:, :, energy_consumption_col, :]
+        * cdm_emission[np.newaxis, np.newaxis, "bld_CO2-factors", :]
+    )
+    dm_emissions.add(arr, dim="Variables", col_label=output_label, unit="kt")
+    dm_emissions.change_unit(output_label, 1e-3, "kt", "Mt")
+    dm_emissions.filter({"Variables": [output_label]}, inplace=True)
+
+    return dm_emissions
+
+
+def bld_hotwater_workflow(
+    DM_hotwater, dm_heating, cdm_const, dm_lfs, years_ots, years_fts
+):
 
     dm_hw_eff = DM_hotwater["efficiency"].copy()
     dm_hw_eff = compute_eff_fts_based_on_heat_eff(
@@ -1449,12 +1491,22 @@ def bld_hotwater_workflow(DM_hotwater, dm_heating, dm_lfs, years_ots, years_fts)
         unit="TWh",
     )
 
-    DM_hotwater_out = {"power": dm_hw_tech}
+    dm_emissions = compute_emissions_per_fuel_type_from_energy(
+        cdm_const,
+        dm_hw_tech,
+        "bld_hot-water_energy-demand",
+        fuel_category="Categories1",
+        output_label="bld_hotwater_CO2-emissions",
+    )
+
+    DM_hotwater_out = {
+        "TPE": {"power": dm_hw_tech, "hotwater_emissions": dm_emissions}
+    }  #
 
     return DM_hotwater_out
 
 
-def bld_services_workflow(DM_services, dm_heating, years_ots, years_fts):
+def bld_services_workflow(DM_services, dm_heating, cdm_const, years_ots, years_fts):
 
     dm_eff = DM_services["services_efficiencies"].copy()
     dm_eff = compute_eff_fts_based_on_heat_eff(
@@ -1544,8 +1596,38 @@ def bld_services_workflow(DM_services, dm_heating, years_ots, years_fts):
         unit="TWh",
     )
 
+    # Services CO2 emissions
+    cdm_emission = cdm_const["emissions"]
+    dm_emissions = dm_tech_mix.filter(
+        {
+            "Categories2": cdm_emission.col_labels["Categories1"],
+            "Categories1": ["hot-water", "space-heating"],
+            "Variables": ["bld_services_energy-consumption"],
+        }
+    )
+    # Compute emissions fossil fuels
+    dm_emissions.sort("Categories2")
+    cdm_emission.sort("Categories1")
+
+    arr = (
+        dm_emissions[:, :, "bld_services_energy-consumption", :, :]
+        * cdm_emission[np.newaxis, np.newaxis, "bld_CO2-factors", np.newaxis, :]
+    )
+    dm_emissions.add(
+        arr, dim="Variables", col_label="services_CO2-emissions_heating", unit="kt"
+    )
+    dm_emissions.change_unit("services_CO2-emissions_heating", 1e-3, "kt", "Mt")
+    dm_emissions.filter({"Variables": ["services_CO2-emissions_heating"]}, inplace=True)
+
+    dm_emissions.group_all("Categories1")
+
     DM_services_out = {
-        "TPE": dm_tech_mix.filter({"Variables": ["bld_services_energy-consumption"]}),
+        "TPE": {
+            "services_energy-consumption": dm_tech_mix.filter(
+                {"Variables": ["bld_services_energy-consumption"]}
+            ),
+            "services_emissions": dm_emissions,
+        },
         "energy": dm_tech_mix,
     }
 

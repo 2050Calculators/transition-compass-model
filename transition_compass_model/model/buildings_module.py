@@ -148,6 +148,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     DM_hotwater_out = wkf.bld_hotwater_workflow(
         DM_hotwater,
         DM_energy_out["TPE"]["energy-demand-heating"].copy(),
+        cdm_const,
         dm_lfs,
         years_ots,
         years_fts,
@@ -156,6 +157,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     DM_services_out = wkf.bld_services_workflow(
         DM_services,
         DM_energy_out["TPE"]["energy-demand-heating"].copy(),
+        cdm_const,
         years_ots,
         years_fts,
     )
@@ -169,7 +171,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
         dm_heat_cool = DM_energy_out["power"].filter(
             {"Variables": ["bld_energy-demand_heating", "bld_energy-demand_cooling"]}
         )
-        dm_hot_water = DM_hotwater_out["power"].filter(
+        dm_hot_water = DM_hotwater_out["TPE"]["power"].filter(
             {"Variables": ["bld_hot-water_energy-demand"]}
         )
         dm_hot_water.rename_col(
@@ -215,7 +217,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
         DM_services_out["TPE"],
         DM_appliances_out["power"],
         DM_light_out["TPE"],
-        DM_hotwater_out["power"],
+        DM_hotwater_out["TPE"],
     )
 
     # 'District-heating' module interface
@@ -227,7 +229,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
 
     DM_inter_energy = {
         "households_heating": DM_energy_out["power"],
-        "households_hot-water": DM_hotwater_out["power"],
+        "households_hot-water": DM_hotwater_out["TPE"]["power"],
         "households_lighting": DM_light_out["energy"],
         "households_electricity": DM_appliances_out["power"],
         "services_all": DM_services_out["energy"],
