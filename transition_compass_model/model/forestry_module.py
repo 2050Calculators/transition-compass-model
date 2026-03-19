@@ -1,10 +1,11 @@
-from .common.interface_class import Interface
-from .common.auxiliary_functions import (
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.common.auxiliary_functions import (
     read_level_data,
     filter_country_and_load_data_from_pickles,
+    compat_pickle_load,
 )
+from transition_compass_model.model.common.config_loader import load_lever_config
 import pickle
-import json
 import os
 import numpy as np
 
@@ -421,7 +422,7 @@ def forestry(lever_setting, years_setting, DM_input, interface=Interface()):
             "../_database/data/interface/energy_to_forestry.pickle",
         )
         with open(lfs_interface_data_file, "rb") as handle:
-            dm_fuelwood_demand = pickle.load(handle)
+            dm_fuelwood_demand = compat_pickle_load(handle)
         dm_fuelwood_demand.filter({"Country": cntr_list}, inplace=True)
     ####################################################################################################################
     # Interface - Industry to Forestry:
@@ -439,7 +440,7 @@ def forestry(lever_setting, years_setting, DM_input, interface=Interface()):
             "../_database/data/interface/industry_to_forestry.pickle",
         )
         with open(lfs_interface_data_file, "rb") as handle:
-            dm_wood_demand = pickle.load(handle)
+            dm_wood_demand = compat_pickle_load(handle)
         dm_wood_demand.filter({"Country": cntr_list}, inplace=True)
 
     ####################################################################################################################
@@ -456,7 +457,7 @@ def forestry(lever_setting, years_setting, DM_input, interface=Interface()):
             "../_database/data/interface/land_to_forestry.pickle",
         )
         with open(lfs_interface_data_file, "rb") as handle:
-            dm_forest_area = pickle.load(handle)
+            dm_forest_area = compat_pickle_load(handle)
         dm_forest_area.filter({"Country": cntr_list}, inplace=True)
 
     ####################################################################################################################
@@ -514,9 +515,7 @@ def forestry(lever_setting, years_setting, DM_input, interface=Interface()):
 def local_forestry_run():
     # Function to run only transport module without converter and tpe
     years_setting = [1990, 2023, 2025, 2050, 5]
-    current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    f = open(os.path.join(current_file_directory, "../config/lever_position.json"))
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
 
     # get geoscale
     country_list = ["Switzerland", "Vaud"]

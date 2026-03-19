@@ -4,20 +4,20 @@
 
 import pandas as pd
 
-from .common.data_matrix_class import DataMatrix
-from .common.constant_data_matrix_class import ConstantDataMatrix
-from .common.io_database import (
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.io_database import (
     read_database_fxa,
     read_database_to_ots_fts_dict_w_groups,
     database_to_df,
     dm_to_database,
 )
-from .common.interface_class import Interface
-from .common.auxiliary_functions import filter_geoscale, calibration_rates
-from .common.auxiliary_functions import read_level_data, simulate_input
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.common.auxiliary_functions import filter_geoscale, calibration_rates, compat_pickle_load
+from transition_compass_model.model.common.auxiliary_functions import read_level_data, simulate_input
+from transition_compass_model.model.common.config_loader import load_lever_config
 from scipy.optimize import linprog
 import pickle
-import json
 import os
 import numpy as np
 
@@ -25,8 +25,7 @@ import numpy as np
 def init_years_lever():
     # function that can be used when running the module as standalone to initialise years and levers
     years_setting = [1990, 2015, 2020, 2050, 5]
-    f = open("../config/lever_position.json")
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
     return years_setting, lever_setting
 
 
@@ -252,7 +251,7 @@ def database_from_csv_to_datamatrix():
 def read_data(data_file, lever_setting):
 
     with open(data_file, "rb") as handle:
-        DM_landuse = pickle.load(handle)
+        DM_landuse = compat_pickle_load(handle)
 
     # Read fts based on lever_setting
     DM_ots_fts = read_level_data(DM_landuse, lever_setting)

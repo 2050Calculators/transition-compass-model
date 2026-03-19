@@ -1,14 +1,14 @@
-from .common.interface_class import Interface
-from .common.auxiliary_functions import cdm_to_dm, read_level_data
-from .common.auxiliary_functions import calibration_rates, cost
-from .common.auxiliary_functions import energy_switch
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.common.auxiliary_functions import cdm_to_dm, read_level_data, compat_pickle_load
+from transition_compass_model.model.common.auxiliary_functions import calibration_rates, cost
+from transition_compass_model.model.common.auxiliary_functions import energy_switch
 import pickle
-import json
 import os
 import numpy as np
 import re
 import warnings
-from .common.auxiliary_functions import filter_country_and_load_data_from_pickles
+from transition_compass_model.model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
+from transition_compass_model.model.common.config_loader import load_lever_config
 
 warnings.simplefilter("ignore")
 import plotly.io as pio
@@ -52,7 +52,7 @@ def get_interface(
             + ".pickle",
         )
         with open(filepath, "rb") as handle:
-            DM = pickle.load(handle)
+            DM = compat_pickle_load(handle)
         if type(DM) is dict:
             for key in DM.keys():
                 DM[key].filter({"Country": country_list}, inplace=True)
@@ -1234,8 +1234,7 @@ def ammonia(
 def local_ammonia_run():
 
     # Configures initial input for model run
-    f = open("../config/lever_position.json")
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
     years_setting = [1990, 2023, 2025, 2050, 5]
 
     country_list = ["Vaud"]

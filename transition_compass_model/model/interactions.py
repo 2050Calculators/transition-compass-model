@@ -1,17 +1,17 @@
-from .transport_module import transport
-from .lifestyles_module import lifestyles
-from .buildings_module import buildings
+from transition_compass_model.model.transport_module import transport
+from transition_compass_model.model.lifestyles_module import lifestyles
+from transition_compass_model.model.buildings_module import buildings
 
-from .forestry_module import forestry
+from transition_compass_model.model.forestry_module import forestry
 
-# from .minerals_module import minerals
-from .common.interface_class import Interface
-from .agriculture_module import agriculture
-from .climate_module import climate
+# from transition_compass_model.model.minerals_module import minerals
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.agriculture_module import agriculture
+from transition_compass_model.model.climate_module import climate
 
-from .ammonia_module import ammonia
-from .industry_module import industry
-from .energy_module import energy
+from transition_compass_model.model.ammonia_module import ammonia
+from transition_compass_model.model.industry_module import industry
+from transition_compass_model.model.energy_module import energy
 
 import math
 import copy

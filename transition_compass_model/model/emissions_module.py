@@ -6,12 +6,12 @@ Created on Thu May 30 15:55:39 2024
 @author: echiarot
 """
 
-from .common.data_matrix_class import DataMatrix
-from .common.io_database import read_database_fxa, read_database_to_ots_fts_dict
-from .common.interface_class import Interface
-from .common.auxiliary_functions import filter_geoscale, simulate_input
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.io_database import read_database_fxa, read_database_to_ots_fts_dict
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.common.auxiliary_functions import filter_geoscale, simulate_input, compat_pickle_load
+from transition_compass_model.model.common.config_loader import load_lever_config
 import pickle
-import json
 import os
 import numpy as np
 import re
@@ -172,7 +172,7 @@ def read_data(data_file, lever_setting):
 
     # load dm
     with open(data_file, "rb") as handle:
-        DM_emissions = pickle.load(handle)
+        DM_emissions = compat_pickle_load(handle)
 
     # get fxa
     DM_fxa = DM_emissions["fxa"]
@@ -872,9 +872,7 @@ def local_emissions_run():
 
     # get years and lever setting
     years_setting = [1990, 2015, 2100, 1]
-    current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    f = open(os.path.join(current_file_directory, "../config/lever_position.json"))
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
 
     # get geoscale
     global_vars = {"geoscale": ".*"}

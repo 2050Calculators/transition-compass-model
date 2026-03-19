@@ -1,15 +1,16 @@
 import pandas as pd
 
-from .common.data_matrix_class import DataMatrix
-from .common.io_database import dm_to_database
-from .common.interface_class import Interface
-from .common.auxiliary_functions import calibration_rates, create_years_list
-from .common.auxiliary_functions import (
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.io_database import dm_to_database
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.common.auxiliary_functions import calibration_rates, create_years_list
+from transition_compass_model.model.common.auxiliary_functions import (
     read_level_data,
     filter_country_and_load_data_from_pickles,
+    compat_pickle_load,
 )
+from transition_compass_model.model.common.config_loader import load_lever_config
 import pickle
-import json
 import os
 import numpy as np
 import time
@@ -21,8 +22,7 @@ import time
 def init_years_lever():
     # function that can be used when running the module as standalone to initialise years and levers
     years_setting = [1990, 2023, 2025, 2050, 5]
-    f = open("../config/lever_position.json")
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
     return years_setting, lever_setting
 
 
@@ -297,7 +297,7 @@ def simulate_lifestyles_to_agriculture_input_new():
         "../_database/data/interface/lifestyles_to_agriculture.pickle",
     )
     with open(f, "rb") as handle:
-        DM_lfs = pickle.load(handle)
+        DM_lfs = compat_pickle_load(handle)
 
     return DM_lfs
 
@@ -392,7 +392,7 @@ def simulate_buildings_to_agriculture_input():
         "../_database/data/interface/buildings_to_agriculture.pickle",
     )
     with open(f, "rb") as handle:
-        dm_bld = pickle.load(handle)
+        dm_bld = compat_pickle_load(handle)
 
     return dm_bld
 
@@ -404,7 +404,7 @@ def simulate_industry_to_agriculture_input():
         "../_database/data/interface/industry_to_agriculture.pickle",
     )
     with open(f, "rb") as handle:
-        DM_ind = pickle.load(handle)
+        DM_ind = compat_pickle_load(handle)
     return DM_ind
 
 
@@ -416,7 +416,7 @@ def simulate_transport_to_agriculture_input():
         "../_database/data/interface/transport_to_agriculture.pickle",
     )
     with open(f, "rb") as handle:
-        dm_tra = pickle.load(handle)
+        dm_tra = compat_pickle_load(handle)
     return dm_tra
 
 

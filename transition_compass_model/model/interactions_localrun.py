@@ -1,25 +1,23 @@
-from .transport_module import transport
-from .lifestyles_module import lifestyles
-from .buildings_module import buildings
-
-from .forestry_module import forestry
-
-# from .minerals_module import minerals
-from .common.interface_class import Interface
-from .agriculture_module import agriculture
-from .climate_module import climate
-
-from .ammonia_module import ammonia
-from .industry_module import industry
-from .lca_module import lca
-
-from .common.auxiliary_functions import filter_country_and_load_data_from_pickles
 import logging
+
+from transition_compass_model.model.transport_module import transport
+from transition_compass_model.model.lifestyles_module import lifestyles
+from transition_compass_model.model.buildings_module import buildings
+from transition_compass_model.model.forestry_module import forestry
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.agriculture_module import agriculture
+from transition_compass_model.model.climate_module import climate
+from transition_compass_model.model.ammonia_module import ammonia
+from transition_compass_model.model.industry_module import industry
+from transition_compass_model.model.lca_module import lca
+from transition_compass_model.model.common.auxiliary_functions import (
+    filter_country_and_load_data_from_pickles,
+)
 
 import math
 import copy
 import time
-import json
+from transition_compass_model.model.common.config_loader import load_lever_config
 
 
 def runner(lever_setting, years_setting, DM_in, sectors, logger):
@@ -139,8 +137,7 @@ def local_interactions_run():
     logger = logging.getLogger(__name__)
 
     # Configures initial input for model run
-    f = open("../config/lever_position.json")
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
     years_setting = [1990, 2023, 2025, 2050, 5]
 
     country_list = ["Switzerland", "EU27", "Vaud"]

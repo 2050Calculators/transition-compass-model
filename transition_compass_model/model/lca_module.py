@@ -1,8 +1,8 @@
-from .common.interface_class import Interface
-from .common.auxiliary_functions import read_level_data
-from .common.auxiliary_functions import filter_country_and_load_data_from_pickles
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.common.auxiliary_functions import read_level_data, compat_pickle_load
+from transition_compass_model.model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
+from transition_compass_model.model.common.config_loader import load_lever_config
 import os
-import json
 import pickle
 import numpy as np
 import warnings
@@ -49,7 +49,7 @@ def get_interface(
             + ".pickle",
         )
         with open(filepath, "rb") as handle:
-            DM = pickle.load(handle)
+            DM = compat_pickle_load(handle)
         if type(DM) is dict:
             for key in DM.keys():
                 if "Country" in list(DM[key].col_labels.keys()):
@@ -250,8 +250,7 @@ def lca(
 def local_lca_run():
 
     # Configures initial input for model run
-    f = open("../config/lever_position.json")
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
     years_setting = [1990, 2023, 2025, 2050, 5]
 
     country_list = ["EU27"]

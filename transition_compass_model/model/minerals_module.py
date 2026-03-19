@@ -6,17 +6,18 @@ Created on Thu May  9 16:29:51 2024
 @author: echiarot
 """
 
-from .common.data_matrix_class import DataMatrix
-from .common.constant_data_matrix_class import ConstantDataMatrix
-from .common.io_database import read_database_fxa
-from .common.interface_class import Interface
-from .common.auxiliary_functions import (
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.io_database import read_database_fxa
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.common.auxiliary_functions import (
     filter_geoscale,
     cdm_to_dm,
     simulate_input,
     calibration_rates,
+    compat_pickle_load,
 )
-from .common.auxiliary_functions import material_decomposition
+from transition_compass_model.model.common.auxiliary_functions import material_decomposition
 import pandas as pd
 import pickle
 import os
@@ -388,7 +389,7 @@ def database_from_csv_to_datamatrix():
 def read_data(data_file):
     # load datamatrixes
     with open(data_file, "rb") as handle:
-        DM_minerals = pickle.load(handle)
+        DM_minerals = compat_pickle_load(handle)
 
     # get constants
     CDM_const = DM_minerals["constant"].copy()

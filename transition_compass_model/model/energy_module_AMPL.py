@@ -1,21 +1,22 @@
 from amplpy import AMPL, add_to_path
 
 # from typing import List, Dict
-from .common.interface_class import Interface
-from .common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 import os
-from .common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     filter_DM,
     create_years_list,
     dm_add_missing_variables,
+    compat_pickle_load,
 )
 import pickle
-import json
 import numpy as np
 import pandas as pd
-from .energy import interfaces as inter
-from .energy import utils
+from transition_compass_model.model.energy import interfaces as inter
+from transition_compass_model.model.energy import utils
 import re
+from transition_compass_model.model.common.config_loader import load_lever_config
 
 
 def define_sets(ampl):
@@ -671,7 +672,7 @@ def energyscope(data_path, DM_tra, DM_bld, DM_ind, years_ots, years_fts, country
     add_to_path(r"/Applications/AMPL")
 
     with open(data_path, "rb") as handle:
-        DM_energy = pickle.load(handle)
+        DM_energy = compat_pickle_load(handle)
 
     # DM_energy['index3'][:, :, 'c_inv', 'PV'] = 400
     # Create an AMPL object
@@ -803,7 +804,7 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
             "../_database/data/interface/transport_to_energy.pickle",
         )
         with open(tra_interface_data_file, "rb") as handle:
-            DM_transport = pickle.load(handle)
+            DM_transport = compat_pickle_load(handle)
         for key in DM_transport.keys():
             DM_transport[key].filter({"Country": country_list}, inplace=True)
 
@@ -831,7 +832,7 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
             "../_database/data/interface/buildings_to_energy.pickle",
         )
         with open(bld_file, "rb") as handle:
-            DM_buildings = pickle.load(handle)
+            DM_buildings = compat_pickle_load(handle)
         filter_DM(DM_buildings, {"Country": country_list})
 
     if interface.has_link(from_sector="industry", to_sector="energy"):
@@ -844,7 +845,7 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
             "../_database/data/interface/industry_to_energy.pickle",
         )
         with open(bld_file, "rb") as handle:
-            DM_industry = pickle.load(handle)
+            DM_industry = compat_pickle_load(handle)
         filter_DM(DM_industry, {"Country": country_list})
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
@@ -867,9 +868,7 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
 def local_energy_run():
     # Function to run module as stand alone without other modules/converter or TPE
     years_setting = [1990, 2023, 2025, 2050, 5]
-    current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    f = open(os.path.join(current_file_directory, "../config/lever_position.json"))
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
     # Function to run only transport module without converter and tpe
 
     # get geoscale
@@ -889,9 +888,9 @@ if __name__ == "__main__":
 # local_energy_run()
 
 # with open('/Users/paruta/Desktop/transport_EU.pickle', 'rb') as handle:
-#    DM_transport = pickle.load(handle)
+#    DM_transport = compat_pickle_load(handle)
 
 
 # with open('/Users/paruta/Desktop/transport_EU.pickle', 'rb') as handle:
-#    DM_transport = pickle.load(handle)
+#    DM_transport = compat_pickle_load(handle)
 # print('Hello')

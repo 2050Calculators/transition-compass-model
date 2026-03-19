@@ -1,17 +1,18 @@
-from .common.interface_class import Interface
+from transition_compass_model.model.common.interface_class import Interface
 
-from .common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     read_level_data,
     filter_country_and_load_data_from_pickles,
     create_years_list,
     dm_add_missing_variables,
+    compat_pickle_load,
 )
 import pickle
-import json
 import os
 import warnings
-from .buildings import workflows as wkf
-from .buildings import interfaces as inter
+from transition_compass_model.model.buildings import workflows as wkf
+from transition_compass_model.model.buildings import interfaces as inter
+from transition_compass_model.model.common.config_loader import load_lever_config
 
 warnings.simplefilter("ignore")
 
@@ -19,9 +20,7 @@ warnings.simplefilter("ignore")
 def init_years_lever():
     # function that can be used when running the module as standalone to initialise years and levers
     years_setting = [1990, 2023, 2025, 2050, 5]
-    current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    f = open(os.path.join(current_file_directory, "../config/lever_position.json"))
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
     return years_setting, lever_setting
 
 
@@ -105,7 +104,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
             "../_database/data/interface/lifestyles_to_buildings.pickle",
         )
         with open(data_file, "rb") as handle:
-            DM_lfs = pickle.load(handle)
+            DM_lfs = compat_pickle_load(handle)
         dm_lfs = DM_lfs["pop"]
         cntr_list = DM_floor_area["floor-intensity"].col_labels["Country"]
         dm_lfs.filter({"Country": cntr_list}, inplace=True)
@@ -120,7 +119,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
             "../_database/data/interface/climate_to_buildings.pickle",
         )
         with open(data_file, "rb") as handle:
-            DM_clm = pickle.load(handle)
+            DM_clm = compat_pickle_load(handle)
         dm_clm = DM_clm["cdd-hdd"]
         cntr_list = DM_floor_area["floor-intensity"].col_labels["Country"]
         dm_clm.filter({"Country": cntr_list}, inplace=True)

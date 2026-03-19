@@ -3,23 +3,23 @@
 #######################################################################################################################
 import numpy as np
 import pickle  # read/write the data in pickle
-import json  # read the lever setting
 import os  # operating system (e.g., look for workspace)
 import pandas as pd
 import warnings
 
 # Import Class
-from .common.data_matrix_class import DataMatrix  # Class for the model inputs
-from .common.constant_data_matrix_class import (
+from transition_compass_model.model.common.data_matrix_class import DataMatrix  # Class for the model inputs
+from transition_compass_model.model.common.constant_data_matrix_class import (
     ConstantDataMatrix,
 )  # Class for the constant inputs
-from .common.interface_class import Interface
+from transition_compass_model.model.common.interface_class import Interface
 
 # ImportFunctions
-from .common.io_database import (
+from transition_compass_model.model.common.io_database import (
     read_database_fxa,
 )  # read functions for levers & fixed assumptions
-from .common.auxiliary_functions import filter_geoscale, simulate_input
+from transition_compass_model.model.common.auxiliary_functions import filter_geoscale, simulate_input, compat_pickle_load
+from transition_compass_model.model.common.config_loader import load_lever_config
 
 warnings.simplefilter("ignore")
 #######################################################################################################################
@@ -452,7 +452,7 @@ def refinery(lever_setting, years_setting, interface=Interface()):
         "../_database/data/datamatrix/geoscale/oil-refinery.pickle",
     )
     with open(refinery_data_file, "rb") as handle:  # read binary (rb)
-        DM_refinery = pickle.load(handle)
+        DM_refinery = compat_pickle_load(handle)
 
     # Country filter setting (based on fxa, because their is no read data function / no levers)
 
@@ -556,9 +556,7 @@ def refinery(lever_setting, years_setting, interface=Interface()):
 def local_refinery_run():
     # Function to run only transport module without converter and tpe
     years_setting = [1990, 2015, 2050, 5]
-    current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    f = open(os.path.join(current_file_directory, "../config/lever_position.json"))
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
 
     global_vars = {"geoscale": ".*"}
     filter_geoscale(global_vars)
