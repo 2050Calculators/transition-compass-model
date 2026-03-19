@@ -18,6 +18,75 @@ uv sync
 
 This creates a `.venv` and installs all dependencies. You can then run scripts directly with `uv run python ...`.
 
+## Running the model locally
+
+```bash
+# Full model run (reads lever config from transition_compass_model/config/lever_position.json)
+uv run python -m transition_compass_model.model.interactions_localrun
+```
+
+Each sector module also has a `local_*_run()` function for standalone testing:
+
+```bash
+uv run python -m transition_compass_model.model.transport_module
+uv run python -m transition_compass_model.model.buildings_module
+# etc.
+```
+
+### IDE setup
+
+The key requirement for all IDEs is to point the Python interpreter at `.venv/bin/python` inside this repo. Once that is done, you can open any `*_module.py` file and run or debug it directly.
+
+#### VS Code
+
+1. Open the repo folder in VS Code.
+2. Open the Command Palette (`Ctrl+Shift+P`) → **Python: Select Interpreter**.
+3. Choose the interpreter at `.venv/bin/python` (it usually appears automatically as a workspace suggestion).
+4. Open any `*_module.py` file and click **Run Python File** (▷ top-right) or press `F5` to debug.
+
+A `.vscode/settings.json` is already committed to this repo with the correct interpreter path, so steps 2–3 may be automatic.
+
+#### Spyder
+
+Spyder must use the same virtual environment as the project, otherwise imports will fail.
+
+**Option A — launch Spyder from the activated venv (recommended):**
+
+```bash
+# Activate the venv first
+source .venv/bin/activate   # macOS/Linux
+.venv\Scripts\activate      # Windows
+
+# Install Spyder inside the venv (once)
+pip install spyder
+
+# Launch
+spyder
+```
+
+**Option B — use an existing Spyder installation with a custom kernel:**
+
+1. With the venv activated, install `spyder-kernels`:
+   ```bash
+   pip install spyder-kernels
+   ```
+2. In Spyder → **Preferences → Python interpreter → Use the following interpreter** → browse to `.venv/bin/python`.
+3. Restart the kernel.
+
+Once the interpreter is set, open any `*_module.py` and run it with `F5` or **Run → Run file**.
+
+#### PyCharm
+
+1. Go to **Settings → Project → Python Interpreter → Add Interpreter → Existing**.
+2. Browse to `.venv/bin/python`.
+3. Right-click any `*_module.py` → **Run**.
+
+---
+
+> **Note on pickle compatibility:** The data files in `_database/data/` were serialized before the package was renamed. The package registers backward-compatible `sys.modules` aliases at import time (`transition_compass_model/__init__.py`), so plain `pickle.load()` works transparently — no special handling needed.
+
+---
+
 ## Working alongside the app (local editable mode)
 
 For iterative model development, install the model as an editable package inside the app's virtual environment so changes are reflected immediately without reinstalling.
