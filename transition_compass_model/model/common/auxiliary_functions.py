@@ -1460,26 +1460,12 @@ def add_dummy_country_to_DM(DM, new_country, ref_country):
     return
 
 
-class _CompatUnpickler(pickle.Unpickler):
-    """Translates stale module paths stored in old pickle files on the fly."""
-
-    def find_class(self, module, name):
-        if module.startswith("model."):
-            module = "transition_compass_model." + module
-        return super().find_class(module, name)
-
-
-def compat_pickle_load(handle):
-    """Drop-in replacement for pickle.load() that fixes stale module paths."""
-    return _CompatUnpickler(handle).load()
-
-
 def load_module_input_from_pickle(module):
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     pickle_path = "/../../_database/data/datamatrix/"
     f = os.path.join(current_file_directory + pickle_path, module + ".pickle")
     with open(f, "rb") as handle:
-        DM_module = _CompatUnpickler(handle).load()
+        DM_module = pickle.load(handle)
 
     return DM_module
 
