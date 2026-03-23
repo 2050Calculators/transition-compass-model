@@ -133,11 +133,11 @@ def run(country_list, years_ots, years_fts):
     # Electricity and heating district are treated separately. There is no coal in vaudx'
     OFEV_emissions_fact = {
         "coal": 350,
-        "heating-oil": 265.32,
-        "gas": 203.04,
-        "wood": 359.64,
+        "heating-oil": 265,
+        "gas": 201,
+        "wood": 0,
         "solar": 0,
-        "district-heating": 160.92,
+        "district-heating": 66,
     }
 
     cdm_emission_fact = ConstantDataMatrix(
