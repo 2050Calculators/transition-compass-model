@@ -1314,6 +1314,10 @@ def compute_tech_fts_based_on_heat_tech(
         dm_heat_tech.array, window_size, axis=dm_heat_tech.dim_labels.index("Years")
     )
     dm_heat_tech.array[:, 1:-1, ...] = data_smooth
+    idx = dm_heat_tech.idx
+    dm_heat_tech.array[
+        idx["Vaud"], idx[2035] :, idx["bld_heating"], idx["electricity"]
+    ] = 0
 
     dm_heat_tech.normalise(dim="Categories1")
 

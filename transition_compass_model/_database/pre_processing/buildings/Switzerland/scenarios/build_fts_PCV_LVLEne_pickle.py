@@ -166,9 +166,6 @@ def update_heating_change_proportion(
 
     idx = dm_heating_fts_mfh.idx
     # Once all the old technologies are set to 0 we want to replace the missing proportion with the ideal scenario proportion
-    a = dm_heating_fts_mfh.dim_labels.index("Categories3")
-    # arr_sum = np.nansum(dm_heating_fts_mfh.array, axis=a, keepdims=True)
-    # arr_sum = np.nan_to_num(dm_heating_fts_mfh.array)
     dm_sum = dm_heating_fts_mfh.group_all("Categories3", inplace=False)
     arr_sum = dm_sum.array[..., np.newaxis]
     proportion_replaced_heating_per_cat = 1 - arr_sum
@@ -254,24 +251,32 @@ def run(
 
     # SECTION: Loi energy - Heating tech
     # Plus de gaz, mazout, charbon dans les prochain 15-20 ans. Pas de gaz, mazout, charbon dans les nouvelles constructions
-    dm_heating_cat_fts_2 = DM_buildings["fts"]["heating-technology-fuel"][
+    dm_heating_cat_fts_1 = DM_buildings["fts"]["heating-technology-fuel"][
         "bld_heating-technology"
     ][1].copy()
 
-    idx = dm_heating_cat_fts_2.idx
+    idx = dm_heating_cat_fts_1.idx
     # Electricity
     # article 41
     idx_old_cat = [idx["E"], idx["F"]]
     idx_new_cat = [idx["B"], idx["C"], idx["D"]]
 
     # article 9 et 10 DACCE 2033 au plus tard et sur justificatif de peu de consomation + 5 ans
-    dm_heating_cat_fts_2.array[
+
+    dm_heating_cat_fts_1.array[
         idx["Vaud"], idx[2035] :, :, :, idx_old_cat, idx["electricity"]
     ] = 0
-    dm_heating_cat_fts_2.array[
-        idx["Vaud"], idx[2040] :, :, :, idx_new_cat, idx["electricity"]
+    dm_heating_cat_fts_1.array[
+        idx["Vaud"], idx[2035] :, :, :, idx_new_cat, idx["electricity"]
     ] = 0
 
+    dm_heating_cat_fts_1.normalise("Categories3")
+    # Electricity is set to lever 1 because it is in a decree from 2022
+    DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"][
+        1
+    ] = dm_heating_cat_fts_1
+
+    dm_heating_cat_fts_2 = dm_heating_cat_fts_1.copy()
     # Fossil heating
     # article  40.1
     idx_fossil = [idx["coal"], idx["heating-oil"], idx["gas"]]
@@ -326,7 +331,7 @@ def run(
     # !FIXME: use the actual values and not the calibration factor
     file = os.path.join(this_dir, "../../../../data/datamatrix/buildings.pickle")
 
-    # my_pickle_dump(DM_buildings, file)
+    my_pickle_dump(DM_buildings, file)
     sort_pickle(file)
 
     return DM_buildings
