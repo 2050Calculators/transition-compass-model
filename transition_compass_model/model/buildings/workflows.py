@@ -1313,11 +1313,9 @@ def compute_tech_fts_based_on_heat_tech(
     data_smooth = moving_average(
         dm_heat_tech.array, window_size, axis=dm_heat_tech.dim_labels.index("Years")
     )
+    # Force 0 values to stay at 0 even after smoothing of values
+    data_smooth = np.where(dm_heat_tech.array[:, 1:-1, ...] == 0, 0, data_smooth)
     dm_heat_tech.array[:, 1:-1, ...] = data_smooth
-    idx = dm_heat_tech.idx
-    dm_heat_tech.array[
-        idx["Vaud"], idx[2035] :, idx["bld_heating"], idx["electricity"]
-    ] = 0
 
     dm_heat_tech.normalise(dim="Categories1")
 
@@ -1331,6 +1329,7 @@ def compute_tech_fts_based_on_heat_tech(
     dm_heat_tech.append(dm_tech, dim="Variables")
 
     # Normalise hw and heat tech so that are comparable in 2023
+    # cette ligne la fait exploser solar presence de nan quiand lever 2 suspect
     dm_heat_tech_norm = dm_heat_tech.copy()
     baseyear = years_ots[-2]
     dm_heat_tech_norm[:, :, :, :] = (

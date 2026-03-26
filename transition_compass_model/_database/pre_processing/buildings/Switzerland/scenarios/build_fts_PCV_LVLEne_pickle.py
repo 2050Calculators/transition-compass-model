@@ -271,6 +271,7 @@ def run(
     ] = 0
 
     dm_heating_cat_fts_1.normalise("Categories3")
+    dm_heating_cat_fts_1.fill_nans("Years")
     # Electricity is set to lever 1 because it is in a decree from 2022
     DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"][
         1
@@ -323,6 +324,7 @@ def run(
     )
 
     dm_heating_cat_fts_2.normalise("Categories3")
+    dm_heating_cat_fts_2.fill_nans("Years")
     DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"][
         lev
     ] = dm_heating_cat_fts_2
