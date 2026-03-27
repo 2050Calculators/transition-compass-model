@@ -186,7 +186,7 @@ def compute_renovation_loi_energie(
     )
 
     idx = dm_bld.idx
-    ren_rate_min_2035 = area_necessary_renovated / np.sum(
+    ren_rate_min_2035_class_F = area_necessary_renovated / np.sum(
         dm_bld.array[
             idx["Vaud"],
             idx[2023],
@@ -199,13 +199,35 @@ def compute_renovation_loi_energie(
     dm_rr_fts_2 = DM_buildings["fts"]["building-renovation-rate"][
         "bld_renovation-rate"
     ][2].copy()
+
     idx = dm_rr_fts_2.idx
-    yrs_fts = [yr for yr in dm_rr_fts_2.col_labels["Years"] if yr <= 2035]
+    yrs_fts = [yr for yr in dm_rr_fts_2.col_labels["Years"] if yr <= 2040]
     idx_fts = [idx[yr] for yr in yrs_fts]
+
+    ren_redistribution = DM_buildings["fts"]["building-renovation-rate"][
+        "bld_renovation-redistribution"
+    ][1].copy()
+    idx_redistrib = ren_redistribution.idx
+    prop_E_renovated = ren_redistribution.array[
+        idx_redistrib["Vaud"],
+        idx_redistrib[2035],
+        idx_redistrib["bld_renovation-redistribution-out"],
+        idx_redistrib["E"],
+    ]
+    renovation_E = (
+        dm_rr_fts_2.array[
+            idx["Vaud"],
+            idx_fts,
+            idx["bld_renovation-rate"],
+            idx["multi-family-households"],
+        ]
+        * prop_E_renovated
+    )
+
     dm_rr_fts_2.array[
         idx["Vaud"], idx_fts, idx["bld_renovation-rate"], idx["multi-family-households"]
-    ] = ren_rate_min_2035 / (
-        yrs_fts[-1] - yrs_fts[0] + 1
+    ] = (
+        ren_rate_min_2035_class_F / (yrs_fts[-1] - yrs_fts[0] + 1) + renovation_E
     )  # Renovation objective divided by the number of year to apply it
     return dm_rr_fts_2
 
@@ -312,6 +334,16 @@ def run(
     DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][
         4
     ] = dm_rr_fts_2
+
+    # renovation redistribution is also affected
+
+    renov_distrib_fts_1 = DM_buildings["fts"]["building-renovation-rate"][
+        "bld_renovation-redistribution"
+    ][1].copy()
+    renov_distrib_fts_1.filter({"Country": ["Vaud"]}, inplace=True)
+    idx = renov_distrib_fts_1.idx
+    # the energy law only affects the class F and G there are no rules about the other classes
+    renov_distrib_fts_1.array[idx["Vaud"], :, idx["bld_renovation-redistribution-in"]]
 
     # SECTION: Loi energy - Heating tech
     # Plus de gaz, mazout, charbon dans les prochain 15-20 ans. Pas de gaz, mazout, charbon dans les nouvelles constructions
