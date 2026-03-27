@@ -145,7 +145,11 @@ def compute_renovation_loi_energie(
     )
 
     dm_num_bld_F = dm_bld.filter(
-        {"Variables": ["bld_stock-number-bld"], "Categories2": ["F"]}
+        {
+            "Country": ["Vaud"],
+            "Variables": ["bld_stock-number-bld"],
+            "Categories2": ["F"],
+        }
     )
     dm_num_bld_F.group_all(dim="Categories2")
 
@@ -206,7 +210,7 @@ def compute_renovation_loi_energie(
 
     ren_redistribution = DM_buildings["fts"]["building-renovation-rate"][
         "bld_renovation-redistribution"
-    ][1].copy()
+    ][2].copy()
     idx_redistrib = ren_redistribution.idx
     prop_E_renovated = ren_redistribution.array[
         idx_redistrib["Vaud"],
@@ -285,7 +289,7 @@ def run(
     # SECTION: Loi Energie - Renovation fts
     # LEVEL 2 Vaud: Loi Energie + Plan Climat
     # According to the Loi Energie, buildings in categories F,G > 750 m2 will have to be renovated before 2035,
-    # and the other F,G before 2040. They estimate this corresponds to 90'000 multi-family-households being renovated before 2035.
+    # They estimate this corresponds to 90'000 multi-family-households being renovated before 2035.
     table_id = "px-x-0902020200_103"
     this_dir = os.path.dirname(os.path.abspath(__file__))
     file = os.path.join(this_dir, "../data/bld_floor-area_stock.pickle")
@@ -337,13 +341,23 @@ def run(
 
     # renovation redistribution is also affected
 
-    renov_distrib_fts_1 = DM_buildings["fts"]["building-renovation-rate"][
+    renov_distrib_fts_3 = DM_buildings["fts"]["building-renovation-rate"][
         "bld_renovation-redistribution"
-    ][1].copy()
-    renov_distrib_fts_1.filter({"Country": ["Vaud"]}, inplace=True)
-    idx = renov_distrib_fts_1.idx
-    # the energy law only affects the class F and G there are no rules about the other classes
-    renov_distrib_fts_1.array[idx["Vaud"], :, idx["bld_renovation-redistribution-in"]]
+    ][2].copy()
+    idx = renov_distrib_fts_3.idx
+    # the energy law forces to renovate directly to class D
+    renov_distrib_fts_3.array[
+        idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["D"]
+    ] += renov_distrib_fts_3.array[
+        idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["E"]
+    ]
+    renov_distrib_fts_3.array[
+        idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["E"]
+    ] = 0
+
+    DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-redistribution"][
+        3
+    ] = renov_distrib_fts_3
 
     # SECTION: Loi energy - Heating tech
     # Plus de gaz, mazout, charbon dans les prochain 15-20 ans. Pas de gaz, mazout, charbon dans les nouvelles constructions
