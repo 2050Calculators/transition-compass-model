@@ -86,61 +86,116 @@ def extract_stock_floor_area(table_id, file):
         "100-149": 124.5,
         "150+": 175,
     }
+
+    dm_num_bld_per_size_per_type = dm_floor_area.copy()
     idx = dm_floor_area.idx
     for size in dm_floor_area.col_labels["Variables"]:
         dm_floor_area.array[:, :, idx[size], :, :] = (
             avg_size[size] * dm_floor_area.array[:, :, idx[size], :, :]
         )
+
     dm_floor_area.groupby(
         {"bld_floor-area_stock": ".*"}, dim="Variables", regex=True, inplace=True
     )
     dm_floor_area.change_unit("bld_floor-area_stock", 1, "number", "m2")
 
-    return dm_floor_area, dm_num_bld
+    return dm_floor_area, dm_num_bld, dm_num_bld_per_size_per_type
+
+
+def replace_years_by_corresponding_categories_for_specified_household(
+    dm_num_bld, env_cat, type_households="single-family-households"
+):
+
+    dm_num_bld_sfh = dm_num_bld.filter({"Categories1": [type_households]})
+    dm_num_bld_sfh.groupby(env_cat, dim="Categories2", inplace=True)
+    return dm_num_bld_sfh
+
+
+def replace_years_by_corresponding_categories(dm_num_bld, env_cat_sfh, env_cat_mfh):
+    dm_num_bld_sfh = replace_years_by_corresponding_categories_for_specified_household(
+        dm_num_bld, env_cat_sfh, type_households="single-family-households"
+    )
+    dm_num_bld_mfh = replace_years_by_corresponding_categories_for_specified_household(
+        dm_num_bld, env_cat_mfh, type_households="multi-family-households"
+    )
+    dm_bld = dm_num_bld_sfh
+    dm_bld.append(dm_num_bld_mfh, dim="Categories1")
+    return dm_bld
 
 
 def compute_renovation_loi_energie(
-    dm_stock_area, dm_num_bld, dm_stock_cat, env_cat_mfh, env_cat_sfh, DM_buildings
+    dm_stock_area,
+    dm_num_bld,
+    dm_stock_cat,
+    env_cat_mfh,
+    env_cat_sfh,
+    DM_buildings,
+    dm_num_bld_per_size_per_type,
 ):
+    dm_num_bld_per_size_per_cat = replace_years_by_corresponding_categories(
+        dm_num_bld_per_size_per_type, env_cat_sfh, env_cat_mfh
+    )
+    dm_num_bld_per_size_F = dm_num_bld_per_size_per_cat.filter(
+        {"Country": ["Vaud"], "Categories2": ["F"]}
+    )
+
     dm_num_bld.append(dm_stock_area, dim="Variables")
-    dm_num_bld_sfh = dm_num_bld.filter({"Categories1": ["single-family-households"]})
-    dm_num_bld_sfh.groupby(env_cat_sfh, dim="Categories2", inplace=True)
-    dm_num_bld_mfh = dm_num_bld.filter({"Categories1": ["multi-family-households"]})
-    dm_num_bld_mfh.groupby(env_cat_mfh, dim="Categories2", inplace=True)
-    dm_bld = dm_num_bld_sfh
-    dm_bld.append(dm_num_bld_mfh, dim="Categories1")
-    dm_bld_adj = dm_stock_cat.filter({"Variables": ["bld_floor-area_stock"]})
-    dm_bld_adj.rename_col(
-        "bld_floor-area_stock", "bld_floor-area_stock_adj", dim="Variables"
+    dm_bld = replace_years_by_corresponding_categories(
+        dm_num_bld, env_cat_sfh, env_cat_mfh
     )
-    dm_bld.append(
-        dm_bld_adj.filter({"Years": dm_bld.col_labels["Years"]}), dim="Variables"
+
+    dm_num_bld_F = dm_bld.filter(
+        {"Variables": ["bld_stock-number-bld"], "Categories2": ["F"]}
     )
-    dm_bld.operation(
-        "bld_floor-area_stock_adj",
-        "/",
-        "bld_floor-area_stock",
-        out_col="ratio_area",
-        unit="%",
+    dm_num_bld_F.group_all(dim="Categories2")
+
+    dm_num_bld_per_size_F.group_all(dim="Categories2")
+    dm_num_bld_F.append(dm_num_bld_per_size_F, dim="Variables")
+
+    dm_num_bld_F.filter(
+        {"Years": [2023], "Categories1": ["multi-family-households"]}, inplace=True
     )
-    dm_bld.operation(
-        "bld_stock-number-bld",
-        "*",
-        "ratio_area",
-        out_col="bld_stock-number-bld_adj",
-        unit="number",
+    dm_num_bld_F.group_all(dim="Categories1")
+
+    for col in dm_num_bld_per_size_F.col_labels["Variables"]:
+        dm_num_bld_F.operation(
+            col,
+            "/",
+            "bld_stock-number-bld",
+            out_col=f"ratio_num_bld_{col}",
+            unit="%",
+        )
+
+    idx = dm_num_bld_F.idx
+
+    array_per_surface = dm_num_bld_F.array[
+        idx["Vaud"], idx[2023], idx["ratio_num_bld_<30"] :
+    ]
+    # we only want the twentypercent  biggest buildings to be renovated
+    percent_building_renvoated_100_149 = (
+        1 - (array_per_surface[-2:].sum() - 0.20) / array_per_surface[-2]
     )
+
+    area_necessary_renovated = (
+        dm_num_bld_F.array[idx["Vaud"], idx[2023], idx["150+"]] * 175
+    )
+    area_necessary_renovated += (
+        dm_num_bld_F.array[idx["Vaud"], idx[2023], idx["100-149"]]
+        * percent_building_renvoated_100_149
+        * 124.5
+    )
+
     idx = dm_bld.idx
-    # I think this is not actuality anymore
-    ren_goal_2035 = 90000 / np.sum(
+    ren_rate_min_2035 = area_necessary_renovated / np.sum(
         dm_bld.array[
             idx["Vaud"],
-            -1,
-            idx["bld_stock-number-bld_adj"],
+            idx[2023],
+            idx["bld_floor-area_stock"],
             idx["multi-family-households"],
             :,
         ]
     )
+
     dm_rr_fts_2 = DM_buildings["fts"]["building-renovation-rate"][
         "bld_renovation-rate"
     ][2].copy()
@@ -149,7 +204,7 @@ def compute_renovation_loi_energie(
     idx_fts = [idx[yr] for yr in yrs_fts]
     dm_rr_fts_2.array[
         idx["Vaud"], idx_fts, idx["bld_renovation-rate"], idx["multi-family-households"]
-    ] = ren_goal_2035 / (
+    ] = ren_rate_min_2035 / (
         yrs_fts[-1] - yrs_fts[0] + 1
     )  # Renovation objective divided by the number of year to apply it
     return dm_rr_fts_2
@@ -212,7 +267,10 @@ def run(
     table_id = "px-x-0902020200_103"
     this_dir = os.path.dirname(os.path.abspath(__file__))
     file = os.path.join(this_dir, "../data/bld_floor-area_stock.pickle")
-    dm_stock_area, dm_num_bld = extract_stock_floor_area(table_id, file)
+    dm_stock_area, dm_num_bld, dm_num_bld_per_size_per_type = extract_stock_floor_area(
+        table_id, file
+    )
+
     dm_stock_area = dm_stock_area.filter({"Country": country_list}).copy()
     dm_num_bld = dm_num_bld.filter({"Country": country_list}).copy()
 
@@ -240,7 +298,13 @@ def run(
 
     # Compute renovation rate loi energie
     dm_rr_fts_2 = compute_renovation_loi_energie(
-        dm_stock_area, dm_num_bld, dm_stock_cat, env_cat_mfh, env_cat_sfh, DM_buildings
+        dm_stock_area,
+        dm_num_bld,
+        dm_stock_cat,
+        env_cat_mfh,
+        env_cat_sfh,
+        DM_buildings,
+        dm_num_bld_per_size_per_type,
     )
     DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][
         3
