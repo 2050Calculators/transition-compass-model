@@ -6,17 +6,18 @@ from model.forestry_module import forestry
 
 # from model.minerals_module import minerals
 from model.common.interface_class import Interface
-from model.district_heating_module import district_heating
+# from model.district_heating_module import district_heating
 from model.agriculture_module import agriculture
 from model.emissions_module import emissions
 from model.climate_module import climate
 
 from model.ammonia_module import ammonia
 from model.industry_module import industry
-from model.energy_module import energy
-from model.power_module import power
-from model.landuse_module import land_use
-from model.oilrefinery_module import refinery
+# from model.energy_module import energy
+# from model.power_module import power
+# from model.landuse_module import land_use
+# from model.oilrefinery_module import refinery
+from model.lca_module import lca
 
 import math
 import copy
@@ -101,6 +102,20 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
         )
         logger.info(
             "Execution time Ammonia: {0:.3g} s".format(time.time() - start_time)
+        )
+    if "emissions" in sectors:
+        start_time = time.time()
+        TPE["emissions"] = emissions(
+            years_setting, interface
+        )
+        logger.info(
+            "Execution time Emissions: {0:.3g} s".format(time.time() - start_time)
+        )
+    if "lca" in sectors:
+        start_time = time.time()
+        TPE["lca"] = lca(lever_setting, years_setting, DM_input['lca'], interface)
+        logger.info(
+            "Execution time LCA: {0:.3g} s".format(time.time() - start_time)
         )
 
     # if "energy" in sectors:
