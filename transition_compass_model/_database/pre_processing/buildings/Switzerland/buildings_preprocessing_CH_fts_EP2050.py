@@ -5,14 +5,14 @@ import copy
 import pickle
 import numpy as np
 import pandas as pd
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     linear_fitting,
     my_pickle_dump,
     filter_DM,
     create_years_list,
     sort_pickle,
 )
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go

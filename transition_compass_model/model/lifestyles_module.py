@@ -7,19 +7,19 @@ import json  # read the lever setting
 import os  # operating system (e.g., look for workspace)
 
 # Import Class
-from model.common.data_matrix_class import DataMatrix  # Class for the model inputs
-from model.common.constant_data_matrix_class import (
+from transition_compass_model.model.common.data_matrix_class import DataMatrix  # Class for the model inputs
+from transition_compass_model.model.common.constant_data_matrix_class import (
     ConstantDataMatrix,
 )  # Class for the constant inputs
-from model.common.interface_class import Interface
+from transition_compass_model.model.common.interface_class import Interface
 
 # ImportFunctions
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     read_level_data,
     filter_geoscale,
     my_pickle_dump,
 )
-from model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
+from transition_compass_model.model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
 
 
 # init years and lever

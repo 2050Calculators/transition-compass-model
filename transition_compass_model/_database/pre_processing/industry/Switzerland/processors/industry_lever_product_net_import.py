@@ -6,8 +6,8 @@ import warnings
 warnings.simplefilter("ignore")
 import os
 import pandas as pd
-from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting
 import pickle
 import plotly.io as pio
 
@@ -19,7 +19,7 @@ from _database.pre_processing.industry.Switzerland.get_data_functions.data_produ
     get_price_index_data,
     get_io_data,
 )
-from model.common.auxiliary_functions import create_years_list, load_pop
+from transition_compass_model.model.common.auxiliary_functions import create_years_list, load_pop
 
 # you need to do material net import (%), production for sectors not considered (kt), packages (something/capita),
 # product net import (%), waste management operation (%), calibration material production (kt),

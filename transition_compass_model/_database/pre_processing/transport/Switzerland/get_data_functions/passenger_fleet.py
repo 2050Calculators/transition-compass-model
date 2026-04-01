@@ -4,8 +4,8 @@ import os
 import pandas as pd
 import numpy as np
 import requests
-from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting, add_missing_ots_years
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting, add_missing_ots_years
 
 
 #### New fleet Switzerland + Vaud: 2005 - now

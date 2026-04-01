@@ -3,15 +3,15 @@ import numpy as np
 import eurostat
 import pandas as pd
 import os
-from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.auxiliary_functions import (
     linear_fitting,
     linear_forecast_BAU,
     moving_average,
     create_years_list,
 )
-from model.common.auxiliary_functions import eurostat_iso2_dict, my_pickle_dump
-from model.common.io_database import (
+from transition_compass_model.model.common.auxiliary_functions import eurostat_iso2_dict, my_pickle_dump
+from transition_compass_model.model.common.io_database import (
     update_database_from_dm,
     csv_database_reformat,
     read_database_to_dm,

@@ -3,9 +3,9 @@ import pickle
 import pandas as pd
 import numpy as np
 
-from model.common.auxiliary_functions import filter_DM, my_pickle_dump
+from transition_compass_model.model.common.auxiliary_functions import filter_DM, my_pickle_dump
 from _database.pre_processing.api_routines_CH import get_data_api_CH
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     linear_fitting,
     filter_DM,

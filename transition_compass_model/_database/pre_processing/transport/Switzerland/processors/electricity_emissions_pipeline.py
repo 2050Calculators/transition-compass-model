@@ -1,4 +1,4 @@
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 import numpy as np
 
 def run(country_list, years_ots, years_fts):

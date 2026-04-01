@@ -1,4 +1,4 @@
-from model.common.auxiliary_functions import create_years_list, load_pop
+from transition_compass_model.model.common.auxiliary_functions import create_years_list, load_pop
 from processors.industry_lever_product_net_import import run as net_import_share_run
 from processors.industry_lever_packaging_per_capita import (
     run as packaging_per_capita_run,

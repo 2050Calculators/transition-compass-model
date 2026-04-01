@@ -1,11 +1,11 @@
 import pickle
 
 import numpy as np
-from model.common.auxiliary_functions import filter_DM, linear_fitting, create_years_list, linear_fitting_ots_db
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.auxiliary_functions import filter_DM, linear_fitting, create_years_list, linear_fitting_ots_db
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 import faostat
 import pandas as pd
-from model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
 
 years_ots = create_years_list(1990, 2023, 1)  # make list with years from 1990 to 2015
 years_fts = create_years_list(2025, 2050, 5)

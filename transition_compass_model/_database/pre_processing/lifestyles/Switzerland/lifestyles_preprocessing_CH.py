@@ -3,15 +3,15 @@ import pandas as pd
 import pickle
 
 
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     linear_fitting,
     linear_fitting_ots_db,
     create_years_list,
     my_pickle_dump,
 )
-from model.common.io_database import update_database_from_dm, csv_database_reformat
+from transition_compass_model.model.common.io_database import update_database_from_dm, csv_database_reformat
 from _database.pre_processing.api_routines_CH import get_data_api_CH
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 import math
 import requests

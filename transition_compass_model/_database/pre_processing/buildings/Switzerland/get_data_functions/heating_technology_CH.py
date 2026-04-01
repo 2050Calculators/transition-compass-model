@@ -2,15 +2,15 @@ import numpy as np
 import pandas as pd
 import pickle
 import time
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     linear_fitting,
     rename_cantons,
     dm_add_missing_variables,
     save_url_to_file,
 )
 from _database.pre_processing.api_routines_CH import get_data_api_CH
-from model.common.data_matrix_class import DataMatrix
-from model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
 
 import os
 import zipfile

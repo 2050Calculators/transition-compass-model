@@ -1,6 +1,6 @@
 import numpy as np
 import os
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     my_pickle_dump,
     sort_pickle,
     create_years_list,

@@ -1,7 +1,7 @@
 import pickle
 import os
 
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     save_url_to_file,
     load_pop,
@@ -14,7 +14,7 @@ import _database.pre_processing.buildings.Switzerland.get_data_functions.hot_wat
 from _database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH import (
     extract_nb_of_apartments_per_building_type,
 )
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def adjust_tech_mix(dm_tech_mix, dm_apt):

@@ -4,22 +4,22 @@
 
 import pandas as pd
 
-from model.common.data_matrix_class import DataMatrix
-from model.common.constant_data_matrix_class import ConstantDataMatrix
-from model.common.io_database import (
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.io_database import (
     read_database_fxa,
     read_database_to_ots_fts_dict_w_groups,
     edit_database,
     database_to_df,
     dm_to_database,
 )
-from model.common.interface_class import Interface
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.common.auxiliary_functions import (
     filter_geoscale,
     calibration_rates,
     create_years_list,
 )
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     read_level_data,
     simulate_input,
     filter_country_and_load_data_from_pickles,

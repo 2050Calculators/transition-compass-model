@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def get_import_export_chf(current_file_directory, trade_flow, df_map_cpa):

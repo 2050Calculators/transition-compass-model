@@ -7,7 +7,7 @@ import numpy as np
 from _database.pre_processing.transport.Switzerland.get_data_functions import (
     passenger_fleet as get_data,
 )
-from model.common.auxiliary_functions import create_years_list, load_pop
+from transition_compass_model.model.common.auxiliary_functions import create_years_list, load_pop
 from _database.pre_processing.transport.Switzerland.processors.transport_demand_pipeline import (
     run as demand_pkm_vkm_run,
 )

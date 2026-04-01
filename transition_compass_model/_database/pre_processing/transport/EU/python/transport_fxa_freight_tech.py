@@ -1,7 +1,7 @@
 
 # packages
-from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting
 import pandas as pd
 import pickle
 import os
@@ -14,7 +14,7 @@ pio.renderers.default='browser'
 
 from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 from _database.pre_processing.routine_JRC import get_jrc_data
-from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
+from transition_compass_model.model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
 
 # directories
 current_file_directory = os.getcwd()

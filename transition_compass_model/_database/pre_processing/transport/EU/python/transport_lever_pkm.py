@@ -5,7 +5,7 @@ import os
 import numpy as np
 import warnings
 warnings.simplefilter("ignore")
-from model.common.auxiliary_functions import linear_fitting
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting
 import pandas as pd
 
 # directories

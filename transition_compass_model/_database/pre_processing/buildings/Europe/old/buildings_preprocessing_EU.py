@@ -1,9 +1,9 @@
 import pandas as pd
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 import numpy as np
-from model.common.auxiliary_functions import linear_fitting, linear_forecast_BAU, moving_average, create_years_list
-from model.common.auxiliary_functions import eurostat_iso2_dict
-from model.common.io_database import read_database_to_dm, edit_database, update_database_from_dm
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting, linear_forecast_BAU, moving_average, create_years_list
+from transition_compass_model.model.common.auxiliary_functions import eurostat_iso2_dict
+from transition_compass_model.model.common.io_database import read_database_to_dm, edit_database, update_database_from_dm
 import eurostat
 import json
 from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat

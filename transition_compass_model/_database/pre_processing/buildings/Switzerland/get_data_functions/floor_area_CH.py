@@ -3,7 +3,7 @@ import pickle
 import pandas as pd
 import zipfile
 
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     moving_average,
     linear_fitting,
     create_years_list,
@@ -13,7 +13,7 @@ from model.common.auxiliary_functions import (
     save_url_to_file,
 )
 from _database.pre_processing.api_routines_CH import get_data_api_CH
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 import os
 

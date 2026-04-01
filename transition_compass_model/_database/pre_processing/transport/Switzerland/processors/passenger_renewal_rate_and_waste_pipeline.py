@@ -3,7 +3,7 @@
 ########################################
 
 import numpy as np
-from model.common.auxiliary_functions import dm_add_missing_variables
+from transition_compass_model.model.common.auxiliary_functions import dm_add_missing_variables
 
 
 def compute_renewal_rate_and_adjust(dm, var_names, max_rr):

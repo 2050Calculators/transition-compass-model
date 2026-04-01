@@ -2,8 +2,8 @@
 # DataMatrix with shape (32, 33, 1, 16), variables ['ind_material-efficiency'] and categories1 ['aluminium', 'ammonia', 'cement', 'chem', 'copper', 'fbt', 'glass', 'lime', 'mae', 'ois', 'paper', 'steel', 'textiles', 'timber', 'tra-equip', 'wwp']
 
 # packages
-from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting
 import pickle
 import os
 import numpy as np

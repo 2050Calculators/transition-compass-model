@@ -1,7 +1,7 @@
 import eurostat
 import pandas as pd
 import numpy as np
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 # Check website for more insight https://pypi.org/project/eurostat/
 # Use the following lines to search a string of text in a table title in eurostat
 # toc = eurostat.get_toc_df(agency='EUROSTAT', lang='en')

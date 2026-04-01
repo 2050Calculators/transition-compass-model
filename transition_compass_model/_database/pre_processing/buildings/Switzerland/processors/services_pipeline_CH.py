@@ -2,14 +2,14 @@
 import pandas as pd
 
 import _database.pre_processing.buildings.Switzerland.get_data_functions.services_CH as fser
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     linear_fitting,
     create_years_list,
     load_pop,
     dm_add_missing_variables,
     save_url_to_file,
 )
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 from _database.pre_processing.buildings.Switzerland.processors.hot_water_pipeline_CH import (
     run as hotwater_run,

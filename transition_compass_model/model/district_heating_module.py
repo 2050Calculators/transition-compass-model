@@ -8,22 +8,22 @@ import warnings
 import time
 
 # Import classes
-from model.common.data_matrix_class import DataMatrix
-from model.common.interface_class import Interface
-from model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
 
 # Import functions
-from model.common.io_database import (
+from transition_compass_model.model.common.io_database import (
     read_database,
     read_database_fxa,
     read_database_w_filter,
     update_database_from_db_old,
 )
-from model.common.io_database import (
+from transition_compass_model.model.common.io_database import (
     read_database_to_ots_fts_dict,
     read_database_to_ots_fts_dict_w_groups,
 )
-from model.common.auxiliary_functions import read_level_data, cost
+from transition_compass_model.model.common.auxiliary_functions import read_level_data, cost
 
 warnings.simplefilter("ignore")
 

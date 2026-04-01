@@ -1,4 +1,4 @@
-from model.common.auxiliary_functions import create_years_list, load_pop
+from transition_compass_model.model.common.auxiliary_functions import create_years_list, load_pop
 from processors.aviation_part1_pipeline_CH import run as aviation_pt1_run
 from processors.transport_demand_pipeline import run as demand_pkm_vkm_run
 from processors.passenger_fleet_pipeline import run as passenger_fleet_run

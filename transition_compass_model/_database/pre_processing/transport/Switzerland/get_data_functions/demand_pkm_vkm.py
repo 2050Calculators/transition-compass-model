@@ -1,9 +1,9 @@
 # get_transport_demand_pkm, get_transport_demand_vkm, get_travel_demand_region_microrecencement
-from model.common.auxiliary_functions import save_url_to_file, linear_fitting
+from transition_compass_model.model.common.auxiliary_functions import save_url_to_file, linear_fitting
 import pandas as pd
 from _database.pre_processing.transport.Switzerland.get_data_functions import utils
 import numpy as np
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 import pickle
 import os
 import zipfile

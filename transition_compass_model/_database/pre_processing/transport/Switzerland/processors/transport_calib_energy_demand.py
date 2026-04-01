@@ -7,7 +7,7 @@ from _database.pre_processing.buildings.Switzerland.get_data_functions import en
 # from _database.pre_processing.transport.Switzerland.get_data_functions import transport_energy as get_data_ep2050
 # from _database.pre_processing.transport.Switzerland.processors.passenger_energy_pipeline import run as get_data_ep2050
 import _database.pre_processing.transport.Switzerland.get_data_functions.transport_energy as get_data_ep2050
-from model.common.auxiliary_functions import create_years_list
+from transition_compass_model.model.common.auxiliary_functions import create_years_list
     
 #####################
 ##### FUNCTIONS #####

@@ -3,7 +3,7 @@ import os
 import warnings
 import pickle
 warnings.simplefilter("ignore")
-from model.common.auxiliary_functions import jrc_iso2_dict, linear_fitting
+from transition_compass_model.model.common.auxiliary_functions import jrc_iso2_dict, linear_fitting
 from _database.pre_processing.routine_JRC import get_jrc_data
 
 # directories

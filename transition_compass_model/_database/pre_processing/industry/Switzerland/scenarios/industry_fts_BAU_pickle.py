@@ -1,6 +1,6 @@
 import os
 import pickle
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     linear_fitting,
     create_years_list,
     my_pickle_dump,

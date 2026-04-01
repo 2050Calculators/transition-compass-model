@@ -6,10 +6,10 @@ import os
 import requests
 import deepl
 import faostat
-from model.common.data_matrix_class import DataMatrix
-from model.common.constant_data_matrix_class import ConstantDataMatrix
-from model.common.auxiliary_functions import create_years_list, linear_fitting, my_pickle_dump
-from model.common.auxiliary_functions import sort_pickle, add_dummy_country_to_DM
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.auxiliary_functions import create_years_list, linear_fitting, my_pickle_dump
+from transition_compass_model.model.common.auxiliary_functions import sort_pickle, add_dummy_country_to_DM
 
 # Initialize the Deepl Translator
 deepl_api_key = '9ecffb3f-5386-4254-a099-8bfc47167661:fx'

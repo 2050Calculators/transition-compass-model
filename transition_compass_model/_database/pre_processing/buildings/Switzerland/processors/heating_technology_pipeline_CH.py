@@ -1,6 +1,6 @@
 import numpy as np
 
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     load_pop,
     dm_add_missing_variables,

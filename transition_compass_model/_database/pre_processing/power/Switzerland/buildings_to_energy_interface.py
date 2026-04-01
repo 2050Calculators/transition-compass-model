@@ -1,7 +1,7 @@
 import pickle
 import os
 from _database.pre_processing.api_routines_CH import get_data_api_CH
-from model.common.auxiliary_functions import create_years_list
+from transition_compass_model.model.common.auxiliary_functions import create_years_list
 import numpy as np
 
 

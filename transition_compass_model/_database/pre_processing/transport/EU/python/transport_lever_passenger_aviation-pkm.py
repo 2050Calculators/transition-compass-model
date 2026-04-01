@@ -1,6 +1,6 @@
 
 # packages
-from model.common.auxiliary_functions import linear_fitting
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting
 import pickle
 import os
 import numpy as np
@@ -10,8 +10,8 @@ warnings.simplefilter("ignore")
 import plotly.io as pio
 pio.renderers.default='browser'
 from _database.pre_processing.routine_JRC import get_jrc_data
-from model.common.auxiliary_functions import jrc_iso2_dict
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.auxiliary_functions import jrc_iso2_dict
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 # directories
 current_file_directory = os.getcwd()

@@ -1,5 +1,5 @@
 import os
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     load_pop,
     dm_add_missing_variables,
@@ -11,7 +11,7 @@ from _database.pre_processing.transport.Switzerland.get_data_functions.demand_pk
     get_travel_demand_region_microrecencement,
 )
 from _database.pre_processing.transport.Switzerland.get_data_functions import utils
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 import pickle
 
 #################################

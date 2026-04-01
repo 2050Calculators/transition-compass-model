@@ -1,6 +1,6 @@
-from model.common.interface_class import Interface
+from transition_compass_model.model.common.interface_class import Interface
 
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     read_level_data,
     filter_country_and_load_data_from_pickles,
 )
@@ -8,9 +8,9 @@ import pickle
 import json
 import os
 
-import model.transport.interfaces as inter
-import model.transport.workflows as wkf
-import model.transport.checks as checks
+import transition_compass_model.model.transport.interfaces as inter
+import transition_compass_model.model.transport.workflows as wkf
+import transition_compass_model.model.transport.checks as checks
 
 
 def read_data(DM_transport, lever_setting):

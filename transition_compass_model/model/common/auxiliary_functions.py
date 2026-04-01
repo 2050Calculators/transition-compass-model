@@ -1,13 +1,13 @@
 import numpy as np
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 from scipy.interpolate import interp1d, CubicSpline
-from model.common.io_database import (
+from transition_compass_model.model.common.io_database import (
     read_database,
     update_database_from_db,
     database_to_dm,
     dm_to_database,
 )
-from model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
 import pandas as pd
 import os
 import re

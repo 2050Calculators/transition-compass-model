@@ -6,10 +6,10 @@ import warnings
 
 warnings.simplefilter("ignore")
 
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 from _database.pre_processing.lca.get_data_functions.data_lca import get_data_lca
-from model.common.auxiliary_functions import create_years_list
+from transition_compass_model.model.common.auxiliary_functions import create_years_list
 
 
 def get_material_footprint_df(current_file_directory, df_full):

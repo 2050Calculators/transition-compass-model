@@ -3,7 +3,7 @@ import copy
 import pickle
 import numpy as np
 import pandas as pd
-from model.common.auxiliary_functions import linear_fitting, my_pickle_dump, \
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting, my_pickle_dump, \
   sort_pickle, dm_add_missing_variables
 import os
 from _database.pre_processing.transport.Switzerland.get_data_functions import utils

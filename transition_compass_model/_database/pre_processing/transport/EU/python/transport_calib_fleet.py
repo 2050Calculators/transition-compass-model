@@ -11,7 +11,7 @@ import pickle
 
 from _database.pre_processing.json_routine_Eurostat import get_data_json_eurostat, get_data_api_eurostat_via_json
 from _database.pre_processing.routine_JRC import get_jrc_data
-from model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
+from transition_compass_model.model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
 
 # directories
 current_file_directory = os.getcwd()
@@ -661,7 +661,7 @@ dm_new.groupby({"trucks" : ['HDVL', 'HDVH']}, "Variables", inplace=True)
 ####################
 
 import pandas as pd
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 def get_specific_jrc_data(country_code, country_name, row_start, row_end, unit, variable = "aviation_kerosene", 
                           database = "JRC-IDEES-2021_x1990_Aviation_EU"):

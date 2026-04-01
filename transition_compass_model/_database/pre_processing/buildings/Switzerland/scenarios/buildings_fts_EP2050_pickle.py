@@ -1,7 +1,7 @@
 import os
 import pickle
 import numpy as np
-from model.common.auxiliary_functions import my_pickle_dump, sort_pickle
+from transition_compass_model.model.common.auxiliary_functions import my_pickle_dump, sort_pickle
 
 
 def run(DM_buildings, lev=4):

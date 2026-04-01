@@ -10,20 +10,20 @@ import pandas as pd
 import time
 
 # Import Class
-from model.common.data_matrix_class import DataMatrix  # Class for the model inputs
-from model.common.constant_data_matrix_class import (
+from transition_compass_model.model.common.data_matrix_class import DataMatrix  # Class for the model inputs
+from transition_compass_model.model.common.constant_data_matrix_class import (
     ConstantDataMatrix,
 )  # Class for the constant inputs
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     read_level_data,
     filter_geoscale,
     simulate_input,
 )
 
 # ImportFunctions
-from model.common.io_database import read_database_to_ots_fts_dict
-from model.common.hourly_data_functions import hourly_data_reader
-from model.common.interface_class import Interface
+from transition_compass_model.model.common.io_database import read_database_to_ots_fts_dict
+from transition_compass_model.model.common.hourly_data_functions import hourly_data_reader
+from transition_compass_model.model.common.interface_class import Interface
 
 #######################################################################################################################
 # ModelSetting - Power

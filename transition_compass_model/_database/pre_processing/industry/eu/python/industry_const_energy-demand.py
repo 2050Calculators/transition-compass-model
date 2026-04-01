@@ -1284,7 +1284,7 @@ df_final = df_final.sort_values(["tech","energy_demand_type","variable"])
 ############# CONVERT TO CONSTANT DATA MATRIX #############
 ###########################################################
 
-from model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
 
 # create dms
 def create_constant(df, variables):

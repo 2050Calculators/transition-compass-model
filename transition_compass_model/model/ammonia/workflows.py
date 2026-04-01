@@ -1,7 +1,7 @@
 import numpy as np
 import re
-from model.common.auxiliary_functions import cdm_to_dm
-from model.common.auxiliary_functions import calibration_rates, cost, energy_switch
+from transition_compass_model.model.common.auxiliary_functions import cdm_to_dm
+from transition_compass_model.model.common.auxiliary_functions import calibration_rates, cost, energy_switch
 
 
 def product_production(dm_agriculture, dm_import):

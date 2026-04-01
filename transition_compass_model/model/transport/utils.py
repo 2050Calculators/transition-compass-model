@@ -1,5 +1,5 @@
 import numpy as np
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def compute_pkm_demand(modal_split, urb_nonurb_demand):

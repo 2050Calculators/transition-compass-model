@@ -1,8 +1,8 @@
 
-from model.common.data_matrix_class import DataMatrix
-from model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
 from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
-from model.common.auxiliary_functions import linear_fitting, moving_average, create_years_list, eurostat_iso2_dict, my_pickle_dump, cdm_to_dm
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting, moving_average, create_years_list, eurostat_iso2_dict, my_pickle_dump, cdm_to_dm
 
 import pickle
 import numpy as np

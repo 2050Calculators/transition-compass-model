@@ -7,18 +7,18 @@ import json  # read the lever setting
 import os  # operating system (e.g., look for workspace)
 
 # Import Class
-from model.common.data_matrix_class import DataMatrix  # Class for the model inputs
-from model.common.constant_data_matrix_class import (
+from transition_compass_model.model.common.data_matrix_class import DataMatrix  # Class for the model inputs
+from transition_compass_model.model.common.constant_data_matrix_class import (
     ConstantDataMatrix,
 )  # Class for the constant inputs
-from model.common.auxiliary_functions import read_level_data
-from model.common.interface_class import Interface
+from transition_compass_model.model.common.auxiliary_functions import read_level_data
+from transition_compass_model.model.common.interface_class import Interface
 
 # ImportFunctions
-from model.common.io_database import (
+from transition_compass_model.model.common.io_database import (
     read_database_to_ots_fts_dict_w_groups,
 )  # read functions for levers & fixed assumptions
-from model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
+from transition_compass_model.model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
 
 # filtering the constants & read csv and prepares it for the pickle format
 

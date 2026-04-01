@@ -3,7 +3,7 @@
 #################################
 import os
 import _database.pre_processing.transport.Switzerland.get_data_functions.transport_energy as get_data
-from model.common.auxiliary_functions import dm_add_missing_variables, create_years_list
+from transition_compass_model.model.common.auxiliary_functions import dm_add_missing_variables, create_years_list
 
 def run(years_ots):
 

@@ -8,7 +8,7 @@ import plotly.io as pio
 
 pio.renderers.default = "browser"
 
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     difference_with_data,
     difference_with_data_graph,
 )

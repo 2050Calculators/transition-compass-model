@@ -2,7 +2,7 @@ import os
 from _database.pre_processing.buildings.Switzerland.get_data_functions import (
     energy_demand_for_calibration as get_data,
 )
-from model.common.auxiliary_functions import create_years_list
+from transition_compass_model.model.common.auxiliary_functions import create_years_list
 import numpy as np
 
 

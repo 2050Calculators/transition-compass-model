@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     save_url_to_file,
     linear_fitting,
     create_years_list,

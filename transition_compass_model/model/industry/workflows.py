@@ -1,7 +1,7 @@
-from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import cdm_to_dm
-from model.common.auxiliary_functions import calibration_rates, cost
-from model.common.auxiliary_functions import material_switch, energy_switch
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.auxiliary_functions import cdm_to_dm
+from transition_compass_model.model.common.auxiliary_functions import calibration_rates, cost
+from transition_compass_model.model.common.auxiliary_functions import material_switch, energy_switch
 import numpy as np
 import re
 import warnings

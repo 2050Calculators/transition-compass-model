@@ -1,6 +1,6 @@
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 import pickle
-from model.common.auxiliary_functions import save_url_to_file
+from transition_compass_model.model.common.auxiliary_functions import save_url_to_file
 import os
 import pandas as pd
 import zipfile

@@ -1,6 +1,6 @@
 
 # packages
-from model.common.auxiliary_functions import linear_fitting, eurostat_iso2_dict, jrc_iso2_dict
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting, eurostat_iso2_dict, jrc_iso2_dict
 from _database.pre_processing.routine_JRC import get_jrc_data
 import pickle
 import os

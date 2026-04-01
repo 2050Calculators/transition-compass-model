@@ -1,6 +1,6 @@
 import pandas as pd
 import os
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def get_ammonia_trade_data(current_file_directory):

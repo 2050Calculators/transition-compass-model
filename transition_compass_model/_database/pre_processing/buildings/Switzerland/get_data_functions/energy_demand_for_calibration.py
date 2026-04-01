@@ -1,6 +1,6 @@
 import os
 import requests
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 import pandas as pd
 from _database.pre_processing.buildings.Switzerland.get_data_functions import utils
 

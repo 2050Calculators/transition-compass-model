@@ -1,5 +1,5 @@
 # packages
-from model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
 import pandas as pd
 import pickle
 import os

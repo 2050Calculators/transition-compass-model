@@ -6,7 +6,7 @@ import numpy as np
 import warnings
 warnings.simplefilter("ignore")
 import pandas as pd
-from model.common.auxiliary_functions import linear_fitting
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting
 
 # directories
 current_file_directory = os.getcwd()

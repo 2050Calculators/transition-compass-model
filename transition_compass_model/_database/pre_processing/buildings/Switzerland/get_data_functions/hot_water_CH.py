@@ -5,13 +5,13 @@ import pandas as pd
 import zipfile
 
 from _database.pre_processing.api_routines_CH import get_data_api_CH
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     translate_text,
     save_url_to_file,
     df_excel_to_dm,
     linear_fitting,
 )
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def clean_country_names(dm):

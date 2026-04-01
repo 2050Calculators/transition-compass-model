@@ -1,4 +1,4 @@
-from model.common.auxiliary_functions import create_years_list
+from transition_compass_model.model.common.auxiliary_functions import create_years_list
 from processors.floor_area_pipeline_CH import run as floor_area_run
 from processors.renovation_pipeline_CH import run as renovation_run
 from processors.heating_technology_pipeline_CH import run as heating_tech_run

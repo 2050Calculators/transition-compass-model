@@ -1,23 +1,23 @@
-from model.transport_module import transport
-from model.lifestyles_module import lifestyles
-from model.buildings_module import buildings
+from transition_compass_model.model.transport_module import transport
+from transition_compass_model.model.lifestyles_module import lifestyles
+from transition_compass_model.model.buildings_module import buildings
 
-from model.forestry_module import forestry
+from transition_compass_model.model.forestry_module import forestry
 
 # from model.minerals_module import minerals
-from model.common.interface_class import Interface
+from transition_compass_model.model.common.interface_class import Interface
 # from model.district_heating_module import district_heating
-from model.agriculture_module import agriculture
-from model.emissions_module import emissions
-from model.climate_module import climate
+from transition_compass_model.model.agriculture_module import agriculture
+from transition_compass_model.model.emissions_module import emissions
+from transition_compass_model.model.climate_module import climate
 
-from model.ammonia_module import ammonia
-from model.industry_module import industry
+from transition_compass_model.model.ammonia_module import ammonia
+from transition_compass_model.model.industry_module import industry
 # from model.energy_module import energy
 # from model.power_module import power
 # from model.landuse_module import land_use
 # from model.oilrefinery_module import refinery
-from model.lca_module import lca
+from transition_compass_model.model.lca_module import lca
 
 import math
 import copy

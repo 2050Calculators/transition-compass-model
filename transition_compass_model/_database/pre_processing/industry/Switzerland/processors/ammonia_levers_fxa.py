@@ -2,8 +2,8 @@ import os
 import numpy as np
 import pandas as pd
 
-from model.common.auxiliary_functions import create_years_list
-from model.common.auxiliary_functions import linear_fitting
+from transition_compass_model.model.common.auxiliary_functions import create_years_list
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting
 from _database.pre_processing.industry.Switzerland.get_data_functions.data_ammonia_product_net_import import (
     get_ammonia_trade_data,
 )

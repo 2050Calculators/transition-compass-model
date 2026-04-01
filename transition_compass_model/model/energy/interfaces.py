@@ -1,7 +1,7 @@
 import numpy as np
 import pyomo.environ as pyo
 
-from model.common.auxiliary_functions import dm_add_missing_variables
+from transition_compass_model.model.common.auxiliary_functions import dm_add_missing_variables
 
 
 def extract_transport_demand(DM_tra):

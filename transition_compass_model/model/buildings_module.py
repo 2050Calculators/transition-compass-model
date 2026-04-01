@@ -1,8 +1,8 @@
 import pandas as pd
-from model.common.data_matrix_class import DataMatrix
-from model.common.interface_class import Interface
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.interface_class import Interface
 
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     read_level_data,
     filter_country_and_load_data_from_pickles,
     create_years_list,
@@ -13,8 +13,8 @@ import pickle
 import json
 import os
 import warnings
-import model.buildings.workflows as wkf
-import model.buildings.interfaces as inter
+import transition_compass_model.model.buildings.workflows as wkf
+import transition_compass_model.model.buildings.interfaces as inter
 
 warnings.simplefilter("ignore")
 

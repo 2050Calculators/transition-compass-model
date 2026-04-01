@@ -1,7 +1,7 @@
 import numpy as np
 import pickle
 
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     my_pickle_dump,
     create_years_list,
     sort_pickle,

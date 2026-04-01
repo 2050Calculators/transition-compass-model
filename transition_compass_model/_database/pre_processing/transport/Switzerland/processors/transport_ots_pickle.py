@@ -1,7 +1,7 @@
 import copy
 
 from _database.pre_processing.transport.Switzerland.processors.passenger_efficiency_pipeline import compute_tech_share
-from model.common.auxiliary_functions import dm_add_missing_variables, my_pickle_dump, sort_pickle
+from transition_compass_model.model.common.auxiliary_functions import dm_add_missing_variables, my_pickle_dump, sort_pickle
 import os
 import pickle
 import numpy as np

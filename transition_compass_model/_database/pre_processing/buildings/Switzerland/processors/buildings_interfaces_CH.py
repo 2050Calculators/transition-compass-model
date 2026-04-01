@@ -1,7 +1,7 @@
 import os.path
 import pickle
 
-from model.common.auxiliary_functions import my_pickle_dump
+from transition_compass_model.model.common.auxiliary_functions import my_pickle_dump
 
 
 def run(country_list):

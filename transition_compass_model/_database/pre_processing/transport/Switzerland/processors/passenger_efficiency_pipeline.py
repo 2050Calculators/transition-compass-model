@@ -6,7 +6,7 @@ import pickle
 import os
 import numpy as np
 import _database.pre_processing.transport.Switzerland.get_data_functions.efficiency as get_data
-from model.common.auxiliary_functions import dm_add_missing_variables, \
+from transition_compass_model.model.common.auxiliary_functions import dm_add_missing_variables, \
   linear_fitting
 
 

@@ -3,19 +3,19 @@ import pandas as pd
 import pickle
 import faostat
 
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     moving_average,
     linear_fitting,
     create_years_list,
 )
-from model.common.io_database import (
+from transition_compass_model.model.common.io_database import (
     update_database_from_dm,
     csv_database_reformat,
     read_database_to_dm,
 )
 from _database.pre_processing.api_routines_CH import get_data_api_CH
-from model.common.data_matrix_class import DataMatrix
-from model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
 import eurostat
 import math
 import requests

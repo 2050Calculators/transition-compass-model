@@ -10,9 +10,9 @@ import plotly.io as pio
 
 pio.renderers.default = "browser"
 
-from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting
-from model.common.auxiliary_functions import create_years_list
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting
+from transition_compass_model.model.common.auxiliary_functions import create_years_list
 
 from _database.pre_processing.industry.Switzerland.get_data_functions.data_waste import (
     get_data_waste_vehicles,

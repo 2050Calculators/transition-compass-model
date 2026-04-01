@@ -1,14 +1,14 @@
 import pandas as pd
 
 from _database.pre_processing.api_routines_CH import get_data_api_CH
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     linear_fitting,
     my_pickle_dump,
     sort_pickle,
     load_pop,
 )
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 import pickle
 import os
 import numpy as np

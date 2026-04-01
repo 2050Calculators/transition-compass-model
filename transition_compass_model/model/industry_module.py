@@ -1,11 +1,11 @@
-from model.common.interface_class import Interface
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.common.auxiliary_functions import (
     read_level_data,
     filter_country_and_load_data_from_pickles,
 )
 
-import model.industry.interfaces as inter
-import model.industry.workflows as wkf
+import transition_compass_model.model.industry.interfaces as inter
+import transition_compass_model.model.industry.workflows as wkf
 
 import os
 import json

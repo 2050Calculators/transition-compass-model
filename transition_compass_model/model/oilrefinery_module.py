@@ -9,18 +9,18 @@ import pandas as pd
 import warnings
 
 # Import Class
-from model.common.data_matrix_class import DataMatrix  # Class for the model inputs
-from model.common.constant_data_matrix_class import (
+from transition_compass_model.model.common.data_matrix_class import DataMatrix  # Class for the model inputs
+from transition_compass_model.model.common.constant_data_matrix_class import (
     ConstantDataMatrix,
 )  # Class for the constant inputs
-from model.common.interface_class import Interface
+from transition_compass_model.model.common.interface_class import Interface
 
 # ImportFunctions
-from model.common.io_database import (
+from transition_compass_model.model.common.io_database import (
     read_database,
     read_database_fxa,
 )  # read functions for levers & fixed assumptions
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     read_level_data,
     filter_geoscale,
     simulate_input,

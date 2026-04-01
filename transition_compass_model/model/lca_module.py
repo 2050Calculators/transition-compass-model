@@ -1,9 +1,9 @@
-from model.common.interface_class import Interface
-from model.common.auxiliary_functions import read_level_data
-from model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.common.auxiliary_functions import read_level_data
+from transition_compass_model.model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
 
-import model.lca.interfaces as inter
-import model.lca.workflows as wkf
+import transition_compass_model.model.lca.interfaces as inter
+import transition_compass_model.model.lca.workflows as wkf
 
 import os
 import json

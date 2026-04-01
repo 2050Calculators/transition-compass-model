@@ -35,7 +35,7 @@ df["variable"] = [ec + "_" + gas + "[TWh/Mt]" for ec, gas in zip(df["carrier_cal
 df = df.loc[:,["variable","value"]]
 
 # make cdm
-from model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
 def create_constant(df, variables):
     
     df_temp = df.loc[df["variable"].isin(variables),:]
@@ -422,7 +422,7 @@ df.sort_values(by=["variable"],inplace=True)
 ############# CONVERT TO CONSTANT DATA MATRIX #############
 ###########################################################
 
-from model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
 
 # create dms
 def create_constant(df, variables):

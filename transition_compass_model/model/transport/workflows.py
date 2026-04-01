@@ -1,7 +1,7 @@
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 import numpy as np
-import model.transport.utils as utils
-from model.common.auxiliary_functions import compute_stock
+import transition_compass_model.model.transport.utils as utils
+from transition_compass_model.model.common.auxiliary_functions import compute_stock
 
 
 def passenger_fleet_energy(DM_passenger, dm_lfs, DM_other, cdm_const, years_setting):

@@ -1,4 +1,4 @@
-from model.energy.energyscopepyomo.ses_pyomo import (
+from transition_compass_model.model.energy.energyscopepyomo.ses_pyomo import (
     load_data,
     build_model,
     make_highs,
@@ -9,10 +9,10 @@ from model.energy.energyscopepyomo.ses_pyomo import (
     set_constraints,
 )
 import pyomo.environ as pyo
-from model.common.interface_class import Interface
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 import os
-from model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     filter_DM,
     create_years_list,
     filter_geoscale,
@@ -22,8 +22,8 @@ from model.common.auxiliary_functions import (
 )
 import pickle
 import numpy as np
-import model.energy.interfaces as inter
-import model.energy.utils as utils
+import transition_compass_model.model.energy.interfaces as inter
+import transition_compass_model.model.energy.utils as utils
 import re
 import json
 

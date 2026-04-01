@@ -6,7 +6,7 @@ from _database.pre_processing.transport.Switzerland.get_data_functions.demand_pk
 )
 import os
 import pickle
-from model.common.auxiliary_functions import create_years_list, load_pop
+from transition_compass_model.model.common.auxiliary_functions import create_years_list, load_pop
 from passenger_fleet_pipeline import run as passenger_fleet_run
 from passenger_renewal_rate_and_waste_pipeline import (
     run as passenger_ren_rate_waste_adj_run,

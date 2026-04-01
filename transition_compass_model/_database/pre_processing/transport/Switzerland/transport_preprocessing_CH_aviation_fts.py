@@ -5,10 +5,10 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 #from plot import plot_transport_variable_2
-from model.common.auxiliary_functions import linear_fitting, my_pickle_dump, create_years_list, filter_DM, add_dummy_country_to_DM, sort_pickle
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting, my_pickle_dump, create_years_list, filter_DM, add_dummy_country_to_DM, sort_pickle
 import os
 
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def update_from_subdm(dm, subdm):

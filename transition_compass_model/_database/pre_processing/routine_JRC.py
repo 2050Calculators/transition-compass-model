@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import re
 import os
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def get_jrc_data(

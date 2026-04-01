@@ -1,6 +1,6 @@
 import pickle
 import pandas as pd
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def extract_EP2050_lighting_energy_consumption(file_raw, file_pickle):

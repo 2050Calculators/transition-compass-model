@@ -1,6 +1,6 @@
 
 # packages
-from model.common.auxiliary_functions import linear_fitting
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting
 import pickle
 import os
 import numpy as np

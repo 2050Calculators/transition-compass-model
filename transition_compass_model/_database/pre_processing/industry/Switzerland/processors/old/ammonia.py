@@ -4,8 +4,8 @@ import warnings
 warnings.simplefilter("ignore")
 import os
 import pandas as pd
-from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting
 import pickle
 import plotly.io as pio
 

@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
-from model.common.data_matrix_class import DataMatrix
-from model.common.auxiliary_functions import linear_fitting
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.auxiliary_functions import linear_fitting
 import pickle
 import plotly.io as pio
 
@@ -11,7 +11,7 @@ import os
 from _database.pre_processing.industry.Switzerland.get_data_functions.data_energy import (
     data_energy as get_energy_data,
 )
-from model.common.auxiliary_functions import create_years_list
+from transition_compass_model.model.common.auxiliary_functions import create_years_list
 
 
 def energy_calib(current_working_directory, years_ots, years_fts):

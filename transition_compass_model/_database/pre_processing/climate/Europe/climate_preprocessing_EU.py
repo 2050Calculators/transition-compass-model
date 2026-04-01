@@ -1,10 +1,10 @@
 from _database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 import eurostat
 import pandas as pd
-from model.common.auxiliary_functions import create_years_list, eurostat_iso2_dict, linear_forecast_BAU_w_noise
+from transition_compass_model.model.common.auxiliary_functions import create_years_list, eurostat_iso2_dict, linear_forecast_BAU_w_noise
 import numpy as np
-from model.common.io_database import csv_database_reformat, update_database_from_dm, edit_database
+from transition_compass_model.model.common.io_database import csv_database_reformat, update_database_from_dm, edit_database
 
 
 def get_CDD_data():

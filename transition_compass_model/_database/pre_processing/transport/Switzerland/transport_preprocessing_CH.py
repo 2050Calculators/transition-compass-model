@@ -2,11 +2,11 @@ import numpy as np
 import pandas as pd
 import numpy as np
 from _database.pre_processing.api_routines_CH import get_data_api_CH
-from model.common.constant_data_matrix_class import ConstantDataMatrix
-from model.common.data_matrix_class import DataMatrix
-from model.common.io_database import read_database_to_dm
-from model.common.auxiliary_functions import create_years_list, linear_fitting, add_missing_ots_years, moving_average
-from model.common.auxiliary_functions import my_pickle_dump, sort_pickle
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.io_database import read_database_to_dm
+from transition_compass_model.model.common.auxiliary_functions import create_years_list, linear_fitting, add_missing_ots_years, moving_average
+from transition_compass_model.model.common.auxiliary_functions import my_pickle_dump, sort_pickle
 from _database.pre_processing.WorldBank_data_extract import get_WB_data
 import pickle
 import os
