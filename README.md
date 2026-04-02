@@ -74,14 +74,16 @@ After cloning, LFS files are fetched automatically. If you see small pointer fil
 
 ```bash
 git clone https://github.com/2050Calculators/transition-compass-model.git
-pip install ./transition-compass-model
+cd transition-compass-model
+pip install .
 ```
 
 Or pin to a specific release tag:
 
 ```bash
 git clone --branch v1.0.0 https://github.com/2050Calculators/transition-compass-model.git
-pip install ./transition-compass-model
+cd transition-compass-model
+pip install .
 ```
 
 ## Usage
