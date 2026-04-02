@@ -58,7 +58,6 @@ dm_max = linear_fitting(dm_max, list(range(2030, 2050 + 5, 5)))
 
 # check
 # dm_max.flatten().datamatrix_plot()
-# dm_max.filter({"Country" : ["EU27"]}).write_df().to_csv("/Users/echiarot/Desktop/check.csv")
 
 # save
 f = os.path.join(current_file_directory, "../data/datamatrix/fxa_vehicles-max.pickle")

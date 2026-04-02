@@ -152,7 +152,6 @@ def local_minerals_run():
 
 
 # # run local
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/model/minerals_module_new.py"
 # start = time.time()
 results_run = local_minerals_run()
 # end = time.time()

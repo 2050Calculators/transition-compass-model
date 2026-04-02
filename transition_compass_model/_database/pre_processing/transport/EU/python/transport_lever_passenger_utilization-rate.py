@@ -63,7 +63,6 @@ dm_uti.rename_col("tra_passenger_vkm", "tra_passenger_utilisation-rate", "Variab
 
 # check
 # dm_uti.filter({"Country" : ["EU27"]}).datamatrix_plot()
-# dm_uti.filter({"Country" : ["EU27"]}).write_df().to_csv("/Users/echiarot/Desktop/check.csv")
 
 ###############
 ##### OTS #####

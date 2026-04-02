@@ -2829,7 +2829,6 @@ def local_minerals_run():
 
 
 # # run local
-# __file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/model/minerals_module.py"
 # database_from_csv_to_datamatrix()
 # import time
 # start = time.time()

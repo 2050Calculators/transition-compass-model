@@ -901,10 +901,8 @@ if __name__ == "__main__":
     results_run = local_energy_run()
 # local_energy_run()
 
-# with open('/Users/paruta/Desktop/transport_EU.pickle', 'rb') as handle:
 #    DM_transport = pickle.load(handle)
 
 
-# with open('/Users/paruta/Desktop/transport_EU.pickle', 'rb') as handle:
 #    DM_transport = pickle.load(handle)
 # print('Hello')

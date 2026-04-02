@@ -358,7 +358,6 @@ dm_occ.units["tra_passenger_occupancy"] = "pkm/vkm"
 
 # check
 # dm_occ.filter({"Country" : ["EU27"]}).datamatrix_plot()
-# dm_occ.filter({"Country" : ["EU27"]}).write_df().to_csv("/Users/echiarot/Desktop/occupancy.csv")
 # dm_occ["EU27",2021,:,"aviation"]
 
 # scale down aviation to get max to 1

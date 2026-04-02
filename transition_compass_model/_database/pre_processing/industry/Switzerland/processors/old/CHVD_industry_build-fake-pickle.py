@@ -17,7 +17,6 @@ pio.renderers.default = "browser"
 import subprocess
 
 # file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/industry/Switzerland/industry_buildpickle.py"
 
 # directories
 current_file_directory = os.path.dirname(os.path.abspath(__file__))

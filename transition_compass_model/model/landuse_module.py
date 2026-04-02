@@ -3,6 +3,7 @@
 
 
 import pandas as pd
+from pathlib import Path
 
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
@@ -153,7 +154,7 @@ def database_from_csv_to_datamatrix():
     # CalibrationDataToDatamatrix
 
     # Data - Calibration
-    file = "/Users/crosnier/Documents/PathwayCalc/_database/data/csv/land-use_calibration.csv"
+    file = Path(__file__).parents[1] / "_database" / "data" / "csv" / "land-use_calibration.csv"
     lever = "none"
     df_db = pd.read_csv(file)
     df_ots, df_fts = database_to_df(df_db, lever, level="all")
@@ -1490,7 +1491,6 @@ if __name__ == "__main__":
 
 
 # # run local
-# __file__ = "/Users/crosnier/DocumentsPathwayCalc/model/landuse_module.py"
 # database_from_csv_to_datamatrix()
 # start = time.time()
 # results_run = local_land_use_run()

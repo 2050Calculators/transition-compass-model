@@ -2560,7 +2560,7 @@ dm_veh_new_eff_LDV = convert_eff_from_gCO2_km_to_MJ_km(
 )
 
 ### We should do a separate flow for aviation. from pkm/cap -> pkm -> technology share (applied to pkm) -> emissions/pkm
-data_file = "/Users/paruta/2050-Calculators/PathwayCalc/_database/data/datamatrix/transport.pickle"
+data_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../data/datamatrix/transport.pickle")
 with open(data_file, "rb") as handle:
     DM_transport = pickle.load(handle)
 

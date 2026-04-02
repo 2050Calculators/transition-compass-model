@@ -376,7 +376,6 @@ dm_hdv.drop("Years", startyear)
 
 # put in uti
 dm_uti.append(dm_hdv, "Variables")
-# dm_uti.filter({"Country":["EU27"]}).write_df().to_csv("/Users/echiarot/Desktop/check.csv")
 
 # split ots and fts
 DM_uti = {

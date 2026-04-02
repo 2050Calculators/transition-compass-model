@@ -4,7 +4,6 @@ import pycountry
 import numpy as np
 import os
 
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/industry/eu/eol_preprocessing/larger-appliances.py"
 
 
 # Function for converting Eurostat country codes to English names using pycountry
@@ -177,7 +176,6 @@ df_LA = transform_to_long_format(
 )
 
 # Check: Export the final long format data to an Excel file
-# df_LA.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/pre-processing/_data-processing/data/larger-appliances/Python-converted_LA.xlsx', index=False)
 
 # Part 2: Get municipal waste data from Eurostat
 df = eurostat.get_data_df("env_wasmun")
@@ -217,7 +215,6 @@ df_mun = transform_to_long_format(
 )
 
 # Check: Export the final long format data to an Excel file
-# df_mun.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/pre-processing/_data-processing/data/computers/Python-converted_mun.xlsx', index=False)
 
 # Part 3: Combine both df and perform calculations based on assumptions
 # Step 1: Merging df_LA and df_mun based on geoscale and timescale
@@ -235,7 +232,6 @@ merged_df = merged_df.drop(columns="sort_order")
 merged_df.reset_index(drop=True, inplace=True)
 
 # Check: Export the merged DataFrame to an Excel file
-# merged_df.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/pre-processing/_data-processing/data/larger-appliances/Python-converted_merge.xlsx', index=False)
 
 # Step 3: Linearly regress waste-collected, landfill, and incineration over time (2007-2018)
 df = merged_df.copy()
@@ -387,7 +383,6 @@ for year in df["timescale"].unique():
 df.fillna(0, inplace=True)
 
 # Check
-# df.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/pre-processing/_data-processing/data/larger-appliances/Python-converted_regress_141024.xlsx', index=False)
 
 # Step 4: Convert all variables into %
 # 4.1 For waste collected

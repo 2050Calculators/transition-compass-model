@@ -118,7 +118,6 @@ def run(global_vars, country_list, years_ots):
 
     dm_pop = load_pop(cantons_en + ["Switzerland"], years_ots)
     dm_pop.sort("Country")
-    # __file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/buildings/Switzerland/buildings_preprocessing_CH.py"
     # filename = 'data/bld_household_size.pickle'
     # dm_lfs_household_size = extract_lfs_household_size(years_ots, table_id='px-x-0102020000_402', file=filename)
     this_dir = os.path.dirname(os.path.abspath(__file__))

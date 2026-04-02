@@ -572,5 +572,4 @@ def local_refinery_run():
     return results_run
 
 
-# __file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/model/emissions_module.py"
 # results_run = local_refinery_run()

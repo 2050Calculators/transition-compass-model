@@ -796,7 +796,6 @@ def filter_country_DM(cntr_list, DM):
     return DM
 
 
-# __file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/lifestyles/Switzerland/lifestyles_preprocessing_CH.py"
 years_setting = [
     1990,
     2023,

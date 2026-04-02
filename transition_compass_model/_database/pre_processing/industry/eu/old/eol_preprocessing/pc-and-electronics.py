@@ -4,7 +4,6 @@ import pycountry
 import numpy as np
 import os
 
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/industry/eu/eol_preprocessing/pc-and-electronics.py"
 
 
 # Function for converting Eurostat country codes to English names using pycountry
@@ -177,7 +176,6 @@ df_pc = transform_to_long_format(
 )
 
 # Check: Export the final long format data to an Excel file
-# df_pc.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/pre-processing/_data-processing/data/computers/Python-converted_pc.xlsx', index=False)
 
 
 # Part 2: Get municipal waste data from Eurostat
@@ -224,7 +222,6 @@ df_mun = transform_to_long_format(
 )
 
 # Check: Export the final long format data to an Excel file
-# df_mun.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/pre-processing/_data-processing/data/computers/Python-converted_mun.xlsx', index=False)
 
 # Part 3: Combine both df and perform calculations based on assumptions
 # Step 1: Merging df_pc and df_mun based on geoscale and timescale
@@ -246,7 +243,6 @@ merged_df = merged_df.drop(columns="sort_order")
 merged_df.reset_index(drop=True, inplace=True)
 
 # Check: Export the merged DataFrame to an Excel file
-# merged_df.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/pre-processing/_data-processing/data/computers/Python-converted_merge.xlsx', index=False)
 
 # Step 3: Linearly regress waste-collected, landfill, and incineration over time (2007-2018)
 # 3.1 Use regression of existing data to fill in the missing values
@@ -347,7 +343,6 @@ for year in eu27_data["timescale"].unique():
             calculated_columns.add(column)
 
 # Check
-# merged_df.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/pre-processing/_data-processing/data/computers/Python-converted_regress_141024.xlsx', index=False)
 
 # Step 4: Regress other variables against the imputed waste-collected column
 # 4.1. Regress recovery, recycling, reuse and selected export values against the imputed 'waste-collected[t]' column as the x-axis
@@ -505,7 +500,6 @@ for year in df["timescale"].unique():
 df.fillna(0, inplace=True)  # Set all remaining NaN values to 0
 
 # Check
-# df.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/pre-processing/_data-processing/data/computers/Python-converted_regress_141024.xlsx', index=False)
 
 # 4.6. Convert all variables into %
 # 4.6.1. For waste collected

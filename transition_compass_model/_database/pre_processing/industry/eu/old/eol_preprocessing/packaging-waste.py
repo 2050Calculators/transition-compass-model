@@ -188,7 +188,6 @@ df_pac = transform_to_long_format(
 )
 
 # Check: Export the final long format data to an Excel file
-# df_pac.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/pre-processing/_data-processing/data/packaging/Python-converted_pac.xlsx', index=False)
 
 # Part 2: Get municipal waste data from Eurostat
 df = eurostat.get_data_df("env_wasmun")
@@ -227,7 +226,6 @@ df_mun = transform_to_long_format(
     waste_col_name=None,  # Since there is no specific waste column in this dataset
 )
 # Check: Export the final long format data to an Excel file
-# df_mun.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/pre-processing/_data-processing/data/packaging/Python-converted_mun.xlsx', index=False)
 
 # Part 3: Combine both df and perform calculations based on assumptions
 # Step 1: Merging df_pac and df_mun based on geoscale and timescale
@@ -246,7 +244,6 @@ merged_df = merged_df.drop(columns="sort_order")
 merged_df.reset_index(drop=True, inplace=True)
 
 # Check: Export the merged DataFrame to an Excel file
-# merged_df.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/pre-processing/_data-processing/data/packaging/Python-converted_merge.xlsx', index=False)
 
 # Step 3: Linearly regress waste-generated, landfill, and incineration over time (2007-2018)
 # 3.1 Use regression of existing data to fill in the missing values
@@ -350,7 +347,6 @@ merged_df.fillna(0, inplace=True)
 merged_df_new = merged_df.fillna(0)
 
 # Check
-# merged_df.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/pre-processing/_data-processing/data/packaging/Python-converted_regress.xlsx', index=False)
 
 # Step 4: Regress other variables against the imputed waste-generated column
 # 4.1. Regress recovery, recycling, reuse and selected export values against the imputed 'waste-generated[t]' column as the x-axis

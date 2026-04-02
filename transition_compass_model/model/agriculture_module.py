@@ -15,7 +15,6 @@ import os
 import numpy as np
 import time
 
-# __file__ = "/Users/crosnier/Documents/PathwayCalc/training/transport_module_notebook.py"
 
 
 def init_years_lever():

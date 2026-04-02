@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import os
 
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/industry/eu/eol_preprocessing/OTS-FTS.py"
 
 # import
 current_file_directory = os.path.dirname(os.path.abspath(__file__))
@@ -310,7 +309,6 @@ df.fillna(0, inplace=True)
 df = df.loc[~((df["Years"].isin(future_years)) & (df["lever_eol"] == 0)), :]
 
 # Check
-# df.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/toy-module/processing-data/Python/Python-OTS.xlsx', index=False)
 
 # List of thresholds (assumptions based on EU Directive targets and Eurostat values)
 thresholds_dict = {
@@ -478,7 +476,6 @@ df = df[
 df.fillna(0, inplace=True)
 
 # Check
-# df.to_excel('/Users/sqiao/Documents/Calculators/Julie_Calc/end-of-life/toy-module/processing-data/Python/Python-OTS+FTS.xlsx', index=False)
 
 # Part 3: Duplicate columns for each catergories to expand the product list
 df = df.copy()

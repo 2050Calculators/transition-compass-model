@@ -14,7 +14,6 @@ import re
 pio.renderers.default = "browser"
 
 # file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/data/interface/industry_build-interface-for-local-run.py"
 
 # directories
 current_file_directory = os.path.dirname(os.path.abspath(__file__))

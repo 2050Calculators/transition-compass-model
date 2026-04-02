@@ -11,7 +11,6 @@ import warnings
 
 warnings.simplefilter("ignore")
 
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/industry/eu/industry_preprocessing_EU.py"
 
 # directories
 current_file_directory = os.path.dirname(os.path.abspath(__file__))

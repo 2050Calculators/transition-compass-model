@@ -399,7 +399,7 @@ def run_old(cdm_emissions_factors, years_ots):
     )
 
     ### We should do a separate flow for aviation. from pkm/cap -> pkm -> technology share (applied to pkm) -> emissions/pkm
-    data_file = "/Users/paruta/2050-Calculators/leure-speed-to-zero/backend/_database/data/datamatrix/transport.pickle"
+    data_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../../data/datamatrix/transport.pickle")
     with open(data_file, "rb") as handle:
         DM_transport = pickle.load(handle)
 

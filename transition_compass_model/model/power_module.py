@@ -1562,6 +1562,5 @@ def local_power_run():
     return results_run
 
 
-# __file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/model/minerals_module.py"
 # # database_from_csv_to_datamatrix()
 # results_run = local_power_run()

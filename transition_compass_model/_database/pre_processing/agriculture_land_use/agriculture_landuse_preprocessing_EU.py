@@ -8094,7 +8094,7 @@ def fxa_preprocessing():
 
     # Extract fxa list we need for Agriculture & Land Use
     df_ref = pd.read_excel(
-        "/Users/crosnier/Documents/PathwayCalc/_database/agriculture_land-use_references.xlsx",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../agriculture_land-use_references.xlsx"),
         sheet_name="references_agriculture",
     )
     df_ref_fxa = df_ref[df_ref["level"] == "fxa"].copy()

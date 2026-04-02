@@ -16,7 +16,6 @@ from _database.pre_processing.routine_JRC import get_jrc_data
 from transition_compass_model.model.common.auxiliary_functions import eurostat_iso2_dict, jrc_iso2_dict
 
 # file
-__file__ = "/Users/echiarot/Documents/GitHub/2050-Calculators/PathwayCalc/_database/pre_processing/transport/EU/python/transport_fxa_passenger_tech.py"
 
 # directories
 current_file_directory = os.path.dirname(os.path.abspath(__file__))
