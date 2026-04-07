@@ -13,10 +13,10 @@ Local setup, dev workflow, and release process for `transition-compass-model`.
 ```bash
 git clone https://github.com/2050Calculators/transition-compass-model.git
 cd transition-compass-model
-uv sync
+make install
 ```
 
-This creates a `.venv` and installs all dependencies. You can then run scripts directly with `uv run python ...`.
+This creates a `.venv`, installs all dependencies (including dev tools), and registers pre-commit hooks. You can then run scripts directly with `uv run python ...`.
 
 ## Running the model locally
 
@@ -128,7 +128,7 @@ cd backend && make check-model
 - **Local mode** — path points inside `../../transition-compass-model/`
 - **Remote mode** — path points inside `.venv/lib/.../site-packages/`
 
-### Switch back to the remote (git-pinned) model
+### Switch back to the remote (PyPI) model
 
 ```bash
 # From speed-to-zero/

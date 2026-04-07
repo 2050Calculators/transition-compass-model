@@ -57,17 +57,6 @@ transition_compass_model/
 
 Given a set of policy lever values (integers 1–4 representing ambition levels), `interactions.py` runs the relevant sector modules and returns time-series results for emissions, energy demand, and environmental indicators.
 
-## Git LFS
-
-This repository uses [Git LFS](https://git-lfs.com/) to store binary data files (`.pickle`, `.pdf`) on GitHub's built-in LFS storage. You need Git LFS installed for a working clone:
-
-```bash
-# Install Git LFS (once per machine)
-git lfs install
-```
-
-After cloning, LFS files are fetched automatically. If you see small pointer files instead of real data, run `git lfs pull`.
-
 ## Install
 
 The package is published on [PyPI](https://pypi.org/project/transition-compass-model/):
@@ -82,7 +71,18 @@ Pin to a specific version:
 pip install transition-compass-model==1.2.3
 ```
 
-> **Note**: Binary data files (`.pickle`) are bundled directly in the PyPI wheel — no Git LFS required.
+Binary data files (`.pickle`) are bundled directly in the PyPI wheel — no Git LFS required.
+
+## Git LFS (for developers)
+
+The repository uses [Git LFS](https://git-lfs.com/) to store binary data files (`.pickle`, `.pdf`). If you **clone the repo** (for development or research), you need Git LFS installed:
+
+```bash
+git lfs install   # once per machine
+git clone https://github.com/2050Calculators/transition-compass-model.git
+```
+
+After cloning, LFS files are fetched automatically. If you see small pointer files instead of real data, run `git lfs pull`.
 
 ## Usage
 
