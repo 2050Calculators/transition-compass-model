@@ -381,6 +381,35 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots, years_f
     return DM_floor_out
 
 
+def multiply_energy_consumption_by_emission_factor_fxa(
+    dm_tech, dm_emis_tech, variable_name="bld_energy-demand_heating"
+):
+    if variable_name == "bld_energy-demand_heating":
+        arr = (
+            dm_tech[:, :, variable_name, :, :, :]
+            * dm_emis_tech[
+                :, :, "bld_CO2-factor", 0, np.newaxis, np.newaxis, np.newaxis
+            ]
+        )
+        new_var = "bld_CO2-emissions_heating"
+
+    elif variable_name == "bld_services_energy-consumption":
+        arr = (
+            dm_tech[:, :, variable_name, :, :]
+            * dm_emis_tech[:, :, "bld_CO2-factor", np.newaxis, :]
+        )
+        new_var = "services_CO2-emissions_heating"
+
+    elif variable_name == "bld_hot-water_energy-demand":
+        arr = dm_tech[:, :, variable_name, :] * dm_emis_tech[:, :, "bld_CO2-factor", :]
+        new_var = "bld_hotwater_CO2-emissions"
+
+    dm_tech.add(arr, dim="Variables", col_label=new_var, unit="kt")
+    dm_tech.change_unit(new_var, 1e-3, "kt", "Mt")
+    dm_tech.filter({"Variables": [new_var]}, inplace=True)
+    return dm_tech
+
+
 def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
     # SECTION ENERGY
     # SECTION Adjusted HDD, CDD
@@ -531,20 +560,23 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
         }
     )
     dm_emis_elec = DM_energy["electricity-emission"]
-    idx = dm_elec.idx
-    idx_e = dm_emis_elec.idx
-    arr = (
-        dm_elec[:, :, "bld_energy-demand_heating", :, :, :]
-        * dm_emis_elec[
-            :, :, "bld_CO2-factor", "electricity", np.newaxis, np.newaxis, np.newaxis
-        ]
+    dm_elec = multiply_energy_consumption_by_emission_factor_fxa(dm_elec, dm_emis_elec)
+
+    # compute district heating emissions
+    dm_district_heating = dm_energy.filter(
+        {
+            "Categories3": ["district-heating"],
+            "Variables": ["bld_energy-demand_heating"],
+        }
     )
-    dm_elec.add(arr, dim="Variables", col_label="bld_CO2-emissions_heating", unit="kt")
-    dm_elec.change_unit("bld_CO2-emissions_heating", 1e-3, "kt", "Mt")
-    dm_elec.filter({"Variables": ["bld_CO2-emissions_heating"]}, inplace=True)
+    dm_emis_district_heating = DM_energy["district_heating-emission"]
+    dm_district_heating = multiply_energy_consumption_by_emission_factor_fxa(
+        dm_district_heating, dm_emis_district_heating
+    )
 
     # Join fossil and electricity
     dm_emissions.append(dm_elec, dim="Categories3")
+    dm_emissions.append(dm_district_heating, dim="Categories3")
 
     dm_emiss_by_class = dm_emissions.group_all("Categories3", inplace=False)
     dm_emiss_by_class.group_all("Categories1")
@@ -1430,6 +1462,7 @@ def compute_eff_fts_based_on_heat_eff(
 def compute_emissions_per_fuel_type_from_energy(
     cdm_const,
     dm_energy_consumption,
+    emission_factor_district_heating,
     energy_consumption_col,
     fuel_category: str,
     output_label="services_CO2-emissions_heating",
@@ -1457,11 +1490,26 @@ def compute_emissions_per_fuel_type_from_energy(
     dm_emissions.change_unit(output_label, 1e-3, "kt", "Mt")
     dm_emissions.filter({"Variables": [output_label]}, inplace=True)
 
+    # Compute emissions district_heating
+    dm_district_consumption = dm_energy_consumption.filter(
+        {
+            fuel_category: ["district-heating"],
+            "Variables": [energy_consumption_col],
+        }
+    )
+
+    dm_district_emissions = multiply_energy_consumption_by_emission_factor_fxa(
+        dm_district_consumption,
+        emission_factor_district_heating,
+        variable_name=energy_consumption_col,
+    )
+    dm_emissions.append(dm_district_emissions, dim=fuel_category)
+
     return dm_emissions
 
 
 def bld_hotwater_workflow(
-    DM_hotwater, dm_heating, cdm_const, dm_lfs, years_ots, years_fts
+    DM_hotwater, dm_heating, DM_energy, cdm_const, dm_lfs, years_ots, years_fts
 ):
     dm_hw_eff = DM_hotwater["efficiency"].copy()
     dm_hw_eff = compute_eff_fts_based_on_heat_eff(
@@ -1497,6 +1545,7 @@ def bld_hotwater_workflow(
     dm_emissions = compute_emissions_per_fuel_type_from_energy(
         cdm_const,
         dm_hw_tech,
+        DM_energy["district_heating-emission"],
         "bld_hot-water_energy-demand",
         fuel_category="Categories1",
         output_label="bld_hotwater_CO2-emissions",
@@ -1509,7 +1558,9 @@ def bld_hotwater_workflow(
     return DM_hotwater_out
 
 
-def bld_services_workflow(DM_services, dm_heating, cdm_const, years_ots, years_fts):
+def bld_services_workflow(
+    DM_services, dm_heating, DM_energy, cdm_const, years_ots, years_fts
+):
     dm_eff = DM_services["services_efficiencies"].copy()
     dm_eff = compute_eff_fts_based_on_heat_eff(
         dm_heating, dm_eff, years_ots, years_fts, var_name="bld_services_efficiency"
@@ -1607,6 +1658,7 @@ def bld_services_workflow(DM_services, dm_heating, cdm_const, years_ots, years_f
             "Variables": ["bld_services_energy-consumption"],
         }
     )
+
     # Compute emissions fossil fuels
     dm_emissions.sort("Categories2")
     cdm_emission.sort("Categories1")
@@ -1621,6 +1673,21 @@ def bld_services_workflow(DM_services, dm_heating, cdm_const, years_ots, years_f
     dm_emissions.change_unit("services_CO2-emissions_heating", 1e-3, "kt", "Mt")
     dm_emissions.filter({"Variables": ["services_CO2-emissions_heating"]}, inplace=True)
 
+    # Compute emissions district_heating
+    dm_district_consumption = dm_tech_mix.filter(
+        {
+            "Categories2": ["district-heating"],
+            "Categories1": ["hot-water", "space-heating"],
+            "Variables": ["bld_services_energy-consumption"],
+        }
+    )
+
+    dm_district_emissions = multiply_energy_consumption_by_emission_factor_fxa(
+        dm_district_consumption,
+        DM_energy["district_heating-emission"],
+        variable_name="bld_services_energy-consumption",
+    )
+    dm_emissions.append(dm_district_emissions, dim="Categories2")
     dm_emissions.group_all("Categories1")
 
     DM_services_out = {

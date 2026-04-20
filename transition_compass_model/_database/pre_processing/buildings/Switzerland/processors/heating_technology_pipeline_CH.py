@@ -1,17 +1,17 @@
 import os
 
-import _database.pre_processing.buildings.Switzerland.get_data_functions.heating_technology_CH as ht
 import numpy as np
-from _database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import (
+
+import transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.heating_technology_CH as ht
+from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import (
     load_construction_period_param,
 )
-from _database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH import (
+from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH import (
     extract_nb_of_apartments_per_building_type,
 )
-from _database.pre_processing.buildings.Switzerland.get_data_functions.hot_water_CH import (
+from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.hot_water_CH import (
     extract_heating_efficiencies_EP2050,
 )
-
 from transition_compass_model.model.common.auxiliary_functions import (
     add_dummy_country_to_DM,
     create_years_list,
@@ -57,7 +57,6 @@ def adjust_COP_based_on_envelope_cat(dm):
 def calibrate_cantons_heating_tech_based_on_EP2050(
     dm_heating_tech_cantons, dm_heating_CH
 ):
-
     def calibrate_heating(dm_raw, dm_cal):
         dm_shares = dm_raw.copy()
 
@@ -124,7 +123,6 @@ def calibrate_cantons_heating_tech_based_on_EP2050(
 
 
 def adjust_tech_mix(dm_tech_mix, dm_apt):
-
     dm_tech_mix[...] = dm_tech_mix[...] / np.nansum(
         dm_tech_mix[...], axis=(-1, -2), keepdims=True
     )
@@ -145,7 +143,6 @@ def adjust_tech_mix(dm_tech_mix, dm_apt):
 
 
 def run(global_var, dm_all, country_list, years_ots):
-
     cantons_en = [
         "Aargau",
         "Appenzell Ausserrhoden",

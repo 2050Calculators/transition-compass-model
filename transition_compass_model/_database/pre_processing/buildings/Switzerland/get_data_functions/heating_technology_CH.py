@@ -5,8 +5,10 @@ import zipfile
 
 import numpy as np
 import pandas as pd
-from _database.pre_processing.api_routines_CH import get_data_api_CH
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     linear_fitting,
@@ -220,7 +222,6 @@ def extract_heating_technologies_old(table_id, file, cat_sfh, cat_mfh):
 
 
 def extract_heating_technologies(table_id, file, cat_sfh, cat_mfh):
-
     def extract_cntr_heating(cntr_list):
         filter = {
             "Année": structure["Année"],
@@ -499,7 +500,6 @@ def compute_heating_mix_F_E_D_categories(
 def compute_heating_mix_C_B_categories(
     dm_heating_tech, cdm_heating_archetypes, years_ots, envelope_cat_new
 ):
-
     dm_heating_tech_new = dm_heating_tech.filter(
         {"Categories1": ["B", "C"]}, inplace=False
     )
@@ -606,7 +606,6 @@ def compute_heating_mix_by_category(dm_heating_tech, cdm_heating_archetypes, dm_
 
 
 def clean_heating_cat(dm_heating_cat, envelope_cat_new):
-
     years_all = dm_heating_cat.col_labels["Years"]
     idx = dm_heating_cat.idx
     for cat, period in envelope_cat_new.items():
@@ -668,7 +667,6 @@ def extract_heating_efficiency_JRC(file, sheet_name, years_ots):
 def compute_heating_efficiency_by_archetype(
     dm_heating_eff, dm_all, envelope_cat_new, categories
 ):
-
     arr_w_cat = np.repeat(
         dm_heating_eff.array[..., np.newaxis], repeats=len(categories), axis=-1
     )
@@ -728,7 +726,6 @@ def compute_heating_efficiency_by_archetype(
 
 
 def extract_heating_technologies_EP2050(file_url, zip_name, file_pickle):
-
     try:
         with open(file_pickle, "rb") as handle:
             dm = pickle.load(handle)

@@ -1,12 +1,12 @@
 import os
 
-import _database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH as fla
 import numpy as np
 import pandas as pd
-from _database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import (
+
+import transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH as fla
+from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import (
     load_construction_period_param,
 )
-
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
@@ -16,7 +16,6 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def fill_missing_years_using_FSO_data(dm, dm_raw):
-
     dm_add_missing_variables(dm, {"Years": dm_raw.col_labels["Years"]}, fill_nans=False)
     dm.filter({"Years": dm_raw.col_labels["Years"]}, inplace=True)
     dm_raw.rename_col(

@@ -1,8 +1,9 @@
 import os
 import pickle
 
-from _database.pre_processing.api_routines_CH import get_data_api_CH
-
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
@@ -102,7 +103,6 @@ def extract_national_energy_demand(table_id, file):
 
 
 def extract_employees_per_sector_canton(table_id, file):
-
     try:
         with open(file, "rb") as handle:
             dm_employees = pickle.load(handle)

@@ -2,8 +2,10 @@ import os
 import pickle
 
 import numpy as np
-from _database.pre_processing.api_routines_CH import get_data_api_CH
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     load_pop,
@@ -105,7 +107,6 @@ def extract_stock_floor_area(table_id, file):
 def replace_years_by_corresponding_categories_for_specified_household(
     dm_num_bld, env_cat, type_households="single-family-households"
 ):
-
     dm_num_bld_sfh = dm_num_bld.filter({"Categories1": [type_households]})
     dm_num_bld_sfh.groupby(env_cat, dim="Categories2", inplace=True)
     return dm_num_bld_sfh
@@ -239,6 +240,16 @@ def compute_renovation_loi_energie(
 def update_heating_change_proportion(
     dm_heating_cat_fts_2, household_type="multi-family-households"
 ):
+    """when setting some technology to 0 in dm_heating_cat_fts_2 we need to replace them with other technology.
+    Here we use the proportion from the study perspectives chaleur to replace them.
+
+    Args:
+        dm_heating_cat_fts_2 (Datamatrix): Datamatrix with the ratio of use of each techology.
+        household_type (str): _description_. Defaults to "multi-family-households".
+
+    Returns:
+        Datamatrix: The updated datamatrix filtered with the relevant household type.
+    """
 
     # update multi households
     dm_heating_fts_mfh = dm_heating_cat_fts_2.filter(
@@ -282,7 +293,6 @@ def update_heating_change_proportion(
 def run(
     DM_buildings, dm_pop, global_var, country_list, lev=2
 ):  # lever =2 for energy law and 3 for PCV 4 is perfect world 1 is BAU
-
     construction_period_envelope_cat_sfh = global_var["envelope construction sfh"]
     construction_period_envelope_cat_mfh = global_var["envelope construction mfh"]
 
@@ -358,6 +368,24 @@ def run(
         DM_buildings["fts"]["building-renovation-rate"][
             "bld_renovation-redistribution"
         ][lever] = renov_distrib_fts_3.copy()
+    # # Chauffage de l'eau chaude
+
+    # dm_hot_water_fxa = DM_buildings["fxa"]["hot-water"]["hw-tech-mix"].copy()
+
+    # idx_hot_water = dm_hot_water_fxa.idx
+    # dm_hot_water_fxa.array[
+    #     idx_hot_water["Vaud"],
+    #     idx_hot_water[2025] : idx_hot_water[2035],
+    #     idx_hot_water["bld_hw_tech-mix"],
+    #     idx_hot_water["electricity"],
+    # ] = np.nan
+    # dm_hot_water_fxa.array[
+    #     idx_hot_water["Vaud"],
+    #     idx_hot_water[2035] :,
+    #     idx_hot_water["bld_hw_tech-mix"],
+    #     idx_hot_water["electricity"],
+    # ] = 0
+    # DM_buildings["fxa"]["hot-water"]["hw-tech-mix"] = dm_hot_water_fxa
 
     # SECTION: Loi energy - Heating tech
     # Plus de gaz, mazout, charbon dans les prochain 15-20 ans. Pas de gaz, mazout, charbon dans les nouvelles constructions

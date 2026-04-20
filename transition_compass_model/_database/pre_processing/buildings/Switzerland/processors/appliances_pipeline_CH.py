@@ -1,10 +1,10 @@
 import os.path
 
 import numpy as np
-from _database.pre_processing.buildings.Switzerland.get_data_functions import (
+
+from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions import (
     appliances_CH as get_data,
 )
-
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
@@ -15,7 +15,6 @@ from transition_compass_model.model.common.auxiliary_functions import (
 
 
 def run(dm_pop, country_list, years_ots, years_fts):
-
     this_dir = os.path.dirname(os.path.abspath(__file__))
     years_fts_orig = years_fts
     years_fts = create_years_list(years_ots[-1] + 1, years_fts_orig[-1], 1)

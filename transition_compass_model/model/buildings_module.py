@@ -61,6 +61,9 @@ def read_data(DM_buildings, lever_setting):
         "heatcool-behaviour": DM_ots_fts["heatcool-behaviour"],
         "heating-calibration": DM_buildings["fxa"]["heating-energy-calibration"],
         "electricity-emission": DM_buildings["fxa"]["emission-factor-electricity"],
+        "district_heating-emission": DM_buildings["fxa"][
+            "emission-factor-heating_district"
+        ],
         "u-value": DM_buildings["fxa"]["u-value"],
         "surface-to-floorarea": DM_buildings["fxa"]["surface-to-floorarea"],
     }
@@ -145,6 +148,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     DM_hotwater_out = wkf.bld_hotwater_workflow(
         DM_hotwater,
         DM_energy_out["TPE"]["energy-demand-heating"].copy(),
+        DM_energy,
         cdm_const,
         dm_lfs,
         years_ots,
@@ -154,6 +158,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     DM_services_out = wkf.bld_services_workflow(
         DM_services,
         DM_energy_out["TPE"]["energy-demand-heating"].copy(),
+        DM_energy,
         cdm_const,
         years_ots,
         years_fts,
@@ -282,7 +287,7 @@ def buildings_local_run():
     # Function to run only transport module without converter and tpe
 
     # get geoscale
-    country_list = ["EU27", "Switzerland", "Vaud"]
+    country_list = ["Switzerland", "Vaud"]
     DM_input = filter_country_and_load_data_from_pickles(
         country_list=country_list, modules_list="buildings"
     )

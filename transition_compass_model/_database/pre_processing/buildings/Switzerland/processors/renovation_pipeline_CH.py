@@ -1,17 +1,15 @@
 import os
 
-import _database.pre_processing.buildings.Switzerland.get_data_functions.renovation_CH as renov
-from _database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import (
+import transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.renovation_CH as renov
+from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import (
     load_construction_period_param,
 )
-
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
 )
 
 
 def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
-
     # SECTION Floor area Renovated ots
     # Number of buildings
     # Bâtiments selon les niveaux géographiques institutionnels, la catégorie de bâtiment et l'époque de construction

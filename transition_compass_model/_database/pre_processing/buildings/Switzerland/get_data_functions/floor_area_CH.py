@@ -4,8 +4,10 @@ import zipfile
 
 import numpy as np
 import pandas as pd
-from _database.pre_processing.api_routines_CH import get_data_api_CH
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
@@ -19,7 +21,6 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def compute_avg_floor_area(dm_floor_area, years_ots):
-
     dm_avg_floor_area = dm_floor_area.filter({"Variables": ["bld_avg-floor-area-new"]})
     years_to_keep = [
         "1991-2000",
@@ -62,7 +63,6 @@ def compute_avg_floor_area(dm_floor_area, years_ots):
 
 
 def extract_stock_floor_area(table_id, file):
-
     try:
         with open(file, "rb") as handle:
             dm_floor_area = pickle.load(handle)
@@ -398,7 +398,6 @@ def compute_bld_floor_area_new(
 
 
 def compute_waste(dm_stock_tot, dm_new_tot, years_ots):
-
     dm = dm_stock_tot.copy()
     dm.append(dm_new_tot, dim="Variables")
 
@@ -470,7 +469,6 @@ def compute_floor_area_waste_cat(dm_waste_tot):
 
 
 def compute_floor_area_new_cat(dm_new_tot, cat_map):
-
     env_cat = ["B", "C", "D", "E", "F"]
     arr = np.zeros(np.shape(dm_new_tot.array) + (len(env_cat),))
     dm_new_cat = DataMatrix.based_on(

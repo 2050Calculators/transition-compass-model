@@ -2,8 +2,10 @@ import os
 import pickle
 
 import numpy as np
-from _database.pre_processing.api_routines_CH import get_data_api_CH
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     linear_fitting,
@@ -113,7 +115,6 @@ def extract_lfs_household_size(years_ots, table_id, file):
 
 
 def compute_building_mix(dm_all):
-
     dm_building_mix = dm_all.filter(
         {"Variables": ["bld_floor-area_stock", "bld_floor-area_new"]}, inplace=False
     ).flatten()
@@ -132,7 +133,6 @@ def compute_building_mix(dm_all):
 
 
 def run(dm_pop, DM_all, years_ots, years_fts):
-
     DM_renov = DM_all["floor_renov"]
     DM_heating = DM_all["space-heat"]
     DM_other = DM_all["misc"]
@@ -157,8 +157,7 @@ def run(dm_pop, DM_all, years_ots, years_fts):
     dm_u_value = DM_other["u-value"]
     cdm_emission_fact = DM_other["emission-factors"]
     dm_s2f = DM_other["surface-to-floor"]
-    dm_elec = DM_other["emission-fact-elec"]
-
+    dm_emission = DM_other["emission-fact-elec_district"]
     # RENOVATION
     dm_all = DM_renov["floor-area-cat"]
     dm_renovation = DM_renov["renovation-rate"]
@@ -183,7 +182,13 @@ def run(dm_pop, DM_all, years_ots, years_fts):
     DM_buildings["constant"]["emissions"] = cdm_emission_fact
 
     # SECTION: fxa - emission-factor-electricity
-    DM_buildings["fxa"]["emission-factor-electricity"] = dm_elec
+    DM_buildings["fxa"]["emission-factor-electricity"] = dm_emission.filter(
+        {"Categories1": ["electricity"]}
+    )
+    # SECTION: fxa - emission-factor-electricity
+    DM_buildings["fxa"]["emission-factor-heating_district"] = dm_emission.filter(
+        {"Categories1": ["heating_district"]}
+    )
 
     # SECTION: fxa - appliances
     DM_buildings["fxa"]["appliances"] = DM_appliances["fxa"]["appliances"].copy()
@@ -323,7 +328,6 @@ def run(dm_pop, DM_all, years_ots, years_fts):
 
     # SECTION: ots - heating-efficiency
     DM_buildings["ots"]["heating-efficiency"] = dm_heating_eff_cat.copy()
-
     my_pickle_dump(DM_buildings, file)
     sort_pickle(file)
 

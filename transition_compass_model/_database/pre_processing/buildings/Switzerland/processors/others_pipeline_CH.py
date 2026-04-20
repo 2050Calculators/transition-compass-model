@@ -142,7 +142,6 @@ def run(country_list, years_ots, years_fts):
         "gas": 201,
         "wood": 0,
         "solar": 0,
-        "district-heating": 66,
     }
 
     cdm_emission_fact = ConstantDataMatrix(
@@ -154,7 +153,6 @@ def run(country_list, years_ots, years_fts):
                 "gas",
                 "wood",
                 "solar",
-                "district-heating",
             ],
         },
         units={"bld_CO2-factors": "kt/TWh"},
@@ -171,22 +169,28 @@ def run(country_list, years_ots, years_fts):
 
     cdm_emission_fact.sort("Categories1")
 
-    # SECTION: Electricity emission factors
+    # SECTION: Electricity and district emission factors
     col_dict = {
         "Country": country_list,
         "Years": years_ots + years_fts,
         "Variables": ["bld_CO2-factor"],
-        "Categories1": ["electricity"],
+        "Categories1": ["electricity", "heating_district"],
     }
-    dm_elec = DataMatrix(col_labels=col_dict, units={"bld_CO2-factor": "kt/TWh"})
+    dm_co2_factor = DataMatrix(col_labels=col_dict, units={"bld_CO2-factor": "kt/TWh"})
 
-    arr_elec = np.zeros((2, 40, 1, 1))
-    idx = dm_elec.idx
-    arr_elec[:, idx[1990] : idx[2023] + 1, 0, 0] = 168.64
-    arr_elec[:, idx[2025] : idx[2050], 0, 0] = np.nan
-    arr_elec[:, idx[2050], 0, 0] = 0
-    dm_elec.array = arr_elec
-    dm_elec.fill_nans(dim_to_interp="Years")
+    arr_co2_factor = np.zeros((2, 40, 1, 2))
+    idx = dm_co2_factor.idx
+    arr_co2_factor[:, idx[1990] : idx[2023] + 1, :, idx["electricity"]] = 168.64
+    arr_co2_factor[:, idx[2025] : idx[2050], :, idx["electricity"]] = np.nan
+    arr_co2_factor[:, idx[2050], :, idx["electricity"]] = 0
+
+    arr_co2_factor[:, : idx[2019] + 1, :, idx["heating_district"]] = 73.55
+    arr_co2_factor[:, idx[2019] : idx[2023], :, idx["heating_district"]] = np.nan
+    arr_co2_factor[:, idx[2023], :, idx["heating_district"]] = 66
+    arr_co2_factor[:, idx[2025] : idx[2050], :, idx["heating_district"]] = np.nan
+    arr_co2_factor[:, idx[2050], :, idx["heating_district"]] = 20.7
+    dm_co2_factor.array = arr_co2_factor
+    dm_co2_factor.fill_nans(dim_to_interp="Years")
 
     DM_other = {
         "u-value": dm_u_value,
@@ -194,7 +198,7 @@ def run(country_list, years_ots, years_fts):
         "Tint-heat": dm_Tint_heat,
         "age": dm_age,
         "emission-factors": cdm_emission_fact,
-        "emission-fact-elec": dm_elec,
+        "emission-fact-elec_district": dm_co2_factor,
     }
 
     return DM_other

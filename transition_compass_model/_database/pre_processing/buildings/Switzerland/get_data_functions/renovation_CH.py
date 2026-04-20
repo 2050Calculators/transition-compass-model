@@ -2,8 +2,10 @@ import os
 import pickle
 
 import numpy as np
-from _database.pre_processing.api_routines_CH import get_data_api_CH
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
@@ -81,7 +83,6 @@ def compute_renovated_buildings(dm_bld, nb_buildings_renovated, VD_share, share_
 
 
 def compute_renovation_rate(dm_renovation, years_ots):
-
     dm_renovation.operation(
         "bld_nb-bld-renovated",
         "/",
@@ -148,7 +149,6 @@ def extract_renovation_redistribuition(ren_map_in, ren_map_out, years_ots):
 
 
 def compute_floor_area_renovated(dm_stock_tot, dm_renovation, dm_renov_distr):
-
     # r_ct(t) = Redistr_ct(t) * (ren-rate_t(t) * stock_t(t))
 
     dm = dm_renovation.copy()

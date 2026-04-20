@@ -2,8 +2,10 @@ import os
 import pickle
 
 import numpy as np
-from _database.pre_processing.api_routines_CH import get_data_api_CH
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     load_pop,
@@ -152,7 +154,6 @@ def compute_renovation_loi_energie(
 
 
 def run(DM_buildings, dm_pop, global_var, country_list, lev=4):
-
     construction_period_envelope_cat_sfh = global_var["envelope construction sfh"]
     construction_period_envelope_cat_mfh = global_var["envelope construction mfh"]
 
@@ -196,25 +197,6 @@ def run(DM_buildings, dm_pop, global_var, country_list, lev=4):
     DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][4] = (
         dm_rr_fts_2
     )
-
-    # Chauffage de l'eau chaude
-
-    dm_hot_water_fxa = DM_buildings["fxa"]["hot-water"]["hw-tech-mix"].copy()
-
-    idx_hot_water = dm_hot_water_fxa.idx
-    dm_hot_water_fxa.array[
-        idx_hot_water["Vaud"],
-        idx_hot_water[2025] : idx_hot_water[2035],
-        idx_hot_water["bld_hw_tech-mix"],
-        idx_hot_water["electricity"],
-    ] = np.nan
-    dm_hot_water_fxa.array[
-        idx_hot_water["Vaud"],
-        idx_hot_water[2035] :,
-        idx_hot_water["bld_hw_tech-mix"],
-        idx_hot_water["electricity"],
-    ] = 0
-    DM_buildings["fxa"]["hot-water"]["hw-tech-mix"] = dm_hot_water_fxa
 
     # SECTION: Loi energy - Heating tech
     # Plus de gaz, mazout, charbon dans les prochain 15-20 ans. Pas de gaz, mazout, charbon dans les nouvelles constructions
