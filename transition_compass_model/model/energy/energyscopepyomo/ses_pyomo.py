@@ -5,6 +5,7 @@
 # - Defaults to minimizing TotalGWP; you can switch to "cost".
 
 import json
+import os
 
 import pyomo.environ as pyo
 from pyomo.contrib.appsi.solvers import Highs
@@ -24,17 +25,48 @@ def make_highs(time_limit=None, show_log=True):
     if time_limit is not None:
         opt.config.time_limit = float(time_limit)
     if hasattr(opt, "highs_options"):
-        opt.highs_options.update({"presolve": "on", "threads": 0})
+        opt.highs_options.update(
+            {"presolve": "on", "threads": 0, "output_flag": bool(show_log)}
+        )
     return opt
 
 
 def attach(opt, m):
-    opt.set_instance(m)
+    if not opt.config.stream_solver:
+        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        old_stdout = os.dup(1)
+        old_stderr = os.dup(2)
+        try:
+            os.dup2(devnull_fd, 1)
+            os.dup2(devnull_fd, 2)
+            opt.set_instance(m)
+        finally:
+            os.dup2(old_stdout, 1)
+            os.dup2(old_stderr, 2)
+            os.close(old_stdout)
+            os.close(old_stderr)
+            os.close(devnull_fd)
+    else:
+        opt.set_instance(m)
 
 
 def solve(opt, m, warmstart=True):
     if warmstart and hasattr(opt, "warm_start"):
         opt.warm_start(m)
+    if not opt.config.stream_solver:
+        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        old_stdout = os.dup(1)
+        old_stderr = os.dup(2)
+        try:
+            os.dup2(devnull_fd, 1)
+            os.dup2(devnull_fd, 2)
+            return opt.solve(m)
+        finally:
+            os.dup2(old_stdout, 1)
+            os.dup2(old_stderr, 2)
+            os.close(old_stdout)
+            os.close(old_stderr)
+            os.close(devnull_fd)
     return opt.solve(m)
 
 

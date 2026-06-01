@@ -164,8 +164,6 @@ def make_const_energy_demand(current_file_directory, lever_file):
 
     # save
     CDM_energy_demand = {
-        "energy-demand-excl-feedstock": cdm_enerdem_exclfeed,
-        "energy-demand-feedstock": cdm_enerdem_feedstock,
         "energy-demand-excl-feedstock-eleclight-split": cdm_enerdem_exclfeed_eleclight_split,
     }
 
@@ -246,12 +244,7 @@ def make_const_energy_demand(current_file_directory, lever_file):
     with open(f, "wb") as handle:
         pickle.dump(CDM_energy_demand, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    return (
-        cdm_enerdem_exclfeed,
-        cdm_enerdem_feedstock,
-        cdm_enerdem_exclfeed_eleclight_split,
-        cdm_enerdem_eff,
-    )
+    return cdm_enerdem_exclfeed_eleclight_split, cdm_enerdem_eff
 
 
 def run():
@@ -264,26 +257,16 @@ def run():
     if os.path.exists(filepath):
         with open(filepath, "rb") as handle:
             CDM = pickle.load(handle)
-            cdm_enerdem_exclfeed = CDM["energy-demand-excl-feedstock"].copy()
-            cdm_enerdem_feedstock = CDM["energy-demand-feedstock"].copy()
             cdm_enerdem_exclfeed_eleclight_split = CDM[
                 "energy-demand-excl-feedstock-eleclight-split"
             ].copy()
             cdm_enerdem_eff = CDM["energy-efficiency"].copy()
     else:
-        (
-            cdm_enerdem_exclfeed,
-            cdm_enerdem_feedstock,
-            cdm_enerdem_exclfeed_eleclight_split,
-            cdm_enerdem_eff,
-        ) = make_const_energy_demand(current_file_directory, lever_file)
+        cdm_enerdem_exclfeed_eleclight_split, cdm_enerdem_eff = (
+            make_const_energy_demand(current_file_directory, lever_file)
+        )
 
-    return (
-        cdm_enerdem_exclfeed,
-        cdm_enerdem_feedstock,
-        cdm_enerdem_exclfeed_eleclight_split,
-        cdm_enerdem_eff,
-    )
+    return cdm_enerdem_exclfeed_eleclight_split, cdm_enerdem_eff
 
 
 if __name__ == "__main__":

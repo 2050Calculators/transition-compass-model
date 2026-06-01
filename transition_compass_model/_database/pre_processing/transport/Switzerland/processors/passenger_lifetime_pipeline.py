@@ -1,7 +1,6 @@
 ########################
 ####    LIFETIME    ####
 ########################
-
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
@@ -56,9 +55,12 @@ def run(mode_cat, tech_cat, years_ots, years_fts, country_list):
     dm_lifetime[:, :, "tra_passenger_lifetime", "2W", :] = 8
     # We assume rail lifetime is 30 years, metrotram lifetime is 20 years and bus lifetime is 10 years
     dm_lifetime[:, :, "tra_passenger_lifetime", "rail", "CEV"] = 30
+    dm_lifetime[:, :, "tra_passenger_lifetime", "rail", "ICE-diesel"] = 30
+    dm_lifetime[:, :, "tra_passenger_lifetime", "rail", "mt"] = 30
     dm_lifetime[:, :, "tra_passenger_lifetime", "metrotram", "mt"] = 20
     dm_lifetime[:, :, "tra_passenger_lifetime", "bus", "CEV"] = 10
     dm_lifetime[:, :, "tra_passenger_lifetime", "bus", "ICE-diesel"] = 10
+    dm_lifetime[:, :, "tra_passenger_lifetime", "bus", "mt"] = 10
 
     dm_lifetime.fill_nans("Years")
 

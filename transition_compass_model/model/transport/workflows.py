@@ -793,6 +793,8 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     cdm_const.rename_col("ICE-gas", "gas", dim="Categories2")
     cdm_const.rename_col("H2", "hydrogen", dim="Categories2")
     cdm_const.drop(col_label="SAF", dim="Categories2")
+    cdm_const.array = cdm_const.array * 3.6e9
+    cdm_const.units["cp_tra_emission-factor"] = "g/TWh"
 
     dm_energy_em = dm_total_energy.filter(
         {"Categories1": cdm_const.col_labels["Categories2"]}
@@ -814,11 +816,12 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     col_labels["Categories2"] = cdm_const.col_labels[
         "Categories1"
     ].copy()  # GHG category
-    unit = {"tra_freight_emissions": "Mt"}
+    unit = {"tra_freight_emissions": "g"}
     dm_emissions_by_fuel = DataMatrix(col_labels=col_labels, units=unit)
     dm_emissions_by_fuel.array = tmp[
         :, :, np.newaxis, :, :
     ]  # The variable dimension was lost when doing nansum
+    dm_emissions_by_fuel.change_unit("tra_freight_emissions", 1e-12, "g", "Mt")
     del dm_energy_em, tmp, col_labels, unit
 
     # Compute emissions by mode
@@ -844,9 +847,9 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
             "Variables": ["tra_freight_emissions"],
             "Categories2": cdm_const.col_labels["Categories1"],
         },
-        units={"tra_freight_emissions": "Mt"},
+        units={"tra_freight_emissions": "g"},
     )
-
+    dm_emissions_by_mode.change_unit("tra_freight_emissions", 1e-12, "g", "Mt")
     del tmp, idx_e, idx_c, dm_energy_em
 
     tmp = np.nansum(dm_emissions_by_mode.array, axis=-2)

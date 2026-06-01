@@ -35,9 +35,8 @@ dependencies = [
     "scipy==1.15.3",
     "statsmodels>=0.14.0",
     "tqdm>=4.67.3",
-    "xlrd>=2.0.2",
-    "odfpy>=1.4.1",
-    "highspy>=1.14.0"
+    "highspy>=1.14.0",
+    "xlrd>=2.0.1",
 ]
 
 [project.urls]
@@ -52,6 +51,7 @@ dev = [
     "pre-commit>=3.0.0",
     "pytest>=8.0.0",
     "codespell>=2.3.0",
+    "spyder-kernels>=3.1.0,<3.2.0",
 ]
 
 [tool.setuptools.packages.find]

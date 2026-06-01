@@ -48,6 +48,14 @@ def run(DM_input, years_ots):
         {"Categories1": ["ammonia-tech"]}
     )
     DM_input["costs-cc"].drop("Categories1", "ammonia-tech")
+    DM_amm["fxa"]["energy-demand-excl-feedstock"] = DM_input[
+        "fxa-energy-exclfeedstock"
+    ].filter({"Categories1": ["ammonia-tech"]})
+    DM_input["fxa-energy-exclfeedstock"].drop("Categories1", "ammonia-tech")
+    DM_amm["fxa"]["energy-demand-feedstock"] = DM_input["fxa-energy-feedstock"].filter(
+        {"Categories1": ["ammonia-tech"]}
+    )
+    DM_input["fxa-energy-feedstock"].drop("Categories1", "ammonia-tech")
 
     DM_amm["calibration"]["emissions"] = DM_input["calib-emissions-ammonia"].copy()
     DM_amm["calibration"]["material-production"] = DM_input[
@@ -75,19 +83,10 @@ def run(DM_input, years_ots):
         "const-material-decomp-batteries"
     ].filter({"Categories3": ["ammonia"]})
     DM_input["const-material-decomp-batteries"].drop("Categories3", "ammonia")
-    constants = [
-        "const-energy-exclfeedstock",
-        "const-energy-feedstock",
-        "const-emission-process",
-    ]
-    lever_names = [
-        "energy_excl-feedstock",
-        "energy_feedstock",
-        "emission-factor-process",
-    ]
-    for c, l in zip(constants, lever_names):
-        DM_amm["constant"][l] = DM_input[c].filter({"Categories1": ["ammonia-tech"]})
-        DM_input[c].drop("Categories1", "ammonia-tech")
+    DM_amm["constant"]["emission-factor-process"] = DM_input[
+        "const-emission-process"
+    ].filter({"Categories1": ["ammonia-tech"]})
+    DM_input["const-emission-process"].drop("Categories1", "ammonia-tech")
     DM_amm["constant"]["emission-factor"] = DM_input["const-emission-combustion"].copy()
 
     # make industry
@@ -107,6 +106,10 @@ def run(DM_input, years_ots):
     DM["fxa"]["cost-CC"] = DM_input["costs-cc"].copy()
     DM["fxa"]["prod"] = DM_input["material-production-not-modelled"].copy()
     DM["fxa"]["demand"] = DM_input["material-demand-wpp"].copy()
+    DM["fxa"]["energy-demand-excl-feedstock"] = DM_input[
+        "fxa-energy-exclfeedstock"
+    ].copy()
+    DM["fxa"]["energy-demand-feedstock"] = DM_input["fxa-energy-feedstock"].copy()
 
     DM["calibration"]["emissions"] = DM_input["calib-emissions"]
     DM["calibration"]["energy-demand"] = DM_input["calib-energy"]
@@ -116,10 +119,6 @@ def run(DM_input, years_ots):
     DM["constant"]["emission-factor-process"] = DM_input[
         "const-emission-process"
     ].copy()
-    DM["constant"]["energy_excl-feedstock"] = DM_input[
-        "const-energy-exclfeedstock"
-    ].copy()
-    DM["constant"]["energy_feedstock"] = DM_input["const-energy-feedstock"].copy()
     DM["constant"]["energy_excl-feedstock_eleclight-split"] = DM_input[
         "const-energy-exclfeedstock-eleclightsplit"
     ].copy()

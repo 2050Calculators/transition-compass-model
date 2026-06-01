@@ -177,7 +177,9 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     # interface.add_link(from_sector='transport', to_sector='minerals', dm=DM_minerals)
 
     # Emissions
-    # TODO: for the moment I am passing only passenger emissions
+    # TODO: for aviation differentiate between multiplier x1, x1.7 (IPCC average) and x3
+    # for emissions of CO2 tonnes at higher layer of atmosphere, we can plot graphs with the
+    # three versions
     dm_emissions = inter.tra_emissions_interface(
         DM_passenger_out["emissions"], DM_freight_out["emissions"]
     )

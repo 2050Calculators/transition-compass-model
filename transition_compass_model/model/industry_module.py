@@ -129,9 +129,6 @@ def industry(
         DM_material_production["bymat"],
     )
 
-    # tomorrow: there are issues with recycled cement (cement cannot be recycled it seems)
-    # and paper / pulp. Review these two inside end_of_life().
-
     # get material production by technology (writes in DM_material_production)
     DM_material_production["bytech"] = wkf.material_production_by_technology(
         DM_ots_fts["technology-share"],
@@ -142,7 +139,9 @@ def industry(
     )
 
     # get energy demand for material production
-    DM_energy_demand = wkf.energy_demand(DM_material_production["bytech"], CDM_const)
+    DM_energy_demand = wkf.energy_demand(
+        DM_material_production["bytech"], CDM_const, DM_fxa
+    )
 
     # calibrate energy demand for material production (writes in DM_energy_demand)
     if calibration is True:

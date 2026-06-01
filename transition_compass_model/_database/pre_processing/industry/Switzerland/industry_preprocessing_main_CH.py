@@ -1,6 +1,7 @@
 from processors.ammonia_levers_fxa import run as ammonia_run
 from processors.industry_calib_emissions import run as emissions_run
 from processors.industry_calib_energy_demand import run as energy_demand_run
+from processors.industry_fxa_energy_demand import run as fxa_energy_demand_run
 from processors.industry_lever_packaging_per_capita import (
     run as packaging_per_capita_run,
 )
@@ -52,9 +53,14 @@ print("Emissions")
 dm_emissions = emissions_run(years_ots, years_fts)
 
 # ammonia
+print("Ammonia")
 dm_amm_prod_net_import, dm_amm_mat_net_import, dm_amm_prod = ammonia_run(
     years_ots, years_fts
 )
+
+# energy demand fxa (Swiss carrier shares)
+print("Energy demand fxa")
+DM_fxa_energy = fxa_energy_demand_run(years_ots, years_fts)
 
 # save industry pre-processing
 DM_input = {
@@ -70,6 +76,14 @@ DM_input = {
     "fert-product-net-import": dm_amm_prod_net_import,
     "amm-material-net-import": dm_amm_mat_net_import,
     "calib-amm-material-production": dm_amm_prod,
+    "fxa-energy-exclfeedstock": DM_fxa_energy["industry"][
+        "energy-demand-excl-feedstock"
+    ],
+    "fxa-energy-feedstock": DM_fxa_energy["industry"]["energy-demand-feedstock"],
+    "fxa-amm-energy-exclfeedstock": DM_fxa_energy["ammonia"][
+        "energy-demand-excl-feedstock"
+    ],
+    "fxa-amm-energy-feedstock": DM_fxa_energy["ammonia"]["energy-demand-feedstock"],
 }
 save_industry_pre_processing_run(DM_input)
 

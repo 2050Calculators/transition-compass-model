@@ -1,5 +1,12 @@
+from processors.aviation_ots_pipeline_CH import run as aviation_ots_run
 from processors.aviation_part1_pipeline_CH import run as aviation_pt1_run
 from processors.electricity_emissions_pipeline import run as electricity_emission_run
+from processors.freight_efficiency_tech_share import run as freight_eff_tech_run
+from processors.freight_mode_other_fxa import run as freight_mode_other_run
+from processors.freight_mode_road_fxa import run as freight_mode_road_run
+from processors.freight_tech_fxa import run as freight_tech_fxa_run
+from processors.freight_tkm_modal_share import run as freight_tkm_run
+from processors.freight_utilization_rate import run as freight_utilization_run
 from processors.passenger_efficiency_pipeline import run as passenger_efficiency_run
 from processors.passenger_emission_factors import run as passenger_emission_run
 from processors.passenger_energy_pipeline import run as passenger_energy_run
@@ -13,6 +20,7 @@ from processors.transport_calib_energy_demand import run as data_check_energy_ru
 from processors.transport_calib_vkm import run as data_check_vkm_run
 from processors.transport_demand_pipeline import run as demand_pkm_vkm_run
 from processors.transport_ots_pickle import run as ots_pickle_run
+from scenarios.freight_fts_BAU_pickle import run as freight_fts_bau_run
 from scenarios.transport_fts_BAU_pickle import run as fts_bau_pickle_run
 from scenarios.transport_fts_PCV2 import run as fts_PCV2_pickle_run
 
@@ -27,6 +35,10 @@ years_fts = create_years_list(2025, 2050, 5)
 country_list = ["Switzerland", "Vaud"]
 
 dm_pop_ots = load_pop(country_list, years_list=years_ots)
+
+#################
+### PASSENGER ###
+#################
 
 ##  Demand in pkm and vkm
 print("Transport passenger demand pkm, vkm")
@@ -99,20 +111,59 @@ dm_veh_eff = passenger_efficiency_run(
 print("Load data check emissions")
 DM_data_check_emi = data_check_emissions_run(years_ots)
 
-
-#####################
-###   AVIATION    ###
-#####################
-##  Aviation part1
-print("Aviation - part1")
+# aviation_pt1_run downloads/caches raw data files (FSO, IATA, World Bank)
+# and returns Swiss aviation pkm/cap used as the monde reference curve
+print("Aviation - part1 (data download/cache)")
 dm_pkm_cap_aviation = aviation_pt1_run(years_ots)
 
-# Aviation: first pkm suisse, then occupancy suisse and monde to obtain weighted occupancy,
-# Vehicle efficiency new, technology share new, SKIP UTILISATION RATE for the moment
-# Emission factor, lifetime, veh-efficiency, technology-share-fleet,
-# Share of local emissions: based on skm_CH & skm_abroad. skm are computed from pkm and occupancy
-# vehicle-waste,
-# STOP Aat Vehicle-fleet-new
+# Build aviation OTS + FXA from data files (no pickle read/write dependency)
+print("Aviation - OTS pipeline")
+dm_pop_ch_ots = dm_pop_ots.filter({"Country": ["Switzerland"]})
+DM_aviation_ots = aviation_ots_run(
+    dm_pop_ch_ots, years_ots, years_fts, dm_pkm_cap_aviation
+)
+
+###############
+### FREIGHT ###
+###############
+
+## Freight tkm and modal share
+print("Freight tkm + modal share")
+DM_freight_ots = freight_tkm_run(years_ots, country_list)
+
+## Freight mode other FXA (non-road: IWW, aviation, marine, rail)
+print("Freight mode other FXA")
+dm_freight_mode_other = freight_mode_other_run(
+    DM_freight_ots, years_ots, years_fts, country_list
+)
+
+## Freight utilization rate OTS (road: HDVH, HDVL, HDVM)
+print("Freight utilization rate OTS")
+dm_freight_utilization = freight_utilization_run(years_ots, country_list)
+
+## Freight mode road FXA (road: HDVH, HDVL, HDVM lifetime)
+print("Freight mode road FXA")
+dm_freight_mode_road = freight_mode_road_run(
+    dm_freight_utilization, years_ots, years_fts, country_list
+)
+
+## Freight efficiency and tech share for new vehicles OTS
+print("Freight efficiency + tech share new vehicles")
+DM_freight_eff_tech = freight_eff_tech_run(years_ots, country_list)
+
+## Freight tech FXA (fleet tech share + fleet efficiency)
+print("Freight tech FXA")
+dm_freight_tech = freight_tech_fxa_run(
+    DM_freight_eff_tech["freight_vehicle-efficiency_new"],
+    DM_freight_eff_tech["freight_technology-share_new"],
+    years_ots,
+    years_fts,
+    country_list,
+)
+
+####################
+### PUT TOGETHER ###
+####################
 
 ## Transport ots pickle
 print("Compile transport pickle ots")
@@ -120,28 +171,40 @@ DM_input = {
     "pkm_demand": dm_pkm,
     "vkm_demand": dm_vkm,
     "pkm_cap": dm_pkm_cap,
-    "pkm_cap_aviation": dm_pkm_cap_aviation,
     "efficiency": dm_veh_eff,
     "lifetime": dm_lifetime,
     "emissions_electricity": dm_elec_emission,
     "emission_factors": cdm_emissions_factors,
+    "freight_tkm": DM_freight_ots["freight_tkm"],
+    "freight_modal-share": DM_freight_ots["freight_modal-share"],
+    "freight_mode_other": dm_freight_mode_other,
+    "freight_utilization-rate": dm_freight_utilization,
+    "freight_mode_road": dm_freight_mode_road,
+    "freight_vehicle-efficiency_new": DM_freight_eff_tech[
+        "freight_vehicle-efficiency_new"
+    ],
+    "freight_technology-share_new": DM_freight_eff_tech["freight_technology-share_new"],
+    "freight_tech": dm_freight_tech,
 }
 # DM.keys = ['passenger_private-fleet', 'passenger_public-fleet', 'passenger_renewal-rate', 'passenger_new-vehicles', 'passenger_waste-fleet']
 DM_input = DM_input | DM  # join
-# It uses transport.pickle to extract aviation data
-# !FIXME: I'm reading aviation and freight from pickle (implement both)
-DM_transport = ots_pickle_run(DM_input, years_ots, years_fts)
+DM_transport = ots_pickle_run(
+    DM_input, years_ots, years_fts, DM_aviation_ots, country_list
+)
 
 # Transport fts pickle
 print("Compile pickle fts - all BAU")
-DM_transport = fts_bau_pickle_run(DM_transport, country_list, years_ots, years_fts)
+DM_transport = fts_bau_pickle_run(
+    DM_transport, country_list, years_ots, years_fts, DM_aviation_ots
+)
+
+print("Compile pickle fts - freight BAU")
+DM_transport = freight_fts_bau_run(DM_transport, country_list, years_ots, years_fts)
 
 print("Compile pickle fts - all BAU")
 fts_PCV2_pickle_run(DM_transport, country_list, years_ots, years_fts)
 
 # print("fts - PCV and DLS")
 # fts_PVC_DLS_pickle_run(DM_transport)
-
-# !FIXME find missing lever 3
 
 print("Hello")

@@ -132,21 +132,19 @@ def calibration_material_production(
     return
 
 
-def energy_demand(dm_material_production_bytech, CDM_const):
+def energy_demand(dm_material_production_bytech, CDM_const, DM_fxa):
     # this is by material-technology and carrier
 
     feedstock = ["excl-feedstock", "feedstock"]
     DM_energy_demand = {}
 
     for f in feedstock:
-        # get constants for energy demand for material production by technology
-        cdm_temp = CDM_const["energy_" + f]
-
-        # create dm for energy demand for material production by technology
-        dm_energy_demand = cdm_to_dm(
-            cdm_temp,
-            dm_material_production_bytech.col_labels["Country"],
-            dm_material_production_bytech.col_labels["Years"],
+        # get fxa energy demand intensities (TWh/Mt) by technology and carrier
+        dm_energy_demand = DM_fxa["energy-demand-" + f].filter(
+            {
+                "Country": dm_material_production_bytech.col_labels["Country"],
+                "Years": dm_material_production_bytech.col_labels["Years"],
+            }
         )
 
         # get energy demand for material production by technology

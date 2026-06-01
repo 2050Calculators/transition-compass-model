@@ -12,6 +12,7 @@ from processors.industry_const_material_switch_ratio import (
     run as const_materia_switch_ratios_run,
 )
 from processors.industry_fxa_costs import run as costs_run
+from processors.industry_fxa_energy_demand import run as fxa_energy_demand_run
 from processors.industry_lever_carbon_capture import run as carbon_capture_run
 from processors.industry_lever_energy_switch import run as energy_switch_run
 from processors.industry_lever_material_efficiency import run as material_efficiency_run
@@ -84,6 +85,10 @@ dm_material_recovery = material_recovery_run(years_ots)
 print("Costs")
 dm_costs, dm_costs_cc = costs_run(years_ots)
 
+# Energy demand (fxa)
+print("Energy demand fxa")
+dm_fxa_energy_excl, dm_fxa_energy_feed = fxa_energy_demand_run(years_ots, years_fts)
+
 # Calibration emissions (calib)
 print("Calibration emissions")
 dm_calib_emissions, dm_calib_emissions_ammonia = calib_emissions_run(
@@ -106,12 +111,7 @@ cdm_emi_fact_combustion, cdm_emi_fact_process = const_emission_factors_run()
 
 # Energy demand constants
 print("Energy demand constants")
-(
-    cdm_enerdem_exclfeed,
-    cdm_enerdem_feedstock,
-    cdm_enerdem_exclfeed_eleclight_split,
-    cdm_enerdem_eff,
-) = const_energy_demand_run()
+cdm_enerdem_exclfeed_eleclight_split, cdm_enerdem_eff = const_energy_demand_run()
 
 # Material decomposition constants
 print("Material decomposition constants")
@@ -155,10 +155,10 @@ DM_input = {
     "calib-material-production-ammonia": dm_calib_matprod_ammonia,
     "const-emission-combustion": cdm_emi_fact_combustion,
     "const-emission-process": cdm_emi_fact_process,
-    "const-energy-exclfeedstock": cdm_enerdem_exclfeed,
-    "const-energy-feedstock": cdm_enerdem_feedstock,
     "const-energy-exclfeedstock-eleclightsplit": cdm_enerdem_exclfeed_eleclight_split,
     "const-energy-efficiency": cdm_enerdem_eff,
+    "fxa-energy-exclfeedstock": dm_fxa_energy_excl,
+    "fxa-energy-feedstock": dm_fxa_energy_feed,
     "const-material-decomp-pack": cdm_pack,
     "const-material-decomp-veh": cdm_tra_veh,
     "const-material-decomp-batteries": cdm_tra_bat,

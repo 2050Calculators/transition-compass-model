@@ -438,10 +438,17 @@ def make_material_net_import_share(current_file_directory, dm_netimp, years_ots)
     # df_temp = dm_netimp_materials.filter({"Years" : [2017]}).write_df()
     # df_temp = pd.melt(df_temp, id_vars=["Country","Years"])
 
-    # correct steel, aluminium and copper (as right now with IO based they are around 0.5, which is a bit low)
     dm_netimp_materials[..., "copper"] = 0.98  # Switzerland produces almost no copper
-    dm_netimp_materials[..., "steel"] = 0.90
+    dm_netimp_materials[..., "steel"] = (
+        0.50  # Swiss Steel Group produces ~1,000 kt; IO estimate ~0.5 was closer
+    )
     dm_netimp_materials[..., "aluminium"] = 0.90
+    dm_netimp_materials[
+        ..., "cement"
+    ] = -0.25  # net exporter: ~4,500 kt production vs ~3,500 kt consumption
+    dm_netimp_materials[
+        ..., "lime"
+    ] = -0.80  # net exporter: production significantly exceeds domestic consumption
 
     # # save
     # dm_ots = dm_netimp_materials.filter({"Years" : years_ots})

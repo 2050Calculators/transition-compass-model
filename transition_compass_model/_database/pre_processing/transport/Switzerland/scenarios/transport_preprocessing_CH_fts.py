@@ -1,13 +1,9 @@
 # ======================  IMPORT PACKAGES & DATA  ========================================================
 import os
-import pickle
 
 import numpy as np
 import pandas as pd
 
-from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
-    utils,
-)
 from transition_compass_model.model.common.auxiliary_functions import (
     linear_fitting,
     my_pickle_dump,
@@ -292,6 +288,10 @@ def run(DM_transport):
     dm_new_tech_share_ots = DM_transport["ots"][
         "passenger_technology-share_new"
     ].filter({"Country": ["Vaud"]})
+    # OTS has no aviation; filter FTS to road categories only so shapes match
+    road_cats = dm_new_tech_share_ots.col_labels["Categories1"]
+    dm_new_tech_share_2 = dm_new_tech_share_2.filter({"Categories1": road_cats})
+    dm_new_tech_share_4 = dm_new_tech_share_4.filter({"Categories1": road_cats})
 
     # PCV: ci dessous les valeurs fixées par le PCV pour 2035.
     prop_EV_PHEV_2035_PCV = 0.65
@@ -626,14 +626,10 @@ def run(DM_transport):
     emissions_moyennes_2035_DLS = electricite_2035_intensity * efficiency_bev_2035_DLS
 
     # ======================  EXPORTS FINAUX   ===========================
-    # Load existing DM_transport
+    # Aviation FTS is already in the pickle (set by transport_fts_BAU_pickle).
+    # This step only updates road/Vaud-specific FTS overrides.
     this_dir = os.path.dirname(os.path.abspath(__file__))
     pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")
-    with open(pickle_file, "rb") as handle:
-        DM_transport_old = pickle.load(handle)
-
-    utils.add_aviation_data_to_DM(DM_fts, DM_transport_old)
-
     my_pickle_dump(DM_new=DM_fts, local_pickle_file=pickle_file)
     sort_pickle(pickle_file)
 

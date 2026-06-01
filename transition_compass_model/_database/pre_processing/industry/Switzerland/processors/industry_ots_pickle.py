@@ -8,7 +8,6 @@ from transition_compass_model.model.common.auxiliary_functions import create_yea
 
 
 def run(DM_input, years_ots):
-
     # directories
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
 
@@ -55,6 +54,10 @@ def run(DM_input, years_ots):
         dm_temp = DM_industry_current["fxa"][f].filter({"Country": ["EU27"]})
         dm_temp.rename_col("EU27", "Switzerland", "Country")
         DM["fxa"][f] = dm_temp.copy()
+
+    # energy demand fxa (Swiss carrier shares applied)
+    DM["fxa"]["energy-demand-excl-feedstock"] = DM_input["fxa-energy-exclfeedstock"]
+    DM["fxa"]["energy-demand-feedstock"] = DM_input["fxa-energy-feedstock"]
 
     # for calibration, for the moment put material production as missing
     # NOTE: we'll see later if to calibrate this against CHF data on material production (converted to tonne)
@@ -104,6 +107,12 @@ def run(DM_input, years_ots):
         dm_temp = DM_amm_current["fxa"][f].filter({"Country": ["EU27"]})
         dm_temp.rename_col("EU27", "Switzerland", "Country")
         DM_amm["fxa"][f] = dm_temp.copy()
+
+    # energy demand fxa for ammonia (EU27 values used — no Swiss ammonia production)
+    DM_amm["fxa"]["energy-demand-excl-feedstock"] = DM_input[
+        "fxa-amm-energy-exclfeedstock"
+    ]
+    DM_amm["fxa"]["energy-demand-feedstock"] = DM_input["fxa-amm-energy-feedstock"]
 
     # for calibration for now put all to nan (we have material production in case for later)
     DM_amm["calibration"]["material-production"] = DM_input[

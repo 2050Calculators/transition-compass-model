@@ -87,7 +87,9 @@ def ammonia(
     DM_material_production["bytech"] = dm_temp.copy()
 
     # get energy demand for material production
-    DM_energy_demand = wkf.energy_demand(DM_material_production["bytech"], CDM_const)
+    DM_energy_demand = wkf.energy_demand(
+        DM_material_production["bytech"], CDM_const, DM_fxa
+    )
 
     # # calibrate energy demand for material production (writes in DM_energy_demand)
     # # note: difficult to find data on energy demand for ammonia manufacturing, to do later on in case

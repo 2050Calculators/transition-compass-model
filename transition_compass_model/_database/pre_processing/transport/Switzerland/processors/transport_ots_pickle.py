@@ -1,12 +1,8 @@
 import copy
 import os
-import pickle
 
 import numpy as np
 
-from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
-    utils,
-)
 from transition_compass_model._database.pre_processing.transport.Switzerland.processors.passenger_efficiency_pipeline import (
     compute_tech_share,
 )
@@ -15,9 +11,71 @@ from transition_compass_model.model.common.auxiliary_functions import (
     my_pickle_dump,
     sort_pickle,
 )
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+
+# Biofuel blend fraction (%) for road and rail OTS — from EU JRC-IDEES used as Swiss proxy.
+# Swiss federal biofuel mandate (Mineralölsteuergesetz) applies uniformly across all cantons,
+# so Vaud uses the same values as Switzerland.
+# Years before 2000 are 0 (no mandate).
+_CH_BIOFUEL_BLEND = {
+    2000: 0.0041,
+    2001: 0.0059,
+    2002: 0.0092,
+    2003: 0.0136,
+    2004: 0.0177,
+    2005: 0.0360,
+    2006: 0.0639,
+    2007: 0.0734,
+    2008: 0.0580,
+    2009: 0.0526,
+    2010: 0.0571,
+    2011: 0.0547,
+    2012: 0.0579,
+    2013: 0.0520,
+    2014: 0.0524,
+    2015: 0.0485,
+    2016: 0.0491,
+    2017: 0.0498,
+    2018: 0.0504,
+    2019: 0.0510,
+    2020: 0.0516,
+    2021: 0.0522,
+    2022: 0.0528,
+    2023: 0.0534,
+}
 
 
-def run(DM_input, years_ots, years_fts):
+def _expand_ch_to_countries(dm, country_list):
+    """Duplicate Switzerland data to any countries in country_list not already present."""
+    for country in country_list:
+        if country not in dm.col_labels["Country"]:
+            dm_c = dm.filter({"Country": ["Switzerland"]})
+            dm_c.rename_col("Switzerland", country, dim="Country")
+            dm.append(dm_c, dim="Country")
+
+
+def _add_aviation_to_dm(dm_target, dm_aviation_ch, country_list):
+    """Append an aviation sub-DM (Switzerland only) to a multi-modal target DM.
+
+    Duplicates Switzerland data for any extra countries in country_list.
+    Aligns Categories2 (road techs vs aviation techs) before appending.
+    """
+    dm_av = dm_aviation_ch.copy()
+    for country in country_list:
+        if country not in dm_av.col_labels["Country"]:
+            dm_country = dm_av.filter({"Country": ["Switzerland"]})
+            dm_country.rename_col("Switzerland", country, dim="Country")
+            dm_av.append(dm_country, dim="Country")
+    if "Categories2" in dm_target.col_labels and "Categories2" in dm_av.col_labels:
+        cat2_all = set(dm_target.col_labels["Categories2"]).union(
+            set(dm_av.col_labels["Categories2"])
+        )
+        dm_add_missing_variables(dm_target, {"Categories2": cat2_all})
+        dm_add_missing_variables(dm_av, {"Categories2": cat2_all})
+    dm_target.append(dm_av, dim="Categories1")
+
+
+def run(DM_input, years_ots, years_fts, DM_aviation_ots, country_list):
     DM_transport_new = {"ots": dict(), "fts": dict(), "fxa": dict(), "constant": dict()}
 
     ######################################
@@ -86,8 +144,13 @@ def run(DM_input, years_ots, years_fts):
     #######################################
     ####    DEMAND PKM/CAP - AVIATION #####
     #######################################
-    # dm_pkm_cap_aviation = DM_input['pkm_cap_aviation']
-    # DM_transport_new['ots']['passenger_aviation-pkm'] = dm_pkm_cap_aviation
+    dm_pkm_av = DM_aviation_ots["ots"]["passenger_aviation-pkm"].copy()
+    for country in country_list:
+        if country not in dm_pkm_av.col_labels["Country"]:
+            dm_c = dm_pkm_av.filter({"Country": ["Switzerland"]})
+            dm_c.rename_col("Switzerland", country, dim="Country")
+            dm_pkm_av.append(dm_c, dim="Country")
+    DM_transport_new["ots"]["passenger_aviation-pkm"] = dm_pkm_av
 
     ###########################
     ####    MODAL SHARE   #####
@@ -156,19 +219,108 @@ def run(DM_input, years_ots, years_fts):
     cdm_emissions_factors = DM_input["emission_factors"]
     DM_transport_new["constant"] = cdm_emissions_factors
 
-    # Load existing DM_transport
-    this_dir = os.path.dirname(os.path.abspath(__file__))
-    pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")
-    with open(pickle_file, "rb") as handle:
-        DM_transport = pickle.load(handle)
-
     DM_transport_wo_aviation = copy.deepcopy(DM_transport_new)
 
-    # ! FIXME: you should re-implement here aviation data
-    # DM_transport_new is missing "aviation" so I cannot simply run my_pickle_dump()
-    # I need to copy DM_transport aviation
-    utils.add_aviation_data_to_DM(DM_transport_new, DM_transport)
+    # --- Integrate aviation OTS ---
+    for key in [
+        "passenger_veh-efficiency_new",
+        "passenger_technology-share_new",
+        "passenger_occupancy",
+        "passenger_utilization-rate",
+    ]:
+        _add_aviation_to_dm(
+            DM_transport_new["ots"][key], DM_aviation_ots["ots"][key], country_list
+        )
 
+    # --- Integrate aviation FXA ---
+    _add_aviation_to_dm(
+        DM_transport_new["fxa"]["passenger_tech"],
+        DM_aviation_ots["fxa"]["passenger_tech"],
+        country_list,
+    )
+    _add_aviation_to_dm(
+        DM_transport_new["fxa"]["passenger_vehicle-lifetime"],
+        DM_aviation_ots["fxa"]["passenger_vehicle-lifetime"],
+        country_list,
+    )
+    DM_transport_new["fxa"]["vehicles-max"] = DM_aviation_ots["fxa"][
+        "vehicles-max"
+    ].copy()
+    _expand_ch_to_countries(DM_transport_new["fxa"]["vehicles-max"], country_list)
+    DM_transport_new["fxa"]["share-local-emissions"] = DM_aviation_ots["fxa"][
+        "share-local-emissions"
+    ].copy()
+    _expand_ch_to_countries(
+        DM_transport_new["fxa"]["share-local-emissions"], country_list
+    )
+    DM_transport_new["fxa"]["fuel-mix-availability"] = DM_aviation_ots["fxa"][
+        "fuel-mix-availability"
+    ].copy()
+    _expand_ch_to_countries(
+        DM_transport_new["fxa"]["fuel-mix-availability"], country_list
+    )
+
+    ###################################
+    ####     FUEL-MIX OTS        #####
+    ###################################
+    dm_fuel_mix = DataMatrix(
+        col_labels={
+            "Country": ["Switzerland"],
+            "Years": years_ots,
+            "Variables": ["tra_fuel-mix"],
+            "Categories1": ["biofuel", "efuel"],
+            "Categories2": ["IWW", "aviation", "marine", "rail", "road"],
+        },
+        units={"tra_fuel-mix": "%"},
+    )
+    idx = dm_fuel_mix.idx
+    for yr, val in _CH_BIOFUEL_BLEND.items():
+        if yr in idx:
+            dm_fuel_mix.array[
+                idx["Switzerland"], idx[yr], 0, idx["biofuel"], idx["road"]
+            ] = val
+            dm_fuel_mix.array[
+                idx["Switzerland"], idx[yr], 0, idx["biofuel"], idx["rail"]
+            ] = val
+    _expand_ch_to_countries(dm_fuel_mix, country_list)
+    DM_transport_new["ots"]["fuel-mix"] = dm_fuel_mix
+
+    ###################################
+    ####    FREIGHT OTS DATA      #####
+    ###################################
+    DM_transport_new["ots"]["freight_tkm"] = DM_input["freight_tkm"]
+    DM_transport_new["ots"]["freight_modal-share"] = DM_input["freight_modal-share"]
+
+    ###################################
+    ####    FREIGHT FXA DATA      #####
+    ###################################
+    DM_transport_new["fxa"]["freight_mode_other"] = DM_input["freight_mode_other"]
+    DM_transport_new["fxa"]["freight_tech"] = DM_input["freight_tech"]
+
+    ###################################
+    ####    FREIGHT UTI RATE OTS  #####
+    ###################################
+    DM_transport_new["ots"]["freight_utilization-rate"] = DM_input[
+        "freight_utilization-rate"
+    ]
+
+    ###################################
+    ####    FREIGHT MODE ROAD FXA #####
+    ###################################
+    DM_transport_new["fxa"]["freight_mode_road"] = DM_input["freight_mode_road"]
+
+    ###############################################
+    ####    FREIGHT EFFICIENCY + TECH SHARE   #####
+    ###############################################
+    DM_transport_new["ots"]["freight_vehicle-efficiency_new"] = DM_input[
+        "freight_vehicle-efficiency_new"
+    ]
+    DM_transport_new["ots"]["freight_technology-share_new"] = DM_input[
+        "freight_technology-share_new"
+    ]
+
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")
     my_pickle_dump(DM_new=DM_transport_new, local_pickle_file=pickle_file)
     sort_pickle(pickle_file)
 

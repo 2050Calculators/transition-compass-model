@@ -16,6 +16,7 @@ from transition_compass_model.model.common.config_loader import load_lever_confi
 # from model.minerals_module import minerals
 from transition_compass_model.model.common.interface_class import Interface
 from transition_compass_model.model.emissions_module import emissions
+from transition_compass_model.model.energy_module import energy
 from transition_compass_model.model.forestry_module import forestry
 from transition_compass_model.model.industry_module import industry
 
@@ -95,10 +96,10 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
         logger.info(
             "Execution time Ammonia: {0:.3g} s".format(time.time() - start_time)
         )
-    # if "energy" in sectors:
-    #     start_time = time.time()
-    #     TPE["energy"] = energy(lever_setting, years_setting, country_list, interface)
-    #     logger.info("Execution time Energy: {0:.3g} s".format(time.time() - start_time))
+    if "energy" in sectors:
+        start_time = time.time()
+        TPE["energy"] = energy(lever_setting, years_setting, country_list, interface)
+        logger.info("Execution time Energy: {0:.3g} s".format(time.time() - start_time))
     if "emissions" in sectors:
         start_time = time.time()
         TPE["emissions"] = emissions(years_setting, interface)
@@ -170,7 +171,7 @@ def local_interactions_run():
         "agriculture",
         "ammonia",
         # 'landuse',
-        # 'energy',
+        "energy",
         "emissions",
         "forestry",
         "lca",

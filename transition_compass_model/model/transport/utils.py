@@ -164,9 +164,8 @@ def add_biofuel_efuel(dm_energy, dm_fuel_shares, mapping_cat):
         # Biofuel
         dm_cat = dm_energy_ICE_PHEV.filter({"Categories1": mapping_cat[cat]})
         dm_biofuel_cat = dm_cat.copy()
-        dm_biofuel_cat.array = (
-            dm_cat.array
-            * dm_fuel_shares.array[
+        biofuel_share = np.nan_to_num(
+            dm_fuel_shares.array[
                 :,
                 :,
                 0,
@@ -175,8 +174,10 @@ def add_biofuel_efuel(dm_energy, dm_fuel_shares, mapping_cat):
                 np.newaxis,
                 np.newaxis,
                 np.newaxis,
-            ]
+            ],
+            nan=0.0,
         )
+        dm_biofuel_cat.array = dm_cat.array * biofuel_share
         dm_biofuel_cat.col_labels["Categories2"] = [
             c + "bio" for c in dm_biofuel_cat.col_labels["Categories2"]
         ]
@@ -186,12 +187,13 @@ def add_biofuel_efuel(dm_energy, dm_fuel_shares, mapping_cat):
             dm_biofuel.append(dm_biofuel_cat, dim="Categories1")
         # Efuel
         dm_efuel_cat = dm_cat.copy()
-        dm_efuel_cat.array = (
-            dm_cat.array
-            * dm_fuel_shares.array[
+        efuel_share = np.nan_to_num(
+            dm_fuel_shares.array[
                 :, :, 0, idx_f["efuel"], idx_f[cat], np.newaxis, np.newaxis, np.newaxis
-            ]
+            ],
+            nan=0.0,
         )
+        dm_efuel_cat.array = dm_cat.array * efuel_share
         dm_efuel_cat.col_labels["Categories2"] = [
             c + "efuel" for c in dm_efuel_cat.col_labels["Categories2"]
         ]
