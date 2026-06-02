@@ -704,6 +704,7 @@ def energyscope_pyomo(
     # ampl.getParameter('avail').setValues({'NG_CCS': 0})
     m.avail["COAL_CCS"] = 0
     m.avail["ELECTRICITY"] = 5000  # Import capped to 5 TWh
+    m.avail["NG_CCS"] = 5000
 
     set_constraints(m, objective="cost")
     # Put show_log to True to see the results of the optimisation
