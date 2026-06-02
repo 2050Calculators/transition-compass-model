@@ -1522,10 +1522,7 @@ def bld_hotwater_workflow(
         dm_heating, dm_hw_eff, years_ots, years_fts
     )
 
-    dm_hw_tech = DM_hotwater["tech-mix"].copy()
-    dm_hw_tech = compute_tech_fts_based_on_heat_tech(
-        dm_heating, dm_hw_tech, years_ots, years_fts
-    )
+    dm_hw_tech = DM_hotwater["tech-mix_fts"].copy()
 
     dm_hw_demand = DM_hotwater["demand"].copy()
 

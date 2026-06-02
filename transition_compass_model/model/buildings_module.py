@@ -46,7 +46,9 @@ def read_data(DM_buildings, lever_setting):
     DM_hotwater = {
         "demand": DM_buildings["fxa"]["hot-water"]["hw-energy-demand"],
         "efficiency": DM_buildings["fxa"]["hot-water"]["hw-efficiency"],
-        "tech-mix": DM_buildings["fxa"]["hot-water"]["hw-tech-mix"],
+        "tech-mix_fts": DM_ots_fts["heating-technology-fuel"][
+            "bld_hot-water-technology"
+        ],
     }
 
     DM_services = DM_buildings["fxa"]["services"]

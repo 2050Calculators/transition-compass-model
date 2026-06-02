@@ -295,6 +295,99 @@ def update_heating_change_proportion(
     return dm_heating_fts_mfh
 
 
+def update_heating_fts_2(dm_heating_cat_fts_2):
+    idx = dm_heating_cat_fts_2.idx
+    idx_old_cat = [idx["E"], idx["F"]]
+    idx_new_cat = [idx["B"], idx["C"], idx["D"]]
+    # Fossil heating
+    # article  40.1
+    idx_fossil = [idx["coal"], idx["heating-oil"], idx["gas"]]
+    # dm_heating_cat_fts_2.array[idx['Vaud'], :, idx['bld_heating-mix'], :, idx['B'], idx_fossil] = 0
+    dm_heating_cat_fts_2.array[
+        idx["Vaud"],
+        1 : idx[2045],
+        idx["bld_heating-mix"],
+        :,
+        *np.ix_(idx_new_cat, idx_fossil),
+    ] = np.nan
+    dm_heating_cat_fts_2.array[
+        idx["Vaud"],
+        idx[2045] :,
+        idx["bld_heating-mix"],
+        :,
+        *np.ix_(idx_new_cat, idx_fossil),
+    ] = 0
+    dm_heating_cat_fts_2.array[
+        idx["Vaud"],
+        1 : idx[2050],
+        idx["bld_heating-mix"],
+        :,
+        *np.ix_(idx_old_cat, idx_fossil),
+    ] = np.nan
+    dm_heating_cat_fts_2.array[
+        idx["Vaud"], idx[2050] :, idx["bld_heating-mix"], :, :, idx_fossil
+    ] = 0
+
+    dm_heating_cat_fts_2.fill_nans("Years")
+
+    dm_heating_fts_mfh = update_heating_change_proportion(
+        dm_heating_cat_fts_2, "multi-family-households"
+    )
+    dm_heating_cat_fts_2["Vaud", :, :, "multi-family-households", :, :] = (
+        dm_heating_fts_mfh["Vaud", :, :, "multi-family-households", :, :]
+    )
+
+    dm_heating_fts_sfh = update_heating_change_proportion(
+        dm_heating_cat_fts_2, "single-family-households"
+    )
+    dm_heating_cat_fts_2["Vaud", :, :, "single-family-households", :, :] = (
+        dm_heating_fts_sfh["Vaud", :, :, "single-family-households", :, :]
+    )
+
+    dm_heating_cat_fts_2.normalise("Categories3")
+    dm_heating_cat_fts_2.fill_nans("Years")
+    return dm_heating_cat_fts_2
+
+
+def create_renov_prop_hw(dm_bld_mix):
+    # Proportion according to the study perspectives chaleur (fig. 1)
+    renov_proportion_multi = {
+        "district-heating": 0.563,
+        "heat-pump": 0.25,
+        "solar": 0.067 + 0.063,
+        "wood": 0.057,
+    }
+    # Proportion according to the study perspectives chaleur (fig 3.)
+    renov_proportion_single = {
+        "district-heating": 0.004,
+        "heat-pump": 0.822,
+        "solar": 0.081 + 0.031,
+        "wood": 0.061,
+    }
+    dm_prop_multi_single = dm_bld_mix.filter(
+        {"Country": ["Vaud"], "Variables": ["bld_floor-area_stock"]}
+    ).copy()
+    dm_prop_multi_single.group_all("Categories2")
+    dm_prop_multi_single.normalise("Categories1")
+    idx_prop_multi_single = dm_prop_multi_single.idx
+    array_prop_multi_single = dm_prop_multi_single.array[
+        idx_prop_multi_single["Vaud"],
+        idx_prop_multi_single[2023],
+        idx_prop_multi_single["bld_floor-area_stock"],
+        :,
+    ]
+
+    # I want to do prop
+    renov_prop_hw = {}
+    for cat in renov_proportion_single.keys():
+        renov_prop_hw[cat] = (
+            renov_proportion_multi[cat] * array_prop_multi_single[0]
+            + renov_proportion_single[cat] * array_prop_multi_single[1]
+        )
+
+    return renov_prop_hw
+
+
 def run(
     DM_buildings, dm_pop, global_var, country_list, lev=2
 ):  # lever =2 for energy law and 3 for PCV 4 is perfect world 1 is BAU
@@ -380,85 +473,67 @@ def run(
 
     # SECTION: Loi energy - Heating tech
     # Plus de gaz, mazout, charbon dans les prochain 15-20 ans. Pas de gaz, mazout, charbon dans les nouvelles constructions
-    dm_heating_cat_fts_1 = DM_buildings["fts"]["heating-technology-fuel"][
+    dm_heating_cat_fts_2 = DM_buildings["fts"]["heating-technology-fuel"][
         "bld_heating-technology"
     ][1].copy()
 
-    idx = dm_heating_cat_fts_1.idx
-    # Electricity
-    # article 41
-    idx_old_cat = [idx["E"], idx["F"]]
-    idx_new_cat = [idx["B"], idx["C"], idx["D"]]
-
-    # article 9 et 10 DACCE 2033 au plus tard et sur justificatif de peu de consomation + 5 ans
-
-    dm_heating_cat_fts_1.array[
-        idx["Vaud"], idx[2035] :, :, :, idx_old_cat, idx["electricity"]
-    ] = 0
-    dm_heating_cat_fts_1.array[
-        idx["Vaud"], idx[2035] :, :, :, idx_new_cat, idx["electricity"]
-    ] = 0
-
-    dm_heating_cat_fts_1.normalise("Categories3")
-    dm_heating_cat_fts_1.fill_nans("Years")
-    # Electricity is set for all levers because it is in a decree from 2022
-    for lever in range(1, 4 + 1):
+    dm_heating_cat_fts_2 = update_heating_fts_2(dm_heating_cat_fts_2)
+    for lever in range(lev, 4 + 1):
         DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"][
-            lever
-        ] = dm_heating_cat_fts_1.copy()
+            lev
+        ] = dm_heating_cat_fts_2.copy()
 
-    dm_heating_cat_fts_2 = dm_heating_cat_fts_1.copy()
+    ##### HOTWATER TECHNOLOGY MIX ######
+
+    dm_hotwater_fts_2 = DM_buildings["fts"]["heating-technology-fuel"][
+        "bld_hot-water-technology"
+    ][1].copy()
+
+    idx = dm_hotwater_fts_2.idx
     # Fossil heating
     # article  40.1
-    idx_fossil = [idx["coal"], idx["heating-oil"], idx["gas"]]
-    # dm_heating_cat_fts_2.array[idx['Vaud'], :, idx['bld_heating-mix'], :, idx['B'], idx_fossil] = 0
-    dm_heating_cat_fts_2.array[
-        idx["Vaud"],
-        1 : idx[2045],
-        idx["bld_heating-mix"],
-        :,
-        *np.ix_(idx_new_cat, idx_fossil),
+    idx_fossil = [idx["heating-oil"], idx["gas"]]
+
+    # Replace the use of fossil fuel for hot water to 0 for new buildings from 2025 and for all buildings from 2035, and replace it by the ideal scenario proportion
+    # There are no buildings catergoies for hotwater technology so we replace it for all the categories at once
+    dm_hotwater_fts_2.array[
+        idx["Vaud"], 1 : idx[2050], idx["bld_hw_tech-mix"], idx_fossil
     ] = np.nan
-    dm_heating_cat_fts_2.array[
-        idx["Vaud"],
-        idx[2045] :,
-        idx["bld_heating-mix"],
-        :,
-        *np.ix_(idx_new_cat, idx_fossil),
+    dm_hotwater_fts_2.array[
+        idx["Vaud"], idx[2050], idx["bld_hw_tech-mix"], idx_fossil
     ] = 0
-    dm_heating_cat_fts_2.array[
-        idx["Vaud"],
-        1 : idx[2050],
-        idx["bld_heating-mix"],
-        :,
-        *np.ix_(idx_old_cat, idx_fossil),
-    ] = np.nan
-    dm_heating_cat_fts_2.array[
-        idx["Vaud"], idx[2050] :, idx["bld_heating-mix"], :, :, idx_fossil
-    ] = 0
+    dm_hotwater_fts_2.fill_nans("Years")
 
-    dm_heating_cat_fts_2.fill_nans("Years")
-
-    dm_heating_fts_mfh = update_heating_change_proportion(
-        dm_heating_cat_fts_2, "multi-family-households"
-    )
-    dm_heating_cat_fts_2["Vaud", :, :, "multi-family-households", :, :] = (
-        dm_heating_fts_mfh["Vaud", :, :, "multi-family-households", :, :]
+    renov_prop_hotwater = create_renov_prop_hw(dm_bld_mix)
+    heating_types = list(renov_prop_hotwater.keys())
+    prop_vec = np.array([renov_prop_hotwater[h] for h in heating_types]).reshape(
+        1, 1, -1
     )
 
-    dm_heating_fts_sfh = update_heating_change_proportion(
-        dm_heating_cat_fts_2, "single-family-households"
+    # Once all the old technologies are set to 0 we want to replace the missing proportion with the ideal scenario proportion
+    # proportion_heating_to_replace is the missing proportion of heating that need to be replaced, we compute it by doing 1 - the sum of the proportion of heating that is not set to 0 (the one that is not affected by the energy law)
+    dm_sum = dm_hotwater_fts_2.filter({"Country": ["Vaud"]}).group_all(
+        "Categories1", inplace=False
     )
-    dm_heating_cat_fts_2["Vaud", :, :, "single-family-households", :, :] = (
-        dm_heating_fts_sfh["Vaud", :, :, "single-family-households", :, :]
-    )
+    arr_sum = dm_sum.array[:, :, :, np.newaxis]
+    proportion_heating_to_replace = 1 - arr_sum
+    idx = dm_hotwater_fts_2.idx
+    heating_idx = [idx[h] for h in heating_types]
+    dm_hotwater_fts_2.array[
+        np.ix_(
+            [idx["Vaud"]],
+            np.arange(dm_hotwater_fts_2.array.shape[1]),
+            np.arange(dm_hotwater_fts_2.array.shape[2]),
+            heating_idx,
+        )
+    ] += proportion_heating_to_replace * prop_vec
+    dm_hotwater_fts_2.normalise("Categories1")
+    dm_hotwater_fts_2.fill_nans("Years")
 
-    dm_heating_cat_fts_2.normalise("Categories3")
-    dm_heating_cat_fts_2.fill_nans("Years")
-    # for lever in range(lev,4+1):
-    DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"][lev] = (
-        dm_heating_cat_fts_2.copy()
-    )
+    for lever in range(lev, 4 + 1):
+        DM_buildings["fts"]["heating-technology-fuel"]["bld_hot-water-technology"][
+            lever
+        ] = dm_hotwater_fts_2.copy()
 
     this_dir = os.path.dirname(os.path.abspath(__file__))
     # !FIXME: use the actual values and not the calibration factor

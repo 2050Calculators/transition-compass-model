@@ -325,6 +325,9 @@ def run(dm_pop, DM_all, years_ots, years_fts):
     DM_buildings["ots"]["heating-technology-fuel"]["bld_heating-technology"] = (
         dm_heating_cat.copy()
     )
+    DM_buildings["ots"]["heating-technology-fuel"]["bld_hot-water-technology"] = (
+        DM_hotwater["hw-tech-mix"].copy()
+    )
 
     # SECTION: ots - heating-efficiency
     DM_buildings["ots"]["heating-efficiency"] = dm_heating_eff_cat.copy()
