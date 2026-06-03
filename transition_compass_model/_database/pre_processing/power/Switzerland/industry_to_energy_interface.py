@@ -43,7 +43,7 @@ def extract_national_energy_demand(table_id, file):
 
         filter = {
             "Économie et ménages": keep_sectors,
-            "Unité de mesure": ["Térajoules"],
+            "Unité de mesure": ["Terajoules"],
             "Année": structure["Année"],
             "Agent énergétique": structure["Agent énergétique"],
         }
@@ -283,6 +283,7 @@ def map_national_energy_demand_by_sector_to_cantons(dm_energy, dm_employees):
 
     dm_energy_mapped.groupby(mapping_sectors, dim="Categories1", inplace=True)
     dm_employees_mapped.groupby(mapping_sectors, dim="Categories1", inplace=True)
+    years_ots = create_years_list(1990, 2023, 1)
     dm_employees_mapped.add(
         np.nan,
         dummy=True,
@@ -805,6 +806,7 @@ def add_process_heat_demand(dm_fuels_eud_cantons, dm_fuels_cantons, cantonal=Tru
     dm_non_proc = dm_fuels_eud_cantons.groupby(
         {"non-process": ".*"}, dim="Categories1", inplace=False, regex=True
     )
+    years_ots = create_years_list(1990, 2023, 1)
     if cantonal:
         dm_ind_fuels.drop("Country", "Switzerland")
     dm_ind_fuels.add(
@@ -941,6 +943,7 @@ def adjust_based_on_FSO_energy_consumption(
 
     dm_OFS_fuels.filter({"Country": dm_eud_shares.col_labels["Country"]}, inplace=True)
 
+    years_ots = create_years_list(1990, 2023, 1)
     # Add missing years
     missing_years = list(set(years_ots) - set(dm_OFS_fuels.col_labels["Years"]))  # noqa: F821
     dm_OFS_fuels.add(np.nan, dim="Years", col_label=missing_years, dummy=True)
@@ -975,17 +978,23 @@ def run():
 
     # Extract energy demand by sector at national level by fuel
     table_id = "px-x-0204000000_106"
+    file_directory = os.path.dirname(os.path.abspath(__file__))
     local_filename = "data/energy_accounts_economy_households.pickle"
+    f = local_filename
+    # f = os.path.join(file_directory, local_filename)
     # Industry sectors linked to energy, like energy production and waste management, have been removed or edited
     # Remove gasoline and diesel which are for transport / machinery
-    dm_energy = extract_national_energy_demand(table_id, local_filename)
+    dm_energy = extract_national_energy_demand(table_id, f)
 
     # Industry energy demand by end-use (lighting, electricity, space-heating, process-heat, hot-water)
     # Energy Perspective 2050 data
     file_url = "https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA0NDE=.html"
     zip_name = "data/EP2050_sectors_test.zip"
+    file_directory = os.path.dirname(os.path.abspath(__file__))
+    zip_path = os.path.join(file_directory, zip_name)
+
     dm_industry_energy_end_use = extract_EP2050_industry_data(
-        file_url, zip_name, years_ots + years_fts
+        file_url, zip_path, years_ots + years_fts
     )
     dm_industry_energy_end_use.change_unit(
         "ind_energy-end-use", old_unit="PJ", new_unit="TWh", factor=3.6, operator="/"
@@ -999,7 +1008,8 @@ def run():
     # This is in order to map the national energy demand to cantons
     table_id = "px-x-0602010000_101"
     local_filename = "data/employees_per_sector_canton.pickle"
-    dm_employees = extract_employees_per_sector_canton(table_id, local_filename)
+    local_filepath = os.path.join(file_directory, local_filename)
+    dm_employees = extract_employees_per_sector_canton(table_id, local_filepath)
 
     # Group employees by sector and canton (dm_employees_mapped)
     dm_fuels_cantons, dm_employees_mapped = (
@@ -1015,7 +1025,8 @@ def run():
     # !FIXME extract also 1990 and 2000
     table_id = "px-x-0902010000_102"
     file_sh = "data/bld_heating_technology_2021-2023.pickle"
-    dm_space_heat = extract_heating_technologies(table_id, file_sh)
+    local_filepath_sh = os.path.join(file_directory, file_sh)
+    dm_space_heat = extract_heating_technologies(table_id, local_filepath_sh)
     # Add missing years
     dm_space_heat.add(
         np.nan,
@@ -1027,7 +1038,8 @@ def run():
     dm_space_heat.fill_nans("Years")
 
     file_hw = "data/bld_hotwater_technology_2021-2023.pickle"
-    dm_water = extract_hotwater_technologies(table_id, file_hw)
+    local_filepath_hw = os.path.join(file_directory, file_hw)
+    dm_water = extract_hotwater_technologies(table_id, local_filepath_hw)
     # Add missing years
     dm_water.add(
         np.nan,
@@ -1044,9 +1056,12 @@ def run():
     #    DM_bld = pickle.load(handle)
 
     # Add efficiencies
+    # !FIXME the pickle is a dict wiht many keys I don't know which one is supposed to be used.
     data_file = "../../../data/interface/buildings_to_energy.pickle"
-    with open(data_file, "rb") as handle:
-        dm_eff = pickle.load(handle)
+    local_filepath_eff = os.path.join(file_directory, data_file)
+    with open(local_filepath_eff, "rb") as handle:
+        dic_building = pickle.load(handle)
+    dm_eff = dic_building["households_heating"].copy()
     dm_eff.filter({"Country": ["Switzerland"]}, inplace=True)
     dm_eff.operation(
         "bld_heating",
