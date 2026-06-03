@@ -1,3 +1,4 @@
+import json
 import os
 import pickle
 import re
@@ -1774,3 +1775,12 @@ def rename_cantons(dm):
     dm.rename_col(cantons_fr, cantons_en, dim="Country")
 
     return
+
+
+def init_years_lever():
+    # function that can be used when running the module as standalone to initialise years and levers
+    years_setting = [1990, 2023, 2025, 2050, 5]
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    f = open(os.path.join(current_file_directory, "../../config/lever_position.json"))
+    lever_setting = json.load(f)[0]
+    return years_setting, lever_setting
