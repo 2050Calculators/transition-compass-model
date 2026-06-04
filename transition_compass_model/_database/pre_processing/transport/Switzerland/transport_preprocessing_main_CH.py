@@ -20,7 +20,6 @@ from processors.transport_calib_energy_demand import run as data_check_energy_ru
 from processors.transport_calib_vkm import run as data_check_vkm_run
 from processors.transport_demand_pipeline import run as demand_pkm_vkm_run
 from processors.transport_ots_pickle import run as ots_pickle_run
-from scenarios.freight_fts_BAU_pickle import run as freight_fts_bau_run
 from scenarios.transport_fts_BAU_pickle import run as fts_bau_pickle_run
 from scenarios.transport_fts_PCV2 import run as fts_PCV2_pickle_run
 
@@ -188,23 +187,19 @@ DM_input = {
 }
 # DM.keys = ['passenger_private-fleet', 'passenger_public-fleet', 'passenger_renewal-rate', 'passenger_new-vehicles', 'passenger_waste-fleet']
 DM_input = DM_input | DM  # join
-DM_transport = ots_pickle_run(
+DM_transport_wo_aviation, DM_transport = ots_pickle_run(
     DM_input, years_ots, years_fts, DM_aviation_ots, country_list
 )
 
-# Transport fts pickle
+# Transport fts pickle (passenger + freight, then aviation merged in)
 print("Compile pickle fts - all BAU")
-DM_transport = fts_bau_pickle_run(
-    DM_transport, country_list, years_ots, years_fts, DM_aviation_ots
+DM_transport["fts"] = fts_bau_pickle_run(
+    DM_transport_wo_aviation, country_list, years_ots, years_fts, DM_aviation_ots
 )
 
-print("Compile pickle fts - freight BAU")
-DM_transport = freight_fts_bau_run(DM_transport, country_list, years_ots, years_fts)
-
 print("Compile pickle fts - all BAU")
+
 fts_PCV2_pickle_run(DM_transport, country_list, years_ots, years_fts)
 
-# print("fts - PCV and DLS")
-# fts_PVC_DLS_pickle_run(DM_transport)
 
 print("Hello")

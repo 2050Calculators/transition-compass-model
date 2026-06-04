@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 from scenarios.aviation_fts_CH import run as aviation_fts_run
+from scenarios.freight_fts_BAU_pickle import build_freight_fts
 
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
@@ -50,13 +51,13 @@ def forecast_vkm_cap(dm_km, years_fts):
     return dm_km
 
 
-def run(DM_transport_new, country_list, years_ots, years_fts, DM_aviation_ots):
+def run(DM_transport_wo_aviation, country_list, years_ots, years_fts, DM_aviation_ots):
     DM_aviation_fts = aviation_fts_run(DM_aviation_ots["_state"], years_fts)
 
     # SECTION Modal-share and Transport demand pkm fts
     # pkm/cap * modal-share[%]
-    dm_pkm_cap_tot = DM_transport_new["ots"]["pkm"].copy()
-    dm_share = DM_transport_new["ots"]["passenger_modal-share"].copy()
+    dm_pkm_cap_tot = DM_transport_wo_aviation["ots"]["pkm"].copy()
+    dm_share = DM_transport_wo_aviation["ots"]["passenger_modal-share"].copy()
     arr_pkm_cap = dm_pkm_cap_tot[..., np.newaxis] * dm_share[...]
     dm_pkm_cap = DataMatrix.based_on(
         arr_pkm_cap,
@@ -82,36 +83,36 @@ def run(DM_transport_new, country_list, years_ots, years_fts, DM_aviation_ots):
         "tra_pkm-cap_share", "tra_passenger_modal-share", dim="Variables"
     )
 
-    DM_transport_new["fts"]["passenger_modal-share"] = dict()
+    DM_transport_wo_aviation["fts"]["passenger_modal-share"] = dict()
     for lev in range(4):
-        DM_transport_new["fts"]["passenger_modal-share"][lev + 1] = (
+        DM_transport_wo_aviation["fts"]["passenger_modal-share"][lev + 1] = (
             dm_modal_share.filter({"Years": years_fts})
         )
 
     # SECTION Pkm
     dm_pkm_cap_tot = dm_pkm_cap.group_all("Categories1", inplace=False)
-    DM_transport_new["fts"]["pkm"] = dict()
+    DM_transport_wo_aviation["fts"]["pkm"] = dict()
     for lev in range(4):
-        DM_transport_new["fts"]["pkm"][lev + 1] = dm_pkm_cap_tot.filter(
+        DM_transport_wo_aviation["fts"]["pkm"][lev + 1] = dm_pkm_cap_tot.filter(
             {"Years": years_fts}
         )
 
     # SECTION Technology share new fleet fts
     # For tech share we don't need the forecasting because it is computed from new_fleet
-    dm_fleet_new_tech_share = DM_transport_new["ots"][
+    dm_fleet_new_tech_share = DM_transport_wo_aviation["ots"][
         "passenger_technology-share_new"
     ].copy()
     dm_fleet_new_tech_share.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
     dm_fleet_new_tech_share.fill_nans("Years")
 
-    DM_transport_new["fts"]["passenger_technology-share_new"] = dict()
+    DM_transport_wo_aviation["fts"]["passenger_technology-share_new"] = dict()
     for lev in range(4):
-        DM_transport_new["fts"]["passenger_technology-share_new"][lev + 1] = (
+        DM_transport_wo_aviation["fts"]["passenger_technology-share_new"][lev + 1] = (
             dm_fleet_new_tech_share.filter({"Years": years_fts})
         )
 
     # SECTION Occupancy pkm/vkm  fts
-    dm_occupancy = DM_transport_new["ots"]["passenger_occupancy"].copy()
+    dm_occupancy = DM_transport_wo_aviation["ots"]["passenger_occupancy"].copy()
     dm_add_missing_variables(dm_occupancy, {"Years": years_fts})
     dm_km = dm_occupancy
     dm_km.append(
@@ -138,34 +139,44 @@ def run(DM_transport_new, country_list, years_ots, years_fts, DM_aviation_ots):
     )
     dm_occupancy = dm_km.filter({"Variables": ["tra_passenger_occupancy"]})
 
-    DM_transport_new["fts"]["passenger_occupancy"] = dict()
+    DM_transport_wo_aviation["fts"]["passenger_occupancy"] = dict()
     for lev in range(4):
-        DM_transport_new["fts"]["passenger_occupancy"][lev + 1] = dm_occupancy.filter(
-            {"Years": years_fts}
+        DM_transport_wo_aviation["fts"]["passenger_occupancy"][lev + 1] = (
+            dm_occupancy.filter({"Years": years_fts})
         )
 
     # SECTION Utilisation rate vkm/veh fts
-    dm_utilisation = DM_transport_new["ots"]["passenger_utilization-rate"].copy()
+    dm_utilisation = DM_transport_wo_aviation["ots"][
+        "passenger_utilization-rate"
+    ].copy()
     linear_fitting(dm_utilisation, years_fts, based_on=create_years_list(2010, 2019, 1))
 
-    DM_transport_new["fts"]["passenger_utilization-rate"] = dict()
+    DM_transport_wo_aviation["fts"]["passenger_utilization-rate"] = dict()
     for lev in range(4):
-        DM_transport_new["fts"]["passenger_utilization-rate"][lev + 1] = (
+        DM_transport_wo_aviation["fts"]["passenger_utilization-rate"][lev + 1] = (
             dm_utilisation.filter({"Years": years_fts})
         )
 
     # SECTION Efficiency fleet
     # For veh-fleet efficiency we can leave the fts to nan because this get re-computed
-    dm_veh_new_eff = DM_transport_new["ots"]["passenger_veh-efficiency_new"].copy()
+    dm_veh_new_eff = DM_transport_wo_aviation["ots"][
+        "passenger_veh-efficiency_new"
+    ].copy()
     dm_veh_new_eff.add(np.nan, dim="Years", dummy=True, col_label=years_fts)
     dm_veh_new_eff.fill_nans(dim_to_interp="Years")
     dm_veh_new_eff.filter({"Years": years_fts}, inplace=True)
 
-    DM_transport_new["fts"]["passenger_veh-efficiency_new"] = dict()
+    DM_transport_wo_aviation["fts"]["passenger_veh-efficiency_new"] = dict()
     for lev in range(4):
-        DM_transport_new["fts"]["passenger_veh-efficiency_new"][lev + 1] = (
+        DM_transport_wo_aviation["fts"]["passenger_veh-efficiency_new"][lev + 1] = (
             dm_veh_new_eff.filter({"Years": years_fts})
         )
+
+    # SECTION Freight FTS
+    freight_fts = build_freight_fts(
+        DM_transport_wo_aviation, country_list, years_ots, years_fts
+    )
+    DM_transport_wo_aviation["fts"].update(freight_fts)
 
     this_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -180,7 +191,9 @@ def run(DM_transport_new, country_list, years_ots, years_fts, DM_aviation_ots):
     for lev in range(1, 5):
         for key in fts_keys_with_aviation:
             _add_aviation_fts_to_dm(
-                DM_transport_new["fts"][key][lev], fts_av[key][lev], country_list
+                DM_transport_wo_aviation["fts"][key][lev],
+                fts_av[key][lev],
+                country_list,
             )
 
     # Aviation pkm and fuel-mix are separate keys (not multi-modal)
@@ -192,10 +205,10 @@ def run(DM_transport_new, country_list, years_ots, years_fts, DM_aviation_ots):
                 dm_c = dm_pkm_av.filter({"Country": ["Switzerland"]})
                 dm_c.rename_col("Switzerland", country, dim="Country")
                 dm_pkm_av.append(dm_c, dim="Country")
-        DM_transport_new["fts"]["passenger_aviation-pkm"] = DM_transport_new["fts"].get(
-            "passenger_aviation-pkm", {}
+        DM_transport_wo_aviation["fts"]["passenger_aviation-pkm"] = (
+            DM_transport_wo_aviation["fts"].get("passenger_aviation-pkm", {})
         )
-        DM_transport_new["fts"]["passenger_aviation-pkm"][lev] = dm_pkm_av
+        DM_transport_wo_aviation["fts"]["passenger_aviation-pkm"][lev] = dm_pkm_av
 
         # fuel-mix: aviation FTS + zeros for non-aviation modes (no biofuel/efuel in BAU)
         dm_fm_av = fts_av["fuel-mix"][lev].copy()
@@ -211,13 +224,13 @@ def run(DM_transport_new, country_list, years_ots, years_fts, DM_aviation_ots):
                 dm_c = dm_fm_av.filter({"Country": ["Switzerland"]})
                 dm_c.rename_col("Switzerland", country, dim="Country")
                 dm_fm_av.append(dm_c, dim="Country")
-        if "fuel-mix" not in DM_transport_new["fts"]:
-            DM_transport_new["fts"]["fuel-mix"] = {}
-        DM_transport_new["fts"]["fuel-mix"][lev] = dm_fm_av
+        if "fuel-mix" not in DM_transport_wo_aviation["fts"]:
+            DM_transport_wo_aviation["fts"]["fuel-mix"] = {}
+        DM_transport_wo_aviation["fts"]["fuel-mix"][lev] = dm_fm_av
 
     pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")
-    DM_to_dump = {"fts": DM_transport_new["fts"]}
+    DM_to_dump = {"fts": DM_transport_wo_aviation["fts"]}
     my_pickle_dump(DM_new=DM_to_dump, local_pickle_file=pickle_file)
     sort_pickle(pickle_file)
 
-    return DM_transport_new
+    return DM_transport_wo_aviation["fts"]

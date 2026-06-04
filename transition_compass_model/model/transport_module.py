@@ -165,7 +165,7 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
             ]
         }
     )
-    dm_infrastructure = wkf.dummy_tra_infrastructure_workflow(dm_lfs)
+    dm_infrastructure = wkf.dummy_tra_infrastructure_workflow(dm_lfs, lever_setting)
     DM_industry = inter.tra_industry_interface(
         dm_freight_veh.copy(), dm_passenger_veh.copy(), dm_infrastructure
     )

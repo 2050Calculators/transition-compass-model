@@ -254,7 +254,8 @@ def run(DM_input, years_ots, years_fts, DM_aviation_ots, country_list):
     ]
 
     # Snapshot before aviation is merged in — freight is included, aviation rows are not.
-    # freight_fts_BAU_pickle and transport_fts_BAU_pickle both read from this dict.
+    # fts_bau_pickle_run reads from this dict so aviation OTS rows don't bleed into FTS extrapolation.
+    # The full DM_transport_new (with aviation in OTS) is also returned so callers have a consistent view.
     DM_transport_wo_aviation = copy.deepcopy(DM_transport_new)
 
     # --- Integrate aviation OTS ---
@@ -326,4 +327,4 @@ def run(DM_input, years_ots, years_fts, DM_aviation_ots, country_list):
     my_pickle_dump(DM_new=DM_transport_new, local_pickle_file=pickle_file)
     sort_pickle(pickle_file)
 
-    return DM_transport_wo_aviation
+    return DM_transport_wo_aviation, DM_transport_new
