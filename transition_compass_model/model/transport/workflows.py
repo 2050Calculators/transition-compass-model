@@ -850,21 +850,38 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     return DM_freight_out
 
 
-# !FIXME: infrastructure dummy not OK, find real tot infrastructure data and real renewal-rates or new-infrastructure
-def dummy_tra_infrastructure_workflow(dm_pop):
-    # Industry and Minerals need the new infrastructure in km for rails, roads, and trolley-cables
-    # In order to compute the new infrastructure we need the tot infrastructure and a renewal-rate
-    # tot_infrastructure = Looking at Swiss data it looks like there are around 10 m of road per capita
-    # (Longueurs des routes nationales, cantonales et des autres routes ouvertes aux véhicules à moteur selon le canton)
-    # and 0.6 m of rail per capita and 0.0017 of trolley-bus, I'm using this approximation for all countries
-    # for the renewal rate eucalc was using 5%, which correspond to a resurfacing every 20 years. I use this for road
-    # for rails I use 2.5% (40 years lifetime). For the wires I have no idea,
-    # I'm going with 25 that seem to be the rewiring span of electrical cables (rr = 4%)
-    # I'm using the stock function to compute the new km and the 'waste' km
+# TODO: preprocess tra_tot-infrastructure as Constants in the transport pickle (one value per
+# country per infra type, no time dimension) using real data: BFS/BAV for CH, SCRIS for Vaud,
+# Eurostat for EU27. Load via filter_country_and_load_data_from_pickles and remove country_overrides
+# dict and per-capita fallback below. Renewal rates can stay as a lever lookup table in the function.
+# Once done, rename this function to tra_infrastructure_workflow.
+def dummy_tra_infrastructure_workflow(dm_pop, lever_setting):
+    # Industry and LCA need new infrastructure in km for rails, roads, and trolley-cables.
+    # Total stock: per-capita proxy for all countries except CH and VD (hardcoded approximations).
+    # Lever sensitivity via renewal rates only — derived from modal-share levers so that
+    # infrastructure material demand stays consistent with actual mode usage across scenarios.
+    # Road: less car use → longer resurfacing interval. Rail: more train use → more track renewal.
 
-    ay_infra_road = dm_pop.array * 10 / 1000  # road infrastructure in km
-    ay_infra_rail = dm_pop.array * 0.6 / 1000  # rail infrastructure in km
-    ay_infra_trolleybus = dm_pop.array * 0.0017 / 1000  # rail infrastructure in km
+    lev_pass = lever_setting["lever_passenger_modal-share"]
+    lev_fre = lever_setting["lever_freight_modal-share"]
+    lev_rail = max(lev_pass, lev_fre)  # rail serves both passenger and freight
+    lev_road = lev_pass  # road wear driven by car use
+
+    ay_infra_road = dm_pop.array * 10 / 1000
+    ay_infra_rail = dm_pop.array * 0.6 / 1000
+    ay_infra_trolleybus = dm_pop.array * 0.0017 / 1000
+
+    # !FIXME: replace hardcoded values with preprocessed data once available
+    country_overrides = {
+        "Switzerland": (71_500, 5_317, 500),  # BFS roads, BAV rail, approx trolleybus
+        "Vaud": (10_500, 510, 90),  # SCRIS roads, approx rail, Lausanne TL
+    }
+    for country, (road_km, rail_km, trolley_km) in country_overrides.items():
+        if country in dm_pop.col_labels["Country"]:
+            i = dm_pop.col_labels["Country"].index(country)
+            ay_infra_road[i, ...] = road_km
+            ay_infra_rail[i, ...] = rail_km
+            ay_infra_trolleybus[i, ...] = trolley_km
 
     ay_tot = np.concatenate(
         (ay_infra_rail, ay_infra_road, ay_infra_trolleybus), axis=-1
@@ -879,11 +896,18 @@ def dummy_tra_infrastructure_workflow(dm_pop):
         },
         units={"tra_tot-infrastructure": "km"},
     )
-    # Add dummy renewal rates
     dm_infra.add(0, dummy=True, dim="Variables", col_label="tra_renewal-rate", unit="%")
     idx = dm_infra.idx
-    dm_infra.array[:, :, idx["tra_renewal-rate"], idx["infra-road"]] = 0.05
-    dm_infra.array[:, :, idx["tra_renewal-rate"], idx["infra-rail"]] = 0.025
+
+    # Lever-dependent renewal rates applied uniformly to all countries
+    road_rr = [0.050, 0.045, 0.040, 0.030]  # L1→L4: less car use → less wear
+    rail_rr = [0.025, 0.030, 0.035, 0.040]  # L1→L4: more train use → more renewal
+    dm_infra.array[:, :, idx["tra_renewal-rate"], idx["infra-road"]] = road_rr[
+        lev_road - 1
+    ]
+    dm_infra.array[:, :, idx["tra_renewal-rate"], idx["infra-rail"]] = rail_rr[
+        lev_rail - 1
+    ]
     dm_infra.array[:, :, idx["tra_renewal-rate"], idx["infra-trolley-cables"]] = 0.04
 
     compute_stock(

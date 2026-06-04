@@ -23,8 +23,6 @@ EP2050 Verkehrssektor:
   # file: EP2050+_Detailergebnisse 2020-2060_Verkehrssektor_alle Szenarien_2022-04-12.xlsx
 """
 
-import os
-
 import numpy as np
 import openpyxl
 import pandas as pd
@@ -38,8 +36,6 @@ from processors.freight_efficiency_tech_share import (
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     linear_fitting,
-    my_pickle_dump,
-    sort_pickle,
 )
 
 _ROAD_MODES = ["HDVH", "HDVL", "HDVM"]
@@ -210,16 +206,21 @@ def _midpoint(dm1, dm4, frac):
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
-def run(DM_transport, country_list, years_ots, years_fts):
-    """Build freight FTS DataMatrices for all 4 lever levels and save to pickle.
+def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
+    """Build freight FTS DataMatrices for all 4 lever levels.
 
     Parameters
     ----------
     DM_transport : dict
-        Full transport DM dict (after passenger BAU run).
+        Transport DM dict containing freight OTS keys.
     country_list : list of str
     years_ots : list of int
     years_fts : list of int
+
+    Returns
+    -------
+    dict
+        Freight FTS keyed by variable name, each value a {lev: DataMatrix} dict.
     """
     all_countries = ["Switzerland", "Vaud"] + [
         c for c in country_list if c not in ("Switzerland", "Vaud")
@@ -337,10 +338,4 @@ def run(DM_transport, country_list, years_ots, years_fts):
         4: dm_ur_lev4,
     }
 
-    # Save
-    this_dir = os.path.dirname(os.path.abspath(__file__))
-    pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")
-    my_pickle_dump(DM_new=DM_fts, local_pickle_file=pickle_file)
-    sort_pickle(pickle_file)
-
-    return DM_transport
+    return DM_fts["fts"]
