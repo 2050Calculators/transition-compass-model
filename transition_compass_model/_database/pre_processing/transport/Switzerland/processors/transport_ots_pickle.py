@@ -219,6 +219,42 @@ def run(DM_input, years_ots, years_fts, DM_aviation_ots, country_list):
     cdm_emissions_factors = DM_input["emission_factors"]
     DM_transport_new["constant"] = cdm_emissions_factors
 
+    ###################################
+    ####    FREIGHT OTS DATA      #####
+    ###################################
+    DM_transport_new["ots"]["freight_tkm"] = DM_input["freight_tkm"]
+    DM_transport_new["ots"]["freight_modal-share"] = DM_input["freight_modal-share"]
+
+    ###################################
+    ####    FREIGHT FXA DATA      #####
+    ###################################
+    DM_transport_new["fxa"]["freight_mode_other"] = DM_input["freight_mode_other"]
+    DM_transport_new["fxa"]["freight_tech"] = DM_input["freight_tech"]
+
+    ###################################
+    ####    FREIGHT UTI RATE OTS  #####
+    ###################################
+    DM_transport_new["ots"]["freight_utilization-rate"] = DM_input[
+        "freight_utilization-rate"
+    ]
+
+    ###################################
+    ####    FREIGHT MODE ROAD FXA #####
+    ###################################
+    DM_transport_new["fxa"]["freight_mode_road"] = DM_input["freight_mode_road"]
+
+    ###############################################
+    ####    FREIGHT EFFICIENCY + TECH SHARE   #####
+    ###############################################
+    DM_transport_new["ots"]["freight_vehicle-efficiency_new"] = DM_input[
+        "freight_vehicle-efficiency_new"
+    ]
+    DM_transport_new["ots"]["freight_technology-share_new"] = DM_input[
+        "freight_technology-share_new"
+    ]
+
+    # Snapshot before aviation is merged in — freight is included, aviation rows are not.
+    # freight_fts_BAU_pickle and transport_fts_BAU_pickle both read from this dict.
     DM_transport_wo_aviation = copy.deepcopy(DM_transport_new)
 
     # --- Integrate aviation OTS ---
@@ -284,40 +320,6 @@ def run(DM_input, years_ots, years_fts, DM_aviation_ots, country_list):
             ] = val
     _expand_ch_to_countries(dm_fuel_mix, country_list)
     DM_transport_new["ots"]["fuel-mix"] = dm_fuel_mix
-
-    ###################################
-    ####    FREIGHT OTS DATA      #####
-    ###################################
-    DM_transport_new["ots"]["freight_tkm"] = DM_input["freight_tkm"]
-    DM_transport_new["ots"]["freight_modal-share"] = DM_input["freight_modal-share"]
-
-    ###################################
-    ####    FREIGHT FXA DATA      #####
-    ###################################
-    DM_transport_new["fxa"]["freight_mode_other"] = DM_input["freight_mode_other"]
-    DM_transport_new["fxa"]["freight_tech"] = DM_input["freight_tech"]
-
-    ###################################
-    ####    FREIGHT UTI RATE OTS  #####
-    ###################################
-    DM_transport_new["ots"]["freight_utilization-rate"] = DM_input[
-        "freight_utilization-rate"
-    ]
-
-    ###################################
-    ####    FREIGHT MODE ROAD FXA #####
-    ###################################
-    DM_transport_new["fxa"]["freight_mode_road"] = DM_input["freight_mode_road"]
-
-    ###############################################
-    ####    FREIGHT EFFICIENCY + TECH SHARE   #####
-    ###############################################
-    DM_transport_new["ots"]["freight_vehicle-efficiency_new"] = DM_input[
-        "freight_vehicle-efficiency_new"
-    ]
-    DM_transport_new["ots"]["freight_technology-share_new"] = DM_input[
-        "freight_technology-share_new"
-    ]
 
     this_dir = os.path.dirname(os.path.abspath(__file__))
     pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")
