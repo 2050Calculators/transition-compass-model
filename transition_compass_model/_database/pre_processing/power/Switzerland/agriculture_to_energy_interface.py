@@ -2,11 +2,11 @@ import os
 import pickle
 
 import numpy as np
-from industry_to_energy_interface import (
+
+from transition_compass_model._database.pre_processing.industry.vaud.industry_to_energy_interface import (
     extract_employees_per_sector_canton,
     extract_national_energy_demand,
 )
-
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     linear_fitting,

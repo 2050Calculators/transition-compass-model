@@ -2,14 +2,14 @@ import numpy as np
 
 
 def get_footprint_by_group(DM_footprint):
-
     def reshape_and_store(DM_footprint, keyword):
-
         DM = {}
         dm = DM_footprint[keyword].copy()
-
+        # FIXME : plane is doing weird things for now it is removed. It should be added back when the issue will be solved.
         dm_veh = dm.filter_w_regex(
-            ({"Variables": "HDV_.*|LDV_.*|bus_.*|planes_.*|ships_.*|trains_.*"})
+            (
+                {"Variables": "HDV_.*|LDV_.*|bus_.*|ships_.*|trains_.*"}  # |planes_.*
+            )
         )
         for v in dm_veh.col_labels["Variables"]:
             dm_veh.rename_col(v, f"{keyword}_" + v, "Variables")
@@ -22,7 +22,6 @@ def get_footprint_by_group(DM_footprint):
         DM["vehicles"] = dm_veh.copy()
 
         def deepen_else(dm, keyword=keyword):
-
             lastcat = dm.dim_labels[-1]
             if len(dm.col_labels[lastcat]) == 1:
                 dm.group_all(lastcat)
@@ -59,7 +58,6 @@ def get_footprint_by_group(DM_footprint):
 
 
 def get_footprint(footprint, DM_demand, DM_footprint):
-
     # vehicles
     dm_veh = DM_footprint["vehicles"].copy()
     dm_veh.units[footprint] = dm_veh.units[footprint].split("/")[0]
@@ -72,7 +70,6 @@ def get_footprint(footprint, DM_demand, DM_footprint):
         dm_all.deepen()
 
     def make_multiplication(dm_footprint, dm_demand):
-
         dm_temp = dm_footprint.copy()
         if len(dm_temp.dim_labels) == 4:
             dm_temp.array = dm_temp.array * dm_demand.array
@@ -102,7 +99,6 @@ def get_footprint(footprint, DM_demand, DM_footprint):
 
 
 def variables_for_tpe(DM_footprint_agg):
-
     dm_tpe = DM_footprint_agg["materials"].flatten()
     dm_tpe.append(DM_footprint_agg["ecological"], "Variables")
     dm_tpe.append(DM_footprint_agg["gwp"], "Variables")

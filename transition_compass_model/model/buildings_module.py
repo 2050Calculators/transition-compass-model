@@ -9,6 +9,7 @@ from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
     filter_country_and_load_data_from_pickles,
+    my_pickle_dump,
     read_level_data,
 )
 from transition_compass_model.model.common.interface_class import Interface
@@ -225,11 +226,13 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     )
 
     # 'District-heating' module interface
-    interface.add_link(
-        from_sector="buildings",
-        to_sector="district-heating",
-        dm=DM_energy_out["district-heating"],
-    )
+    DISTRICT_HEATING_MODULE = False
+    if DISTRICT_HEATING_MODULE:
+        interface.add_link(
+            from_sector="buildings",
+            to_sector="district-heating",
+            dm=DM_energy_out["district-heating"],
+        )
 
     DM_inter_energy = {
         "households_heating": DM_energy_out["power"],
@@ -239,14 +242,14 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
         "services_all": DM_services_out["energy"],
     }
 
-    # write_pickle = False
-    # if write_pickle is True:
-    #     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    #     f = os.path.join(
-    #         current_file_directory,
-    #         "../_database/data/interface/buildings_to_energy.pickle",
-    #     )
-    #     my_pickle_dump(DM_inter_energy, f)
+    write_pickle = False
+    if write_pickle:
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(
+            current_file_directory,
+            "../_database/data/interface/buildings_to_energy.pickle",
+        )
+        my_pickle_dump(DM_inter_energy, f)
 
     interface.add_link(from_sector="buildings", to_sector="energy", dm=DM_inter_energy)
 
@@ -262,7 +265,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
         to_sector="emissions",
         dm=dm_emi,
     )
-
+    #
     # industry interface
     DM_industry = inter.bld_industry_interface(
         DM_floor_out["industry"], DM_appliances_out["industry"]
