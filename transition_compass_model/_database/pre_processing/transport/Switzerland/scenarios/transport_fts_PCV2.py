@@ -5,9 +5,6 @@ import pickle
 import numpy as np
 import pandas as pd
 
-from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
-    utils,
-)
 from transition_compass_model.model.common.auxiliary_functions import (
     linear_fitting,
     my_pickle_dump,
@@ -170,7 +167,6 @@ def run(DM_transport, country_list, years_ots, years_fts):
     dm_occupancy_2.array[
         idx["Vaud"], idx[2030] :, idx["tra_passenger_occupancy"], :
     ] = np.nan
-    array_PCV_occupancy = dm_occupancy_2.array
 
     dm_occupancy_2.array[
         idx["Vaud"], idx[2030], idx["tra_passenger_occupancy"], idx["LDV"]
@@ -551,18 +547,8 @@ def run(DM_transport, country_list, years_ots, years_fts):
     DM_fts["fts"]["pkm"] = {4: dm_pkm_4}
 
     # ======================  MESURE 5  ==================================== (CALCULER LES EMISSIONS MOYENNES DU NOUVEAU PARC EN 2021)
-    categories_transport = [
-        "BEV",
-        "CEV",
-        "FCEV",
-        "ICE-diesel",
-        "ICE-gas",
-        "ICE-gasoline",
-        "PHEV-diesel",
-        "PHEV-gasoline",
-        "mt",
-    ]
-    df_mesure_5 = pd.DataFrame(index=categories_transport)
+
+    df_mesure_5 = pd.DataFrame(index=dm_new_eff_ots.col_labels["Categories2"])
 
     idx = dm_new_eff_ots.idx
     efficiency_2018 = dm_new_eff_ots.array[
@@ -673,10 +659,8 @@ def run(DM_transport, country_list, years_ots, years_fts):
     # Load existing DM_transport
     this_dir = os.path.dirname(os.path.abspath(__file__))
     pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")
-    with open(pickle_file, "rb") as handle:
-        DM_transport_old = pickle.load(handle)
-
-    utils.add_aviation_data_to_DM(DM_fts, DM_transport_old)
+    # with open(pickle_file, "rb") as handle:
+    #     DM_transport_old = pickle.load(handle)
 
     my_pickle_dump(DM_new=DM_fts, local_pickle_file=pickle_file)
     sort_pickle(pickle_file)
