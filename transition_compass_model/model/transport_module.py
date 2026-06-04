@@ -106,11 +106,68 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     DM_passenger_out["aviation-share-local"] = DM_passenger[
         "passenger_aviation-share-local"
     ]
+
+    # Convert fleet/new/waste counts to consistent "vehicle unit" before any interface or
+    # output consumer sees them. Only fleet-count variables are adjusted; efficiency, energy,
+    # emissions, and tech-shares are unaffected.
+    #
+    # Aviation: the model stores fleet in total *seats* (design convention shared by EU and CH
+    # preprocessing).  Divide by average seats per commercial aircraft so downstream material
+    # decomposition (115 t/aircraft) and fleet plots show aircraft, not seats.
+    #
+    # Rail / Metrotram (Switzerland and Vaud only): CH preprocessing uses BFS "Voitures
+    # voyageurs" which counts individual carriages/EMU elements.  EU preprocessing uses JRC
+    # IDEES "representative train configurations" (multi-car trainsets). The material
+    # decomposition constants are calibrated against JRC data, so divide CH/Vaud counts by
+    # the EU/CH util-rate ratio to produce EU-equivalent configuration counts.
+    #   Rail:      EU util_rate 165 917 / CH util_rate 26 726 ≈ 6.2 carriages/EU config
+    #   Metrotram: EU util_rate 113 046 / CH util_rate 47 826 ≈ 2.4 cars/EU config
+    _fleet_vars = [
+        "tra_passenger_new-vehicles",
+        "tra_passenger_vehicle-waste",
+        "tra_passenger_vehicle-fleet",
+    ]
+    _dm_tech = DM_passenger_out["tech"]
+    _idx = _dm_tech.idx
+    avg_seats_per_aircraft = 150
+    for _v in _fleet_vars:
+        _dm_tech.array[:, :, _idx[_v], _idx["aviation"], :] /= avg_seats_per_aircraft
+    if any(c in cntr_list for c in ("Switzerland", "Vaud")):
+        avg_carriages_per_rail_config = 6.2
+        avg_cars_per_metrotram_config = 2.4
+        for _v in _fleet_vars:
+            _dm_tech.array[:, :, _idx[_v], _idx["rail"], :] /= (
+                avg_carriages_per_rail_config
+            )
+            _dm_tech.array[:, :, _idx[_v], _idx["metrotram"], :] /= (
+                avg_cars_per_metrotram_config
+            )
+
     # FREIGHT
     cdm_const_freight = cdm_const.copy()
     DM_freight_out = wkf.freight_fleet_energy(
         DM_freight, DM_other, cdm_const_freight, years_setting
     )
+
+    # Freight rail (Switzerland and Vaud only): CH FXA uses individual wagons
+    # (tkm-by-veh 1 648 600 tkm/wagon); EU uses train-load configurations
+    # (tkm-by-veh 104 206 628 tkm/config).  Divide CH/Vaud freight rail counts
+    # by the EU/CH tkm-by-veh ratio so the material decomposition constant is
+    # applied to the correct unit.
+    #   Freight rail: EU tkm-by-veh 104 206 628 / CH tkm-by-veh 1 648 600 ≈ 63.2
+    if any(c in cntr_list for c in ("Switzerland", "Vaud")):
+        avg_wagons_per_freight_rail_config = 63.2
+        _fre_fleet_vars = [
+            "tra_freight_new-vehicles",
+            "tra_freight_vehicle-waste",
+            "tra_freight_vehicle-fleet",
+        ]
+        _dm_fre = DM_freight_out["tech"]
+        _idx_fre = _dm_fre.idx
+        for _v in _fre_fleet_vars:
+            _dm_fre.array[:, :, _idx_fre[_v], _idx_fre["rail"], :] /= (
+                avg_wagons_per_freight_rail_config
+            )
 
     check_transport_eu = False
     if check_transport_eu is True and cntr_list == ["EU27"]:
