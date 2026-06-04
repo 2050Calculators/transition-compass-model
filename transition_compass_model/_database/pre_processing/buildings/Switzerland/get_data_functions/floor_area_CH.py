@@ -392,50 +392,6 @@ def extract_energy_reference_area(file_path=""):
         df_single = df[df["gklas"].isin(values)]
         dic_ERA[keys] = df_single["gebf"].sum()
 
-    # For iterating over cantons
-    # file_path = "transition_compass_model/_database/pre_processing/buildings/Switzerland/data/gebaeude_batiment_edificio.csv"
-    # df = pd.read_csv(file_path,usecols = ["GSTAT", "GDEKT", "GKLAS", "GEBF"],sep = "	")
-    # We only keep existing buildings
-    #
-    # df = df[df["GSTAT"]==1004]
-    # #We translate canotn abbreviations by full name country_list
-    # with open("transition_compass_model/_database/pre_processing/buildings/Switzerland/data/Correspondance_canton_name.json", "r") as f:
-    #     cantons_correspondance = json.load(f)
-    # df["GDEKT"] = df["GDEKT"].map(cantons_correspondance)
-    # dic_ERA = {}
-    # single_multi_code = {"sfh" : [1110.], "mfh" : [1122.,1121.,1130.]}
-    # for keys,values in single_multi_code.items():
-    #     df_single = df[df["GKLAS"].isin(values)]
-    #     #GEBF is the column for energy referance area
-    #     dic_ERA[keys] = df_single.groupby("GDEKT")["GEBF"].sum()
-    # dic_ERA["sfh"].loc["Switzerland"] = dic_ERA["sfh"].sum()
-    # dic_ERA["mfh"].loc["Switzerland"] = dic_ERA["mfh"].sum()
-
-    # TODO : test filtering per year of construction to see if improved accuracy
-    # Copilot can you put it in a numpy array with the same order as in dm_stock_tot and with the same categories (sfh and mfh) ?
-
-    # Build an array aligned with dm_stock_tot ordering:
-    # rows -> country_list order, columns -> [sfh, mfh]
-    # arr_era = np.zeros((len(dm_stock_tot.col_labels["Country"]), 2))
-    # for i, country in enumerate(dm_stock_tot.col_labels["Country"]):
-    #     arr_era[i, 0] = dic_ERA["mfh"].get(country, np.nan)
-    #     arr_era[i, 1] = dic_ERA["sfh"].get(country, np.nan)
-
-    # dm_era = DataMatrix(
-    #     col_labels={
-    #         "Country": dm_stock_tot.col_labels["Country"],
-    #         "Years": [2023],
-    #         "Variables": ["bld_energy-reference-area"],
-    #         "Categories1": [
-    #             "multi-family-households",
-    #             "single-family-households",
-    #         ],
-    #     },
-    #     units={"bld_energy-reference-area": "m2"},
-    # )
-    # dm_era.array[:, 0, 0, 0] = arr_era[:, 0]
-    # dm_era.array[:, 0, 0, 1] = arr_era[:, 1]
-
     return dic_ERA
 
 

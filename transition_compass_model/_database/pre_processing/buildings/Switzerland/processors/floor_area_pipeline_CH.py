@@ -203,12 +203,7 @@ def run(global_vars, country_list, years_ots):
         df_WP, cantons_name_list=dm_stock_tot.col_labels["Country"]
     )
 
-    # !FIXME: You are here!
-
-    # dm_stock_tot[:, :, "bld_floor-area_stock", :] = (
-    #     dm_stock_tot[:, :, "bld_floor-area_stock", :] * arr_adj_factor[:, np.newaxis, :]
-    # )
-    # Adjust from dwelling area to ERA
+    # !FIXME: Find a better option to generalize to all canton
     backup_stock = dm_stock_tot.copy()
 
     arr_adj_factor = (
