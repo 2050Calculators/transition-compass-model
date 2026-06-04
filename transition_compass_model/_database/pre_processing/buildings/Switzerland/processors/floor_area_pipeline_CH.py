@@ -219,25 +219,6 @@ def run(global_vars, country_list, years_ots):
     dm_stock_tot[:, :, "bld_floor-area_stock", :] = (
         dm_stock_tot[:, :, "bld_floor-area_stock", :] * arr_adj_factor[:, np.newaxis, :]
     )
-    # Get energy referance area from vaud canton energy cadastre data and adjust the vaud stock accordingly
-    dm_era = fla.extract_energy_reference_area()
-
-    # dm_era[:, 2023, "bld_energy-reference-area", :]
-    # adjust factor from dwelling surface to energy referance area (ERA) for vaud canton
-    arr_adj_factor_vaud = {}
-    for key in dm_era.keys():
-        arr_adj_factor_vaud[key] = (
-            dm_era[key] / backup_stock["Vaud", 2023, "bld_floor-area_stock", key]
-        )
-
-    dm_stock_tot["Vaud", :, "bld_floor-area_stock", "multi-family-households"] = (
-        backup_stock["Vaud", :, "bld_floor-area_stock", "multi-family-households"]
-        * arr_adj_factor_vaud["multi-family-households"]
-    )
-    dm_stock_tot["Vaud", :, "bld_floor-area_stock", "single-family-households"] = (
-        backup_stock["Vaud", :, "bld_floor-area_stock", "single-family-households"]
-        * arr_adj_factor_vaud["single-family-households"]
-    )
 
     # Adjust cantonal stock by energy class
     dm_stock_cat.normalise("Categories2")
