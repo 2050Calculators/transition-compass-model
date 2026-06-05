@@ -428,6 +428,14 @@ class DataMatrix:
         return idx
 
     def overwrite_1cat(self, matrix2):
+        """_summary_
+
+        Args:
+            matrix2 (_type_): _description_
+
+        Raises:
+            Exception: _description_
+        """
         country = matrix2.col_labels["Country"]
         years = matrix2.col_labels["Years"]
         variables = matrix2.col_labels["Variables"]
@@ -447,6 +455,13 @@ class DataMatrix:
             )
 
     def fill_nans(self, dim_to_interp):
+        """
+        It fills the nans in the datamatrix by interpolating over the dimension dim_to_interp (e.g. 'Years').
+        If there are nans outside of the range of the existing values, it fills them with the closest existing value (e.g. if there are nans before the first year with data, it fills them with the value of the first year with data).
+        It does not return a new datamatrix, it modifies self.array in place.
+        Args:
+            dim_to_interp (str): the dimension over which to interpolate the nans (e.g. 'Years')
+        """
         axis_to_interp = self.dim_labels.index(dim_to_interp)
 
         def interpolate_nans(arr, x_values):
@@ -1069,7 +1084,9 @@ class DataMatrix:
             raise ValueError("Only * and / operators are possible in change_unit")
         return
 
-    def datamatrix_plot(self, selected_cols={}, title="title", stacked=None):
+    def datamatrix_plot(
+        self, selected_cols={}, title="title", stacked=None, rename_cols={}
+    ):
         if stacked is not None:
             stacked = "one"
 
@@ -1092,15 +1109,30 @@ class DataMatrix:
 
         years_idx = [i[x] for x in plot_cols["Years"]]
         # Create an empty figure
-        fig = px.line(
-            x=plot_cols["Years"], labels={"x": "Years", "y": "Values"}, title=title
-        )
+        if len(set(self.units.values())) > 1:
+            fig = px.line(
+                x=plot_cols["Years"], labels={"x": "Years", "y": "Values"}, title=title
+            )
+        else:
+            fig = px.line(
+                x=plot_cols["Years"],
+                labels={"x": "Years", "y": list(self.units.values())[0]},
+                title=title,
+            )
         fig.data[0]["y"] = np.nan * np.ones(shape=np.shape(fig.data[0]["y"]))
+        # add y label using unit
+
         if dims == 3:
             for c in plot_cols["Country"]:
                 for v in plot_cols["Variables"]:
                     y_values = self.array[i[c], years_idx, i[v]]
-                    label = c + "_" + v
+                    if rename_cols == "end":
+                        label = v.split("_")[-1]
+                    elif v not in rename_cols.keys():
+                        label = c + "_" + v
+                    else:
+                        label = rename_cols[v]
+
                     fig.add_scatter(
                         x=plot_cols["Years"],
                         y=y_values,
@@ -1121,7 +1153,6 @@ class DataMatrix:
                             mode="lines",
                             stackgroup=stacked,
                         )
-
         fig.show()
 
         return

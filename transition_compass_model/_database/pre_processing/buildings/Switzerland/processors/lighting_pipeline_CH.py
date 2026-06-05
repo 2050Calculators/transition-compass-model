@@ -1,9 +1,10 @@
 import os
 
-import _database.pre_processing.buildings.Switzerland.get_data_functions.lighting_CH as lt
 import numpy as np
-from src.api.routes import country_list
 
+import transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.lighting_CH as lt
+
+# from src.api.routes import country_list
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     linear_fitting,

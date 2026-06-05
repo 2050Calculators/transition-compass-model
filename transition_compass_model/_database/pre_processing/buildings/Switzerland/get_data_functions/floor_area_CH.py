@@ -4,8 +4,10 @@ import zipfile
 
 import numpy as np
 import pandas as pd
-from _database.pre_processing.api_routines_CH import get_data_api_CH
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
@@ -19,7 +21,6 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def compute_avg_floor_area(dm_floor_area, years_ots):
-
     dm_avg_floor_area = dm_floor_area.filter({"Variables": ["bld_avg-floor-area-new"]})
     years_to_keep = [
         "1991-2000",
@@ -62,7 +63,6 @@ def compute_avg_floor_area(dm_floor_area, years_ots):
 
 
 def extract_stock_floor_area(table_id, file):
-
     try:
         with open(file, "rb") as handle:
             dm_floor_area = pickle.load(handle)
@@ -356,6 +356,45 @@ def extract_bld_new_buildings_2(table_id, file):
     return dm_new_area
 
 
+def extract_energy_reference_area(file_path=""):
+    """Download data from https://www.housing-stat.ch/fr/data/supply/public.html and extract the energy reference area per building category.
+    This is the area used to compute the energy demand of new buildings, as it corresponds to the area that needs to be heated/cooled.
+    It is different from the dwelling area, as it does include staircases, hallways etc ...
+    To get the documentation of the data check https://www.housing-stat.ch/catalog/fr/4.3/final
+
+    Args:
+        years_ots (_type_): _description_
+        file_path (str, optional): _description_. Defaults to "".
+    """
+    # TODO: automatize the download and extraction of the data, currently I downloaded it manually and saved it as an csv
+    file_path = "transition_compass_model/_database/pre_processing/buildings/Switzerland/data/cadastre_regener.csv"
+
+    df = pd.read_csv(file_path)
+
+    # 1110 single_family_households
+    # 1122 and 1121 multi_family_households
+    # 1130 multi_family_households Bâtiments résidentiels pour collectivités, y compris les résidences et résidences-services pour les personnes âgées, les étudiants, les enfants et d'autres groupes sociaux: par exemple, maisons de retraite, foyers pour travailleurs, foyers pour étudiants, orphelinats, foyers pour sans-abri etc.
+    # df = df[df["gkat"].isin(['Batiments_exclusivement_a_usage_d_habitation','Batiment_d_habitation_a_usage_annexe'])]
+
+    dic_ERA = {}
+    # dic_ERA["single-family-households"] = df[df["gklas"] == "Maisons_individuelles"]["gebf"].sum()
+    # dic_ERA["multi-family-households"] = df[df["gklas"] != "Maisons_individuelles"]["gebf"].sum()
+
+    single_multi_code = {
+        "single-family-households": ["Maisons_individuelles"],
+        "multi-family-households": [
+            "Immeubles_a_trois_logements_et_plus",
+            "Maisons_a_deux_logements",
+            "Habitat communautaire",
+        ],
+    }
+    for keys, values in single_multi_code.items():
+        df_single = df[df["gklas"].isin(values)]
+        dic_ERA[keys] = df_single["gebf"].sum()
+
+    return dic_ERA
+
+
 def compute_bld_floor_area_new(
     dm_bld_new_buildings_1, dm_bld_new_buildings_2, dm_bld_area_stock, dm_pop, years_ots
 ):
@@ -398,7 +437,6 @@ def compute_bld_floor_area_new(
 
 
 def compute_waste(dm_stock_tot, dm_new_tot, years_ots):
-
     dm = dm_stock_tot.copy()
     dm.append(dm_new_tot, dim="Variables")
 
@@ -470,7 +508,6 @@ def compute_floor_area_waste_cat(dm_waste_tot):
 
 
 def compute_floor_area_new_cat(dm_new_tot, cat_map):
-
     env_cat = ["B", "C", "D", "E", "F"]
     arr = np.zeros(np.shape(dm_new_tot.array) + (len(env_cat),))
     dm_new_cat = DataMatrix.based_on(

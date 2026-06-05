@@ -2,10 +2,10 @@ import copy
 import os
 
 import numpy as np
-from _database.pre_processing.transport.Switzerland.processors.passenger_efficiency_pipeline import (
+
+from transition_compass_model._database.pre_processing.transport.Switzerland.processors.passenger_efficiency_pipeline import (
     compute_tech_share,
 )
-
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     my_pickle_dump,

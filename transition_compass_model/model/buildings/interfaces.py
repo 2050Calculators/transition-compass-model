@@ -263,6 +263,7 @@ def bld_TPE_interface(
     )
     dm_emission_global.rename_col("Variables", "bld_CO2-emissions", "Variables")
     dm_tpe.append(dm_emission_global.flattest(), dim="Variables")
+    # dm_emission_global.change_unit("bld_CO2-emissions", factor=1e6, old_unit="Mt", new_unit="t" )
 
     dm_emission_global.group_all("Categories1", inplace=True)
     value = dm_emission_global[0, yr, "bld_CO2-emissions"]
@@ -279,6 +280,52 @@ def bld_TPE_interface(
     KPI.append(
         {"title": "Energy Demand for Space Heating", "value": value, "unit": "TWh"}
     )
+
+    # Energy demand total heating  (hotwater + space heating residential + services)
+    # TODO : add a plot for the total energy demand for heating (hot water + space heating for residential + services) and the share of ambient heat and other tech in it.
+    dm_energy_global = (
+        DM_energy["energy-demand-heating"]
+        .filter({"Variables": ["bld_energy-demand_heating"]})
+        .copy()
+    )
+    dm_hw_copy = dm_hw.copy()
+    dm_hw_copy.add(0, "Categories1", ["other-tech", "ambient-heat"], dummy=True)
+    dm_energy_global.append(dm_hw_copy, dim="Variables")
+    dmservices_flat = (
+        DM_services["services_energy-consumption"]
+        .filter({"Categories1": ["hot-water", "space-heating"]})
+        .flatten()
+        .flatten()
+    )
+    dmservices_flat.deepen()
+    dmservices_flat.add(0, "Categories1", ["other-tech", "ambient-heat"], dummy=True)
+    dm_energy_global.append(dmservices_flat, dim="Variables")
+
+    # Create Categories1 dimension for appliances with heating technologies
+    dm_appliances_energy = DM_appliances.copy()
+    dm_appliances_energy.deepen()
+    dm_appliances_energy.rename_col("tot-elec-demand", "electricity", dim="Categories1")
+    other_cats = [
+        cat
+        for cat in dm_energy_global.col_labels["Categories1"]
+        if cat != "electricity"
+    ]
+    dm_appliances_energy.add(0, "Categories1", other_cats, dummy=True)
+    dm_energy_global.append(dm_appliances_energy, dim="Variables")
+
+    dm_energy_comsumption_tot = dm_energy_global.groupby(
+        {
+            "energy_consumption": [
+                "bld_services_energy-consumption_hot-water",
+                "bld_services_energy-consumption_space-heating",
+                "bld_energy-demand_heating",
+                "bld_hot-water_energy-demand",
+                "bld_appliances",
+            ]
+        },
+        dim="Variables",
+    )
+    # dm_energy_comsumption_tot.change_unit("energy_consumption", factor=1e6, old_unit="TWh", new_unit="MWh")
 
     # A-C buildings buildings %
     dm_area = DM_area["floor-area-cat"].normalise("Categories1", inplace=False)

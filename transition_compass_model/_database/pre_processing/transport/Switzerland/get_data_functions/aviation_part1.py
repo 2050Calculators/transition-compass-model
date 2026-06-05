@@ -1,6 +1,8 @@
 import pandas as pd
-from _database.pre_processing.transport.Switzerland.get_data_functions import utils
 
+from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
+    utils,
+)
 from transition_compass_model.model.common.auxiliary_functions import save_url_to_file
 
 

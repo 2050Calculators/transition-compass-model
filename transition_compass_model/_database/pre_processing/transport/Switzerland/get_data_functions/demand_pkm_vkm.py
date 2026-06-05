@@ -5,8 +5,10 @@ import zipfile
 
 import numpy as np
 import pandas as pd
-from _database.pre_processing.transport.Switzerland.get_data_functions import utils
 
+from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
+    utils,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     linear_fitting,
     save_url_to_file,
@@ -15,7 +17,6 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def get_transport_demand_pkm(file_url, local_filename, years_ots):
-
     header_row = 1
     rows_to_keep = [
         "Chemins de fer",
@@ -233,7 +234,6 @@ def get_travel_demand_region_microrecencement(
 
 
 def extract_EP2050_transport_vkm_demand(file_url, zip_name, file_pickle):
-
     try:
         with open(file_pickle, "rb") as handle:
             dm = pickle.load(handle)

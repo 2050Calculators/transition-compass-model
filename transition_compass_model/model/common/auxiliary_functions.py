@@ -1,3 +1,4 @@
+import json
 import os
 import pickle
 import re
@@ -1308,7 +1309,12 @@ def jrc_iso2_dict():
     return dict_iso2
 
 
-def my_pickle_dump(DM_new, local_pickle_file):
+def my_pickle_dump(
+    DM_new,
+    local_pickle_file,
+    refactoring_change=False,
+    backup_folder_path="transition_compass_model/_database/data/backup/",
+):
     # if there is no pickle, just save DM_new
     if not os.path.exists(local_pickle_file):
         with open(local_pickle_file, "wb") as handle:
@@ -1330,29 +1336,40 @@ def my_pickle_dump(DM_new, local_pickle_file):
 
         def update_DM(DM_old, DM_new):
             for key in DM_new.keys():
-                if isinstance(DM_new[key], dict):
-                    update_DM(DM_old[key], DM_new[key])
-                else:
-                    try:
+                if key in DM_old.keys():
+                    if isinstance(DM_new[key], dict):
+                        update_DM(DM_old[key], DM_new[key])
+                    else:
                         DM_old[key] = update_data(DM_old[key], DM_new[key])
-                    except Exception:
-                        raise RuntimeError(
-                            f"Warning: Error occurred when trying to update {key}, in file {local_pickle_file}"
-                        )
+                else:
+                    print("Warning: key " + key + " not in old DM, adding it")
+                    DM_old[key] = DM_new[key]
             return
 
-        # Load existing DM in pickle
-        with open(local_pickle_file, "rb") as handle:
-            DM = pickle.load(handle)
+        if not refactoring_change:
+            # Load existing DM in pickle
+            with open(local_pickle_file, "rb") as handle:
+                DM = pickle.load(handle)
+            if isinstance(DM_new, dict):
+                update_DM(DM, DM_new)
+            else:  # if it is actually a dm
+                DM = update_data(DM, DM_new)
 
-        if isinstance(DM_new, dict):
-            update_DM(DM, DM_new)
-        else:  # if it is actually a dm
-            DM = update_data(DM, DM_new)
-
-        with open(local_pickle_file, "wb") as handle:
-            pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
+            with open(local_pickle_file, "wb") as handle:
+                pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        else:
+            # Load existing DM in pickle
+            with open(local_pickle_file, "rb") as handle:
+                DM = pickle.load(handle)
+            # save the old file in backup folder
+            backup_file_path = os.path.join(
+                backup_folder_path, local_pickle_file.split("/")[-1]
+            )
+            with open(backup_file_path, "wb") as handle:
+                pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            # save the new file in place of the old file
+            with open(local_pickle_file, "wb") as handle:
+                pickle.dump(DM_new, handle, protocol=pickle.HIGHEST_PROTOCOL)
     return
 
 
@@ -1758,3 +1775,12 @@ def rename_cantons(dm):
     dm.rename_col(cantons_fr, cantons_en, dim="Country")
 
     return
+
+
+def init_years_lever():
+    # function that can be used when running the module as standalone to initialise years and levers
+    years_setting = [1990, 2023, 2025, 2050, 5]
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    f = open(os.path.join(current_file_directory, "../../config/lever_position.json"))
+    lever_setting = json.load(f)[0]
+    return years_setting, lever_setting

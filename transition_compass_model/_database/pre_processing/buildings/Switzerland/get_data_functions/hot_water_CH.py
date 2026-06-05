@@ -3,8 +3,10 @@ import pickle
 import zipfile
 
 import pandas as pd
-from _database.pre_processing.api_routines_CH import get_data_api_CH
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     df_excel_to_dm,
     save_url_to_file,
@@ -274,7 +276,6 @@ def extract_hotwater_technologies_old(table_id, file):
 
 
 def extract_EP2050_hot_water_energy_consumption(file_raw, file_pickle):
-
     try:
         with open(file_pickle, "rb") as handle:
             dm = pickle.load(handle)
@@ -343,7 +344,6 @@ def extract_EP2050_hot_water_energy_consumption(file_raw, file_pickle):
 
 
 def extract_heating_efficiencies_EP2050(file_url, zip_name, file_pickle):
-
     try:
         with open(file_pickle, "rb") as handle:
             dm = pickle.load(handle)

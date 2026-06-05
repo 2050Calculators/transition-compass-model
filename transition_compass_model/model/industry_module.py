@@ -1,10 +1,10 @@
-import json
 import os
 
 import transition_compass_model.model.industry.interfaces as inter
 import transition_compass_model.model.industry.workflows as wkf
 from transition_compass_model.model.common.auxiliary_functions import (
     filter_country_and_load_data_from_pickles,
+    init_years_lever,
     read_level_data,
 )
 from transition_compass_model.model.common.interface_class import Interface
@@ -304,15 +304,13 @@ def industry(
     # interface.add_link(from_sector='industry', to_sector='air-pollution', dm=dm_airpoll)
 
     # return
-    return results_run
+    KPI = {}
+    return results_run, KPI
 
 
 def local_industry_run():
     # Configures initial input for model run
-    f = open("../config/lever_position.json")
-    lever_setting = json.load(f)[0]
-    years_setting = [1990, 2023, 2025, 2050, 5]
-
+    years_setting, lever_setting = init_years_lever()
     country_list = ["Switzerland", "EU27", "Vaud"]
 
     sectors = ["industry"]

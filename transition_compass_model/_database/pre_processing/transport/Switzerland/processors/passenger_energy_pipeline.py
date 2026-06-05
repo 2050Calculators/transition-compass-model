@@ -3,8 +3,7 @@
 #################################
 import os
 
-import _database.pre_processing.transport.Switzerland.get_data_functions.transport_energy as get_data
-
+import transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions.transport_energy as get_data
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
@@ -12,7 +11,6 @@ from transition_compass_model.model.common.auxiliary_functions import (
 
 
 def run(years_ots):
-
     this_dir = os.path.dirname(os.path.abspath(__file__))
 
     # Energy demand for LDV, 2W, bus by technology from EP2050

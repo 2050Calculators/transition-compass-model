@@ -1,7 +1,6 @@
 import os
 
 import numpy as np
-from src.api.routes import country_list
 
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,

@@ -6,8 +6,10 @@ import zipfile
 import numpy as np
 import pandas as pd
 import requests
-from _database.pre_processing.api_routines_CH import get_data_api_CH
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     linear_fitting,
@@ -41,7 +43,7 @@ def extract_national_energy_demand(table_id, file):
 
         filter = {
             "Économie et ménages": keep_sectors,
-            "Unité de mesure": ["Térajoules"],
+            "Unité de mesure": ["Terajoules"],
             "Année": structure["Année"],
             "Agent énergétique": structure["Agent énergétique"],
         }
@@ -63,7 +65,7 @@ def extract_national_energy_demand(table_id, file):
         )
 
         # dm_heating.rename_col('--- Chauffage des ménages', 'bld_heating-demand', dim='Variables')
-        dm_energy.rename_col("Térajoules", "Switzerland", dim="Country")
+        dm_energy.rename_col("Terajoules", "Switzerland", dim="Country")
 
         # We drop the fuels fro transport
         dict_rename = {
@@ -281,6 +283,7 @@ def map_national_energy_demand_by_sector_to_cantons(dm_energy, dm_employees):
 
     dm_energy_mapped.groupby(mapping_sectors, dim="Categories1", inplace=True)
     dm_employees_mapped.groupby(mapping_sectors, dim="Categories1", inplace=True)
+    years_ots = create_years_list(1990, 2023, 1)
     dm_employees_mapped.add(
         np.nan,
         dummy=True,
@@ -803,6 +806,7 @@ def add_process_heat_demand(dm_fuels_eud_cantons, dm_fuels_cantons, cantonal=Tru
     dm_non_proc = dm_fuels_eud_cantons.groupby(
         {"non-process": ".*"}, dim="Categories1", inplace=False, regex=True
     )
+    years_ots = create_years_list(1990, 2023, 1)
     if cantonal:
         dm_ind_fuels.drop("Country", "Switzerland")
     dm_ind_fuels.add(
@@ -823,6 +827,7 @@ def add_process_heat_demand(dm_fuels_eud_cantons, dm_fuels_cantons, cantonal=Tru
 
 
 def adjust_based_on_efficiency(dm, dm_eff, years_ots):
+    dm.rename_col("other", "other-tech", dim="Categories1")
     dm_eff.filter(
         {"Categories1": dm.col_labels["Categories1"], "Years": years_ots}, inplace=True
     )
@@ -939,6 +944,7 @@ def adjust_based_on_FSO_energy_consumption(
 
     dm_OFS_fuels.filter({"Country": dm_eud_shares.col_labels["Country"]}, inplace=True)
 
+    years_ots = create_years_list(1990, 2023, 1)
     # Add missing years
     missing_years = list(set(years_ots) - set(dm_OFS_fuels.col_labels["Years"]))  # noqa: F821
     dm_OFS_fuels.add(np.nan, dim="Years", col_label=missing_years, dummy=True)
@@ -973,17 +979,22 @@ def run():
 
     # Extract energy demand by sector at national level by fuel
     table_id = "px-x-0204000000_106"
+    file_directory = os.path.dirname(os.path.abspath(__file__))
     local_filename = "data/energy_accounts_economy_households.pickle"
+    f = os.path.join(file_directory, local_filename)
     # Industry sectors linked to energy, like energy production and waste management, have been removed or edited
     # Remove gasoline and diesel which are for transport / machinery
-    dm_energy = extract_national_energy_demand(table_id, local_filename)
+    dm_energy = extract_national_energy_demand(table_id, f)
 
     # Industry energy demand by end-use (lighting, electricity, space-heating, process-heat, hot-water)
     # Energy Perspective 2050 data
     file_url = "https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA0NDE=.html"
     zip_name = "data/EP2050_sectors_test.zip"
+    file_directory = os.path.dirname(os.path.abspath(__file__))
+    zip_path = os.path.join(file_directory, zip_name)
+
     dm_industry_energy_end_use = extract_EP2050_industry_data(
-        file_url, zip_name, years_ots + years_fts
+        file_url, zip_path, years_ots + years_fts
     )
     dm_industry_energy_end_use.change_unit(
         "ind_energy-end-use", old_unit="PJ", new_unit="TWh", factor=3.6, operator="/"
@@ -997,7 +1008,8 @@ def run():
     # This is in order to map the national energy demand to cantons
     table_id = "px-x-0602010000_101"
     local_filename = "data/employees_per_sector_canton.pickle"
-    dm_employees = extract_employees_per_sector_canton(table_id, local_filename)
+    local_filepath = os.path.join(file_directory, local_filename)
+    dm_employees = extract_employees_per_sector_canton(table_id, local_filepath)
 
     # Group employees by sector and canton (dm_employees_mapped)
     dm_fuels_cantons, dm_employees_mapped = (
@@ -1013,7 +1025,8 @@ def run():
     # !FIXME extract also 1990 and 2000
     table_id = "px-x-0902010000_102"
     file_sh = "data/bld_heating_technology_2021-2023.pickle"
-    dm_space_heat = extract_heating_technologies(table_id, file_sh)
+    local_filepath_sh = os.path.join(file_directory, file_sh)
+    dm_space_heat = extract_heating_technologies(table_id, local_filepath_sh)
     # Add missing years
     dm_space_heat.add(
         np.nan,
@@ -1025,7 +1038,8 @@ def run():
     dm_space_heat.fill_nans("Years")
 
     file_hw = "data/bld_hotwater_technology_2021-2023.pickle"
-    dm_water = extract_hotwater_technologies(table_id, file_hw)
+    local_filepath_hw = os.path.join(file_directory, file_hw)
+    dm_water = extract_hotwater_technologies(table_id, local_filepath_hw)
     # Add missing years
     dm_water.add(
         np.nan,
@@ -1042,9 +1056,12 @@ def run():
     #    DM_bld = pickle.load(handle)
 
     # Add efficiencies
+    # !FIXME the pickle is a dict wiht many keys I don't know which one is supposed to be used.
     data_file = "../../../data/interface/buildings_to_energy.pickle"
-    with open(data_file, "rb") as handle:
-        dm_eff = pickle.load(handle)
+    local_filepath_eff = os.path.join(file_directory, data_file)
+    with open(local_filepath_eff, "rb") as handle:
+        dic_building = pickle.load(handle)
+    dm_eff = dic_building["households_heating"].copy()
     dm_eff.filter({"Country": ["Switzerland"]}, inplace=True)
     dm_eff.operation(
         "bld_heating",
@@ -1092,100 +1109,91 @@ def run():
     ##   SERVICES TO ENERGY INTERFACE  ##
     #####################################
 
-    # Infras, TEP, Prognos, 2021. Analyse des schweizerischen Energieverbrauchs 2000–2020 - Auswertung nach Verwendungszwecken.
-    # Table 26 - Endenergieverbrauch im Dienstleistungssektor nach Verwendungszwecken Entwicklung von 2000 bis 2020, in PJ, inkl. Landwirtschaft
-    # Final energy consumption in the service sector by purpose Development from 2000 to 2020, in PJ, incl. agriculture
+    # Infras, TEP, Prognos, 2021. Analyse des schweizerischen Energieverbrauchs 2000–2024 - Auswertung nach Verwendungszwecken.
+    # Table 26 - Endenergieverbrauch im Dienstleistungssektor nach Verwendungszwecken Entwicklung von 2000 bis 2024, in PJ, inkl. Landwirtschaft
+    # Final energy consumption in the service sector by purpose Development from 2000 to 2024, in PJ, incl. agriculture
     # https://www.bfe.admin.ch/bfe/de/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA2OTM%3D.html&ved=2ahUKEwiC4OjJvpGOAxWexgIHHdyFGVMQFnoECB0QAQ&usg=AOvVaw1a9deGMbwSdNvV0aVLEBPj
     services_agri_split = {
         "space-heating": {
-            2000: 82.1,
-            2014: 67.1,
-            2015: 73.2,
-            2016: 77.3,
-            2017: 75.0,
-            2018: 67.0,
-            2019: 69.7,
-            2020: 65.9,
+            2000: 74.9,
+            2018: 66.8,
+            2019: 68.3,
+            2020: 62.6,
+            2021: 73.7,
+            2022: 58.8,
+            2023: 59.1,
         },
         "hot-water": {
-            2000: 12.7,
-            2014: 12.1,
-            2015: 12.1,
-            2016: 12.0,
-            2017: 12.0,
-            2018: 12.0,
-            2019: 11.9,
-            2020: 11.9,
+            2000: 11.7,
+            2018: 8.9,
+            2019: 8.9,
+            2020: 8.5,
+            2021: 8.2,
+            2022: 8.3,
+            2023: 8.1,
         },
         "process-heat": {
-            2000: 2.3,
-            2014: 2.5,
-            2015: 2.5,
-            2016: 2.5,
-            2017: 2.5,
-            2018: 2.6,
-            2019: 2.7,
-            2020: 2.2,
+            2000: 2.8,
+            2018: 3.2,
+            2019: 3.3,
+            2020: 2.5,
+            2021: 2.8,
+            2022: 3.1,
+            2023: 3.1,
         },
         "lighting": {
-            2000: 16.8,
-            2014: 17.0,
-            2015: 17.0,
-            2016: 17.0,
-            2017: 17.0,
-            2018: 16.9,
-            2019: 16.8,
-            2020: 15.9,
+            2000: 14.0,
+            2018: 12.5,
+            2019: 12.2,
+            2020: 10.9,
+            2021: 10.9,
+            2022: 10.8,
+            2023: 10.4,
         },
         "HVAC and building tech": {
-            2000: 11.2,
-            2014: 13.8,
-            2015: 15.0,
-            2016: 15.1,
-            2017: 15.5,
-            2018: 15.5,
-            2019: 15.8,
-            2020: 15.0,
+            2000: 11.3,
+            2018: 12.8,
+            2019: 12.9,
+            2020: 12.5,
+            2021: 12.8,
+            2022: 12.2,
+            2023: 12.5,
         },
         "ICT and entertainment media": {
-            2000: 6.1,
-            2014: 6.9,
-            2015: 6.9,
-            2016: 6.9,
-            2017: 6.9,
-            2018: 7.0,
-            2019: 7.0,
-            2020: 6.8,
+            2000: 4.8,
+            2018: 9.3,
+            2019: 9.4,
+            2020: 9.4,
+            2021: 9.6,
+            2022: 9.8,
+            2023: 9.8,
         },
         "Drives and processes": {
-            2000: 14.4,
-            2014: 16.1,
-            2015: 16.0,
-            2016: 16.0,
-            2017: 15.9,
-            2018: 16.1,
-            2019: 16.2,
-            2020: 15.7,
+            2000: 15.3,
+            2018: 17.0,
+            2019: 17.0,
+            2020: 16.6,
+            2021: 16.5,
+            2022: 16.4,
+            2023: 16.3,
         },
         "Other": {
-            2000: 4.0,
-            2014: 4.3,
-            2015: 4.4,
-            2016: 4.4,
-            2017: 4.3,
-            2018: 4.4,
-            2019: 4.3,
-            2020: 4.1,
+            2000: 3.4,
+            2018: 4.0,
+            2019: 3.9,
+            2020: 3.8,
+            2021: 3.8,
+            2022: 3.8,
+            2023: 3.8,
         },
         "Total": {
-            2000: 149.7,
-            2014: 139.7,
-            2015: 147.2,
-            2016: 151.2,
-            2017: 149.2,
-            2018: 141.5,
-            2019: 144.4,
-            2020: 137.5,
+            2000: 138.1,
+            2018: 134.5,
+            2019: 136.0,
+            2020: 126.7,
+            2021: 138.3,
+            2022: 123.2,
+            2023: 123.1,
         },
     }
 
@@ -1237,7 +1245,8 @@ def run():
 
     # Add FTS forecasting
     file_lfs = "../../../data/datamatrix/lifestyles.pickle"
-    with open(file_lfs, "rb") as handle:
+    local_filepath_lfs = os.path.join(file_directory, file_lfs)
+    with open(local_filepath_lfs, "rb") as handle:
         dm_lfs = pickle.load(handle)
 
     dm_fuels_eud_cantons.sort("Country")
@@ -1325,14 +1334,15 @@ def run():
     )
 
     # dm_fuels_eud_cantons.flattest().datamatrix_plot({'Country': ['Switzerland']})
-    DM = {"ind-serv-energy-demand": dm_fuels_eud_cantons}
+    DM = {"ind-energy-demand": dm_fuels_eud_cantons}
 
     file_industry = "../../../data/interface/industry_to_energy.pickle"
-    with open(file_industry, "wb") as handle:
+    local_filepath_industry = os.path.join(file_directory, file_industry)
+    with open(local_filepath_industry, "wb") as handle:
         pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     # my_pickle_dump(dm_fuels_eud_cantons, file_industry)
-    sort_pickle(file_industry)
+    sort_pickle(local_filepath_industry)
 
     return
 

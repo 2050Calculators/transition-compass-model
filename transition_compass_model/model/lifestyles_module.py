@@ -17,7 +17,7 @@ from transition_compass_model.model.common.interface_class import Interface
 # init years and lever
 def init_years_lever():
     # function that can be used when running the module as standalone to initialise years and levers
-    years_setting = [1990, 2015, 2050, 5]
+    years_setting = [1990, 2023, 2025, 2050, 5]
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     f = open(os.path.join(current_file_directory, "../config/lever_position.json"))
     lever_setting = json.load(f)[0]
@@ -37,6 +37,21 @@ def read_data(DM_lfs, lever_setting):
 def lifestyles(
     lever_setting, years_setting, DM_input, interface=Interface(), write_pickle=False
 ):
+    """Compute the lifestyles module, which is currently only population, and send it to the other modules.
+    The population data is read from the pickles, but can be overwritten by the interface if the data is available there.
+    The population data is sent to transport, agriculture, buildings and industry.
+
+
+    Args:
+        lever_setting (dict): The lever setting to use for the run, which is used to read the correct data from the pickles.
+        years_setting (list): The list of years for which to run the model.
+        DM_input (DataMatrix): The input data for the lifestyles module.
+        interface (Interface, optional): The interface through which to communicate with other modules. Defaults to Interface().
+        write_pickle (bool, optional): Whether to write the output to a pickle file. Defaults to False.
+
+    Returns:
+        DataMatrix: The population data for the lifestyles module.
+    """
     # get population data
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     DM_pop = read_data(DM_input, lever_setting)

@@ -463,6 +463,11 @@ def create_future_country_production_trend(DM_2050, DM_input, years_ots, years_f
 
     ## Use Capacity to create a Pathway at Country level
     dm_cap_tmp = dm_cap.filter({"Variables": ["pow_capacity"]})
+    missing_cat = list(
+        set(dm_prod_trend.col_labels["Categories1"])
+        - set(dm_cap_tmp.col_labels["Categories1"])
+    )
+    dm_cap_tmp.add(0, dim="Categories1", col_label=missing_cat, dummy=True)
     # Create fts trend by using the pow_cap-fact = production / capacity
     # fake_net_import_cap = dm_prod_hist[:, :, 'pow_production', 'Net-import', np.newaxis]
     # dm_cap_tmp.add(fake_net_import_cap, dummy=True, dim='Categories1', col_label='Net-import')
@@ -699,6 +704,7 @@ def energyscope_pyomo(
     # ampl.getParameter('avail').setValues({'NG_CCS': 0})
     m.avail["COAL_CCS"] = 0
     m.avail["ELECTRICITY"] = 5000  # Import capped to 5 TWh
+    m.avail["NG_CCS"] = 5000
 
     set_constraints(m, objective="cost")
     # Put show_log to True to see the results of the optimisation

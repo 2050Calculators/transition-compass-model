@@ -5,9 +5,13 @@ import pickle
 import numpy as np
 import pandas as pd
 import requests
-from _database.pre_processing.api_routines_CH import get_data_api_CH
-from _database.pre_processing.WorldBank_data_extract import get_WB_data
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
+from transition_compass_model._database.pre_processing.WorldBank_data_extract import (
+    get_WB_data,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     linear_fitting,
@@ -30,7 +34,6 @@ def create_ots_years_list(years_setting):
 
 
 def create_fts_years_list():
-
     years_fts = list(np.linspace(start=2025, stop=2050, num=6).astype(int))
     return years_fts
 
@@ -173,7 +176,6 @@ def deprecated_extract_lfs_demography_age():
 ### tot & by age new ###
 ########################
 def extract_lfs_pop(years_ots, table_id, file):
-
     try:
         with open(file, "rb") as handle:
             dm_lfs_pop_age = pickle.load(handle)
@@ -191,7 +193,7 @@ def extract_lfs_pop(years_ots, table_id, file):
                 "Citizenship (category)": "Citizenship (category) - total",  # Swiss and non-Swiss resident
                 "Sex": ["Male", "Female"],
                 "Age": structure["Age"],
-                "Demographic component": "Population on 1 January",
+                "Demographic component": "Population on 31 December",
             }
 
             mapping_dim = {
@@ -268,7 +270,7 @@ def extract_lfs_pop(years_ots, table_id, file):
     dm_lfs_pop_tot.group_all("Categories2")
     dm_lfs_pop_tot.group_all("Categories1")
     dm_lfs_pop_tot.rename_col(
-        "Population on 1 January", "lfs_population_total", dim="Variables"
+        "Population on 31 December", "lfs_population_total", dim="Variables"
     )
 
     # Sort Years
@@ -279,7 +281,6 @@ def extract_lfs_pop(years_ots, table_id, file):
 
 
 def extract_lfs_pop_fts(years_fts, table_id, file):
-
     try:
         with open(file, "rb") as handle:
             dm_pop_fts = pickle.load(handle)
@@ -700,7 +701,6 @@ def extract_per_capita_gdp_ppp():
 
 
 def dummy_update_DM_module_baseyear(DM_old, years_ots, years_fts):
-
     def dummy_update_dm_ots_baseyear(dm_ots, dm_fts, years_ots):
         years_ots_missing = list(set(years_ots) - set(dm_ots.col_labels["Years"]))
         dm_ots.add(np.nan, dummy=True, dim="Years", col_label=years_ots_missing)
@@ -760,7 +760,6 @@ def dummy_update_DM_module_baseyear(DM_old, years_ots, years_fts):
 
 
 def filter_country_DM(cntr_list, DM):
-
     for lever in DM["ots"].keys():
         if isinstance(DM["ots"][lever], dict):
             for dm_name in DM["ots"][lever].keys():

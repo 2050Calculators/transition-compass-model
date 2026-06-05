@@ -188,21 +188,22 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     )
 
     # Local transport emissions
-    N2O_to_CO2 = 265
-    CH4_to_CO2 = 28
 
-    dm_emissions = DM_passenger_out["emissions"]
-    idx = dm_emissions.idx
-    dm_emissions.array[:, :, :, :, idx["CH4"]] = (
-        dm_emissions.array[:, :, :, :, idx["CH4"]] * CH4_to_CO2
-    )
-    dm_emissions.array[:, :, :, :, idx["N2O"]] = (
-        dm_emissions.array[:, :, :, :, idx["N2O"]] * N2O_to_CO2
-    )
+    dm_emissions = wkf.convert_to_cO2eq_emissions(DM_passenger_out["emissions"].copy())
     dm_emissions.rename_col(
         "tra_passenger_emissions", "tra_emissions-CO2e_passenger", dim="Variables"
     )
-    dm_emissions.group_all("Categories2")
+    DM_passenger_out["emissions"] = dm_emissions
+
+    dm_emissions_scope1 = wkf.convert_to_cO2eq_emissions(
+        DM_passenger_out["emissions_scope1"].copy()
+    )
+    dm_emissions_scope1.rename_col(
+        "tra_passenger_emissions-scope1",
+        "tra_emissions-CO2e_passenger-scope1",
+        dim="Variables",
+    )
+    # dm_emissions_scope1.change_unit('tra_passenger_emissions-scope1', old_unit='Mt', new_unit='MtCO2eq', factor=1)
 
     results_run, KPI = inter.prepare_TPE_output(DM_passenger_out, DM_freight_out)
     return results_run, KPI
@@ -214,7 +215,7 @@ def local_transport_run():
     lever_setting = load_lever_config()
 
     # get geoscale
-    country_list = ["Switzerland"]
+    country_list = ["Vaud"]
     DM_input = filter_country_and_load_data_from_pickles(
         country_list=country_list, modules_list="transport"
     )

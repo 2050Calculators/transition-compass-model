@@ -1,15 +1,15 @@
 import os
 import pickle
 
-from _database.pre_processing.transport.Switzerland.get_data_functions.demand_pkm_vkm import (
-    extract_EP2050_transport_vkm_demand,
-)
 from processors.passenger_fleet_pipeline import run as passenger_fleet_run
 from processors.passenger_renewal_rate_and_waste_pipeline import (
     run as passenger_ren_rate_waste_adj_run,
 )
 from processors.transport_demand_pipeline import run as demand_pkm_vkm_run
 
+from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions.demand_pkm_vkm import (
+    extract_EP2050_transport_vkm_demand,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     load_pop,
@@ -17,7 +17,6 @@ from transition_compass_model.model.common.auxiliary_functions import (
 
 
 def get_ep2050_data(this_dir, years_ots):
-
     # VKM demand for LDV, 2W, bus by technology from EP2050
     # EP2050+_Detailergebnisse 2020-2060_Verkehrssektor_alle Szenarien_2022-04-12
     file_url = "https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA0NDE=.html"
@@ -34,7 +33,6 @@ def get_ep2050_data(this_dir, years_ots):
 
 
 def run(dm_vkm, dm_LDV_fleet_stock, dm_new_LDV_fleet, years_ots):
-
     # get dir
     this_dir = os.path.dirname(os.path.abspath(__file__))
 

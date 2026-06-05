@@ -5,13 +5,13 @@
 import os
 
 import numpy as np
-from _database.pre_processing.transport.Switzerland.get_data_functions import (
+
+from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
     passenger_fleet as get_data,
 )
-from _database.pre_processing.transport.Switzerland.processors.transport_demand_pipeline import (
+from transition_compass_model._database.pre_processing.transport.Switzerland.processors.transport_demand_pipeline import (
     run as demand_pkm_vkm_run,
 )
-
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     load_pop,
@@ -38,6 +38,18 @@ def downscale_public_fleet_VD(dm_public_fleet, dm_pkm):
 
 
 def compute_passenger_new_fleet(table_id_new_veh, file_new_veh_ots1, file_new_veh_ots2):
+    """
+    Compute the new passenger fleet by technology for Switzerland and Vaud.
+
+    Args:
+        table_id_new_veh (str): The ID of the table containing new vehicle data.
+        file_new_veh_ots1 (str): The path to the file containing new vehicle data for the first period.
+        file_new_veh_ots2 (str): The path to the file containing new vehicle data for the second period.
+
+    Returns:
+        DataMatrix: The computed passenger fleet by technology for Switzerland and Vaud.
+    """
+
     ### Add new fleet Vaud 1990 - 2004
     def compute_new_fleet_vaud(dm_CH, dm_tech):
         # Extract the cantonal % of the swiss new vehicles in 2005 and uses it to determine Vaud fleet in 1990-2004
@@ -117,7 +129,6 @@ def compute_passenger_new_fleet(table_id_new_veh, file_new_veh_ots1, file_new_ve
 
 
 def allocate_other_to_new_technologies(dm_fleet, dm_new_tech):
-
     dm_fleet_other = dm_fleet.filter({"Categories2": ["Other"]})
     # dm_fleet_other.group_all('Categories2')
     dm_fleet_other.filter({"Years": dm_new_tech.col_labels["Years"]}, inplace=True)
@@ -208,6 +219,17 @@ def get_public_transport_data(file_url, local_filename, years_ots):
 
 
 def run(dm_pkm, years_ots):
+    """
+    Run the passenger fleet pipeline.
+
+    Args:
+        dm_pkm (DataMatrix): DataMatrix of passenger demand in pkm, used to downscale public fleet to Vaud
+        years_ots (list): List of years for which to compute the fleet data
+
+    Returns:
+        dm_private_fleet (DataMatrix): DataMatrix of private passenger fleet data
+        dm_public_fleet (DataMatrix): DataMatrix of public passenger fleet data
+    """
     this_dir = os.path.dirname(os.path.abspath(__file__))
 
     # SECTION New vehicle fleet and technology share LDV, 2W ots
@@ -215,6 +237,7 @@ def run(dm_pkm, years_ots):
     # FIXME: In order to access other cantons check out: "New registrations of road vehicles by vehicle group and type"
     # FIXME: on https://stats.swiss/vis?pg=0&snb=21&df[ds]=ds%3Adisseminate&df[id]=DF_IVS_0_GENERAL&df[ag]=CH1.MFZ_IVS&df[vs]=1.0.0&dq=_T._T.N.100%2B200%2B300%2B400%2B500%2B600%2B700%2B_T%2B000._T.A&lom=LASTNPERIODS&lo=6&to[TIME_PERIOD]=false&lc=en
     ##### NEW passenger fleet by technology LDV, 2W
+    # https://www.bfs.admin.ch/asset/en/px-x-1103020200_120
     table_id_new_veh = "px-x-1103020200_120"
     # file is created if it doesn't exist
     file_new_veh_ots1 = os.path.join(this_dir, "../data/tra_new_fleet.pickle")
@@ -229,6 +252,7 @@ def run(dm_pkm, years_ots):
 
     # SECTION Vehicle fleet and technology share LDV, 2W ots
     #### Passenger fleet by technology (stock) LDV, 2W
+    # https://www.bfs.admin.ch/asset/fr/px-x-1103020100_101
     table_id_tot_veh = "px-x-1103020100_101"
     file_tot_veh = os.path.join(this_dir, "../data/tra_tot_fleet.pickle")
     dm_pass_fleet_raw = get_data.get_passenger_stock_fleet_by_tech_raw(
@@ -241,6 +265,7 @@ def run(dm_pkm, years_ots):
     #### Passenger fleet by technology (stock) bus, rail, metrotram - Switzerland only
     # Note that this data are better for ots than
     file_url = "https://dam-api.bfs.admin.ch/hub/api/dam/assets/32253175/master"
+    # https://www.bfs.admin.ch/asset/fr/36202624
     # Transports publics (trafic marchandises rail inclus) - séries chronologiques détaillées
     local_filename = os.path.join(this_dir, "../data/tra_public_transport.xlsx")
     DM_public = get_public_transport_data(file_url, local_filename, years_ots)

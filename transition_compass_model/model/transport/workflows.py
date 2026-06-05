@@ -2,10 +2,19 @@ import numpy as np
 
 import transition_compass_model.model.transport.utils as utils
 from transition_compass_model.model.common.auxiliary_functions import compute_stock
+from transition_compass_model.model.common.constant_data_matrix_class import (
+    ConstantDataMatrix,
+)
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
-def passenger_fleet_energy(DM_passenger, dm_lfs, DM_other, cdm_const, years_setting):
+def passenger_fleet_energy(
+    DM_passenger: DataMatrix,
+    dm_lfs: DataMatrix,
+    DM_other: DataMatrix,
+    cdm_const: ConstantDataMatrix,
+    years_setting: list,
+):
     # SECTION Passenger - Demand-pkm by mode
     # dm_demand_by_mode [pkm] = modal_shares(urban) * demand_pkm(urban) + modal_shares(non-urban) * demand_pkm(non-urban)
     dm_modal_split = DM_passenger["passenger_modal_split"]
@@ -198,6 +207,22 @@ def passenger_fleet_energy(DM_passenger, dm_lfs, DM_other, cdm_const, years_sett
         },
         units={"tra_passenger_emissions": "g"},
     )
+    # Scope1 emissions output
+    dm_emissions_by_mode_scope_1 = dm_emissions.copy()
+    dm_emissions_by_mode_scope_1.change_unit(
+        "tra_passenger_emissions", 1e-12, "g", "Mt"
+    )
+    dm_emissions_by_mode_scope_1.drop(col_label="aviation", dim="Categories1")
+    dm_emissions_by_mode_scope_1.drop(col_label="SAF", dim="Categories2")
+    dm_emissions_by_mode_scope_1.rename_col(
+        "tra_passenger_emissions", "tra_passenger_emissions-scope1", dim="Variables"
+    )
+    dm_emissions_by_mode_scope_1.groupby(
+        {"rail": ["metrotram", "rail"]},
+        dim="Categories1",
+        inplace=True,
+    )
+    dm_emissions_by_mode_scope_1.group_all("Categories2", inplace=True)
 
     # SECTION Passenger - GHG Emissions EV
     # Compute emissions from electricity
@@ -418,6 +443,7 @@ def passenger_fleet_energy(DM_passenger, dm_lfs, DM_other, cdm_const, years_sett
     DM_passenger_out["fuel"] = dm_fuel
     DM_passenger_out["agriculture"] = dm_biogas
     DM_passenger_out["emissions"] = dm_emissions_by_mode
+    DM_passenger_out["emissions_scope1"] = dm_emissions_by_mode_scope_1
     DM_passenger_out["energy"] = dm_energy
     DM_passenger_out["soft-mobility"] = dm_demand_soft
     DM_passenger_out["aviation"] = {
@@ -927,3 +953,29 @@ def dummy_tra_infrastructure_workflow(dm_pop, lever_setting):
             ]
         }
     )
+
+
+def convert_to_cO2eq_emissions(dm_emissions):
+    """Convert N20  and CH4 emissions to CO2 equivalent emissions
+
+    Args:
+        dm_emissions (Datamatrix): Datamatrix with N2O and CH4 emissions in Mt
+
+    Returns:
+        Datamatrix: Datamatrix with N2O and CH4 emissions converted to CO2 equivalent emissions
+    """
+
+    # Local transport emissions
+    N2O_to_CO2 = 265
+    CH4_to_CO2 = 28
+
+    idx = dm_emissions.idx
+    dm_emissions.array[:, :, :, :, idx["CH4"]] = (
+        dm_emissions.array[:, :, :, :, idx["CH4"]] * CH4_to_CO2
+    )
+    dm_emissions.array[:, :, :, :, idx["N2O"]] = (
+        dm_emissions.array[:, :, :, :, idx["N2O"]] * N2O_to_CO2
+    )
+    dm_emissions.group_all("Categories2")
+
+    return dm_emissions

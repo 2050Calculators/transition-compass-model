@@ -1,10 +1,10 @@
-import json
 import os
 
 import transition_compass_model.model.lca.interfaces as inter
 import transition_compass_model.model.lca.workflows as wkf
 from transition_compass_model.model.common.auxiliary_functions import (
     filter_country_and_load_data_from_pickles,
+    init_years_lever,
     read_level_data,
 )
 from transition_compass_model.model.common.interface_class import Interface
@@ -63,8 +63,11 @@ def lca(
     dm_elec_new = DM_buildings["electronics"].filter(
         {"Variables": ["bld_electronics_new"]}
     )
+    # FIXME : plane is doing weird things for now it is removed. It should be added back when the issue will be solved.
     DM_demand = {
-        "vehicles": DM_transport["tra-veh"],
+        "vehicles": DM_transport["tra-veh"].filter(
+            {"Categories1": ["HDV", "LDV", "bus", "ships", "trains"]}
+        ),
         "tra-infra": dm_tra_infra_new,
         "domapp": dm_domapp_new,
         "electronics": dm_elec_new,
@@ -85,16 +88,14 @@ def lca(
     results_run = wkf.variables_for_tpe(DM_footprint_agg)
 
     # return
+    # TODO : add other results run outputs to website.
     return results_run
 
 
 def local_lca_run():
     # Configures initial input for model run
-    f = open("../config/lever_position.json")
-    lever_setting = json.load(f)[0]
-    years_setting = [1990, 2023, 2025, 2050, 5]
-
-    country_list = ["EU27"]
+    years_setting, lever_setting = init_years_lever()
+    country_list = ["Vaud"]
 
     sectors = ["lca"]
 

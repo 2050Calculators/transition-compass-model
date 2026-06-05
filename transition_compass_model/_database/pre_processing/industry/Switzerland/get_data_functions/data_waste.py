@@ -7,7 +7,6 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def get_data_waste_vehicles(current_file_directory):
-
     # source on website: https://www.bafu.admin.ch/bafu/en/home/topics/waste/guide-to-waste-a-z/end-of-life-vehicles.html
     # "Approximately 200,000 vehicles are withdrawn from circulation every year in Switzerland.
     # A large proportion of them are completely roadworthy or only have minor damage or faults.
@@ -84,11 +83,10 @@ def subset_with_key_word(df, word):
 
 
 def get_data_special_waste(current_file_directory):
-
     # get data dechet speciaux
     filepath = os.path.join(
         current_file_directory,
-        "../data/waste/2_Statistique des déchets spéciaux/ALL.xlsx",
+        "../data/waste/2_Statistique_des_déchets_spéciaux/ALL.xlsx",
     )
     df = pd.read_excel(filepath)
     df = subset_with_key_word(df, "batteries")
@@ -101,10 +99,9 @@ def get_data_special_waste(current_file_directory):
 
 
 def extract_waste_data_from_dechets_speciaux(current_file_directory, word, variable):
-
     filepath = os.path.join(
         current_file_directory,
-        "../data/waste/2_Statistique des déchets spéciaux/ALL.xlsx",
+        "../data/waste/2_Statistique_des_déchets_spéciaux/ALL.xlsx",
     )
     df = pd.read_excel(filepath)
     df = subset_with_key_word(df, word)

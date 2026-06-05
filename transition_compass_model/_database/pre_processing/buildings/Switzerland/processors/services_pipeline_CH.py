@@ -3,12 +3,12 @@
 import os
 import re
 
-import _database.pre_processing.buildings.Switzerland.get_data_functions.services_CH as fser
 import numpy as np
-from _database.pre_processing.buildings.Switzerland.processors.hot_water_pipeline_CH import (
+
+import transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.services_CH as fser
+from transition_compass_model._database.pre_processing.buildings.Switzerland.processors.hot_water_pipeline_CH import (
     run as hotwater_run,
 )
-
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
@@ -131,7 +131,6 @@ def determine_mapping_dict(cat_list_ref, cat_list_match):
 def map_national_energy_demand_by_sector_to_cantons(
     dm_energy, dm_employees, mapping_dict, mapping_sectors, years_ots
 ):
-
     dm_employees_mapped = dm_employees.groupby(
         mapping_dict, dim="Categories1", inplace=False
     )
@@ -200,7 +199,6 @@ def map_services_eud_by_canton(dm_employees_mapped, dm_services_end_use):
 def split_fuel_demand_by_eud(
     dm_water, dm_space_heat, dm_industry_eud_canton, cantonal=True
 ):
-
     dm_fuel_split = dm_water.copy()
     dm_fuel_split.append(dm_space_heat, dim="Categories1")
 
@@ -290,7 +288,6 @@ def adjust_based_on_FSO_energy_consumption(
 def energy_split_from_fuel_to_tech(
     dm_energy, dm_water_CH, dm_space_heat_CH, dm_efficiency, dm_services_eud
 ):
-
     dm_solar = split_fuel_demand_by_eud(
         dm_water_CH, dm_space_heat_CH, dm_services_eud.copy(), cantonal=False
     )
@@ -330,7 +327,6 @@ def energy_split_from_fuel_to_tech(
 ##   SERVICES TO ENERGY INTERFACE  ##
 #####################################
 def run(country_list, years_ots):
-
     this_dir = os.path.dirname(os.path.abspath(__file__))
 
     # Get Water data for all cantons

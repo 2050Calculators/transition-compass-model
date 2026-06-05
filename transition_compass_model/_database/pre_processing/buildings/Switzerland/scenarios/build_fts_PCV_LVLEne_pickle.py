@@ -2,8 +2,10 @@ import os
 import pickle
 
 import numpy as np
-from _database.pre_processing.api_routines_CH import get_data_api_CH
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     load_pop,
@@ -105,7 +107,6 @@ def extract_stock_floor_area(table_id, file):
 def replace_years_by_corresponding_categories_for_specified_household(
     dm_num_bld, env_cat, type_households="single-family-households"
 ):
-
     dm_num_bld_sfh = dm_num_bld.filter({"Categories1": [type_households]})
     dm_num_bld_sfh.groupby(env_cat, dim="Categories2", inplace=True)
     return dm_num_bld_sfh
@@ -139,6 +140,7 @@ def compute_renovation_loi_energie(
         {"Country": ["Vaud"], "Categories2": ["F"]}
     )
 
+    # append the area in meter square to the datamatrix with the number of buildings.
     dm_num_bld.append(dm_stock_area, dim="Variables")
     dm_bld = replace_years_by_corresponding_categories(
         dm_num_bld, env_cat_sfh, env_cat_mfh
@@ -151,16 +153,18 @@ def compute_renovation_loi_energie(
             "Categories2": ["F"],
         }
     )
+    # Categories 2 is the CECB category as it filtered with only F we just remove a useless dimension
     dm_num_bld_F.group_all(dim="Categories2")
-
     dm_num_bld_per_size_F.group_all(dim="Categories2")
     dm_num_bld_F.append(dm_num_bld_per_size_F, dim="Variables")
 
+    # We filter only for multi-family household sbecause they are probably the only one with superficy higher than 750 m2
     dm_num_bld_F.filter(
         {"Years": [2023], "Categories1": ["multi-family-households"]}, inplace=True
     )
     dm_num_bld_F.group_all(dim="Categories1")
 
+    # Iterate in the size of buildings and compute the ratio of number of buildings it correspond to
     for col in dm_num_bld_per_size_F.col_labels["Variables"]:
         dm_num_bld_F.operation(
             col,
@@ -179,7 +183,8 @@ def compute_renovation_loi_energie(
     percent_building_renvoated_100_149 = (
         1 - (array_per_surface[-2:].sum() - 0.20) / array_per_surface[-2]
     )
-
+    # We want to convert the number of building to the floor area that need to be renovated, and we assume that the average size of building bigger than 150m2 is 175m2
+    # and the average size of building between 100 and 149 is 124.5 m2
     area_necessary_renovated = (
         dm_num_bld_F.array[idx["Vaud"], idx[2023], idx["150+"]] * 175
     )
@@ -208,6 +213,7 @@ def compute_renovation_loi_energie(
     yrs_fts = [yr for yr in dm_rr_fts_2.col_labels["Years"] if yr <= 2040]
     idx_fts = [idx[yr] for yr in yrs_fts]
 
+    # get the proportion of renovation for E buildings (not influenced by energy law) to add to the renovation rate of F buildings, as we assume that some of the renovation that would have been done in E will be done in F because of the energy law
     ren_redistribution = DM_buildings["fts"]["building-renovation-rate"][
         "bld_renovation-redistribution"
     ][2].copy()
@@ -239,6 +245,16 @@ def compute_renovation_loi_energie(
 def update_heating_change_proportion(
     dm_heating_cat_fts_2, household_type="multi-family-households"
 ):
+    """when setting some technology to 0 in dm_heating_cat_fts_2 we need to replace them with other technology.
+    Here we use the proportion from the study perspectives chaleur to replace them.
+
+    Args:
+        dm_heating_cat_fts_2 (Datamatrix): Datamatrix with the ratio of use of each techology.
+        household_type (str): _description_. Defaults to "multi-family-households".
+
+    Returns:
+        Datamatrix: The updated datamatrix filtered with the relevant household type.
+    """
 
     # update multi households
     dm_heating_fts_mfh = dm_heating_cat_fts_2.filter(
@@ -279,10 +295,102 @@ def update_heating_change_proportion(
     return dm_heating_fts_mfh
 
 
+def update_heating_fts_2(dm_heating_cat_fts_2):
+    idx = dm_heating_cat_fts_2.idx
+    idx_old_cat = [idx["E"], idx["F"]]
+    idx_new_cat = [idx["B"], idx["C"], idx["D"]]
+    # Fossil heating
+    # article  40.1
+    idx_fossil = [idx["coal"], idx["heating-oil"], idx["gas"]]
+    # dm_heating_cat_fts_2.array[idx['Vaud'], :, idx['bld_heating-mix'], :, idx['B'], idx_fossil] = 0
+    dm_heating_cat_fts_2.array[
+        idx["Vaud"],
+        1 : idx[2045],
+        idx["bld_heating-mix"],
+        :,
+        *np.ix_(idx_new_cat, idx_fossil),
+    ] = np.nan
+    dm_heating_cat_fts_2.array[
+        idx["Vaud"],
+        idx[2045] :,
+        idx["bld_heating-mix"],
+        :,
+        *np.ix_(idx_new_cat, idx_fossil),
+    ] = 0
+    dm_heating_cat_fts_2.array[
+        idx["Vaud"],
+        1 : idx[2050],
+        idx["bld_heating-mix"],
+        :,
+        *np.ix_(idx_old_cat, idx_fossil),
+    ] = np.nan
+    dm_heating_cat_fts_2.array[
+        idx["Vaud"], idx[2050] :, idx["bld_heating-mix"], :, :, idx_fossil
+    ] = 0
+
+    dm_heating_cat_fts_2.fill_nans("Years")
+
+    dm_heating_fts_mfh = update_heating_change_proportion(
+        dm_heating_cat_fts_2, "multi-family-households"
+    )
+    dm_heating_cat_fts_2["Vaud", :, :, "multi-family-households", :, :] = (
+        dm_heating_fts_mfh["Vaud", :, :, "multi-family-households", :, :]
+    )
+
+    dm_heating_fts_sfh = update_heating_change_proportion(
+        dm_heating_cat_fts_2, "single-family-households"
+    )
+    dm_heating_cat_fts_2["Vaud", :, :, "single-family-households", :, :] = (
+        dm_heating_fts_sfh["Vaud", :, :, "single-family-households", :, :]
+    )
+
+    dm_heating_cat_fts_2.normalise("Categories3")
+    dm_heating_cat_fts_2.fill_nans("Years")
+    return dm_heating_cat_fts_2
+
+
+def create_renov_prop_hw(dm_bld_mix):
+    # Proportion according to the study perspectives chaleur (fig. 1)
+    renov_proportion_multi = {
+        "district-heating": 0.563,
+        "heat-pump": 0.25,
+        "solar": 0.067 + 0.063,
+        "wood": 0.057,
+    }
+    # Proportion according to the study perspectives chaleur (fig 3.)
+    renov_proportion_single = {
+        "district-heating": 0.004,
+        "heat-pump": 0.822,
+        "solar": 0.081 + 0.031,
+        "wood": 0.061,
+    }
+    dm_prop_multi_single = dm_bld_mix.filter(
+        {"Country": ["Vaud"], "Variables": ["bld_floor-area_stock"]}
+    ).copy()
+    dm_prop_multi_single.group_all("Categories2")
+    dm_prop_multi_single.normalise("Categories1")
+    idx_prop_multi_single = dm_prop_multi_single.idx
+    array_prop_multi_single = dm_prop_multi_single.array[
+        idx_prop_multi_single["Vaud"],
+        idx_prop_multi_single[2023],
+        idx_prop_multi_single["bld_floor-area_stock"],
+        :,
+    ]
+
+    # I want to do prop
+    renov_prop_hw = {}
+    for cat in renov_proportion_single.keys():
+        renov_prop_hw[cat] = (
+            renov_proportion_multi[cat] * array_prop_multi_single[0]
+            + renov_proportion_single[cat] * array_prop_multi_single[1]
+        )
+
+    return renov_prop_hw
+
+
 def run(
     DM_buildings, dm_pop, global_var, country_list, lev=2
 ):  # lever =2 for energy law and 3 for PCV 4 is perfect world 1 is BAU
-
     construction_period_envelope_cat_sfh = global_var["envelope construction sfh"]
     construction_period_envelope_cat_mfh = global_var["envelope construction mfh"]
 
@@ -304,8 +412,12 @@ def run(
     env_cat_sfh = construction_period_envelope_cat_sfh
 
     # Recompute stock_cat from DM_buildings
-    dm_floor_cap = DM_buildings["ots"]["floor-intensity"].filter(
-        {"Variables": ["lfs_floor-intensity_space-cap"], "Country": country_list}
+    dm_floor_cap = (
+        DM_buildings["ots"]["floor-intensity"]
+        .filter(
+            {"Variables": ["lfs_floor-intensity_space-cap"], "Country": country_list}
+        )
+        .copy()
     )
     dm_bld_mix = (
         DM_buildings["ots"]["building-renovation-rate"]["bld_building-mix"]
@@ -361,85 +473,67 @@ def run(
 
     # SECTION: Loi energy - Heating tech
     # Plus de gaz, mazout, charbon dans les prochain 15-20 ans. Pas de gaz, mazout, charbon dans les nouvelles constructions
-    dm_heating_cat_fts_1 = DM_buildings["fts"]["heating-technology-fuel"][
+    dm_heating_cat_fts_2 = DM_buildings["fts"]["heating-technology-fuel"][
         "bld_heating-technology"
     ][1].copy()
 
-    idx = dm_heating_cat_fts_1.idx
-    # Electricity
-    # article 41
-    idx_old_cat = [idx["E"], idx["F"]]
-    idx_new_cat = [idx["B"], idx["C"], idx["D"]]
-
-    # article 9 et 10 DACCE 2033 au plus tard et sur justificatif de peu de consomation + 5 ans
-
-    dm_heating_cat_fts_1.array[
-        idx["Vaud"], idx[2035] :, :, :, idx_old_cat, idx["electricity"]
-    ] = 0
-    dm_heating_cat_fts_1.array[
-        idx["Vaud"], idx[2035] :, :, :, idx_new_cat, idx["electricity"]
-    ] = 0
-
-    dm_heating_cat_fts_1.normalise("Categories3")
-    dm_heating_cat_fts_1.fill_nans("Years")
-    # Electricity is set for all levers because it is in a decree from 2022
-    for lever in range(1, 4 + 1):
+    dm_heating_cat_fts_2 = update_heating_fts_2(dm_heating_cat_fts_2)
+    for lever in range(lev, 4 + 1):
         DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"][
-            lever
-        ] = dm_heating_cat_fts_1.copy()
+            lev
+        ] = dm_heating_cat_fts_2.copy()
 
-    dm_heating_cat_fts_2 = dm_heating_cat_fts_1.copy()
+    ##### HOTWATER TECHNOLOGY MIX ######
+
+    dm_hotwater_fts_2 = DM_buildings["fts"]["heating-technology-fuel"][
+        "bld_hot-water-technology"
+    ][1].copy()
+
+    idx = dm_hotwater_fts_2.idx
     # Fossil heating
     # article  40.1
-    idx_fossil = [idx["coal"], idx["heating-oil"], idx["gas"]]
-    # dm_heating_cat_fts_2.array[idx['Vaud'], :, idx['bld_heating-mix'], :, idx['B'], idx_fossil] = 0
-    dm_heating_cat_fts_2.array[
-        idx["Vaud"],
-        1 : idx[2040],
-        idx["bld_heating-mix"],
-        :,
-        *np.ix_(idx_new_cat, idx_fossil),
+    idx_fossil = [idx["heating-oil"], idx["gas"]]
+
+    # Replace the use of fossil fuel for hot water to 0 for new buildings from 2025 and for all buildings from 2035, and replace it by the ideal scenario proportion
+    # There are no buildings catergoies for hotwater technology so we replace it for all the categories at once
+    dm_hotwater_fts_2.array[
+        idx["Vaud"], 1 : idx[2050], idx["bld_hw_tech-mix"], idx_fossil
     ] = np.nan
-    dm_heating_cat_fts_2.array[
-        idx["Vaud"],
-        idx[2040] :,
-        idx["bld_heating-mix"],
-        :,
-        *np.ix_(idx_new_cat, idx_fossil),
+    dm_hotwater_fts_2.array[
+        idx["Vaud"], idx[2050], idx["bld_hw_tech-mix"], idx_fossil
     ] = 0
-    dm_heating_cat_fts_2.array[
-        idx["Vaud"],
-        1 : idx[2045],
-        idx["bld_heating-mix"],
-        :,
-        *np.ix_(idx_old_cat, idx_fossil),
-    ] = np.nan
-    dm_heating_cat_fts_2.array[
-        idx["Vaud"], idx[2045] :, idx["bld_heating-mix"], :, :, idx_fossil
-    ] = 0
+    dm_hotwater_fts_2.fill_nans("Years")
 
-    dm_heating_cat_fts_2.fill_nans("Years")
-
-    dm_heating_fts_mfh = update_heating_change_proportion(
-        dm_heating_cat_fts_2, "multi-family-households"
-    )
-    dm_heating_cat_fts_2["Vaud", :, :, "multi-family-households", :, :] = (
-        dm_heating_fts_mfh["Vaud", :, :, "multi-family-households", :, :]
+    renov_prop_hotwater = create_renov_prop_hw(dm_bld_mix)
+    heating_types = list(renov_prop_hotwater.keys())
+    prop_vec = np.array([renov_prop_hotwater[h] for h in heating_types]).reshape(
+        1, 1, -1
     )
 
-    dm_heating_fts_sfh = update_heating_change_proportion(
-        dm_heating_cat_fts_2, "single-family-households"
+    # Once all the old technologies are set to 0 we want to replace the missing proportion with the ideal scenario proportion
+    # proportion_heating_to_replace is the missing proportion of heating that need to be replaced, we compute it by doing 1 - the sum of the proportion of heating that is not set to 0 (the one that is not affected by the energy law)
+    dm_sum = dm_hotwater_fts_2.filter({"Country": ["Vaud"]}).group_all(
+        "Categories1", inplace=False
     )
-    dm_heating_cat_fts_2["Vaud", :, :, "single-family-households", :, :] = (
-        dm_heating_fts_sfh["Vaud", :, :, "single-family-households", :, :]
-    )
+    arr_sum = dm_sum.array[:, :, :, np.newaxis]
+    proportion_heating_to_replace = 1 - arr_sum
+    idx = dm_hotwater_fts_2.idx
+    heating_idx = [idx[h] for h in heating_types]
+    dm_hotwater_fts_2.array[
+        np.ix_(
+            [idx["Vaud"]],
+            np.arange(dm_hotwater_fts_2.array.shape[1]),
+            np.arange(dm_hotwater_fts_2.array.shape[2]),
+            heating_idx,
+        )
+    ] += proportion_heating_to_replace * prop_vec
+    dm_hotwater_fts_2.normalise("Categories1")
+    dm_hotwater_fts_2.fill_nans("Years")
 
-    dm_heating_cat_fts_2.normalise("Categories3")
-    dm_heating_cat_fts_2.fill_nans("Years")
-    # for lever in range(lev,4+1):
-    DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"][lev] = (
-        dm_heating_cat_fts_2.copy()
-    )
+    for lever in range(lev, 4 + 1):
+        DM_buildings["fts"]["heating-technology-fuel"]["bld_hot-water-technology"][
+            lever
+        ] = dm_hotwater_fts_2.copy()
 
     this_dir = os.path.dirname(os.path.abspath(__file__))
     # !FIXME: use the actual values and not the calibration factor

@@ -81,7 +81,7 @@ target/
 # IPython
 profile_default/
 ipython_config.py
-
+*.csv
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is
 #   intended to run in multiple environments; otherwise, check them in:
@@ -223,6 +223,7 @@ CLAUDE.md
 
 # For Mac
 .DS_Store
+transition_compass_model/.vscode/launch.json
 
 # PDFs
 *.pdf

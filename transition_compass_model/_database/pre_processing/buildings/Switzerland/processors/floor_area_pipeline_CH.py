@@ -1,12 +1,12 @@
 import os
 
-import _database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH as fla
 import numpy as np
 import pandas as pd
-from _database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import (
+
+import transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH as fla
+from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import (
     load_construction_period_param,
 )
-
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
@@ -16,7 +16,6 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def fill_missing_years_using_FSO_data(dm, dm_raw):
-
     dm_add_missing_variables(dm, {"Years": dm_raw.col_labels["Years"]}, fill_nans=False)
     dm.filter({"Years": dm_raw.col_labels["Years"]}, inplace=True)
     dm_raw.rename_col(
@@ -203,13 +202,35 @@ def run(global_vars, country_list, years_ots):
     dm_WP = clean_WP_ERA_file(
         df_WP, cantons_name_list=dm_stock_tot.col_labels["Country"]
     )
-    # !FIXME: You are here!
+
+    # !FIXME: Find a better option to generalize to all canton
+    backup_stock = dm_stock_tot.copy()
+
     arr_adj_factor = (
         dm_WP[:, 2023, "bld_floor-area_stock", :]
         / dm_stock_tot[:, 2023, "bld_floor-area_stock", :]
     )
+
     dm_stock_tot[:, :, "bld_floor-area_stock", :] = (
         dm_stock_tot[:, :, "bld_floor-area_stock", :] * arr_adj_factor[:, np.newaxis, :]
+    )
+    dm_era = fla.extract_energy_reference_area()
+
+    # dm_era[:, 2023, "bld_energy-reference-area", :]
+    # adjust factor from dwelling surface to energy referance area (ERA) for vaud canton
+    arr_adj_factor_vaud = {}
+    for key in dm_era.keys():
+        arr_adj_factor_vaud[key] = (
+            dm_era[key] / backup_stock["Vaud", 2023, "bld_floor-area_stock", key]
+        )
+
+    dm_stock_tot["Vaud", :, "bld_floor-area_stock", "multi-family-households"] = (
+        backup_stock["Vaud", :, "bld_floor-area_stock", "multi-family-households"]
+        * arr_adj_factor_vaud["multi-family-households"]
+    )
+    dm_stock_tot["Vaud", :, "bld_floor-area_stock", "single-family-households"] = (
+        backup_stock["Vaud", :, "bld_floor-area_stock", "single-family-households"]
+        * arr_adj_factor_vaud["single-family-households"]
     )
 
     # Adjust cantonal stock by energy class

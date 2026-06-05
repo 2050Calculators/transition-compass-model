@@ -9,6 +9,7 @@ from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
     filter_country_and_load_data_from_pickles,
+    my_pickle_dump,
     read_level_data,
 )
 from transition_compass_model.model.common.interface_class import Interface
@@ -46,7 +47,9 @@ def read_data(DM_buildings, lever_setting):
     DM_hotwater = {
         "demand": DM_buildings["fxa"]["hot-water"]["hw-energy-demand"],
         "efficiency": DM_buildings["fxa"]["hot-water"]["hw-efficiency"],
-        "tech-mix": DM_buildings["fxa"]["hot-water"]["hw-tech-mix"],
+        "tech-mix_fts": DM_ots_fts["heating-technology-fuel"][
+            "bld_hot-water-technology"
+        ],
     }
 
     DM_services = DM_buildings["fxa"]["services"]
@@ -61,6 +64,9 @@ def read_data(DM_buildings, lever_setting):
         "heatcool-behaviour": DM_ots_fts["heatcool-behaviour"],
         "heating-calibration": DM_buildings["fxa"]["heating-energy-calibration"],
         "electricity-emission": DM_buildings["fxa"]["emission-factor-electricity"],
+        "district_heating-emission": DM_buildings["fxa"][
+            "emission-factor-heating_district"
+        ],
         "u-value": DM_buildings["fxa"]["u-value"],
         "surface-to-floorarea": DM_buildings["fxa"]["surface-to-floorarea"],
     }
@@ -145,6 +151,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     DM_hotwater_out = wkf.bld_hotwater_workflow(
         DM_hotwater,
         DM_energy_out["TPE"]["energy-demand-heating"].copy(),
+        DM_energy,
         cdm_const,
         dm_lfs,
         years_ots,
@@ -154,6 +161,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     DM_services_out = wkf.bld_services_workflow(
         DM_services,
         DM_energy_out["TPE"]["energy-demand-heating"].copy(),
+        DM_energy,
         cdm_const,
         years_ots,
         years_fts,
@@ -218,11 +226,13 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     )
 
     # 'District-heating' module interface
-    interface.add_link(
-        from_sector="buildings",
-        to_sector="district-heating",
-        dm=DM_energy_out["district-heating"],
-    )
+    DISTRICT_HEATING_MODULE = False
+    if DISTRICT_HEATING_MODULE:
+        interface.add_link(
+            from_sector="buildings",
+            to_sector="district-heating",
+            dm=DM_energy_out["district-heating"],
+        )
 
     DM_inter_energy = {
         "households_heating": DM_energy_out["power"],
@@ -232,14 +242,14 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
         "services_all": DM_services_out["energy"],
     }
 
-    # write_pickle = False
-    # if write_pickle is True:
-    #     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    #     f = os.path.join(
-    #         current_file_directory,
-    #         "../_database/data/interface/buildings_to_energy.pickle",
-    #     )
-    #     my_pickle_dump(DM_inter_energy, f)
+    write_pickle = False
+    if write_pickle:
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(
+            current_file_directory,
+            "../_database/data/interface/buildings_to_energy.pickle",
+        )
+        my_pickle_dump(DM_inter_energy, f)
 
     interface.add_link(from_sector="buildings", to_sector="energy", dm=DM_inter_energy)
 
@@ -255,7 +265,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
         to_sector="emissions",
         dm=dm_emi,
     )
-
+    #
     # industry interface
     DM_industry = inter.bld_industry_interface(
         DM_floor_out["industry"], DM_appliances_out["industry"]
@@ -282,7 +292,7 @@ def buildings_local_run():
     # Function to run only transport module without converter and tpe
 
     # get geoscale
-    country_list = ["EU27", "Switzerland", "Vaud"]
+    country_list = ["Switzerland", "Vaud"]
     DM_input = filter_country_and_load_data_from_pickles(
         country_list=country_list, modules_list="buildings"
     )

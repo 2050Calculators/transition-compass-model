@@ -5,9 +5,9 @@
 import os
 import pickle
 
-import _database.pre_processing.transport.Switzerland.get_data_functions.efficiency as get_data
 import numpy as np
 
+import transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions.efficiency as get_data
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     linear_fitting,
@@ -200,7 +200,6 @@ def run(
     years_ots,
     dm_data_check_vkm,
 ):
-
     this_dir = os.path.dirname(os.path.abspath(__file__))  # creates local path variable
 
     ###############################
@@ -398,7 +397,6 @@ def run(
 
 
 def run_old(cdm_emissions_factors, years_ots):
-
     this_dir = os.path.dirname(os.path.abspath(__file__))  # creates local path variable
 
     # SECTION Vehicle efficiency LDV, stock and new, ots

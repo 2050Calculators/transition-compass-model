@@ -44,7 +44,6 @@ def adjust_COP_based_on_envelope_cat(dm):
 
 
 def run(DM_buildings, country_list, years_fts):
-
     filter_DM(DM_buildings, {"Country": country_list})
 
     this_dir = os.path.dirname(os.path.abspath(__file__))
@@ -150,27 +149,60 @@ def run(DM_buildings, country_list, years_fts):
     ###########################################
     #####    HEATING TECHNOLOGY MIX     #######
     ###########################################
+    def linear_fit_ratio(dm, years_fts, category_to_normalise="Categories1"):
+        # Use based_on to fit only on historical data (2015-2023)
+        linear_fitting(dm, years_fts, based_on=list(range(2015, 2023)))
+        test_array = dm.array
+        test_array[test_array < 0] = 0
+        dm.array = test_array
+        dm.fill_nans("Years")
+        dm.normalise(category_to_normalise)
+        return dm
+
     dm_heating_cat = DM_buildings["ots"]["heating-technology-fuel"][
         "bld_heating-technology"
     ].copy()
     dm_heating_cat.add(np.nan, dim="Years", dummy=True, col_label=years_fts)
-    # Obligation à enlever les chauffages electriques d'ici 2033-2038
-    # https://publication.vd.ch/publications/dgaic/aide-memoire/domaines-batiments/assainissement-des-chauffages-et-chauffe-eau-electriques
+    # Obligation à enlever les chauffages electriques d'ici 2033
+    # https://www.vd.ch/environnement/energie/legislation/chauffages-et-chauffe-eaux-electriques
     idx = dm_heating_cat.idx
-    dm_heating_cat["Vaud", idx[2035] :, :, :, "E", "electricity"] = 0
-    dm_heating_cat["Vaud", idx[2035] :, :, :, "F", "electricity"] = 0
-    dm_heating_cat["Vaud", idx[2040] :, :, :, "B", "electricity"] = 0
-    dm_heating_cat["Vaud", idx[2040] :, :, :, "C", "electricity"] = 0
-    dm_heating_cat["Vaud", idx[2040] :, :, :, "D", "electricity"] = 0
-    dm_heating_cat.fill_nans("Years")
+    dm_heating_cat["Vaud", idx[2035] :, :, :, :, "electricity"] = 0
+
+    dm_heating_cat = linear_fit_ratio(
+        dm_heating_cat.copy(), years_fts, category_to_normalise="Categories3"
+    )
+
     DM_buildings["fts"]["heating-technology-fuel"] = dict()
     DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"] = dict()
-    dm_heating_cat.normalise("Categories3")
     for lev in range(4):
         lev = lev + 1
         DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"][
             lev
         ] = dm_heating_cat.filter({"Years": years_fts})
+    ###########################################
+    #####    HOTWATER TECHNOLOGY MIX     #######
+    ###########################################
+    dm_hotwater_cat = DM_buildings["fxa"]["hot-water"]["hw-tech-mix"].copy()
+    idx = dm_heating_cat.idx
+    # Obligation à enlever les chauffages electriques d'ici 2033
+    # https://www.vd.ch/environnement/energie/legislation/chauffages-et-chauffe-eaux-electriques
+    # article 9 et 10 DACCE 2033 au plus tard et sur justificatif de peu de consomation + 5 ans
+    dm_hotwater_cat["Vaud", idx[2035] :, :, "electricity"] = 0
+    # For hot water we do a linear extrapolation of the technology mix.
+    # As it is a ratio we force values to be above 0, and then normalise to sum to 1 again.
+
+    dm_hotwater_cat = linear_fit_ratio(
+        dm_hotwater_cat, years_fts, category_to_normalise="Categories1"
+    )
+
+    # dm_hotwater_cat.fill_nans("Years")
+    # dm_hotwater_cat.normalise("Categories1")
+    DM_buildings["fts"]["heating-technology-fuel"]["bld_hot-water-technology"] = dict()
+    for lev in range(4):
+        lev = lev + 1
+        DM_buildings["fts"]["heating-technology-fuel"]["bld_hot-water-technology"][
+            lev
+        ] = dm_hotwater_cat.filter({"Years": years_fts})
 
     ############################################
     ######       HEATING EFFICIENCY       ######

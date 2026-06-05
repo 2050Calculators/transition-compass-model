@@ -112,6 +112,14 @@ def compute_new_public_fleet_ots(dm, var_names):
 
 
 def run(dm_private_fleet, dm_public_fleet):
+    """
+    Args:
+        dm_private_fleet (DataMatrix):
+        dm_public_fleet (DataMatrix):
+
+    Returns:
+        dM: Dictionnary with the following keys: ['passenger_private-fleet', 'passenger_public-fleet', 'passenger_renewal-rate', 'passenger_new-vehicles', 'passenger_waste-fleet']
+    """
     var_names = {
         "stock": "tra_passenger_vehicle-fleet",
         "new": "tra_passenger_new-vehicles",

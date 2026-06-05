@@ -11,10 +11,10 @@ from transition_compass_model.model.climate_module import climate
 # from model.minerals_module import minerals
 from transition_compass_model.model.common.interface_class import Interface
 from transition_compass_model.model.emissions_module import emissions
+from transition_compass_model.model.energy_module import energy
 from transition_compass_model.model.forestry_module import forestry
 from transition_compass_model.model.industry_module import industry
 
-# from model.energy_module import energy
 # from model.power_module import power
 # from model.landuse_module import land_use
 # from model.oilrefinery_module import refinery
@@ -111,10 +111,10 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
         TPE["lca"] = lca(lever_setting, years_setting, DM_input["lca"], interface)
         logger.info("Execution time LCA: {0:.3g} s".format(time.time() - start_time))
 
-    # if "energy" in sectors:
-    #     start_time = time.time()
-    #     TPE["energy"] = energy(lever_setting, years_setting, country_list, interface)
-    #     logger.info("Execution time Energy: {0:.3g} s".format(time.time() - start_time))
+    if "energy" in sectors:
+        start_time = time.time()
+        TPE["energy"] = energy(lever_setting, years_setting, country_list, interface)
+        logger.info("Execution time Energy: {0:.3g} s".format(time.time() - start_time))
 
     # start_time = time.time()
     # TPE['agriculture'] = agriculture(lever_setting, years_setting, interface)

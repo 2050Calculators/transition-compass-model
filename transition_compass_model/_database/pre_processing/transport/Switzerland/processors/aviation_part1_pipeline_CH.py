@@ -2,12 +2,14 @@ import os
 
 import numpy as np
 import pandas as pd
-from _database.pre_processing.transport.Switzerland.get_data_functions import utils
-from _database.pre_processing.transport.Switzerland.get_data_functions.aviation_part1 import (
+
+from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
+    utils,
+)
+from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions.aviation_part1 import (
     get_pkm_cap_aviation,
     get_world_pop,
 )
-
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     linear_fitting,
@@ -124,7 +126,6 @@ def adj_pkm_monde_ots(dm_pkmsuisse_ots, dm_pkm_ots):
 
 
 def run(years_ots):
-
     this_dir = os.path.dirname(os.path.abspath(__file__))
 
     ##### Transport demand aviation - of Swiss residents (> 6 years)

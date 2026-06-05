@@ -5,11 +5,10 @@ import warnings
 warnings.simplefilter("ignore")
 # from _database.pre_processing.transport.Switzerland.get_data_functions import transport_energy as get_data_ep2050
 # from _database.pre_processing.transport.Switzerland.processors.passenger_energy_pipeline import run as get_data_ep2050
-import _database.pre_processing.transport.Switzerland.get_data_functions.transport_energy as get_data_ep2050
-from _database.pre_processing.buildings.Switzerland.get_data_functions import (
+import transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions.transport_energy as get_data_ep2050
+from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions import (
     energy_demand_for_calibration as get_data,
 )
-
 from transition_compass_model.model.common.auxiliary_functions import create_years_list
 
 #####################
@@ -18,7 +17,6 @@ from transition_compass_model.model.common.auxiliary_functions import create_yea
 
 
 def official_energy_stats(this_dir, years_ots):
-
     # Extract energy demand of households (incl. hot-water, heating, lighting, appliances)
     file_url = "https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/gesamtenergiestatistik.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZnIvcHVibGljYX/Rpb24vZG93bmxvYWQvNzUxOQ==.html"
     local_filename = os.path.join(
@@ -123,7 +121,6 @@ def official_energy_stats(this_dir, years_ots):
 
 
 def ep2050_energy_stats(DM, this_dir, years_ots):
-
     # Energy demand for LDV, 2W, bus by technology from EP2050
     # EP2050+_Detailergebnisse 2020-2060_Verkehrssektor_alle Szenarien_2022-04-12
     # file_url = 'https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA0NDE=.html'
@@ -215,7 +212,6 @@ def ep2050_energy_stats(DM, this_dir, years_ots):
 
 
 def run(years_ots):
-
     # get dir
     this_dir = os.path.dirname(os.path.abspath(__file__))
 

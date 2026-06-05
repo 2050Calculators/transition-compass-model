@@ -1,11 +1,11 @@
 import os
 
-import _database.pre_processing.buildings.Switzerland.get_data_functions.hot_water_CH as hw
 import numpy as np
-from _database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH import (
+
+import transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.hot_water_CH as hw
+from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH import (
     extract_nb_of_apartments_per_building_type,
 )
-
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
@@ -16,7 +16,6 @@ from transition_compass_model.model.common.auxiliary_functions import (
 
 
 def adjust_tech_mix(dm_tech_mix, dm_apt):
-
     dm_tech_mix.filter({"Years": dm_apt.col_labels["Years"]}, inplace=True)
     dm_tech_mix.drop("Categories2", "other")
     dm_apt.sort("Country")
@@ -42,7 +41,6 @@ def adjust_tech_mix(dm_tech_mix, dm_apt):
 def distribute_hw_energy_consumption_to_cantons(
     dm_water_CH_consumption, dm_tech_mix, dm_pop
 ):
-
     dm_tech_mix.filter(
         {"Categories1": dm_water_CH_consumption.col_labels["Categories1"]}, inplace=True
     )
@@ -107,7 +105,6 @@ def extrapolate_missing_years_based_on_per_capita(dm_apt, dm_pop, years_ots):
 def extrapolate_missing_years_based_on_tech_mix(
     dm_water_CH_consumption, dm_pop, years_ots
 ):
-
     dm_cons = dm_water_CH_consumption.group_all("Categories1", inplace=False)
     dm_add_missing_variables(dm_cons, {"Years": years_ots}, fill_nans=False)
     dm_cons.append(dm_pop.filter({"Country": ["Switzerland"]}), dim="Variables")
@@ -160,7 +157,6 @@ def adjust_heat_pumps_hot_water_COP(dm_efficiencies, COP_HP_HW):
 
 
 def run(country_list, years_ots):
-
     cantons_en = [
         "Aargau",
         "Appenzell Ausserrhoden",
