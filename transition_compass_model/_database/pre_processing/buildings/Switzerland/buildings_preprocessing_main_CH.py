@@ -83,7 +83,9 @@ print("Compile pickle fts - all BAU")
 DM_buildings = fts_bau_pickle_run(DM_buildings, country_list, years_fts)
 
 print("Compile PCV - Vaud - level 2")
-DM_buildings = fts_PCV_run(DM_buildings, dm_pop_ots, global_var, country_list, lev=2)
+DM_buildings = fts_PCV_run(
+    DM_buildings, dm_stock_cat, dm_pop_ots, global_var, country_list, lev=2
+)
 
 # print("Compile Scenario EP2050 - Vaud - level 3")
 # DM_buildings = fts_Vaud_EP2050_run(DM_buildings, lev=3)
