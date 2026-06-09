@@ -21,8 +21,13 @@ from processors.transport_calib_vkm import run as data_check_vkm_run
 from processors.transport_demand_pipeline import run as demand_pkm_vkm_run
 from processors.transport_ots_pickle import run as ots_pickle_run
 from scenarios.transport_fts_BAU_pickle import run as fts_bau_pickle_run
-from scenarios.transport_fts_PCV2 import run as fts_PCV2_pickle_run
 
+from transition_compass_model._database.pre_processing.transport.Switzerland.scenarios.transport_fts_PCV1 import (
+    run as fts_PCV1_pickle_run,
+)
+from transition_compass_model._database.pre_processing.transport.Switzerland.scenarios.transport_fts_PCV2 import (
+    run as fts_PCV2_pickle_run,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     load_pop,
@@ -199,7 +204,7 @@ DM_transport["fts"] = fts_bau_pickle_run(
 
 print("Compile pickle fts - all BAU")
 
-fts_PCV2_pickle_run(DM_transport, country_list, years_ots, years_fts)
-
+DM_transport = fts_PCV1_pickle_run(DM_transport, country_list, years_ots, years_fts)
+DM_transport = fts_PCV2_pickle_run(DM_transport, country_list, years_ots, years_fts)
 
 print("Hello")
