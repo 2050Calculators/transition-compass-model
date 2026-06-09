@@ -88,18 +88,20 @@ def extrapolate_missing_pkm_cap_based_on_pkm_CH(
         dm_tmp, var_nan="tra_pkm-cap_MRMT", var_ref="tra_pkm-cap_MRMT_CH"
     )
     # Adjust Vaud demand to go from MRMT to official
-    dm_adj_fact = dm_pkm_cap_new_CH.filter({"Variables": ["adj_factor"]})
-    dm_adj_fact.rename_col("Switzerland", "Vaud", dim="Country")
-    dm_pkm_cap_new_VD.append(dm_adj_fact, dim="Variables")
-    dm_pkm_cap_new_VD.operation(
-        "adj_factor",
-        "*",
-        "tra_pkm-cap_MRMT",
-        out_col="tra_pkm-cap_official",
-        unit="pkm/cap",
-    )
+    # dm_adj_fact = dm_pkm_cap_new_CH.filter({"Variables": ["adj_factor"]})
+    # dm_adj_fact.rename_col("Switzerland", "Vaud", dim="Country")
+    # dm_pkm_cap_new_VD.append(dm_adj_fact, dim="Variables")
+    # dm_pkm_cap_new_VD.operation(
+    #     "adj_factor",
+    #     "*",
+    #     "tra_pkm-cap_MRMT",
+    #     out_col="tra_pkm-cap_official",
+    #     unit="pkm/cap",
+    # )
 
-    # dm_pkm_cap_new_VD.rename_col("tra_pkm-cap_MRMT", "tra_pkm-cap_official", dim="Variables")
+    dm_pkm_cap_new_VD.rename_col(
+        "tra_pkm-cap_MRMT", "tra_pkm-cap_official", dim="Variables"
+    )
     # Keep only "official" data
     dm_pkm_cap_new_CH.filter({"Variables": ["tra_pkm-cap_official"]}, inplace=True)
     dm_pkm_cap_new_VD.filter({"Variables": ["tra_pkm-cap_official"]}, inplace=True)
