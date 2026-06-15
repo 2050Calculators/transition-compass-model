@@ -1133,7 +1133,7 @@ class DataMatrix:
                     y_values = self.array[i[c], years_idx, i[v]]
                     if rename_cols == "end":
                         label = v.split("_")[-1]
-                        if dic_to_rename_end.isintsance(dict):
+                        if isinstance(dic_to_rename_end, dict):
                             label = dic_to_rename_end[label]
                     elif v not in rename_cols.keys():
                         label = c + "_" + v
