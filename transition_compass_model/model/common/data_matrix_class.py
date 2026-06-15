@@ -1085,7 +1085,12 @@ class DataMatrix:
         return
 
     def datamatrix_plot(
-        self, selected_cols={}, title="title", stacked=None, rename_cols={}
+        self,
+        selected_cols={},
+        title="title",
+        stacked=None,
+        rename_cols={},
+        dic_to_rename_end=None,
     ):
         if stacked is not None:
             stacked = "one"
@@ -1111,12 +1116,12 @@ class DataMatrix:
         # Create an empty figure
         if len(set(self.units.values())) > 1:
             fig = px.line(
-                x=plot_cols["Years"], labels={"x": "Years", "y": "Values"}, title=title
+                x=plot_cols["Years"], labels={"x": "Années", "y": "Values"}, title=title
             )
         else:
             fig = px.line(
                 x=plot_cols["Years"],
-                labels={"x": "Years", "y": list(self.units.values())[0]},
+                labels={"x": "Années", "y": list(self.units.values())[0]},
                 title=title,
             )
         fig.data[0]["y"] = np.nan * np.ones(shape=np.shape(fig.data[0]["y"]))
@@ -1128,6 +1133,8 @@ class DataMatrix:
                     y_values = self.array[i[c], years_idx, i[v]]
                     if rename_cols == "end":
                         label = v.split("_")[-1]
+                        if dic_to_rename_end.isintsance(dict):
+                            label = dic_to_rename_end[label]
                     elif v not in rename_cols.keys():
                         label = c + "_" + v
                     else:
@@ -1140,6 +1147,7 @@ class DataMatrix:
                         mode="lines",
                         stackgroup=stacked,
                     )
+
         if dims == 4:
             for c in plot_cols["Country"]:
                 for v in plot_cols["Variables"]:

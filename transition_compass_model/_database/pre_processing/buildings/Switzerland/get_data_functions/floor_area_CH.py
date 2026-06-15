@@ -367,7 +367,7 @@ def extract_energy_reference_area(file_path=""):
         file_path (str, optional): _description_. Defaults to "".
     """
     # TODO: automatize the download and extraction of the data, currently I downloaded it manually and saved it as an csv
-    file_path = "transition_compass_model/_database/pre_processing/buildings/Switzerland/data/cadastre_regener.csv"
+    file_path = "data/cadastre_regener.csv"
 
     df = pd.read_csv(file_path)
 

@@ -309,38 +309,56 @@ def update_heating_change_proportion(
     return dm_heating_fts_mfh
 
 
-def update_heating_fts_2(dm_heating_cat_fts_2):
+def update_heating_fts_2(dm_heating_cat_fts_2, dm_heating_cat_ots):
+    idx_ots = dm_heating_cat_ots.idx
     idx = dm_heating_cat_fts_2.idx
     idx_old_cat = [idx["E"], idx["F"]]
     idx_new_cat = [idx["B"], idx["C"], idx["D"]]
     # Fossil heating
     # article  40.1
     idx_fossil = [idx["coal"], idx["heating-oil"], idx["gas"]]
+    idx_ots_fossil = [idx_ots["coal"], idx_ots["heating-oil"], idx_ots["gas"]]
+    idx_ots_new_cat = [idx_ots["B"], idx_ots["C"], idx_ots["D"]]
     # dm_heating_cat_fts_2.array[idx['Vaud'], :, idx['bld_heating-mix'], :, idx['B'], idx_fossil] = 0
     dm_heating_cat_fts_2.array[
         idx["Vaud"],
         1 : idx[2045],
         idx["bld_heating-mix"],
         :,
-        *np.ix_(idx_new_cat, idx_fossil),
+        *np.ix_(idx_old_cat, idx_fossil),
     ] = np.nan
     dm_heating_cat_fts_2.array[
         idx["Vaud"],
         idx[2045] :,
         idx["bld_heating-mix"],
         :,
-        *np.ix_(idx_new_cat, idx_fossil),
-    ] = 0
-    dm_heating_cat_fts_2.array[
-        idx["Vaud"],
-        1 : idx[2050],
-        idx["bld_heating-mix"],
-        :,
         *np.ix_(idx_old_cat, idx_fossil),
+    ] = (
+        dm_heating_cat_ots.array[
+            idx_ots["Vaud"],
+            idx_ots[2023] :,
+            idx_ots["bld_heating-mix"],
+            :,
+            *np.ix_(idx_ots_new_cat, idx_ots_fossil),
+        ]
+        * 0.05
+    )
+    dm_heating_cat_fts_2.array[
+        idx["Vaud"], 1 : idx[2050], idx["bld_heating-mix"], :, :, idx_fossil
     ] = np.nan
     dm_heating_cat_fts_2.array[
         idx["Vaud"], idx[2050] :, idx["bld_heating-mix"], :, :, idx_fossil
-    ] = 0
+    ] = (
+        dm_heating_cat_ots.array[
+            idx_ots["Vaud"],
+            idx_ots[2023] :,
+            idx_ots["bld_heating-mix"],
+            :,
+            :,
+            idx_ots_fossil,
+        ]
+        * 0.05
+    )
 
     dm_heating_cat_fts_2.fill_nans("Years")
 
@@ -492,32 +510,6 @@ def run(
     DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][4] = (
         renov_copy_old
     )
-    # Compute renovation rate loi energie_refuse
-    # dm_renovation = DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][2].copy()
-
-    # dm_stock_mix =  DM_buildings["fxa"]["bld_type"].copy()
-    # idx_mix = dm_stock_mix.idx
-    # renov_rate    =  dm_stock_mix.array[
-    #         idx_mix["Vaud"],
-    #         idx_mix[2023],
-    #         idx_mix["bld_building-mix_stock"],
-    #         :,
-    #         idx_mix["F"],
-    #     ]
-    # renov_rate = np.ones_like(renov_rate)
-    # #get the number of years to divide the rnovation rate by to apply it gradually between 2025 and 2040
-    # idx_renov =dm_renovation.idx
-    # yrs_renov = [yr for yr in dm_rr_fts_2.col_labels["Years"] if yr <= 2040]
-    # idx_years_renov = [idx_renov[yr] for yr in yrs_renov]
-    # E_renov = get_renov_rate_E(DM_buildings)
-    # dm_renovation.array[
-    #     idx_renov["Vaud"], idx_years_renov, idx_renov["bld_renovation-rate"], :
-    # ] = (
-    #     renov_rate / (yrs_renov[-1] - yrs_renov[0] + 1) )+ E_renov[0]
-
-    # DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][4] = (
-    #     dm_renovation
-    # )
 
     # renovation redistribution is also affected
 
@@ -545,7 +537,10 @@ def run(
         "bld_heating-technology"
     ][1].copy()
 
-    dm_heating_cat_fts_2 = update_heating_fts_2(dm_heating_cat_fts_2)
+    dm_heating_cat_fts_2 = update_heating_fts_2(
+        dm_heating_cat_fts_2,
+        DM_buildings["ots"]["heating-technology-fuel"]["bld_heating-technology"],
+    )
     for lever in range(lev, 4 + 1):
         DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"][
             lev
@@ -556,12 +551,15 @@ def run(
     dm_hotwater_fts_2 = DM_buildings["fts"]["heating-technology-fuel"][
         "bld_hot-water-technology"
     ][1].copy()
+    dm_hotwater_ots = DM_buildings["ots"]["heating-technology-fuel"][
+        "bld_hot-water-technology"
+    ].copy()
 
     idx = dm_hotwater_fts_2.idx
     # Fossil heating
     # article  40.1
     idx_fossil = [idx["heating-oil"], idx["gas"]]
-
+    idx_ots = dm_hotwater_ots.idx
     # Replace the use of fossil fuel for hot water to 0 for new buildings from 2025 and for all buildings from 2035, and replace it by the ideal scenario proportion
     # There are no buildings catergoies for hotwater technology so we replace it for all the categories at once
     dm_hotwater_fts_2.array[
@@ -569,7 +567,15 @@ def run(
     ] = np.nan
     dm_hotwater_fts_2.array[
         idx["Vaud"], idx[2050], idx["bld_hw_tech-mix"], idx_fossil
-    ] = 0
+    ] = (
+        dm_hotwater_ots.array[
+            idx_ots["Vaud"],
+            idx_ots[2023],
+            idx["bld_hw_tech-mix"],
+            [idx_ots["heating-oil"], idx_ots["gas"]],
+        ]
+        * 0.05
+    )
     dm_hotwater_fts_2.fill_nans("Years")
 
     renov_prop_hotwater = create_renov_prop_hw(dm_bld_mix)
