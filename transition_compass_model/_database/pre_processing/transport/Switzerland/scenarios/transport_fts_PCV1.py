@@ -537,32 +537,20 @@ def run(DM_transport, country_list, years_ots, years_fts):
     for key, values in values_2025_new_tech_share_4.items():
         dm_new_tech_share_4.array[
             idx["Vaud"],
-            idx[2025],
+            idx[2025] :,
             idx["tra_passenger_technology-share_new"],
-            idx["LDV"],
-            idx[key],
-        ] = values
-        dm_new_tech_share_4.array[
-            idx["Vaud"],
-            idx[2050],
-            idx["tra_passenger_technology-share_new"],
-            idx["LDV"],
+            [idx["LDV"], idx["bus"]],
             idx[key],
         ] = values
 
     dm_new_tech_share_trend_4 = dm_new_tech_share_ots.copy()
 
-    # Scenario 3 : part électrique des bus augmente.
-    dm_new_tech_share_3 = DM_transport["fts"]["passenger_technology-share_new"][
-        3
-    ].filter({"Country": ["Vaud"]})
-
     dm_new_tech_share_trend_4.append(dm_new_tech_share_4, dim="Years")
-    linear_fitting(
-        dm_new_tech_share_trend_4, dm_new_tech_share_trend_4.col_labels["Years"]
-    )
+    # linear_fitting(
+    #     dm_new_tech_share_trend_4, dm_new_tech_share_trend_4.col_labels["Years"]
+    # )
 
-    dm_new_tech_share_trend_4.array = np.maximum(dm_new_tech_share_trend_4.array, 0)
+    # dm_new_tech_share_trend_4.array = np.maximum(dm_new_tech_share_trend_4.array, 0)
     dm_new_tech_share_trend_4.normalise("Categories2", inplace=True)
     dm_new_tech_share_trend_4_fts = dm_new_tech_share_trend_4.filter(
         {"Years": dm_new_tech_share_4.col_labels["Years"]}

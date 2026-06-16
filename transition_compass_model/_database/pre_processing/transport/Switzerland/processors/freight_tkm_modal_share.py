@@ -17,19 +17,19 @@ Road HDVL (light commercial vehicles < 3.5 t):
   # file: EP2050+_Detailergebnisse 2020-2060_Verkehrssektor_alle Szenarien_2022-04-12.xlsx
   #   sheet '03 Fahrleistung', ZERO-Basis scenario
 
+
 Rail freight:
   BFS public transport statistics, table T7.2.1 row 12 (Chemins de fer, million tkm).
   Years 1990, 1995, 2000-2023; gaps 1991-1994 and 1996-1999 interpolated linearly.
-  # https://www.bfs.admin.ch/bfs/fr/home/statistiques/mobilite-transports/
-  #   transports-publics.html
+  #Transports publics (trafic marchandises rail inclus) - séries chronologiques détaillées - 1990, 1995, 2000-2024 | Données - Tableau
+  # https://www.bfs.admin.ch/asset/fr/36202624
   # file: tra_public_transport.xlsx, sheet T7_2_1
 
 IWW (Rhine navigation):
   BFS Rhine imports/exports (million tonnes, 1955-2024) × _IWW_HAUL_KM.
   _IWW_HAUL_KM = 34 km is the navigable Swiss Rhine stretch (Port of Basel to
   German border), which reproduces the ~0.17 bn-tkm IWW share in Swiss statistics.
-  # https://www.bfs.admin.ch/bfs/en/home/statistics/mobility-transport/
-  #   goods-transport/air-water-pipeline.html
+  # https://www.bfs.admin.ch/bfs/en/home/statistics/mobility-transport/goods-transport/air-water-pipeline.html
   # file: gr-e-11.05.04b.csv
 
 Marine:
