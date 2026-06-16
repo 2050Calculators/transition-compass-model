@@ -26,13 +26,40 @@ def define_variables_for_lever(DM_transport, lever: int):
     return dm_modal_share_lever, idx, dm_modal_share_lever, dm_modal_share_lever_tmp
 
 
-def update_lever_in_loop(key, cat, dm_modal_ots_cat, idx_ots, dict_ratio, array_lever):
+def normalise_non_fixed_values(dm_modal_share_3, fixed_cat, years_start):
+    idx_fts = dm_modal_share_3.idx
+    cat_labels = dm_modal_share_3.col_labels["Categories1"]
+    other_cats = [c for c in cat_labels if c not in fixed_cat]
+    other_idxs = [idx_fts[c] for c in other_cats]
+    fixed_idx = [idx_fts[c] for c in fixed_cat]
+    country_i = idx_fts["Vaud"]
+    mode_i = idx_fts["tra_passenger_modal-share"]
+
+    fixed_val = dm_modal_share_3.array[
+        country_i, years_start, mode_i, fixed_idx
+    ].astype(float)
+
+    # compute sum of other categories (ignore NaNs)
+    others = dm_modal_share_3.array[country_i, years_start, mode_i, other_idxs].astype(
+        float
+    )
+    sum_others = np.nansum(others)
+    remaining = 1.0 - fixed_val.sum()
+
+    scale = remaining / sum_others
+    dm_modal_share_3.array[country_i, years_start, mode_i, other_idxs] = others * scale
+    return dm_modal_share_3
+
+
+def update_lever_in_loop(
+    key, cat, dm_modal_ots_cat, idx_ots, dict_ratio, array_lever, year=2050
+):
     dm_modal_share_lever, idx, dm_modal_share_lever, dm_modal_share_lever_tmp = (
         array_lever
     )
 
     dm_modal_fts_cat_lever = dm_modal_share_lever.filter({"Categories1": cat})
-    dm_modal_fts_cat_lever.array[idx["Vaud"], idx[2050], ...] = (
+    dm_modal_fts_cat_lever.array[idx["Vaud"], idx[year], ...] = (
         dict_ratio[key] * dm_modal_ots_cat.array[idx_ots["Vaud"], idx_ots[2023], ...]
     )
 
@@ -64,8 +91,8 @@ def run(DM_transport, country_list, years_ots, years_fts):
     # mais on garde les proportions de 2023 entre les différents modes dans TP, MA et TIM
     # (Source: vision 2050)
     CITEC_2050_val_dict = {"TIM": 0.55, "TP": 0.38, "MA": 0.07}
-    # 10% velo et 5% marche
-    obj_PCV2_205 = {"TIM": 0.49, "TP": 0.38, "MA": 0.15}
+    # 3.3% velo et 5% marche
+    obj_PCV2_2050 = {"TIM": 0.53, "TP": 0.38, "MA": 0.09}
     DLS_2050_val_dict = {
         "TIM": 587 / 3241,
         "TP": 1143 / 3241,
@@ -89,7 +116,7 @@ def run(DM_transport, country_list, years_ots, years_fts):
         # level 3
 
         param_3 = update_lever_in_loop(
-            key, cat, dm_modal_ots_cat, idx_ots, obj_PCV2_205, param_3
+            key, cat, dm_modal_ots_cat, idx_ots, obj_PCV2_2050, param_3
         )
         # level 4
         param_4 = update_lever_in_loop(
@@ -102,6 +129,7 @@ def run(DM_transport, country_list, years_ots, years_fts):
 
     dm_modal_share_2 = dm_modal_share_2_tmp.copy()
     dm_modal_share_2.sort("Categories1")
+    dm_modal_share_3_tmp.sort("Categories1")
     dm_modal_share_3 = dm_modal_share_3_tmp.copy()
     dm_modal_share_3.sort("Categories1")
     dm_modal_share_4 = dm_modal_share_4_tmp.copy()
@@ -117,7 +145,6 @@ def run(DM_transport, country_list, years_ots, years_fts):
         "LDV": 0.6,
         "2W": 0.03,
     }  # Source: PCV
-    values_pcv2 = {"walk": 0.05, "bike": 0.10}  # Source: PCV2
     for key, values in values_2030.items():
         dm_modal_share_2.array[
             idx_fts["Vaud"],
@@ -126,13 +153,117 @@ def run(DM_transport, country_list, years_ots, years_fts):
             idx_fts[key],
         ] = values
 
+    share_TP = dm_modal_share_ots.filter({"Categories1": ["rail", "metrotram", "bus"]})
+    share_TP.normalise(dim="Categories1", inplace=True, keep_original=False)
+    idx_TP = share_TP.idx
+    share_TIM = dm_modal_share_ots.filter({"Categories1": ["LDV", "2W"]})
+    share_TIM.normalise(dim="Categories1", inplace=True, keep_original=False)
+    idx_TIM = share_TIM.idx
+    values_pcv2_2030 = {
+        "rail": 0.3 * share_TP.array[idx_TP["Vaud"], idx_TP[2023], :, idx_TP["rail"]],
+        "metrotram": 0.3
+        * share_TP.array[idx_TP["Vaud"], idx_TP[2023], :, idx_TP["metrotram"]],
+        "bus": 0.3 * share_TP.array[idx_TP["Vaud"], idx_TP[2023], :, idx_TP["bus"]],
+    }  # Source: PCV
+    values_pcv2_2035 = {"bike": 0.04}
+
+    idx_fts = dm_modal_share_3.idx
+
+    for key, values in values_pcv2_2030.items():
+        dm_modal_share_3.array[
+            idx_fts["Vaud"],
+            idx_fts[2030],
+            idx_fts["tra_passenger_modal-share"],
+            idx_fts[key],
+        ] = values
+
     dm_modal_share_3.array[
         idx_fts["Vaud"],
-        idx_fts[2035],
+        idx_fts[2035] :,
         idx_fts["tra_passenger_modal-share"],
-        idx_fts["bike"],
-    ] = 0.10
-    for key, values in values_pcv2.items():
+        :,
+    ] = np.nan
+
+    for key, values in values_pcv2_2035.items():
+        dm_modal_share_3.array[
+            idx_fts["Vaud"],
+            idx_fts[2035],
+            idx_fts["tra_passenger_modal-share"],
+            idx_fts[key],
+        ] = values
+
+    fixed_cat = cat_dict["TP"]
+
+    linear_fitting(dm_modal_share_2, dm_modal_share_2.col_labels["Years"])
+    dm_modal_share_2.normalise(dim="Categories1", inplace=True)
+    linear_fitting(dm_modal_share_3, dm_modal_share_3.col_labels["Years"])
+
+    for key, values in values_pcv2_2030.items():
+        dm_modal_share_3.array[
+            idx_fts["Vaud"],
+            idx_fts[2030],
+            idx_fts["tra_passenger_modal-share"],
+            idx_fts[key],
+        ] = values
+
+    dm_modal_share_3 = normalise_non_fixed_values(
+        dm_modal_share_3, fixed_cat, idx_fts[2030]
+    )
+    dm_modal_share_3.normalise(dim="Categories1", inplace=True)
+    linear_fitting(dm_modal_share_4, dm_modal_share_4.col_labels["Years"])
+    dm_modal_share_4.normalise(dim="Categories1", inplace=True)
+
+    for key, values in values_pcv2_2035.items():
+        dm_modal_share_3.array[
+            idx_fts["Vaud"],
+            idx_fts[2035],
+            idx_fts["tra_passenger_modal-share"],
+            idx_fts[key],
+        ] = values
+
+    fixed_cat = "bike"
+    years_start = idx_fts[2035]  # first year to enforce
+
+    cat_labels = dm_modal_share_3.col_labels["Categories1"]
+    other_cats = [c for c in cat_labels if c != fixed_cat]
+    other_idxs = [idx_fts[c] for c in other_cats]
+    fixed_idx = idx_fts[fixed_cat]
+    country_i = idx_fts["Vaud"]
+    mode_i = idx_fts["tra_passenger_modal-share"]
+
+    fixed_val = values_pcv2_2035["bike"]
+
+    # compute sum of other categories (ignore NaNs)
+    others = dm_modal_share_3.array[country_i, years_start, mode_i, other_idxs].astype(
+        float
+    )
+    sum_others = np.nansum(others)
+    remaining = 1.0 - fixed_val
+
+    scale = remaining / sum_others
+    dm_modal_share_3.array[country_i, years_start, mode_i, other_idxs] = others * scale
+    # dm_modal_share_3.normalise(dim="Categories1", inplace=True)
+    dm_modal_share_3.array[
+        idx_fts["Vaud"],
+        idx_fts[2040] :,
+        idx_fts["tra_passenger_modal-share"],
+        :,
+    ] = np.nan
+
+    dm_modal_share_3.array[
+        idx_fts["Vaud"],
+        idx_fts[2050],
+        idx_fts["tra_passenger_modal-share"],
+        :,
+    ] = dm_modal_share_3_tmp.array[
+        idx_fts["Vaud"],
+        idx_fts[2050],
+        idx_fts["tra_passenger_modal-share"],
+        :,
+    ]
+
+    values_2050 = {"walk": 0.05, "bike": 0.04}
+    for key, values in values_2050.items():
         dm_modal_share_3.array[
             idx_fts["Vaud"],
             idx_fts[2050],
@@ -140,12 +271,8 @@ def run(DM_transport, country_list, years_ots, years_fts):
             idx_fts[key],
         ] = values
 
-    linear_fitting(dm_modal_share_2, dm_modal_share_2.col_labels["Years"])
-    dm_modal_share_2.normalise(dim="Categories1", inplace=True)
     linear_fitting(dm_modal_share_3, dm_modal_share_3.col_labels["Years"])
     dm_modal_share_3.normalise(dim="Categories1", inplace=True)
-    linear_fitting(dm_modal_share_4, dm_modal_share_4.col_labels["Years"])
-    dm_modal_share_4.normalise(dim="Categories1", inplace=True)
 
     DM_fts["fts"]["passenger_modal-share"] = {
         2: dm_modal_share_2,

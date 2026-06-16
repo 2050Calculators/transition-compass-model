@@ -51,6 +51,17 @@ def forecast_vkm_cap(dm_km, years_fts):
     return dm_km
 
 
+def linear_fit_ratio(dm, years_fts, category_to_normalise="Categories1"):
+    # Use based_on to fit only on historical data
+    linear_fitting(dm, years_fts, based_on=list(range(2013, 2023)))
+    test_array = dm.array
+    test_array[test_array < 0] = 0
+    dm.array = test_array
+    dm.fill_nans("Years")
+    dm.normalise(category_to_normalise)
+    return dm
+
+
 def run(DM_transport_wo_aviation, country_list, years_ots, years_fts, DM_aviation_ots):
     DM_aviation_fts = aviation_fts_run(DM_aviation_ots["_state"], years_fts)
 
@@ -65,7 +76,7 @@ def run(DM_transport_wo_aviation, country_list, years_ots, years_fts, DM_aviatio
         change={"Variables": ["tra_pkm-cap"]},
         units={"tra_pkm-cap": "pkm/cap"},
     )
-    based_on_years = create_years_list(2010, 2019, 1)
+    based_on_years = create_years_list(2000, 2019, 1)
     linear_fitting(dm_pkm_cap, years_fts, based_on=based_on_years)
 
     # For Switzerland metrotram use flat extrapolation
@@ -103,7 +114,10 @@ def run(DM_transport_wo_aviation, country_list, years_ots, years_fts, DM_aviatio
         "passenger_technology-share_new"
     ].copy()
     dm_fleet_new_tech_share.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
-    dm_fleet_new_tech_share.fill_nans("Years")
+    dm_fleet_new_tech_share = linear_fit_ratio(
+        dm_fleet_new_tech_share, years_fts, category_to_normalise="Categories2"
+    )
+    # dm_fleet_new_tech_share.fill_nans("Years")
 
     DM_transport_wo_aviation["fts"]["passenger_technology-share_new"] = dict()
     for lev in range(4):
