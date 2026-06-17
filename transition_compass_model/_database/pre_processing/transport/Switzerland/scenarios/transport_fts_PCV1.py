@@ -558,6 +558,9 @@ def run(DM_transport, country_list, years_ots, years_fts):
     DM_fts["fts"]["passenger_technology-share_new"][4] = dm_new_tech_share_trend_4_fts
 
     # ======================  DEMANDE  ========================================================
+
+    dm_pkm_1 = DM_transport["fts"]["pkm"][1].filter({"Country": ["Vaud"]})
+
     dm_pkm_2 = DM_transport["fts"]["pkm"][2].filter({"Country": ["Vaud"]})
     dm_pkm_4 = DM_transport["fts"]["pkm"][4].filter({"Country": ["Vaud"]})
     dm_pkm_ots = DM_transport["ots"]["pkm"].filter({"Country": ["Vaud"]})
@@ -567,28 +570,41 @@ def run(DM_transport, country_list, years_ots, years_fts):
     demande_transport_2023 = dm_pkm_ots.array[idx["Vaud"], idx[2023], 0]
     croissance_demande_annuelle = 0.0091
 
+    dm_pkm_2 = dm_pkm_ots.copy()
+
+    # dm_pkm_2.array[idx["Vaud"], idx[2025] : idx[2050] + 1, 0] = np.nan
+    # dm_pkm_2.array[idx["Vaud"], idx[2030], 0] = (
+    #     demande_transport_2019 * (1 + croissance_demande_annuelle) ** 5
+    # )
+    dm_pkm_2.add(np.nan, dim="Years", dummy=True, col_label=years_fts)
     idx = dm_pkm_2.idx
-    dm_pkm_2.array[idx["Vaud"], idx[2025] : idx[2050] + 1, 0] = np.nan
-    dm_pkm_2.array[idx["Vaud"], idx[2030], 0] = (
-        demande_transport_2019 * (1 + croissance_demande_annuelle) ** 5
-    )
-    dm_pkm_2.array[idx["Vaud"], idx[2025], 0] = demande_transport_2019
-    dm_pkm_2.array[idx["Vaud"], idx[2050], 0] = dm_pkm_2.array[
-        idx["Vaud"], idx[2030], 0
-    ]
-    linear_fitting(dm_pkm_2, dm_pkm_2.col_labels["Years"])
-    dm_pkm_PCV = dm_pkm_ots.copy()
-    dm_pkm_PCV.append(dm_pkm_2, dim="Years")
+    dm_pkm_2.array[idx["Vaud"], idx[2025] :, 0] = np.nan
+    dm_pkm_2.array[idx["Vaud"], idx[2030], 0] = demande_transport_2019
+    dm_pkm_2.array[idx["Vaud"], idx[2050], 0] = demande_transport_2019
+    dm_pkm_2.fill_nans("Years")
+    dm_pkm_2 = dm_pkm_2.filter({"Years": years_fts})
 
-    DM_fts["fts"]["pkm"] = {2: dm_pkm_2}
-
+    # SCENARIO STAT VAUD
     dm_pkm_3 = DM_transport["fts"]["pkm"][3].filter({"Country": ["Vaud"]})
-
-    test = (demande_transport_2023 - demande_transport_2019) / (2023 - 2019)
-    (demande_transport_2019 - demande_transport_2023) / test
-
-    dm_pkm_3.array[idx["Vaud"], idx[2025] :, 0] = demande_transport_2023 * 1.01 * 1.01
-
+    idx = dm_pkm_3.idx
+    # Téléchargement de la population dans le futur
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    lfs_interface_data_file = os.path.join(
+        current_file_directory,
+        "../../../../data/interface/lifestyles_to_transport.pickle",
+    )
+    with open(lfs_interface_data_file, "rb") as handle:
+        DM_lfs = pickle.load(handle)
+        dm_pop = DM_lfs["pop"]
+    idx_pop = dm_pop.idx
+    dm_pkm_3.array[idx["Vaud"], :, 0] = np.nan
+    dm_pkm_3.array[idx["Vaud"], idx[2025], 0] = dm_pkm_1.array[
+        idx["Vaud"], idx[2025], 0
+    ]
+    dm_pkm_3.array[idx["Vaud"], idx[2050], 0] = (
+        10.4 * 10**9 / dm_pop.array[idx_pop["Vaud"], idx_pop[2050], 0]
+    )
+    dm_pkm_3.fill_nans("Years")
     # SCENARIO DLS:
     idx = dm_pkm_4.idx
     dm_pkm_4.array[idx["Vaud"], 0 : idx[2050] + 1, 0] = np.nan
@@ -598,7 +614,7 @@ def run(DM_transport, country_list, years_ots, years_fts):
     dm_pkm_4.array[idx["Vaud"], idx[2025], 0] *= 0.95
     linear_fitting(dm_pkm_4, dm_pkm_4.col_labels["Years"])
 
-    DM_fts["fts"]["pkm"] = {1: dm_pkm_3, 3: dm_pkm_3, 4: dm_pkm_4}
+    DM_fts["fts"]["pkm"] = {1: dm_pkm_1, 2: dm_pkm_2, 3: dm_pkm_3, 4: dm_pkm_4}
 
     # ======================  MESURE 5  ==================================== (CALCULER LES EMISSIONS MOYENNES DU NOUVEAU PARC EN 2021)
 

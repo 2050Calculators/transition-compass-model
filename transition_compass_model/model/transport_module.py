@@ -207,6 +207,8 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     # idx = dm_emissions_scope1.idx
     # (dm_emissions_scope1.array[0,idx[2030],0] -dm_emissions_scope1.array[0,idx[1990],0])/ dm_emissions_scope1.array[0,idx[1990],0]* 100
     # dm_emissions_scope1.change_unit('tra_passenger_emissions-scope1', old_unit='Mt', new_unit='MtCO2eq', factor=1)
+    #
+    # dm_emissions_scope1.write_df().to_csv("/home/augustoni/Documents/PDM/excels/tra_emis_BAU.csv")
 
     results_run, KPI = inter.prepare_TPE_output(DM_passenger_out, DM_freight_out)
     return results_run, KPI

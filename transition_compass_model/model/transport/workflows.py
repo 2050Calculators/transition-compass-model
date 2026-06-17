@@ -39,6 +39,7 @@ def passenger_fleet_energy(
         "tra_passenger_transport-demand-by-mode",
         dim="Variables",
     )
+    # dm_demand_total = dm_demand_by_mode.group_all("Categories1")
     dm_demand_by_mode.drop(dim="Categories1", col_label="walk|bike")
 
     # SECTION Passenger - Aviation Demand-pkm
