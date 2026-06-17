@@ -193,6 +193,17 @@ def _zerob_utilization_road(years_fts):
     }
 
 
+def linear_fit_ratio(dm, years_fts, category_to_normalise="Categories1"):
+    # Use based_on to fit only on historical data
+    linear_fitting(dm, years_fts, based_on=list(range(2010, 2023)))
+    test_array = dm.array
+    test_array[test_array < 0] = 0
+    dm.array = test_array
+    dm.fill_nans("Years")
+    dm.normalise(category_to_normalise)
+    return dm
+
+
 # ---------------------------------------------------------------------------
 # Midpoint helper
 # ---------------------------------------------------------------------------
@@ -243,7 +254,7 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
     # ------------------------------------------------------------------
     dm_ms = DM_transport["ots"]["freight_modal-share"].copy()
     dm_ms.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
-    dm_ms.fill_nans("Years")
+    dm_ms = linear_fit_ratio(dm_ms, years_fts, category_to_normalise="Categories1")
     dm_ms_fts = dm_ms.filter({"Years": years_fts})
     DM_fts["fts"]["freight_modal-share"] = {
         lev: dm_ms_fts.copy() for lev in range(1, 5)

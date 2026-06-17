@@ -35,7 +35,7 @@ def _add_aviation_fts_to_dm(dm_target, dm_aviation_ch, country_list):
 
 
 def forecast_vkm_cap(dm_km, years_fts):
-    based_on_years = create_years_list(2010, 2019, 1)
+    based_on_years = create_years_list(2000, 2019, 1)
     linear_fitting(dm_km, years_fts, based_on=based_on_years, min_tb=0)
     # For metrotram extrapolate with flat line
     idx = dm_km.idx

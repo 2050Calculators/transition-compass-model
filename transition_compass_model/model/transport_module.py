@@ -203,6 +203,9 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
         "tra_emissions-CO2e_passenger-scope1",
         dim="Variables",
     )
+    # dm_emissions_scope1.group_all("Categories1")
+    # idx = dm_emissions_scope1.idx
+    # (dm_emissions_scope1.array[0,idx[2030],0] -dm_emissions_scope1.array[0,idx[1990],0])/ dm_emissions_scope1.array[0,idx[1990],0]* 100
     # dm_emissions_scope1.change_unit('tra_passenger_emissions-scope1', old_unit='Mt', new_unit='MtCO2eq', factor=1)
 
     results_run, KPI = inter.prepare_TPE_output(DM_passenger_out, DM_freight_out)
