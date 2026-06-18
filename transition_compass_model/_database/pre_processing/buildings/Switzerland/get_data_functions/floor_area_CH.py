@@ -367,7 +367,9 @@ def extract_energy_reference_area(file_path=""):
         file_path (str, optional): _description_. Defaults to "".
     """
     # TODO: automatize the download and extraction of the data, currently I downloaded it manually and saved it as an csv
-    file_path = "transition_compass_model/_database/pre_processing/buildings/Switzerland/data/cadastre_regener.csv"
+    # file_path = "transition_compass_model/_database/pre_processing/buildings/Switzerland/data/cadastre_regener.csv"
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    file_path = current_file_directory + "/../data/cadastre_regener.csv"
 
     df = pd.read_csv(file_path)
 
@@ -457,16 +459,27 @@ def compute_waste(dm_stock_tot, dm_new_tot, years_ots):
         unit="m2",
     )
 
-    # FIX WASTE
-    # Set minimum demolition-rate at 0.2%
-    # dem-rate(t-1) = max( w(t)/s(t-1), 0.2% )
-    # w(t) = dem-rate(t-1)*s(t-1)
-
-    min_waste = 0.002 * dm[:, :, "bld_floor-area_stock_tm1", ...]
-    dm[:, :, "bld_floor-area_waste", ...] = np.maximum(
-        min_waste, dm[:, :, "bld_floor-area_waste", ...]
+    # !TODO: replace with actual Swiss demolition statistics (e.g. from BFS) per
+    # building type and year. Currently we use a proxy: the average of back-calculated
+    # rates over 2015-2023, clipped to non-negative and floored at 0.2%. The
+    # year-by-year back-calculation is unreliable due to a Swiss building registry
+    # (GWR) methodology change around 2008-2009 that produces artefacts (rates up to
+    # ~2% pre-2008, then negative post-2008 as the stock jumps). The flat ~0.2% rate
+    # used here is physically plausible (Swiss buildings last 100-200+ years) but is
+    # not derived from measured demolition data.
+    dem_rate_raw = (
+        dm[:, :, "bld_floor-area_waste", ...]
+        / dm[:, :, "bld_floor-area_stock_tm1", ...]
     )
-    # Fix 1990 value
+    avg_idx = [years_ots.index(yr) for yr in years_ots if 2015 <= yr <= 2023]
+    avg_dem_rate = np.nanmean(
+        np.maximum(0, dem_rate_raw[:, avg_idx, ...]), axis=1, keepdims=True
+    )
+    avg_dem_rate = np.maximum(avg_dem_rate, 0.002)
+    dm[:, :, "bld_floor-area_waste", ...] = (
+        avg_dem_rate * dm[:, :, "bld_floor-area_stock_tm1", ...]
+    )
+    # Fix 1990 value (no stock_tm1 available)
     dm[:, 0, "bld_floor-area_waste", ...] = np.nan
     dm.fill_nans("Years")
 
