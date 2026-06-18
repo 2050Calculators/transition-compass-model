@@ -6,6 +6,9 @@ import numpy as np
 from transition_compass_model._database.pre_processing.api_routines_CH import (
     get_data_api_CH,
 )
+from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.services_CH import (
+    extract_services_renovation_rate_EP2050,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     linear_fitting,
@@ -114,10 +117,66 @@ def extract_lfs_household_size(years_ots, table_id, file):
     return dm_household_size
 
 
-def compute_building_mix(dm_all):
-    dm_building_mix = dm_all.filter(
+def compute_building_mix(dm_all, dm_srv_floor=None, envelope_cat_new=None):
+    dm_res = dm_all.filter(
         {"Variables": ["bld_floor-area_stock", "bld_floor-area_new"]}, inplace=False
-    ).flatten()
+    )
+
+    if dm_srv_floor is not None:
+        energy_classes = dm_srv_floor.col_labels["Categories2"]
+
+        # Non-res stock: raw floor areas (m²) so normalization is unified across all types
+        dm_nonres_stock = dm_srv_floor.copy()
+        dm_nonres_stock.rename_col(
+            "bld_floor-area_services", "bld_floor-area_stock", "Variables"
+        )
+
+        # Non-res new: annual stock change per type, concentrated in the period-appropriate class.
+        # Using stock change (not total stock) keeps the scale consistent with the residential
+        # bld_floor-area_new (annual flows), so the normalised building-mix_new reflects the
+        # correct ~25% non-res / ~75% residential split.
+        dm_nonres_new = dm_nonres_stock.copy()
+        dm_nonres_new.rename_col(
+            "bld_floor-area_stock", "bld_floor-area_new", "Variables"
+        )
+        dm_nonres_new.array[:] = 0.0
+        if envelope_cat_new:
+            idx = dm_nonres_new.idx
+            years_list = dm_nonres_new.col_labels["Years"]
+            for cat, (yr_start, yr_end) in envelope_cat_new.items():
+                if cat in energy_classes:
+                    i_cat = energy_classes.index(cat)
+                    for i_yr, yr in enumerate(years_list):
+                        if yr_start <= yr <= yr_end and yr in idx:
+                            if i_yr > 0:
+                                prev_yr = years_list[i_yr - 1]
+                                delta = np.maximum(
+                                    0,
+                                    dm_nonres_stock.array[:, idx[yr], 0, :, :].sum(
+                                        axis=-1
+                                    )
+                                    - dm_nonres_stock.array[
+                                        :, idx[prev_yr], 0, :, :
+                                    ].sum(axis=-1),
+                                )
+                            else:
+                                # First year: use forward difference as approximation
+                                next_yr = years_list[i_yr + 1]
+                                delta = np.maximum(
+                                    0,
+                                    dm_nonres_stock.array[:, idx[next_yr], 0, :, :].sum(
+                                        axis=-1
+                                    )
+                                    - dm_nonres_stock.array[:, idx[yr], 0, :, :].sum(
+                                        axis=-1
+                                    ),
+                                )
+                            dm_nonres_new.array[:, idx[yr], 0, :, i_cat] = delta
+
+        dm_nonres_stock.append(dm_nonres_new, dim="Variables")
+        dm_res.append(dm_nonres_stock, dim="Categories1")
+
+    dm_building_mix = dm_res.flatten()
     dm_building_mix.normalise("Categories1", keep_original=True)
     dm_building_mix.deepen()
     dm_building_mix.rename_col(
@@ -128,8 +187,133 @@ def compute_building_mix(dm_all):
     dm_building_mix.filter(
         {"Variables": ["bld_building-mix_stock", "bld_building-mix_new"]}, inplace=True
     )
-
     return dm_building_mix
+
+
+def compute_nonres_floor_intensity_CH(dm_srv_floor, dm_pop):
+    """Compute non-residential floor intensity (m²/cap) from EP2050 stock data.
+
+    Sums all non-res floor area (all types × classes) and divides by population.
+    Variable: bld_floor-intensity_nonres-cap (m²/cap).
+    """
+    dm_total = dm_srv_floor.group_all("Categories2", inplace=False)
+    dm_total.group_all("Categories1")
+    dm_total.rename_col(
+        "bld_floor-area_services", "bld_floor-area_nonres_total", dim="Variables"
+    )
+    dm_total.append(dm_pop, dim="Variables")
+    dm_total.operation(
+        "bld_floor-area_nonres_total",
+        "/",
+        "lfs_population_total",
+        out_col="bld_floor-intensity_nonres-cap",
+        unit="m2/cap",
+    )
+    dm_total.filter({"Variables": ["bld_floor-intensity_nonres-cap"]}, inplace=True)
+    return dm_total
+
+
+def compute_nonres_building_mix_CH(dm_srv_floor, years_ots, envelope_cat_new):
+    """Build non-residential bld_building-mix for CH/Vaud (OTS years only).
+
+    bld_building-mix_stock: energy-class shares per type from EP2050 floor area (sheet 04 EBF-Baualter).
+    bld_building-mix_new: class assignment from EP2050 construction period mapping
+                          (C for 1990-2019, B for 2020+).
+    """
+    nonres_types = dm_srv_floor.col_labels["Categories1"]
+    energy_classes = dm_srv_floor.col_labels["Categories2"]
+    country_list = dm_srv_floor.col_labels["Country"]
+
+    # Stock mix: share of each energy class within each non-res building type
+    dm_stock = dm_srv_floor.filter({"Years": years_ots}, inplace=False)
+    dm_stock.rename_col(
+        "bld_floor-area_services", "bld_building-mix_stock", dim="Variables"
+    )
+    total = dm_stock.array.sum(axis=-1, keepdims=True)
+    total[total == 0] = 1.0
+    dm_stock.array = dm_stock.array / total
+
+    # New-build mix: assign energy class by construction period
+    dm_new = DataMatrix(
+        col_labels={
+            "Country": country_list,
+            "Years": years_ots,
+            "Variables": ["bld_building-mix_new"],
+            "Categories1": nonres_types,
+            "Categories2": energy_classes,
+        },
+        units={"bld_building-mix_new": "%"},
+    )
+    idx = dm_new.idx
+    for cat, (yr_start, yr_end) in envelope_cat_new.items():
+        if cat not in energy_classes:
+            continue
+        idx_cat = energy_classes.index(cat)
+        for yr in range(yr_start, yr_end + 1):
+            if yr in idx:
+                dm_new.array[:, idx[yr], 0, :, idx_cat] = 1.0
+    dm_new.fill_nans("Years")
+
+    dm_stock.append(dm_new, dim="Variables")
+    return dm_stock
+
+
+def compute_nonres_demolition_rate_CH(dm_srv_floor, dm_nonres_rr, years_ots):
+    """Derive non-residential demolition rate from EP2050 total stock balance.
+
+    New construction is inferred from the annual change of the current-period energy class
+    (EP2050 "04 EBF-Baualter" maps construction year → energy class B-F):
+      - 1990–2019: newly built → class C; new_const(t) = max(ΔstockC(t), 0)
+      - 2020+:     newly built → class B; new_const(t) = max(ΔstockB(t), 0)
+    waste(t)     = new_const(t) + total_stock(t-1) - total_stock(t)
+    demo_rate(t) = max(waste(t), 0) / total_stock(t-1)
+    Raw (unclipped) class arrays are used so that linear extrapolation back to 1990 still
+    gives correct annual deltas even when absolute stock values go slightly negative.
+    """
+    nonres_types = dm_srv_floor.col_labels["Categories1"]
+    country_list = dm_srv_floor.col_labels["Country"]
+
+    stock_C_raw = dm_srv_floor.array[:, :, 0, :, dm_srv_floor.idx["C"]]
+    stock_B_raw = dm_srv_floor.array[:, :, 0, :, dm_srv_floor.idx["B"]]
+    stock_total = np.maximum(dm_srv_floor.array[:, :, 0, :, :].sum(axis=-1), 0.0)
+
+    dm_demo = DataMatrix(
+        col_labels={
+            "Country": country_list,
+            "Years": years_ots,
+            "Variables": ["bld_demolition-rate"],
+            "Categories1": nonres_types,
+        },
+        units={"bld_demolition-rate": "%"},
+    )
+
+    for i in range(1, len(years_ots)):
+        yr, yr_prev = years_ots[i], years_ots[i - 1]
+        s_t = stock_total[:, dm_srv_floor.idx[yr], :]
+        s_tm1 = stock_total[:, dm_srv_floor.idx[yr_prev], :]
+
+        if yr <= 2019:
+            delta = (
+                stock_C_raw[:, dm_srv_floor.idx[yr], :]
+                - stock_C_raw[:, dm_srv_floor.idx[yr_prev], :]
+            )
+        else:
+            delta = (
+                stock_B_raw[:, dm_srv_floor.idx[yr], :]
+                - stock_B_raw[:, dm_srv_floor.idx[yr_prev], :]
+            )
+
+        new_const = np.maximum(delta, 0.0)
+        waste = new_const + s_tm1 - s_t
+        demo_rate = np.where(s_tm1 > 0, np.maximum(waste, 0.0) / s_tm1, 0.0)
+        dm_demo.array[:, dm_demo.idx[yr], 0, :] = demo_rate
+
+    # Hold first year equal to second year
+    dm_demo.array[:, dm_demo.idx[years_ots[0]], 0, :] = dm_demo.array[
+        :, dm_demo.idx[years_ots[1]], 0, :
+    ]
+
+    return dm_demo
 
 
 def run(dm_pop, DM_all, years_ots, years_fts):
@@ -208,7 +392,7 @@ def run(dm_pop, DM_all, years_ots, years_fts):
     DM_buildings["fxa"]["hot-water"] = {
         "hw-energy-demand": dm_hw_demand.copy(),
         "hw-efficiency": dm_hw_efficiency.copy(),
-        "hw-tech-mix": dm_hw_tech_mix.copy(),
+        # hw-tech-mix removed: promoted to ots-fts as bld_hot-water-technology
     }
 
     # SECTION: fxa - lighting
@@ -238,6 +422,8 @@ def run(dm_pop, DM_all, years_ots, years_fts):
     DM_buildings["fxa"]["lighting"] = dm_light
 
     # SECTION: fxa - services
+    # services_demand is in kWh/m² (intensity); linear_fitting extrapolates the
+    # efficiency trend per unit floor area to FTS years.
     linear_fitting(
         DM_services["services_demand"], years_fts, based_on=list(range(2012, 2023))
     )
@@ -247,15 +433,13 @@ def run(dm_pop, DM_all, years_ots, years_fts):
     dm_add_missing_variables(
         DM_services["services_efficiencies"], {"Years": years_fts}, fill_nans=False
     )
-    DM_buildings["fxa"]["services"] = DM_services
-
-    # add_dummy_country_to_DM(DM_appliances, 'EU27', 'Switzerland')
-    # file = os.path.join(this_dir , '../../../../data/datamatrix/buildings.pickle')
-    # with open(file, 'rb') as handle:
-    #  DM_B = pickle.load(handle)
-    # DM_B['fxa']['appliances'] = DM_appliances['fxa']['appliances'].copy()
-    # with open(file, 'wb') as handle:
-    #  pickle.dump(DM_B, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    # services_floor-area goes to OTS (lever-driven), not FXA
+    dm_srv_floor = DM_services.get("services_floor-area")
+    DM_buildings["fxa"]["services"] = {
+        k: v for k, v in DM_services.items() if k != "services_floor-area"
+    }
+    if dm_srv_floor is not None:
+        DM_buildings["ots"]["services-floor-area"] = dm_srv_floor
 
     # CALIBRATION
     # SECTION: fxa - heating-energy-calibration
@@ -274,6 +458,13 @@ def run(dm_pop, DM_all, years_ots, years_fts):
     dm_space_cap.append(
         dm_lfs_household_size.filter({"Years": years_ots}), dim="Variables"
     )
+    if dm_srv_floor is not None:
+        res_countries = dm_space_cap.col_labels["Country"]
+        dm_nonres_intensity = compute_nonres_floor_intensity_CH(
+            dm_srv_floor.filter({"Country": res_countries}, inplace=False),
+            dm_pop,
+        )
+        dm_space_cap.append(dm_nonres_intensity, dim="Variables")
     DM_buildings["ots"]["floor-intensity"] = dm_space_cap.copy()
 
     DM_buildings["ots"]["heatcool-behaviour"] = dm_Tint_heat.filter(
@@ -281,7 +472,19 @@ def run(dm_pop, DM_all, years_ots, years_fts):
     )
 
     # SECTION: fxa - bld_type
-    dm_building_mix = compute_building_mix(dm_all)
+    # EP2050 period→class for non-res new: C for 1990-2019, B for 2020+
+    nonres_envelope_cat_new = {"C": (1990, 2019), "B": (2020, 2023)}
+    if dm_srv_floor is not None:
+        res_countries = dm_all.col_labels["Country"]
+        dm_building_mix = compute_building_mix(
+            dm_all,
+            dm_srv_floor.filter({"Country": res_countries}, inplace=False),
+            nonres_envelope_cat_new,
+        )
+    else:
+        dm_building_mix = compute_building_mix(dm_all)
+    dm_building_mix.sort("Categories1")
+
     dm_bld_type = dm_building_mix.filter({"Variables": ["bld_building-mix_stock"]})
     dm_bld_type.add(np.nan, dummy=True, dim="Years", col_label=years_fts)
 
@@ -295,6 +498,19 @@ def run(dm_pop, DM_all, years_ots, years_fts):
 
     # SECTION: ots - renovation-rate -> renovation-rate
     dm_rr = dm_renovation.filter({"Variables": ["bld_renovation-rate"]})
+    nonres_types = ["education", "health", "hotels", "offices", "other", "trade"]
+    # Extract non-residential renovation rate from EP2050 Dienstleistung file
+    ep2050_services_file = os.path.join(
+        this_dir,
+        "../data/EP2050_sectors/EP2050+_Szenarienergebnisse_Details_Nachfragesektoren/"
+        "EP2050+_Detailergebnisse 2020-2060_Dienstleistung_alle Szenarien_2022-10-20.xlsx",
+    )
+    country_list = dm_rr.col_labels["Country"]
+    dm_nonres_rr = extract_services_renovation_rate_EP2050(
+        ep2050_services_file, years_ots, nonres_types, country_list
+    )["ots"]
+    dm_rr.append(dm_nonres_rr, dim="Categories1")
+    dm_rr.sort("Categories1")
     DM_buildings["ots"]["building-renovation-rate"]["bld_renovation-rate"] = dm_rr
 
     # SECTION: ots - renovation-rate -> renovation-redistribution
@@ -315,6 +531,32 @@ def run(dm_pop, DM_all, years_ots, years_fts):
         unit="%",
     )
     dm_demolition_rate = dm_tot.filter({"Variables": ["bld_demolition-rate"]})
+    # Non-residential demolition rate from EP2050 class-F stock dynamics (same source as renovation rate)
+    if dm_srv_floor is not None:
+        res_countries = dm_demolition_rate.col_labels["Country"]
+        dm_nonres_demo = compute_nonres_demolition_rate_CH(
+            dm_srv_floor.filter({"Country": res_countries}, inplace=False),
+            dm_nonres_rr.filter({"Country": res_countries}, inplace=False),
+            years_ots,
+        )
+        for t in nonres_types:
+            i_t = dm_nonres_demo.idx[t]
+            dm_demolition_rate.add(
+                dm_nonres_demo.array[:, :, :, i_t : i_t + 1],
+                dim="Categories1",
+                col_label=t,
+                unit=dm_demolition_rate.units["bld_demolition-rate"],
+            )
+    else:
+        idx_mfh_d = dm_demolition_rate.idx["multi-family-households"]
+        for t in nonres_types:
+            dm_demolition_rate.add(
+                dm_demolition_rate.array[:, :, :, idx_mfh_d],
+                dim="Categories1",
+                col_label=t,
+                unit=dm_demolition_rate.units["bld_demolition-rate"],
+            )
+    dm_demolition_rate.sort("Categories1")
     DM_buildings["ots"]["building-renovation-rate"]["bld_demolition-rate"] = (
         dm_demolition_rate.copy()
     )
