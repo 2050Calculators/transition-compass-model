@@ -2,6 +2,9 @@ import os
 
 import numpy as np
 
+from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.services_CH import (
+    extract_services_renovation_rate_EP2050,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     filter_DM,
@@ -54,7 +57,24 @@ def run(DM_buildings, country_list, years_fts):
     #####  FLOOR INTENSITY - SPACE/CAP  #####
     #########################################
     dm_space_cap = DM_buildings["ots"]["floor-intensity"].copy()
-    linear_fitting(dm_space_cap, years_fts)
+    # Use recent years only for nonres-cap: trend peaked ~2015 and is flat/declining since
+    dm_nonres_cap = dm_space_cap.filter(
+        {"Variables": ["bld_floor-intensity_nonres-cap"]}, inplace=False
+    )
+    linear_fitting(dm_nonres_cap, years_fts, based_on=list(range(2012, 2024)))
+    dm_res_cap = dm_space_cap.filter(
+        {
+            "Variables": [
+                v
+                for v in dm_space_cap.col_labels["Variables"]
+                if v != "bld_floor-intensity_nonres-cap"
+            ]
+        },
+        inplace=False,
+    )
+    linear_fitting(dm_res_cap, years_fts)
+    dm_nonres_cap.append(dm_res_cap, dim="Variables")
+    dm_space_cap = dm_nonres_cap
     DM_buildings["fts"]["floor-intensity"] = dict()
     for lev in range(4):
         lev = lev + 1
@@ -73,6 +93,19 @@ def run(DM_buildings, country_list, years_fts):
         DM_buildings["fts"]["heatcool-behaviour"][lev] = dm_Tint_heat.filter(
             {"Years": years_fts}
         )
+
+    #########################################
+    #####  SERVICES FLOOR AREA - FTS  #######
+    #########################################
+    if "services-floor-area" in DM_buildings["ots"]:
+        dm_srv_floor = DM_buildings["ots"]["services-floor-area"].copy()
+        linear_fitting(dm_srv_floor, years_fts, based_on=list(range(2012, 2024)))
+        DM_buildings["fts"]["services-floor-area"] = dict()
+        for lev in range(4):
+            lev = lev + 1
+            DM_buildings["fts"]["services-floor-area"][lev] = dm_srv_floor.filter(
+                {"Years": years_fts}
+            )
 
     #########################################
     #####        BUILDING MIX          ######
@@ -99,13 +132,47 @@ def run(DM_buildings, country_list, years_fts):
     DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"] = dict()
     dm_rr.add(np.nan, dim="Years", dummy=True, col_label=years_fts)
     dm_rr.fill_nans(dim_to_interp="Years")
-    for lev in range(4):
-        lev = lev + 1
+
+    # For non-residential types, replace the flat OTS extrapolation with EP2050 FTS values.
+    # Level 1 (BAU) = WWB; level 4 (ambitious) = ZERO; levels 2-3 = linear interpolation.
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    ep2050_services_file = os.path.join(
+        this_dir,
+        "../data/EP2050_sectors/EP2050+_Szenarienergebnisse_Details_Nachfragesektoren/"
+        "EP2050+_Detailergebnisse 2020-2060_Dienstleistung_alle Szenarien_2022-10-20.xlsx",
+    )
+    nonres_types = ["education", "health", "hotels", "offices", "other", "trade"]
+    country_list = dm_rr.col_labels["Country"]
+    ep2050_rr = extract_services_renovation_rate_EP2050(
+        ep2050_services_file, [], nonres_types, country_list
+    )["fts"]
+    dm_wwb_fts = ep2050_rr["wwb"]  # shape: (country, fts_years, var, nonres_types)
+    dm_zero_fts = ep2050_rr["zero"]
+
+    for lev in range(1, 5):
+        dm_lev = dm_rr.filter({"Years": years_fts})
+        # Interpolation weight: 0 = WWB, 1 = ZERO
+        alpha = (lev - 1) / 3.0
+        for yr in dm_wwb_fts.col_labels["Years"]:
+            if yr in dm_lev.idx:
+                wwb_val = dm_wwb_fts.array[
+                    :, dm_wwb_fts.idx[yr], dm_wwb_fts.idx["bld_renovation-rate"], :
+                ]
+                zero_val = dm_zero_fts.array[
+                    :, dm_zero_fts.idx[yr], dm_zero_fts.idx["bld_renovation-rate"], :
+                ]
+                interp_val = (1 - alpha) * wwb_val + alpha * zero_val
+                for i_t, t in enumerate(nonres_types):
+                    dm_lev.array[
+                        :,
+                        dm_lev.idx[yr],
+                        dm_lev.idx["bld_renovation-rate"],
+                        dm_lev.idx[t],
+                    ] = interp_val[:, i_t]
         DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][lev] = (
-            dm_rr.filter({"Years": years_fts})
+            dm_lev
         )
-    # Build a level 1 scenario with no renovation
-    DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][1][...] = 0
+    # Lever 1 = BAU: keep OTS renovation rate (no zeroing)
 
     ###########################################
     #####    RENOVATION-REDISTRIBUTION    #####
@@ -182,7 +249,9 @@ def run(DM_buildings, country_list, years_fts):
     ###########################################
     #####    HOTWATER TECHNOLOGY MIX     #######
     ###########################################
-    dm_hotwater_cat = DM_buildings["fxa"]["hot-water"]["hw-tech-mix"].copy()
+    dm_hotwater_cat = DM_buildings["ots"]["heating-technology-fuel"][
+        "bld_hot-water-technology"
+    ].copy()
     idx = dm_heating_cat.idx
     # Obligation à enlever les chauffages electriques d'ici 2033
     # https://www.vd.ch/environnement/energie/legislation/chauffages-et-chauffe-eaux-electriques
