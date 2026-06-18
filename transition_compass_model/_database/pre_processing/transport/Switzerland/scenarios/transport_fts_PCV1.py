@@ -570,12 +570,18 @@ def run(DM_transport, country_list, years_ots, years_fts):
     demande_transport_2023 = dm_pkm_ots.array[idx["Vaud"], idx[2023], 0]
     croissance_demande_annuelle = 0.0091
 
-    dm_pkm_2 = dm_pkm_ots.copy()
+    idx_fts = dm_pkm_1.idx
+    dm_pkm_1.array[idx_fts["Vaud"], :, 0] = np.nan
+    dm_pkm_1.array[idx_fts["Vaud"], idx_fts[2025] :, 0] = (
+        demande_transport_2023 * 1.01 * 1.01
+    )
+    dm_pkm_1.fill_nans("Years")
 
     # dm_pkm_2.array[idx["Vaud"], idx[2025] : idx[2050] + 1, 0] = np.nan
     # dm_pkm_2.array[idx["Vaud"], idx[2030], 0] = (
     #     demande_transport_2019 * (1 + croissance_demande_annuelle) ** 5
     # )
+    dm_pkm_2 = dm_pkm_ots.copy()
     dm_pkm_2.add(np.nan, dim="Years", dummy=True, col_label=years_fts)
     idx = dm_pkm_2.idx
     dm_pkm_2.array[idx["Vaud"], idx[2025] :, 0] = np.nan
