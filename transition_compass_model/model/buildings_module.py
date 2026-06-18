@@ -239,6 +239,8 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
 
     DM_inter_energy = {
         "space-heating": DM_energy_out["power"],
+        "households_heating": DM_energy_out["power_households"],
+        "services_space-heating": DM_energy_out["power_services"],
         "households_hot-water": DM_hotwater_out["TPE"]["power"],
         "households_lighting": DM_light_out["energy"],
         "households_electricity": DM_appliances_out["power"],
