@@ -52,7 +52,9 @@ def read_data(DM_buildings, lever_setting):
         ],
     }
 
-    DM_services = DM_buildings["fxa"]["services"]
+    DM_services = dict(DM_buildings["fxa"]["services"])
+    if "services-floor-area" in DM_ots_fts:
+        DM_services["services-floor-area"] = DM_ots_fts["services-floor-area"]
 
     dm_light = DM_buildings["fxa"]["lighting"]
 
@@ -158,13 +160,14 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
         years_fts,
     )
 
-    DM_services_out = wkf.bld_services_workflow(
+    DM_hotwater_out["nonres"] = wkf.bld_services_workflow(
         DM_services,
         DM_energy_out["TPE"]["energy-demand-heating"].copy(),
         DM_energy,
         cdm_const,
         years_ots,
         years_fts,
+        dm_bld_floor=DM_floor_out["wf-energy"],
     )
 
     DM_light_out = {"TPE": dm_light.copy(), "energy": dm_light.copy()}
@@ -219,7 +222,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     results_run, KPI = inter.bld_TPE_interface(
         DM_energy_out["TPE"],
         DM_floor_out["TPE"],
-        DM_services_out["TPE"],
+        DM_hotwater_out["nonres"]["TPE"],
         DM_appliances_out["power"],
         DM_light_out["TPE"],
         DM_hotwater_out["TPE"],
@@ -235,11 +238,11 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
         )
 
     DM_inter_energy = {
-        "households_heating": DM_energy_out["power"],
+        "space-heating": DM_energy_out["power"],
         "households_hot-water": DM_hotwater_out["TPE"]["power"],
         "households_lighting": DM_light_out["energy"],
         "households_electricity": DM_appliances_out["power"],
-        "services_all": DM_services_out["energy"],
+        "services_all": DM_hotwater_out["nonres"]["energy"],
     }
 
     write_pickle = False
@@ -271,7 +274,6 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
         DM_floor_out["industry"], DM_appliances_out["industry"]
     )
     interface.add_link(from_sector="buildings", to_sector="industry", dm=DM_industry)
-    # TODO: probably add non residential (offices) to interface to industry
 
     # interface.add_link(from_sector='buildings', to_sector='minerals', dm=DM_floor_out['industry'])
 
