@@ -1,10 +1,212 @@
 import os
 import pickle
 
+import numpy as np
+import pandas as pd
+
 from transition_compass_model._database.pre_processing.api_routines_CH import (
     get_data_api_CH,
 )
+from transition_compass_model.model.common.auxiliary_functions import (
+    dm_add_missing_variables,
+    linear_fitting,
+)
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
+
+
+def _extract_type_class_shares_from_cadastre(this_dir):
+    """Return P(type | class) shares from Vaud cadastre, shape (n_types, n_classes)."""
+    cadastre_path = os.path.join(this_dir, "../data/cadastre_regener.csv")
+    df = pd.read_csv(cadastre_path, low_memory=False)
+
+    non_res_sia = [
+        "Administration",
+        "Commerce",
+        "Ecoles",
+        "Hopitaux",
+        "Restauration",
+        "Lieux_de_rassemblement",
+        "Installations_sportives",
+    ]
+    type_map = {
+        "Administration": "offices",
+        "Commerce": "trade",
+        "Ecoles": "education",
+        "Hopitaux": "health",
+        "Restauration": "hotels",
+        "Lieux_de_rassemblement": "other",
+        "Installations_sportives": "other",
+    }
+
+    df = df[df["aff_sia"].isin(non_res_sia)].copy()
+    df = df[df["gebf"].notna() & (df["gebf"] > 0)]
+    df["model_type"] = df["aff_sia"].map(type_map)
+
+    def _year_to_class(yr):
+        if pd.isna(yr):
+            return None
+        yr = int(yr)
+        if yr < 1947:
+            return "F"
+        elif yr <= 1975:
+            return "E"
+        elif yr <= 1990:
+            return "D"
+        elif yr <= 2019:
+            return "C"
+        else:
+            return "B"
+
+    df["energy_class"] = df["gbauj"].apply(_year_to_class)
+    df = df[df["energy_class"].notna()]
+
+    area_by_type_class = (
+        df.groupby(["model_type", "energy_class"])["gebf"]
+        .sum()
+        .unstack("energy_class")
+        .fillna(0)
+    )
+    # Normalize columns so shares sum to 1 per class
+    shares = area_by_type_class.div(area_by_type_class.sum(axis=0), axis=1)
+    return shares  # DataFrame indexed by model_type, columns = energy class
+
+
+def extract_services_floor_area_EP2050(this_dir, years_ots):
+    """Extract national non-residential floor area by building type and energy class."""
+    file_path = os.path.join(
+        this_dir,
+        "../data/EP2050_sectors/EP2050+_Szenarienergebnisse_Details_Nachfragesektoren/"
+        "EP2050+_Detailergebnisse 2020-2060_Dienstleistung_alle Szenarien_2022-10-20.xlsx",
+    )
+    df = pd.read_excel(file_path, sheet_name="04 EBF-Baualter", header=None)
+
+    # Locate year columns (header row containing 2000)
+    year_row_idx = df.apply(lambda row: 2000 in row.values, axis=1).idxmax()
+    year_cols = {
+        int(v): i
+        for i, v in enumerate(df.iloc[year_row_idx])
+        if isinstance(v, (int, float)) and not pd.isna(v) and 2000 <= int(v) <= 2060
+    }
+    years_ep2050 = sorted(year_cols.keys())
+
+    # Construction period rows map to energy classes (labels in column 1)
+    period_to_class = {
+        "vor 1946": "F",
+        "1947-1975": "E",
+        "1976-1990": "D",
+        "1991-2019": "C",
+        "ab 2020": "B",
+    }
+    energy_classes = ["B", "C", "D", "E", "F"]
+
+    # Extract floor area (Tsd. m²) per class per year
+    class_area = {}  # class → np.array over years_ep2050
+    for period, cls in period_to_class.items():
+        row_mask = df.iloc[:, 1].astype(str).str.strip() == period
+        row_idx = df.index[row_mask][0]
+        values = np.array(
+            [df.iloc[row_idx, year_cols[yr]] for yr in years_ep2050], dtype=float
+        )
+        class_area[cls] = values * 1000  # Tsd. m² → m²
+
+    # Get P(type | class) shares from Vaud cadastre
+    type_shares = _extract_type_class_shares_from_cadastre(this_dir)
+    bld_types = sorted(
+        type_shares.index.tolist()
+    )  # ['education','health','hotels','offices','other','trade']
+
+    dm_ch = DataMatrix(
+        col_labels={
+            "Country": ["Switzerland"],
+            "Years": years_ep2050,
+            "Variables": ["bld_floor-area_services"],
+            "Categories1": bld_types,
+            "Categories2": energy_classes,
+        },
+        units={"bld_floor-area_services": "m2"},
+    )
+
+    for i, yr in enumerate(years_ep2050):
+        for cls in energy_classes:
+            total_cls = class_area[cls][i]
+            for bld_type in bld_types:
+                share = (
+                    type_shares.loc[bld_type, cls]
+                    if cls in type_shares.columns
+                    else 0.0
+                )
+                dm_ch["Switzerland", yr, "bld_floor-area_services", bld_type, cls] = (
+                    total_cls * share
+                )
+
+    missing_years = [yr for yr in years_ots if yr not in years_ep2050]
+    if missing_years:
+        dm_add_missing_variables(dm_ch, {"Years": missing_years})
+        dm_ch.sort("Years")
+    linear_fitting(dm_ch, years_ots, based_on=list(range(2000, 2010)))
+    return dm_ch.filter({"Years": years_ots})
+
+
+def extract_services_renovation_rate_EP2050(
+    file_path, years_ots, nonres_types, country_list
+):
+    """Extract non-residential energy renovation rate from EP2050 Dienstleistung Excel.
+
+    Source: sheet '01 Sanierung', Table 01-03 (ZERO) and 01-06 (WWB).
+    Uses the 'Gesamt' row — total stock weighted across all construction periods.
+    Unit: fraction per year (not %).
+
+    Returns a dict with keys 'ots' and 'fts', each a DataMatrix:
+      - 'ots': annual rate 1990-2023, same value broadcast to all nonres_types
+      - 'fts': dict with keys 'wwb' and 'zero', each covering years_fts (2025-2050)
+    """
+    df = pd.read_excel(file_path, sheet_name="01 Sanierung", header=None)
+
+    # Locate year columns from the ZERO table header (row 31 / 65 are identical)
+    year_row_idx = 31
+    year_cols = {
+        int(v): i
+        for i, v in enumerate(df.iloc[year_row_idx])
+        if isinstance(v, (int, float)) and not pd.isna(v) and 2000 <= int(v) <= 2060
+    }
+
+    # Row indices for 'Gesamt' in each scenario
+    ZERO_GESAMT_ROW = 35
+    WWB_GESAMT_ROW = 69
+
+    def _build_dm(row_idx, years):
+        dm = DataMatrix(
+            col_labels={
+                "Country": country_list,
+                "Years": years,
+                "Variables": ["bld_renovation-rate"],
+                "Categories1": nonres_types,
+            },
+            units={"bld_renovation-rate": "%"},
+        )
+        for yr in years:
+            if yr in year_cols:
+                rate = df.iloc[row_idx, year_cols[yr]]
+                dm.array[:, dm.idx[yr], dm.idx["bld_renovation-rate"], :] = rate
+        return dm
+
+    # OTS: use ZERO row (OTS values are identical across scenarios)
+    ots_years_in_ep2050 = [yr for yr in years_ots if yr in year_cols]
+    dm_ots = _build_dm(ZERO_GESAMT_ROW, years_ots)
+    # Fill 1990-1999 (not in EP2050) by holding the 2000 value constant backward
+    val_2000 = df.iloc[ZERO_GESAMT_ROW, year_cols[2000]]
+    for yr in years_ots:
+        if yr < 2000:
+            dm_ots.array[:, dm_ots.idx[yr], dm_ots.idx["bld_renovation-rate"], :] = (
+                val_2000
+            )
+
+    # FTS: extract both scenarios over 2025-2050
+    fts_ep2050_years = [yr for yr in range(2025, 2051, 5) if yr in year_cols]
+    dm_wwb = _build_dm(WWB_GESAMT_ROW, fts_ep2050_years)
+    dm_zero = _build_dm(ZERO_GESAMT_ROW, fts_ep2050_years)
+
+    return {"ots": dm_ots, "fts": {"wwb": dm_wwb, "zero": dm_zero}}
 
 
 def extract_national_energy_demand(table_id, file):
