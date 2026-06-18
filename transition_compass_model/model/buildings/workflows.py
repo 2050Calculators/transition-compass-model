@@ -616,9 +616,39 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
     #########################
     ###   PREPARE OUTPUT  ###
     #########################
-    # Energy demand by type of fuel
-    dm_fuel = dm_energy.group_all("Categories2", inplace=False)
-    dm_fuel.group_all("Categories1", inplace=True)
+    # Aggregate energy class (Cat2) first; building type (Cat1) still present
+    dm_by_type = dm_energy.group_all("Categories2", inplace=False)
+
+    # Split residential vs non-residential before collapsing building type,
+    # so the energy module LP can constrain HOUSEHOLDS and SERVICES separately.
+    res_types = ["multi-family-households", "single-family-households"]
+    nonres_types = [
+        t for t in dm_by_type.col_labels["Categories1"] if t not in res_types
+    ]
+    avail_res = [t for t in res_types if t in dm_by_type.col_labels["Categories1"]]
+
+    def _make_fuel_sector(dm_src, bld_types):
+        dm = dm_src.filter(
+            {
+                "Categories1": bld_types,
+                "Variables": ["bld_energy-demand_heating", "bld_heating"],
+            }
+        )
+        dm.group_all("Categories1", inplace=True)
+        dm.add(np.nan, dummy=True, dim="Categories1", col_label="ambient-heat")
+        dm[:, :, "bld_energy-demand_heating", "ambient-heat"] = (
+            dm[:, :, "bld_heating", "heat-pump"]
+            - dm[:, :, "bld_energy-demand_heating", "heat-pump"]
+        )
+        return dm
+
+    dm_fuel_households = _make_fuel_sector(dm_by_type, avail_res)
+    dm_fuel_services = (
+        _make_fuel_sector(dm_by_type, nonres_types) if nonres_types else None
+    )
+
+    # Total across all building types (used for TPE and other interfaces)
+    dm_fuel = dm_by_type.group_all("Categories1", inplace=False)
     dm_fuel.filter({"Variables": ["bld_energy-demand_heating", "bld_heating"]})
     dm_fuel.add(np.nan, dummy=True, dim="Categories1", col_label="ambient-heat")
     dm_fuel[:, :, "bld_energy-demand_heating", "ambient-heat"] = (
@@ -626,17 +656,13 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
         - dm_fuel[:, :, "bld_energy-demand_heating", "heat-pump"]
     )
 
-    # energy demand_b
-
     # Heating demand by type of building
     dm_class = dm_floor_area.group_all("Categories1", inplace=False)
     dm_class.filter({"Variables": ["bld_heating"]}, inplace=True)
     dm_class.change_unit("bld_heating", 1e-9, "kWh", "TWh")
     dm_class.append(dm_emiss_by_class, dim="Variables")
 
-    #
-    dm_power = dm_energy.group_all("Categories2", inplace=False)
-    dm_power.group_all("Categories1")
+    dm_power = dm_by_type.group_all("Categories1", inplace=False)
     dm_refinery = dm_power.filter(
         {
             "Variables": ["bld_energy-demand_heating"],
@@ -672,6 +698,8 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
             "emissions": dm_emissions,
         },
         "power": dm_fuel.copy(),
+        "power_households": dm_fuel_households,
+        "power_services": dm_fuel_services,
         "district-heating": dm_district_heating,
         "agriculture": dm_fuel.filter(
             {"Variables": ["bld_energy-demand_heating"], "Categories1": ["wood"]}
