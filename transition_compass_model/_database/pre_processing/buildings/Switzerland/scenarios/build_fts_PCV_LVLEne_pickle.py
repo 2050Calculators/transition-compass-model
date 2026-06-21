@@ -212,6 +212,8 @@ def compute_renovation_loi_energie(
         idx["Vaud"], idx[2023], idx["ratio_num_bld_<30"] :
     ]
     # we only want the twentypercent  biggest buildings to be renovated
+    # For this we need the percentage of dwellings with area between 100-149 meter square to be renovated and we renovate and the buildings
+    # with area bigger than 150 meter
     percent_building_renvoated_100_149 = (
         1 - (array_per_surface[-2:].sum() - 0.20) / array_per_surface[-2]
     )
@@ -322,36 +324,38 @@ def update_heating_fts_2(dm_heating_cat_fts_2, dm_heating_cat_ots):
     # dm_heating_cat_fts_2.array[idx['Vaud'], :, idx['bld_heating-mix'], :, idx['B'], idx_fossil] = 0
     dm_heating_cat_fts_2.array[
         idx["Vaud"],
-        1 : idx[2045],
+        1 : idx[2050],
         idx["bld_heating-mix"],
         :,
-        *np.ix_(idx_old_cat, idx_fossil),
+        :,
+        idx_fossil,
     ] = np.nan
     dm_heating_cat_fts_2.array[
         idx["Vaud"],
-        idx[2045] :,
+        idx[2045],
         idx["bld_heating-mix"],
         :,
-        *np.ix_(idx_old_cat, idx_fossil),
+        :,
+        idx_fossil,
     ] = (
         dm_heating_cat_ots.array[
             idx_ots["Vaud"],
-            idx_ots[2023] :,
+            idx_ots[2023],
             idx_ots["bld_heating-mix"],
             :,
-            *np.ix_(idx_ots_new_cat, idx_ots_fossil),
+            :,
+            idx_ots_fossil,
         ]
-        * 0.05
+        * 0.10
     )
+
+    # We suppose 5% of exception
     dm_heating_cat_fts_2.array[
-        idx["Vaud"], 1 : idx[2050], idx["bld_heating-mix"], :, :, idx_fossil
-    ] = np.nan
-    dm_heating_cat_fts_2.array[
-        idx["Vaud"], idx[2050] :, idx["bld_heating-mix"], :, :, idx_fossil
+        idx["Vaud"], idx[2050], idx["bld_heating-mix"], :, :, idx_fossil
     ] = (
         dm_heating_cat_ots.array[
             idx_ots["Vaud"],
-            idx_ots[2023] :,
+            idx_ots[2023],
             idx_ots["bld_heating-mix"],
             :,
             :,
@@ -545,6 +549,33 @@ def run(
         DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"][
             lev
         ] = dm_heating_cat_fts_2.copy()
+
+    # Compute renovation rate loi energie_refuse
+    # dm_renovation = DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][2].copy()
+
+    # dm_stock_mix =  DM_buildings["fxa"]["bld_type"].copy()
+    # idx_mix = dm_stock_mix.idx
+    # renov_rate    =  dm_stock_mix.array[
+    #         idx_mix["Vaud"],
+    #         idx_mix[2023],
+    #         idx_mix["bld_building-mix_stock"],
+    #         :,
+    #         idx_mix["F"],
+    #     ]
+    # renov_rate = np.ones_like(renov_rate)
+    # #get the number of years to divide the rnovation rate by to apply it gradually between 2025 and 2040
+    # idx_renov =dm_renovation.idx
+    # yrs_renov = [yr for yr in dm_rr_fts_2.col_labels["Years"] if yr <= 2040]
+    # idx_years_renov = [idx_renov[yr] for yr in yrs_renov]
+    # E_renov = get_renov_rate_E(DM_buildings)
+    # dm_renovation.array[
+    #     idx_renov["Vaud"], idx_years_renov, idx_renov["bld_renovation-rate"], :
+    # ] = (
+    #     renov_rate / (yrs_renov[-1] - yrs_renov[0] + 1) )+ E_renov[0]
+
+    # DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][4] = (
+    #     dm_renovation
+    # )
 
     ##### HOTWATER TECHNOLOGY MIX ######
 

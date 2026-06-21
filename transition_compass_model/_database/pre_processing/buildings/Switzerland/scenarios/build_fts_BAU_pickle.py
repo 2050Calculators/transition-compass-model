@@ -166,8 +166,18 @@ def run(DM_buildings, country_list, years_fts):
     # Obligation à enlever les chauffages electriques d'ici 2033
     # https://www.vd.ch/environnement/energie/legislation/chauffages-et-chauffe-eaux-electriques
     idx = dm_heating_cat.idx
-    dm_heating_cat["Vaud", idx[2035] :, :, :, :, "electricity"] = 0
 
+    # We want to linearly interpolate for elecetricity and then linearly extrpolate the other base on years 2015 -2023
+    def set_elec_to_zero(dm):
+        idx = dm.idx
+        dm_heating_cat_elec = dm.copy()
+        dm_heating_cat_elec["Vaud", idx[2025] :, ..., "electricity"] = np.nan
+        dm_heating_cat_elec["Vaud", idx[2035] :, ..., "electricity"] = 0
+        dm_heating_cat_elec.fill_nans("Years")
+        dm["Vaud", ..., "electricity"] = dm_heating_cat_elec["Vaud", ..., "electricity"]
+        return dm
+
+    dm_heating_cat = set_elec_to_zero(dm_heating_cat)
     dm_heating_cat = linear_fit_ratio(
         dm_heating_cat.copy(), years_fts, category_to_normalise="Categories3"
     )
@@ -183,11 +193,12 @@ def run(DM_buildings, country_list, years_fts):
     #####    HOTWATER TECHNOLOGY MIX     #######
     ###########################################
     dm_hotwater_cat = DM_buildings["fxa"]["hot-water"]["hw-tech-mix"].copy()
-    idx = dm_heating_cat.idx
+
     # Obligation à enlever les chauffages electriques d'ici 2033
     # https://www.vd.ch/environnement/energie/legislation/chauffages-et-chauffe-eaux-electriques
-    # article 9 et 10 DACCE 2033 au plus tard et sur justificatif de peu de consomation + 5 ans
-    dm_hotwater_cat["Vaud", idx[2035] :, :, "electricity"] = 0
+    # article 9 et 10 DACCE 2033 au plus tard et sur justificatif de p  eu de consomation + 5 ans
+    dm_hotwater_cat = set_elec_to_zero(dm_hotwater_cat)
+
     # For hot water we do a linear extrapolation of the technology mix.
     # As it is a ratio we force values to be above 0, and then normalise to sum to 1 again.
 
