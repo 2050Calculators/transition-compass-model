@@ -103,6 +103,7 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
         (2001, 2010): {"F": 0, "E": 0.69, "D": 0.16, "C": 0.15, "B": 0},
         (2011, 2023): {},
     }  # 46, 24, 15,14
+
     ren_map_in[(2011, 2023)]["E"] = round(0.8 * ren_1_class, 2)
     ren_map_in[(2011, 2023)]["D"] = round(0.8 * ren_2_class + 0.2 * ren_1_class, 2)
     ren_map_in[(2011, 2023)]["C"] = round(0.8 * ren_3_class + 0.2 * ren_2_class, 2)
