@@ -360,20 +360,18 @@ def update_heating_change_proportion(
     if household_type == "multi-family-households":
         # Proportion according to the study perspectives chaleur (fig. 1)
         renov_proportion = {
-            "district-heating": 0.563,
-            "heat-pump": 0.25,
-            "solar": 0.067,
-            "wood": 0.057,
-            "other-tech": 0.063,
+            "district-heating": 0.66,
+            "heat-pump": 0.27,
+            "solar": 0.04,
+            "wood": 0.03,
         }
     else:
         # Proportion according to the study perspectives chaleur (fig 3.)
         renov_proportion = {
-            "district-heating": 0.004,
-            "heat-pump": 0.822,
-            "solar": 0.081,
-            "wood": 0.061,
-            "other-tech": 0.031,
+            "district-heating": 0.0044,  # 0.004426002766251729
+            "heat-pump": 0.8488,
+            "solar": 0.0835,
+            "wood": 0.0633,
         }
 
     heating_types = list(renov_proportion.keys())
@@ -406,7 +404,7 @@ def update_heating_fts_2(dm_heating_cat_fts_2, dm_heating_cat_ots):
     ] = np.nan
     dm_heating_cat_fts_2.array[
         idx["Vaud"],
-        idx[2045],
+        idx[2040],
         idx["bld_heating-mix"],
         :,
         :,
@@ -420,12 +418,12 @@ def update_heating_fts_2(dm_heating_cat_fts_2, dm_heating_cat_ots):
             :,
             idx_ots_fossil,
         ]
-        * 0.10
+        * 0.25
     )
 
     # We suppose 5% of exception
     dm_heating_cat_fts_2.array[
-        idx["Vaud"], idx[2050], idx["bld_heating-mix"], :, :, idx_fossil
+        idx["Vaud"], idx[2045], idx["bld_heating-mix"], :, :, idx_fossil
     ] = (
         dm_heating_cat_ots.array[
             idx_ots["Vaud"],
@@ -437,7 +435,11 @@ def update_heating_fts_2(dm_heating_cat_fts_2, dm_heating_cat_ots):
         ]
         * 0.05
     )
-
+    dm_heating_cat_fts_2.array[
+        idx["Vaud"], idx[2050], idx["bld_heating-mix"], :, :, idx_fossil
+    ] = dm_heating_cat_fts_2.array[
+        idx["Vaud"], idx[2045], idx["bld_heating-mix"], :, :, idx_fossil
+    ]
     dm_heating_cat_fts_2.fill_nans("Years")
 
     dm_heating_fts_mfh = update_heating_change_proportion(
@@ -891,11 +893,23 @@ def run(
     idx_ots = dm_hotwater_ots.idx
     # Replace the use of fossil fuel for hot water to 0 for new buildings from 2025 and for all buildings from 2035, and replace it by the ideal scenario proportion
     # There are no buildings catergoies for hotwater technology so we replace it for all the categories at once
+    dm_hotwater_fts_2.array[idx["Vaud"], 1:, idx["bld_hw_tech-mix"], idx_fossil] = (
+        np.nan
+    )
+
     dm_hotwater_fts_2.array[
-        idx["Vaud"], 1 : idx[2050], idx["bld_hw_tech-mix"], idx_fossil
-    ] = np.nan
+        idx["Vaud"], idx[2040], idx["bld_hw_tech-mix"], idx_fossil
+    ] = (
+        dm_hotwater_ots.array[
+            idx_ots["Vaud"],
+            idx_ots[2023],
+            idx["bld_hw_tech-mix"],
+            [idx_ots["heating-oil"], idx_ots["gas"]],
+        ]
+        * 0.25
+    )
     dm_hotwater_fts_2.array[
-        idx["Vaud"], idx[2050], idx["bld_hw_tech-mix"], idx_fossil
+        idx["Vaud"], idx[2045], idx["bld_hw_tech-mix"], idx_fossil
     ] = (
         dm_hotwater_ots.array[
             idx_ots["Vaud"],
@@ -905,6 +919,12 @@ def run(
         ]
         * 0.05
     )
+    dm_hotwater_fts_2.array[
+        idx["Vaud"], idx[2050], idx["bld_hw_tech-mix"], idx_fossil
+    ] = dm_hotwater_fts_2.array[
+        idx["Vaud"], idx[2045], idx["bld_hw_tech-mix"], idx_fossil
+    ]
+
     dm_hotwater_fts_2.fill_nans("Years")
 
     renov_prop_hotwater = create_renov_prop_hw(dm_bld_mix)
