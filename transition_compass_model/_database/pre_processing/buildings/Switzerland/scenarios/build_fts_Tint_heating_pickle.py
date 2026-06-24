@@ -31,7 +31,8 @@ def run(DM_buildings, years_ots, years_fts):
         dm_heat_cool_ots.fill_nans("Years")
         dm_heat_cool_fts = dm_heat_cool_ots.filter({"Years": years_fts})
         DM_buildings["fts"]["heatcool-behaviour"][lev] = dm_heat_cool_fts.copy()
-
+    dm_heat_cool_fts[:, :, "bld_Tint-heating", :, :] = 19
+    DM_buildings["fts"]["heatcool-behaviour"][4] = dm_heat_cool_fts
     this_dir = os.path.dirname(os.path.abspath(__file__))
     file = os.path.join(this_dir, "../../../../data/datamatrix/buildings.pickle")
 

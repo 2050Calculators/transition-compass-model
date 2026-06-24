@@ -584,6 +584,7 @@ def run(
         )
         .copy()
     )
+
     dm_bld_mix = (
         DM_buildings["ots"]["building-renovation-rate"]["bld_building-mix"]
         .filter({"Country": country_list})
@@ -957,6 +958,23 @@ def run(
         DM_buildings["fts"]["heating-technology-fuel"]["bld_hot-water-technology"][
             lever
         ] = dm_hotwater_fts_2.copy()
+
+    ###### FLOOR AREA #####
+    dm_fts_floor_intensity = DM_buildings["fts"]["floor-intensity"][1].copy()
+    idx = dm_fts_floor_intensity.idx
+    dm_fts_floor_intensity.array[
+        idx["Vaud"], 1:, idx["lfs_floor-intensity_space-cap"]
+    ] = np.nan
+    dm_fts_floor_intensity.array[
+        idx["Vaud"], idx[2050], idx["lfs_floor-intensity_space-cap"]
+    ] = (
+        dm_fts_floor_intensity.array[
+            idx["Vaud"], idx[2025], idx["lfs_floor-intensity_space-cap"]
+        ]
+        - 23.9
+    )
+    dm_fts_floor_intensity.fill_nans("Years")
+    DM_buildings["fts"]["floor-intensity"][4] = dm_fts_floor_intensity
 
     this_dir = os.path.dirname(os.path.abspath(__file__))
     # !FIXME: use the actual values and not the calibration factor

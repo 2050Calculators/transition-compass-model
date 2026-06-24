@@ -83,9 +83,7 @@ print("Compile pickle fts - all BAU")
 DM_buildings = fts_bau_pickle_run(DM_buildings, country_list, years_fts)
 
 print("Compile PCV - Vaud - level 2")
-DM_buildings = fts_PCV_run(
-    DM_buildings, dm_stock_cat, dm_pop_ots, global_var, country_list, lev=2
-)
+
 
 # print("Compile Scenario EP2050 - Vaud - level 3")
 # DM_buildings = fts_Vaud_EP2050_run(DM_buildings, lev=3)
@@ -101,6 +99,9 @@ DM_buildings = fts_Tint_heating_run(DM_buildings, years_ots, years_fts)
 print("Add scenarios for floor area/cap")
 DM_buildings = fts_floor_area_run(DM_buildings, years_ots, years_fts)
 
+DM_buildings = fts_PCV_run(
+    DM_buildings, dm_stock_cat, dm_pop_ots, global_var, country_list, lev=2
+)
 print("Add scenarios for heating efficiency (heat-pumps)")
 fts_efficiency_run(DM_buildings, years_fts)
 
