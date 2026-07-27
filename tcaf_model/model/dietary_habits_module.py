@@ -142,8 +142,9 @@ def simulate_population_to_dietaryhabits_input():
 
 
 # CalculationLeaf DIET WITH ADHERENCE SCENARIO --------------------------------------------------------------
-def diet_adherence_scenarios(DM_diet, DM_pop, CDM_const, bau, tpe_scenario):
-
+def diet_adherence_scenarios(
+    DM_diet, DM_pop, CDM_const, bau, tpe_scenario, apply_adherence=True
+):
     # Processing for diet-adherence
     dm_adherence = DM_diet["diet-adherence"].copy()
     if bau == True:
@@ -158,6 +159,13 @@ def diet_adherence_scenarios(DM_diet, DM_pop, CDM_const, bau, tpe_scenario):
         ]
         var_consumers_diet = "lfs_consumers-diet"
         var_kcal_req = "agr_kcal-req"
+
+    # Stratified-adherence health assessment (see TCAF_health_diet_workflow):
+    # to obtain the *unweighted* full diets - the full BAU diet B (everyone at BAU
+    # composition) and the full target diet T (everyone at target composition) -
+    # the population adherence weighting is removed by forcing the share to 1.
+    if apply_adherence is False:
+        dm_adherence[:, :, "share_diet_adherence"] = 1.0
 
     dm_diet_food = {}
     if tpe_scenario == "diet-split-share":
@@ -727,18 +735,23 @@ def dietaryhabits_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_foo
 
 
 # CalculationLeaf INTERFACE OUT TCAF  --------------------------------------------------------------
-def dietaryhabits_TCAF_interface(dm_diet_consumed_bau, dm_diet_consumed_scenario):
-
-    # Filter
-    dm_diet_consumed_bau.filter({"Variables": ["lfs_consumers-diet"]}, inplace=True)
-    dm_diet_consumed_scenario.filter(
-        {"Variables": ["lfs_consumers-diet"]}, inplace=True
+def dietaryhabits_TCAF_interface(
+    dm_diet_consumed_B, dm_diet_consumed_T, dm_diet_adherence
+):
+    # Filter to the consumed-diet variable
+    dm_diet_consumed_B.filter({"Variables": ["lfs_consumers-diet"]}, inplace=True)
+    dm_diet_consumed_T.filter({"Variables": ["lfs_consumers-diet"]}, inplace=True)
+    dm_diet_adherence = dm_diet_adherence.filter(
+        {"Variables": ["share_diet_adherence"]}, inplace=False
     )
 
-    # Aggregate in DM
+    # B     = full BAU (reference) diet   [g/cap/day]
+    # T     = full target diet (a full adherent)   [g/cap/day]
+    # alpha = population share adopting the target diet   [-]
     DM_TCAF_health_diet = {
-        "diet-consumed_bau": dm_diet_consumed_bau,
-        "diet-consumed_scenario": dm_diet_consumed_scenario,
+        "diet-consumed_bau": dm_diet_consumed_B,
+        "diet-consumed_target": dm_diet_consumed_T,
+        "diet-adherence": dm_diet_adherence,
     }
 
     return DM_TCAF_health_diet
@@ -802,8 +815,29 @@ def dietaryhabits(
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 
     # Dietary Habits to TCAF
+    # Stratified-adherence health assessment (R logic): the TCAF module needs the
+    # *unweighted* full diets and the adherence share, not the population-weighted
+    # BAU/scenario split. B = full BAU (reference) diet, T = full target diet.
+    # NB: the workflow above has already added the BAU composition variables to
+    # DM_diet in-place, so diet_adherence_scenarios can be re-run here.
+    _, dm_diet_consumed_B = diet_adherence_scenarios(
+        DM_diet,
+        DM_pop,
+        CDM_const,
+        bau=True,
+        tpe_scenario=tpe_scenario,
+        apply_adherence=False,
+    )
+    _, dm_diet_consumed_T = diet_adherence_scenarios(
+        DM_diet,
+        DM_pop,
+        CDM_const,
+        bau=False,
+        tpe_scenario=tpe_scenario,
+        apply_adherence=False,
+    )
     DM_TCAF_health_diet = dietaryhabits_TCAF_interface(
-        dm_diet_consumed_bau, dm_diet_consumed_scenario
+        dm_diet_consumed_B, dm_diet_consumed_T, DM_diet["diet-adherence"]
     )
     if write_pickle is True:
         current_file_directory = os.path.dirname(os.path.abspath(__file__))

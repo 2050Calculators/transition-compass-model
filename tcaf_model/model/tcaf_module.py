@@ -10,7 +10,6 @@ from tcaf_model.model.common.auxiliary_functions import (
     linear_fitting,
 )
 from tcaf_model.model.common.config_loader import load_lever_config
-from tcaf_model.model.common.data_matrix_class import DataMatrix
 from tcaf_model.model.common.interface_class import Interface
 
 
@@ -230,7 +229,7 @@ def TCAF_lca_workflow(
         DM_crop_to_TCAF.filter({"Variables": ["agr_production-lca"]}), dim="Categories1"
     )
 
-    # Multiply with Monetized LCA impacts
+    # Multiply with Monetized LCA impacts fixme sure already monetized?
     food_cat = dm_lca_world.col_labels["Categories1"]
     DM_TCAF_lca["lca-world"].filter({"Categories1": food_cat}, inplace=True)
     array_temp = (
@@ -272,34 +271,66 @@ def TCAF_lca_workflow(
 
 # CalculationLeaf TCAF HEALTH DIET
 def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
-    # For both BAU & SCENARIO
-    dm_diet_bau = DM_diet["diet-consumed_bau"]
-    dm_diet_sce = DM_diet["diet-consumed_scenario"]
+    """
+    Diet-attributable / avoidable DALYs, following the stratified-adherence logic
+    of the R projection script (Projection.R).
+
+    For every food risk-factor r and disease d:
+      PAF_r(B) : PAF read off the dose-response curve at the BAU (reference) intake
+      PAF_r(T) : PAF read off the curve at the full target intake (full adherent)
+      PIF_r    : max((PAF_r(B) - PAF_r(T)) / (1 - PAF_r(T)), 0)      [full adoption]
+    PAF is read by linear interpolation with flat extrapolation
+    (numpy.interp == R's approx(..., rule = 2)).
+
+    Combine the food risk-factors of a disease multiplicatively (GBD standard):
+      AF_ref = 1 - prod_r (1 - PAF_r(B))
+      PIF    = 1 - prod_r (1 - PIF_r)
+
+    Population adherence alpha (share of the population adopting the target diet)
+    enters as a LINEAR scaling of the disease-level impact fraction - the
+    two-strata mixture used by R, PIF(alpha) = alpha * PIF:
+      attributable = AF_ref        * DALYs
+      avoided      = alpha * PIF    * DALYs
+      residual     = attributable - avoided
+
+    Inputs from the dietary-habits interface:
+      B     = diet-consumed_bau     (unweighted full BAU diet,     g/cap/day)
+      T     = diet-consumed_target  (unweighted full target diet,  g/cap/day)
+      alpha = diet-adherence        (share_diet_adherence,         -)
+
+    Monetization:
+      MF    = CDM_MF['health-diet'] (value per DALY, CHF/DALY)  ->  cost = DALYs * MF
+
+    FLAG - where alpha is applied: here it scales the COMBINED (disease-level) PIF,
+    which is the standard "a fraction alpha of the population fully complies"
+    interpretation and reproduces R's par_total at every alpha. If the R script
+    instead scales each food's PIF *before* the multiplicative combination, use the
+    line marked "ALT" below instead (the two differ because the combination is
+    non-linear).
+    """
+    dm_B = DM_diet["diet-consumed_bau"].copy()  # reference (BAU) diet
+    dm_T = DM_diet["diet-consumed_target"].copy()  # full target diet
+    dm_alpha = DM_diet["diet-adherence"].copy()  # population adherence share
 
     # Pre-processing
-    dm_data_paf = DM_TCAF_health_diet["health-diet_paf"]
-    dm_data_dalys = DM_TCAF_health_diet["health-diet_dalys"]
-
-    # pondération genre PAF
+    dm_data_paf = DM_TCAF_health_diet[
+        "health-diet_paf"
+    ]  # dict: food -> PAF dose-response curve
+    dm_data_dalys = DM_TCAF_health_diet[
+        "health-diet_dalys"
+    ]  # DM: Country x Years x [dalys] x disease
 
     # Step 0 - Groupby categories relevant for health ----------------------------
-    # Red meat
+    # Red meat = bovine + pig + sheep + other animal
     pattern = "pro-liv-meat-bovine|pro-liv-meat-pig|pro-liv-meat-sheep|pro-liv-meat-oth-animal"
-    dm_diet_bau.groupby(
+    dm_B.groupby(
         {"pro-liv-meat-red": pattern}, dim="Categories1", inplace=True, regex=True
     )
-    dm_diet_sce.groupby(
+    dm_T.groupby(
         {"pro-liv-meat-red": pattern}, dim="Categories1", inplace=True, regex=True
     )
 
-    # Step 1 - Link the intakes in DM_diet and DM_TCAF_health_diet ---------------
-    # Note: link them with the closest value
-
-    # Round up the intake
-    # dm_diet_bau[:, :, :, :] = np.round(dm_diet_bau[:, :, :, :])
-    # dm_diet_sce[:, :, :, :] = np.round(dm_diet_sce[:, :, :, :])
-
-    # Health categories that we consider
+    # Health categories (food risk factors) that we consider
     cat_health = [
         "crop-fruit",
         "crop-pulse",
@@ -310,103 +341,119 @@ def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
         "crop-veg",
         "crop-cereal-whole",
     ]
-    cat_temp = [
-        "tcaf_health-diet_paf_crop-fruit",
-        "tcaf_health-diet_paf_crop-pulse",
-        "tcaf_health-diet_paf_pro-liv-abp-dairy-milk",
-        "tcaf_health-diet_paf_crop-oilcrop",
-        "tcaf_health-diet_paf_pro-liv-meat-processed",
-        "tcaf_health-diet_paf_pro-liv-meat-red",
-        "tcaf_health-diet_paf_crop-veg",
-        "tcaf_health-diet_paf_crop-cereal-whole",
-    ]
 
-    # Filter diet according to health categories
-    dm_diet_bau.filter({"Categories1": cat_health}, inplace=True)
-    dm_diet_sce.filter({"Categories1": cat_health}, inplace=True)
-
-    # Create a dm with only the relevant intakes
-    dm_paf = dm_data_dalys.copy()
-    dm_data_dalys_temp = dm_data_dalys.copy()
-    dm_paf_year = dm_data_dalys.copy()
-    # Add dummies for processing
-    dm_paf_year.add(
-        0.0, dummy=True, col_label=cat_temp, dim="Variables", unit="--------"
-    )
-    # Drop the DALYs because we only want the structure
-    dm_paf.drop(dim="Variables", col_label="tcaf_health-diet_dalys")
-    dm_paf_year.drop(dim="Variables", col_label="tcaf_health-diet_dalys")
-
-    n_countries = 1
+    dm_B.filter({"Categories1": cat_health}, inplace=True)
+    dm_T.filter({"Categories1": cat_health}, inplace=True)
 
     for cat in cat_health:
-        if cat not in dm_diet_bau.col_labels["Categories1"]:
-            print(f"Warning: {cat} not in dm_diet_bau")
+        if cat not in dm_B.col_labels["Categories1"]:
+            print(f"Warning: {cat} not in diet-consumed_bau")
         if cat not in dm_data_paf:
             print(f"Warning: {cat} not in dm_data_paf")
 
-    for cat in cat_health:
-        variable_name = "tcaf_health-diet_paf_" + cat
-        for year in dm_diet_bau.col_labels["Years"]:
-            # 0: initialize arrays
-            arr_diet_intake = dm_diet_bau[:, year, "lfs_consumers-diet", cat]
-            arr_paf_intake = dm_data_paf[cat][:, :, :]
-            list_paf_intake = np.array(dm_data_paf[cat].col_labels["Years"])
-            # 1: Compute absolute difference between actual intake and available PAF intake levels
-            diff = np.abs(
-                list_paf_intake[None, :] - arr_diet_intake[:, None]
-            )  # shape (n_countries, n_intakes)
-
-            # 2: Find the index of the closest intake level for each country
-            closest_idx = np.argmin(diff, axis=1)  # shape (n_countries,)
-
-            # 3: Select the corresponding row across all 9 variables
-            arr_filtered = arr_paf_intake[
-                np.arange(arr_paf_intake.shape[0]), closest_idx, :
-            ]  # shape (n_countries, 9)
-            # 4: format as a datamatrix
-            year = np.int64(year)
-            dm_paf_temp = DataMatrix.based_on(
-                arr_filtered[:, np.newaxis, np.newaxis, :],
-                dm_data_dalys_temp.filter({"Years": [year]}, inplace=False),
-                change={"Variables": [variable_name]},
-                units={variable_name: "-"},
-            )
-            # 5: Append years together
-            dm_paf_year[:, year, variable_name, :] = dm_paf_temp[:, :, variable_name, :]
-        # 6: Append variables together
-        dm_paf.append(
-            dm_paf_year.filter({"Variables": [variable_name]}, inplace=False),
-            dim="Variables",
-        )
-
-    # Step 2 - Associated DALYs per disease d for total country = PAF d,r * DALYs d ------------------
-    dm_data_dalys = dm_data_dalys.flatten()
-    dm_data_dalys.rename_col_regex(
-        str1="tcaf_health-diet_dalys", str2="", dim="Variables"
+    # Step 1 - Common years across intakes, adherence and (projected) DALYs ------
+    years = sorted(
+        set(dm_B.col_labels["Years"])
+        & set(dm_data_dalys.col_labels["Years"])
+        & set(dm_alpha.col_labels["Years"])
     )
-    array_temp = dm_paf[:, :, :, :] * dm_data_dalys[:, :, np.newaxis, :]
-    dm_paf.deepen(based_on="Variables")
-    dm_paf.switch_categories_order(
-        cat1="Categories2", cat2="Categories1"
-    )  # Switch categories
+    dm_B.filter({"Years": years}, inplace=True)
+    dm_T.filter({"Years": years}, inplace=True)
+    dm_alpha.filter({"Years": years}, inplace=True)
+
+    country = dm_B.col_labels["Country"]
+    dalys_disease = dm_data_dalys.col_labels["Categories1"]  # disease code order
+    n_c, n_y, n_f, n_d = len(country), len(years), len(cat_health), len(dalys_disease)
+    paf_var_prefix = "tcaf_health-diet_paf_"
+
+    # Step 2 - Read the PAF off the dose-response curve at each intake -----------
+    # numpy.interp does linear interpolation with flat extrapolation outside the
+    # grid, reproducing R's approx(x, y, xout, rule = 2).
+    def eval_paf(dm_intake):
+        out = np.zeros((n_c, n_y, n_f, n_d))
+        for fi, cat in enumerate(cat_health):
+            dm_curve = dm_data_paf[cat]
+            x_grid = np.array(
+                dm_curve.col_labels["Years"], dtype=float
+            )  # intake grid [g/day/cap]
+            var_names = [paf_var_prefix + d for d in dalys_disease]
+            y_grid = np.stack(
+                [dm_curve[:, :, v][0, :] for v in var_names], axis=-1
+            )  # (n_intake, n_disease)
+            order = np.argsort(x_grid)
+            x_s, y_s = x_grid[order], y_grid[order, :]
+            xv = dm_intake[:, :, "lfs_consumers-diet", cat]  # (n_c, n_y)
+            for di in range(n_d):
+                out[:, :, fi, di] = np.interp(xv, x_s, y_s[:, di])
+        return out
+
+    arr_paf_B = eval_paf(dm_B)  # PAF at reference intake
+    arr_paf_T = eval_paf(dm_T)  # PAF at full target intake
+
+    # Step 3 - Full-adoption PIF per food x disease ------------------------------
+    with np.errstate(divide="ignore", invalid="ignore"):
+        arr_pif = (arr_paf_B - arr_paf_T) / (1.0 - arr_paf_T)
+    arr_pif = np.maximum(np.nan_to_num(arr_pif, nan=0.0), 0.0)
+
+    # Step 4 - Combine the food risk-factors of a disease: 1 - prod(1 - p) -------
+    af_ref_comb = 1.0 - np.prod(1.0 - arr_paf_B, axis=2)  # (n_c, n_y, n_d)
+    pif_comb = 1.0 - np.prod(1.0 - arr_pif, axis=2)  # (n_c, n_y, n_d)  full adoption
+
+    # Step 5 - Apply population adherence: alpha * PIF ---------------------------
+    alpha = dm_alpha[:, :, "share_diet_adherence"]  # (n_c, n_y)
+    pif_alpha = alpha[:, :, np.newaxis] * pif_comb  # alpha on the COMBINED PIF
+    # ALT (scale each food's PIF before combining):
+    # pif_alpha = 1.0 - np.prod(1.0 - alpha[:, :, np.newaxis, np.newaxis] * arr_pif, axis=2)
+
+    # Step 6 - Attributable / avoided / residual DALYs ---------------------------
+    dm_dalys = dm_data_dalys.copy()
+    dm_dalys.filter({"Years": years}, inplace=True)
+    arr_dalys = dm_dalys[:, :, "tcaf_health-diet_dalys", :]  # (n_c, n_y, n_d)
+
+    arr_attr = af_ref_comb * arr_dalys
+    arr_avoid = pif_alpha * arr_dalys
+    arr_resid = arr_attr - arr_avoid
+
+    # Detailed DM (per disease): attributable / avoided / residual
+    dm_paf = dm_dalys.copy()
+    dm_paf[:, :, "tcaf_health-diet_dalys", :] = arr_attr
     dm_paf.add(
-        array_temp[:, :, np.newaxis, :, :],
-        dummy=True,
-        col_label="tcaf_health-diet_dalys",
+        arr_avoid,
         dim="Variables",
-        unit="DALYs",
+        col_label="tcaf_health-diet_dalys-avoided",
+        unit="DALYs/y",
+    )
+    dm_paf.add(
+        arr_resid,
+        dim="Variables",
+        col_label="tcaf_health-diet_dalys-residual",
+        unit="DALYs/y",
     )
 
-    # Step 3 - Total DALYs = sum(DALYs d) ----------------------------------------
+    # Step 7 - Total across diseases = sum_d ------------------------------------
     dm_dalys_tot = dm_paf.copy()
-    # dm_dalys_tot.drop(dim='Categories2', col_label='combined')
-    dm_dalys_tot.groupby({"total": ".*"}, dim="Categories2", inplace=True, regex=True)
-    dm_dalys_tot.switch_categories_order(cat1="Categories2", cat2="Categories1")
-    dm_dalys_tot = dm_dalys_tot.flatten()
+    dm_dalys_tot.groupby({"total": ".*"}, dim="Categories1", inplace=True, regex=True)
 
-    # Step 4 - Calibration: normalise according to the total DALYs ---------------
-    # Use combined PAF
+    # Step 8 - Monetization: cost [CHF] = DALYs [DALYs/y] * MF [CHF/DALY] --------
+    # CDM_MF['health-diet'] holds a single health-diet monetization factor
+    # (monetary value per DALY). Each DALYs component (attributable / avoided /
+    # residual) is monetized, both per disease and for the total.
+    cdm_mf = CDM_MF["health-diet"]
+    mf_var = cdm_mf.col_labels["Variables"][0]
+    mf = cdm_mf[mf_var]  # scalar CHF/DALY
+    cost_of = {
+        "tcaf_health-diet_dalys": "tcaf_health-diet_cost-bau",
+        "tcaf_health-diet_dalys-avoided": "tcaf_health-diet_cost-avoided",
+        "tcaf_health-diet_dalys-residual": "tcaf_health-diet_cost-residual",
+    }
+    for dm in (dm_paf, dm_dalys_tot):
+        for dalys_var, cost_var in cost_of.items():
+            dm.add(
+                dm[:, :, dalys_var, :] * mf,
+                dim="Variables",
+                col_label=cost_var,
+                unit="CHF",
+            )
 
     return dm_paf, dm_dalys_tot
 
@@ -488,15 +535,22 @@ def TCAF_biodiversity_workflow(DM_TCAF_biodiversity, DM_landuse_to_TCAF):
 
 # CalculationLeaf TPE INTERFACE
 def TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot):
+    # attributable / avoided / residual DALYs, and their monetized costs [CHF]
+    vars_out = [
+        "tcaf_health-diet_dalys",
+        "tcaf_health-diet_dalys-avoided",
+        "tcaf_health-diet_dalys-residual",
+        "tcaf_health-diet_cost",
+        "tcaf_health-diet_cost-avoided",
+        "tcaf_health-diet_cost-residual",
+    ]
 
-    # health-diet detailed
-    dm_health_diet_detailed.filter(
-        {"Variables": ["tcaf_health-diet_dalys"]}, inplace=True
-    )
+    # health-diet detailed (per disease)
+    dm_health_diet_detailed.filter({"Variables": vars_out}, inplace=True)
     dm_tpe = dm_health_diet_detailed.flattest()
 
-    # health-diet total
-    dm_health_diet_tot.filter({"Variables": ["tcaf_health-diet_dalys"]}, inplace=True)
+    # health-diet total (summed over diseases)
+    dm_health_diet_tot.filter({"Variables": vars_out}, inplace=True)
     dm_tpe.append(dm_health_diet_tot.flattest(), dim="Variables")
 
     return dm_tpe
@@ -558,13 +612,7 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
         DM_livestock_to_TCAF = simulate_livestock_to_TCAF_input()
 
     # CalculationTree ---------------------------------------------------------------------------------------------------
-    DM_TCAF_lca = TCAF_lca_workflow(
-        DM_TCAF_lca,
-        DM_crop_to_TCAF,
-        DM_landuse_to_TCAF,
-        DM_livestock_to_TCAF,
-        CDM_const,
-    )
+    # DM_TCAF_lca = TCAF_lca_workflow(DM_TCAF_lca, DM_crop_to_TCAF, DM_landuse_to_TCAF, DM_livestock_to_TCAF, CDM_const)
     dm_health_diet_detailed, dm_health_diet_tot = TCAF_health_diet_workflow(
         DM_diet, DM_TCAF_health_diet, CDM_MF
     )

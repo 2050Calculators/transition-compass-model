@@ -114,39 +114,34 @@ def TCAF_MF_preprocessing():
 def TCAF_health_diet_preprocessing():
 
     # ----------------------------------------------------------------------------
-    # DALYs
+    # Disease name -> short code (shared by DALYs and PAF so they align on merge)
     # ----------------------------------------------------------------------------
-
-    # Data -----------------------------------------------------------------------
-    df_dalys = pd.read_csv("data/health-diet/Disease_sex_DALYs_2023.csv")
-
-    # Preprocessing --------------------------------------------------------------
-
-    # Filter
-    df_dalys = df_dalys[["location", "sex", "cause", "year", "val"]]
-
-    # Rename cols
-    df_dalys.rename(
-        columns={"location": "Country", "year": "Years", "val": "value"}, inplace=True
-    )
-
-    # Groupby gender (sum total DALYs)
-    df_dalys = df_dalys.groupby(["Country", "Years", "cause"], as_index=False)[
-        "value"
-    ].sum()
-
-    # Rename terms
-    cause_map = {
+    disease_map = {
+        "Breast cancer": "BC",
         "Colon and rectum cancer": "CRC",
         "Diabetes mellitus type 2": "DT2",
+        "Esophageal cancer": "EC",
         "Intracerebral hemorrhage": "ICH",
         "Ischemic heart disease": "IHD",
         "Ischemic stroke": "IS",
         "Subarachnoid hemorrhage": "SH",
-        "Tracheal, bronchus, and lung cancer": "TBLC",
-        "Esophageal cancer": "EC",
+        "Tracheal bronchus and lung cancer": "TBLC",
+        "Stomach cancer": "SC",
     }
-    df_dalys["cause"] = df_dalys["cause"].replace(cause_map)
+
+    # ----------------------------------------------------------------------------
+    # DALYs  (projected 2025-2050, one Forecast_DALY per disease x year)
+    # ----------------------------------------------------------------------------
+
+    # Data -----------------------------------------------------------------------
+    df_dalys = pd.read_csv(
+        "data/health-diet-v2/Projected_DALYs.csv"
+    )  # Disease, Year, Forecast_DALY
+
+    # Preprocessing --------------------------------------------------------------
+    df_dalys = df_dalys.rename(columns={"Year": "Years", "Forecast_DALY": "value"})
+    df_dalys["Country"] = "Switzerland"
+    df_dalys["cause"] = df_dalys["Disease"].replace(disease_map)
 
     # Create variables name
     df_dalys["variables"] = "tcaf_health-diet_dalys_" + df_dalys["cause"] + "[DALYs/y]"
@@ -155,109 +150,73 @@ def TCAF_health_diet_preprocessing():
     df_dalys = df_dalys[["Country", "Years", "variables", "value"]]
 
     # Format as dm  --------------------------------------------------------------
-
     df_dalys_pivot = df_dalys.pivot_table(
         index=["Country", "Years"], columns="variables", values="value"
     ).reset_index()
     dm_health_dalys = DataMatrix.create_from_df(df_dalys_pivot, num_cat=1)
 
-    """# Compute total DALYs
-  dm_temp = dm_health_dalys.groupby({'combined': '.*'}, dim='Categories1', regex=True, inplace=False)
-  dm_health_dalys.append(dm_temp, dim='Categories1')"""
-
-    # Linear fitting to expand the constant value
+    # Linear fitting to expand over the full model horizon (years_all)
+    # NB: the projection covers 2025-2050; fitting extrapolates the remaining
+    # (ots) years so every model year carries a value.
     linear_fitting(dm_health_dalys, years_all)
 
     # ----------------------------------------------------------------------------
-    # PAF
+    # PAF  (dose-response grid: PAF as a function of intake x [g/day/cap])
     # ----------------------------------------------------------------------------
 
     # Data -----------------------------------------------------------------------
-    df_data = pd.read_excel("data/health-diet/PAF_Idriss.xlsx", sheet_name="Sheet1")
+    # cols: cause, Disease, Risk_Factor, x, PAF_mean, PAF_lower, PAF_upper, xmax, floor
+    df_paf = pd.read_csv("data/health-diet-v2/PAF_grid.csv")
 
     # Preprocessing --------------------------------------------------------------
-
-    # Average PAF per risk factor, cause, grams
-    df_data_grouped = (
-        df_data.groupby(["Risk_Factor", "cause", "grams"])["paf"].mean().reset_index()
-    )
-
-    # Add gender
-
-    """# Combined PAF = 1 - PROD(1-PAFi)
-  df_paf_comb = df_data_grouped.copy()
-  df_paf_comb = (
-    df_paf_comb
-    .groupby(['Risk_Factor', 'grams'])['paf']
-    .apply(lambda x: 1 - np.prod(1 - x))
-    .reset_index()
-  )
-  df_paf_comb['cause'] = 'Combined'"""
-
-    # Concat dfs
-    df_tcaf_health_diet = df_data_grouped
-    # df_tcaf_health_diet = pd.concat([df_data_grouped, df_paf_comb])
-
-    # Formatting -----------------------------------------------------------------
-
-    # Add country 'Switzerland'
-    df_tcaf_health_diet["Country"] = "Switzerland"
-
-    # Rename cols
-    df_tcaf_health_diet.rename(columns={"paf": "value", "grams": "Years"}, inplace=True)
-
-    # Rename terms
+    # Keep only the dietary risk factors used by the model (matches Projection.R)
     risk_factor_map = {
         "Fruits": "crop-fruit",
+        "Vegetables": "crop-veg",
         "Whole_Grains": "crop-cereal-whole",
-        "Calcium": "calcium",
-        "Fiber": "fiber",
+        "Nuts": "crop-oilcrop",
         "Legumes": "crop-pulse",
         "Milk": "pro-liv-abp-dairy-milk",
-        "Nuts": "crop-oilcrop",
-        "Omega_3": "omega",
-        "PUFA": "pufa",
-        "Processed_Meat": "pro-liv-meat-processed",
         "Red_Meat": "pro-liv-meat-red",
-        "SSB": "pro-bev-ssb",
-        "Vegetables": "crop-veg",
+        "Processed_Meat": "pro-liv-meat-processed",
     }
-    df_tcaf_health_diet["Risk_Factor"] = df_tcaf_health_diet["Risk_Factor"].replace(
-        risk_factor_map
-    )
+    df_paf = df_paf[df_paf["Risk_Factor"].isin(risk_factor_map.keys())].copy()
 
     # Rename terms
-    df_tcaf_health_diet["cause"] = df_tcaf_health_diet["cause"].replace(cause_map)
+    df_paf["Risk_Factor"] = df_paf["Risk_Factor"].replace(risk_factor_map)
+    df_paf["cause"] = df_paf["Disease"].replace(disease_map)
+    df_paf["Country"] = "Switzerland"
+
+    # The intake grid x is stored on the 'Years' axis and renamed afterwards.
+    # Only the mean PAF is used by the workflow for now; PAF_lower / PAF_upper are
+    # available in the source file if bounds are needed later.
+    df_paf = df_paf.rename(columns={"x": "Years", "PAF_mean": "value"})
 
     # Create variables name
-    df_tcaf_health_diet["variables"] = (
-        "tcaf_health-diet_paf_" + df_tcaf_health_diet["cause"] + "[-]"
-    )
+    df_paf["variables"] = "tcaf_health-diet_paf_" + df_paf["cause"] + "[-]"
 
     # Format as separate dm, according to the risk factor (or food categories)
-    # Note : here, the intake is processed as the 'Years' dimensions, and renamed
-    # afterwards. Therefore, this DM has not timescale
+    # Note: here, the intake is processed as the 'Years' dimension, and renamed
+    # afterwards. Therefore, this DM has no timescale.
     DM_TCAF_health_diet_paf = {}
 
+    # Full set of disease codes present across the kept risk factors: any disease
+    # a given food does not affect is padded with PAF = 0 (contributes a factor
+    # (1 - 0) = 1 to the multiplicative combination, i.e. no effect).
     var_total = [
-        "tcaf_health-diet_paf_CRC",
-        "tcaf_health-diet_paf_DT2",
-        "tcaf_health-diet_paf_ICH",
-        "tcaf_health-diet_paf_IHD",
-        "tcaf_health-diet_paf_IS",
-        "tcaf_health-diet_paf_SH",
-        "tcaf_health-diet_paf_EC",
-        "tcaf_health-diet_paf_TBLC",
+        "tcaf_health-diet_paf_" + disease_map[d]
+        for d in sorted(disease_map)
+        if disease_map[d] in df_paf["cause"].unique()
     ]
 
-    for rf in df_tcaf_health_diet["Risk_Factor"].unique():
-        sub_df = df_tcaf_health_diet[df_tcaf_health_diet["Risk_Factor"] == rf].copy()
+    for rf in df_paf["Risk_Factor"].unique():
+        sub_df = df_paf[df_paf["Risk_Factor"] == rf].copy()
         sub_df_pivot = sub_df.pivot_table(
             index=["Country", "Years"], columns="variables", values="value"
         ).reset_index()
         dm = DataMatrix.create_from_df(sub_df_pivot, num_cat=0)
         dm.dim_labels[1] = "Intake [g/day/cap]"
-        # Add dummies
+        # Add dummies for diseases not affected by this risk factor
         var_rf = dm.col_labels["Variables"]
         var_missing = set(var_total) - set(var_rf)
         for var in var_missing:
@@ -977,7 +936,6 @@ DM_TCAF_biodiversity = TCAF_biodiversity_preprocessing()
 DM_TCAF_lca = TCAF_lca_preprocessing()
 CDM_MF = TCAF_MF_preprocessing()
 cdm_kcal = constant()
-
 
 # CalculationTree RUNNING PICKLE CREATION --------------------------------------
 database_from_csv_to_datamatrix(years_ots, years_fts)
