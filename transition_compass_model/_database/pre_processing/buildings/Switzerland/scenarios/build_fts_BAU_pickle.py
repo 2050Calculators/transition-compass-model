@@ -5,6 +5,7 @@ import numpy as np
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     filter_DM,
+    linear_fit_ratio,
     linear_fitting,
     my_pickle_dump,
     sort_pickle,
@@ -149,15 +150,6 @@ def run(DM_buildings, country_list, years_fts):
     ###########################################
     #####    HEATING TECHNOLOGY MIX     #######
     ###########################################
-    def linear_fit_ratio(dm, years_fts, category_to_normalise="Categories1"):
-        # Use based_on to fit only on historical data (2015-2023)
-        linear_fitting(dm, years_fts, based_on=list(range(2015, 2023)))
-        test_array = dm.array
-        test_array[test_array < 0] = 0
-        dm.array = test_array
-        dm.fill_nans("Years")
-        dm.normalise(category_to_normalise)
-        return dm
 
     dm_heating_cat = DM_buildings["ots"]["heating-technology-fuel"][
         "bld_heating-technology"
@@ -169,9 +161,25 @@ def run(DM_buildings, country_list, years_fts):
 
     # We want to linearly interpolate for elecetricity and then linearly extrpolate the other base on years 2015 -2023
     def set_elec_to_zero(dm):
+        """
+        The function sets resisitive electric heating to 0 from 2035 onwards.
+        The function first sets the values to NaN from 2025 onwards, and then sets them to 0 from 2035 onwards. The function then fills the NaN values by linear interpolation.
+        From 2033 onwards, the DACCE makes electricty heating unauthorized.  (article 9 et 10 )
+        Some exceptions exists but are not considered here. For more information, see
+        https://www.vd.ch/environnement/energie/legislation/chauffages-et-chauffe-eaux-electriques
+
+        Args:
+            dm (_type_): The data matrix containing the heating technology mix for buildings in Vaud, Switzerland. The data matrix is expected to have a dimension for heating technologies, including electricity.
+
+        Returns:
+            _type_: The modified data matrix with the values for electricity heating set to 0 from 2035 onwards, and the NaN values filled by linear interpolation.
+        """
         idx = dm.idx
         dm_heating_cat_elec = dm.copy()
+        # The data will linearly interpolated
         dm_heating_cat_elec["Vaud", idx[2025] :, ..., "electricity"] = np.nan
+        #
+        # Here it is simpllified to 0 and exception are considerted neglected.
         dm_heating_cat_elec["Vaud", idx[2035] :, ..., "electricity"] = 0
         dm_heating_cat_elec.fill_nans("Years")
         dm["Vaud", ..., "electricity"] = dm_heating_cat_elec["Vaud", ..., "electricity"]
@@ -179,7 +187,10 @@ def run(DM_buildings, country_list, years_fts):
 
     dm_heating_cat = set_elec_to_zero(dm_heating_cat)
     dm_heating_cat = linear_fit_ratio(
-        dm_heating_cat.copy(), years_fts, category_to_normalise="Categories3"
+        dm_heating_cat.copy(),
+        years_fts,
+        years_range=[2015, 2023],
+        category_to_normalise="Categories3",
     )
 
     DM_buildings["fts"]["heating-technology-fuel"] = dict()
@@ -194,16 +205,16 @@ def run(DM_buildings, country_list, years_fts):
     ###########################################
     dm_hotwater_cat = DM_buildings["fxa"]["hot-water"]["hw-tech-mix"].copy()
 
-    # Obligation à enlever les chauffages electriques d'ici 2033
-    # https://www.vd.ch/environnement/energie/legislation/chauffages-et-chauffe-eaux-electriques
-    # article 9 et 10 DACCE 2033 au plus tard et sur justificatif de p  eu de consomation + 5 ans
     dm_hotwater_cat = set_elec_to_zero(dm_hotwater_cat)
 
     # For hot water we do a linear extrapolation of the technology mix.
     # As it is a ratio we force values to be above 0, and then normalise to sum to 1 again.
 
     dm_hotwater_cat = linear_fit_ratio(
-        dm_hotwater_cat, years_fts, category_to_normalise="Categories1"
+        dm_hotwater_cat,
+        years_fts,
+        years_range=[2015, 2023],
+        category_to_normalise="Categories1",
     )
 
     # dm_hotwater_cat.fill_nans("Years")

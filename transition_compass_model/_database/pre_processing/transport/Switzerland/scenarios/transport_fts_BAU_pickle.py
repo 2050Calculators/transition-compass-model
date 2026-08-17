@@ -7,6 +7,7 @@ from scenarios.freight_fts_BAU_pickle import build_freight_fts
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
+    linear_fit_ratio,
     linear_fitting,
     my_pickle_dump,
     sort_pickle,
@@ -49,17 +50,6 @@ def forecast_vkm_cap(dm_km, years_fts):
     mask = dm_km[:, :, "tra_vkm-cap", "2W"] > dm_km[:, :, "tra_pkm-cap", "2W"]
     dm_km[:, :, "tra_vkm-cap", "2W"][mask] = dm_km[:, :, "tra_pkm-cap", "2W"][mask]
     return dm_km
-
-
-def linear_fit_ratio(dm, years_fts, category_to_normalise="Categories1"):
-    # Use based_on to fit only on historical data
-    linear_fitting(dm, years_fts, based_on=list(range(2018, 2023)))
-    test_array = dm.array
-    test_array[test_array < 0] = 0
-    dm.array = test_array
-    dm.fill_nans("Years")
-    dm.normalise(category_to_normalise)
-    return dm
 
 
 def run(DM_transport_wo_aviation, country_list, years_ots, years_fts, DM_aviation_ots):
@@ -115,7 +105,10 @@ def run(DM_transport_wo_aviation, country_list, years_ots, years_fts, DM_aviatio
     ].copy()
     dm_fleet_new_tech_share.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
     dm_fleet_new_tech_share = linear_fit_ratio(
-        dm_fleet_new_tech_share, years_fts, category_to_normalise="Categories2"
+        dm_fleet_new_tech_share,
+        years_fts,
+        [2018, 2023],
+        category_to_normalise="Categories2",
     )
     # dm_fleet_new_tech_share.fill_nans("Years")
 

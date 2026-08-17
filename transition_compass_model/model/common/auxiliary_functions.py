@@ -1107,6 +1107,22 @@ def linear_fitting(
     return dm
 
 
+def linear_fit_ratio(
+    dm, years_fts, years_range=[2015, 2023], category_to_normalise="Categories1"
+):
+    """Linear_fitting but constrained above 0 and normalised to 1 in the first year of the range"""
+
+    linear_fitting(
+        dm, years_fts, based_on=list(range(years_range[0], years_range[1] + 1))
+    )
+    constrained_array = dm.array
+    constrained_array[constrained_array < 0] = 0
+    dm.array = constrained_array
+    dm.fill_nans("Years")
+    dm.normalise(category_to_normalise)
+    return dm
+
+
 def linear_fitting_ots_db(df_db, years_ots, countries="all"):
     df_db["timescale"] = df_db["timescale"].astype(int)
     levers = list(set(df_db["lever"]))

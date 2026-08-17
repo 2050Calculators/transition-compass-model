@@ -16,7 +16,7 @@ def run(DM_buildings, years_ots, years_fts):
     # Lev 4 - heating temperature setting decrease of 1.5, not below 19.5
 
     lev_setting = {2: [21, -0.5], 3: [20, -1], 4: [19.5, -1.5]}
-    for lev in [2, 3, 4]:
+    for lev in [2, 3]:
         min_T = lev_setting[lev][0]
         deltaT = lev_setting[lev][1]
         dm_heat_cool_ots = DM_buildings["ots"]["heatcool-behaviour"].copy()
@@ -31,6 +31,7 @@ def run(DM_buildings, years_ots, years_fts):
         dm_heat_cool_ots.fill_nans("Years")
         dm_heat_cool_fts = dm_heat_cool_ots.filter({"Years": years_fts})
         DM_buildings["fts"]["heatcool-behaviour"][lev] = dm_heat_cool_fts.copy()
+    # Remove the rebound effect for lever 4, and make all enveloppe to 19°C. DLS confort temperature
     idx = dm_heat_cool_fts.idx
     dm_heat_cool_fts[:, idx[2030] :, idx["bld_Tint-heating"], :, :] = 19
     DM_buildings["fts"]["heatcool-behaviour"][4] = dm_heat_cool_fts
