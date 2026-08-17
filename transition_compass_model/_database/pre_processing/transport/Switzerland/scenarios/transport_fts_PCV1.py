@@ -26,31 +26,6 @@ def define_variables_for_lever(DM_transport, lever: int):
     return dm_modal_share_lever, idx, dm_modal_share_lever, dm_modal_share_lever_tmp
 
 
-def normalise_non_fixed_values(dm_modal_share_3, fixed_cat, years_start):
-    idx_fts = dm_modal_share_3.idx
-    cat_labels = dm_modal_share_3.col_labels["Categories1"]
-    other_cats = [c for c in cat_labels if c not in fixed_cat]
-    other_idxs = [idx_fts[c] for c in other_cats]
-    fixed_idx = [idx_fts[c] for c in fixed_cat]
-    country_i = idx_fts["Vaud"]
-    mode_i = idx_fts["tra_passenger_modal-share"]
-
-    fixed_val = dm_modal_share_3.array[
-        country_i, years_start, mode_i, fixed_idx
-    ].astype(float)
-
-    # compute sum of other categories (ignore NaNs)
-    others = dm_modal_share_3.array[country_i, years_start, mode_i, other_idxs].astype(
-        float
-    )
-    sum_others = np.nansum(others)
-    remaining = 1.0 - fixed_val.sum()
-
-    scale = remaining / sum_others
-    dm_modal_share_3.array[country_i, years_start, mode_i, other_idxs] = others * scale
-    return dm_modal_share_3
-
-
 def update_lever_in_loop(
     key, cat, dm_modal_ots_cat, idx_ots, dict_ratio, array_lever, year=2050
 ):
@@ -192,8 +167,6 @@ def run(DM_transport, country_list, years_ots, years_fts):
             idx_fts[key],
         ] = values
 
-    fixed_cat = cat_dict["TP"]
-
     linear_fitting(dm_modal_share_2, dm_modal_share_2.col_labels["Years"])
     dm_modal_share_2.normalise(dim="Categories1", inplace=True)
     linear_fitting(dm_modal_share_3, dm_modal_share_3.col_labels["Years"])
@@ -206,9 +179,8 @@ def run(DM_transport, country_list, years_ots, years_fts):
             idx_fts[key],
         ] = values
 
-    dm_modal_share_3 = normalise_non_fixed_values(
-        dm_modal_share_3, fixed_cat, idx_fts[2030]
-    )
+    fixed_cat = cat_dict["TP"]
+    dm_modal_share_3.normalise_non_fixed_values(fixed_cat, idx_fts[2030])
     dm_modal_share_3.normalise(dim="Categories1", inplace=True)
     linear_fitting(dm_modal_share_4, dm_modal_share_4.col_labels["Years"])
     dm_modal_share_4.normalise(dim="Categories1", inplace=True)
