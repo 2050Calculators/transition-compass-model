@@ -53,7 +53,7 @@ def forecast_vkm_cap(dm_km, years_fts):
 
 def linear_fit_ratio(dm, years_fts, category_to_normalise="Categories1"):
     # Use based_on to fit only on historical data
-    linear_fitting(dm, years_fts, based_on=list(range(2013, 2023)))
+    linear_fitting(dm, years_fts, based_on=list(range(2018, 2023)))
     test_array = dm.array
     test_array[test_array < 0] = 0
     dm.array = test_array

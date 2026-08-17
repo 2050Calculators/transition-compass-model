@@ -29,6 +29,7 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
     # https://www.newsd.admin.ch/newsd/message/attachments/82234.pdf
     # "Programme bâtiments" rapports annuels 2014-2022, focus sur isolation thérmique
     nb_buildings_isolated = {
+        # 2023 : 8924,
         2022: 8148,
         2021: 8400,
         2020: 8050,
@@ -39,6 +40,7 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
         2014: 8303,
     }
     nb_buildings_systemic_renovation = {
+        # 2023 : 2520,
         2022: 2326,
         2021: 2320,
         2020: 2240,
@@ -65,6 +67,7 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
         2020: 0.16,
         2021: 0.193,
         2022: 0.15,
+        2023: 0.15,
     }
     share_by_bld = {
         "single-family-households": 0.55,

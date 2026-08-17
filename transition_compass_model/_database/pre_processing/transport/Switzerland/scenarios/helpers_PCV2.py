@@ -75,10 +75,10 @@ def compute_tech_share_for_buses(dm_new_tech_share_3):
     dm_new_tech_share_3.array[idx["Vaud"], 1:, :, idx["bus"], idx["ICE-diesel"]] = (
         np.nan
     )
-    dm_new_tech_share_3.array[idx["Vaud"], idx[2050], :, idx["bus"], idx["CEV"]] = 0.5
+    dm_new_tech_share_3.array[idx["Vaud"], idx[2050], :, idx["bus"], idx["CEV"]] = 0.8
     dm_new_tech_share_3.array[
         idx["Vaud"], idx[2050], :, idx["bus"], idx["ICE-diesel"]
-    ] = 0.5
+    ] = 0.2
 
     dm_new_tech_share_3.fill_nans("Years")
     return dm_new_tech_share_3

@@ -325,6 +325,8 @@ def bld_TPE_interface(
         },
         dim="Variables",
     )
+
+    dm_tpe.append(dm_energy_comsumption_tot.flattest(), dim="Variables")
     # dm_energy_comsumption_tot.change_unit("energy_consumption", factor=1e6, old_unit="TWh", new_unit="MWh")
 
     # A-C buildings buildings %

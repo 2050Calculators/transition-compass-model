@@ -6,6 +6,7 @@ import transition_compass_model.model.transport.interfaces as inter
 import transition_compass_model.model.transport.workflows as wkf
 from transition_compass_model.model.common.auxiliary_functions import (
     filter_country_and_load_data_from_pickles,
+    my_pickle_dump,
     read_level_data,
 )
 from transition_compass_model.model.common.config_loader import load_lever_config
@@ -174,6 +175,15 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     #  data for ch ok, data for eu, backcalculation? dummy based on swiss pop?
     interface.add_link(from_sector="transport", to_sector="industry", dm=DM_industry)
     interface.add_link(from_sector="transport", to_sector="lca", dm=DM_industry)
+
+    write_pickle = True
+    if write_pickle:
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(
+            current_file_directory,
+            "../_database/data/interface/transport_to_lca.pickle",
+        )
+        my_pickle_dump(DM_industry, f)
     # interface.add_link(from_sector='transport', to_sector='minerals', dm=DM_minerals)
 
     # Emissions

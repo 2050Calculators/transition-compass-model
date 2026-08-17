@@ -1,7 +1,6 @@
 import os
 
 import numpy as np
-import scenarios.helpers_PCV2 as wkf
 
 from transition_compass_model.model.common.auxiliary_functions import (
     my_pickle_dump,
@@ -39,14 +38,9 @@ def normalise_non_fixed_values(
 def run(DM_transport: DataMatrix, country_list, years_ots, years_fts):
     # TODO : see why only 2 and 3 levers
     # MO- : favoriser les bus électriques
-    dm_new_tech_share_3 = DM_transport["fts"]["passenger_technology-share_new"][2]
-    dm_new_tech_share_3 = wkf.compute_tech_share_for_buses(dm_new_tech_share_3)
-    # dm_new
 
-    DM_transport["fts"]["passenger_technology-share_new"][
-        2
-    ].array = dm_new_tech_share_3.array
-    #
+    dm_freight_ots = DM_transport["ots"]["freight_modal-share"]
+    idx_ots = dm_freight_ots.idx
 
     dm_freight_modal_share_3 = DM_transport["fts"]["freight_modal-share"][3]
     idx_freight = dm_freight_modal_share_3.idx
@@ -58,9 +52,14 @@ def run(DM_transport: DataMatrix, country_list, years_ots, years_fts):
         ]
     )
     dm_freight_modal_share_3.array[idx_freight["Vaud"], 1:-1, :, :] = np.nan
+
     dm_freight_modal_share_3.array[
         idx_freight["Vaud"], idx_freight[2050], :, idx_freight["rail"]
-    ] = 0.451 * share_without_aviation
+    ] = (
+        dm_freight_ots.array[idx_ots["Vaud"], idx_ots[2023], :, idx_ots["rail"]]
+        * 1.45
+        * share_without_aviation
+    )
     dm_freight_modal_share_3 = normalise_non_fixed_values(
         dm_freight_modal_share_3,
         ["rail"],
@@ -70,8 +69,21 @@ def run(DM_transport: DataMatrix, country_list, years_ots, years_fts):
 
     dm_freight_modal_share_3.fill_nans("Years")
     dm_freight_modal_share_3.normalise(dim="Categories1", inplace=True)
-    DM_transport["fts"]["freight_modal-share"][3] = dm_freight_modal_share_3
+    DM_transport["fts"]["freight_modal-share"][4] = dm_freight_modal_share_3
 
+    # Réduction de la dmeande de transport
+    tkm_ots = DM_transport["ots"]["freight_tkm"].copy()
+    dm_tkm_3 = DM_transport["fts"]["freight_tkm"][4].copy()
+    idx_tkm = dm_tkm_3.idx
+    idx_tkm_ots = tkm_ots.idx
+    dm_tkm_3.array[idx_tkm["Vaud"], 1:-1, :] = np.nan
+    dm_tkm_3.array[idx_tkm["Vaud"], -1, :] = (
+        tkm_ots.array[idx_tkm_ots["Vaud"], idx_tkm_ots[2023], :] * 0.41 * (1 - 0.16)
+        + tkm_ots.array[idx_tkm_ots["Vaud"], idx_tkm_ots[2023], :] * 0.6
+    )
+
+    dm_tkm_3.fill_nans("Years")
+    DM_transport["fts"]["freight_tkm"][4] = dm_tkm_3
     ##### FREIGHT TRANSPORT #########
     this_dir = os.path.dirname(os.path.abspath(__file__))
     pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")

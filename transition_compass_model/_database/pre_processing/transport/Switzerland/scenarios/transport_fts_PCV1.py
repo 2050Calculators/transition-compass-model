@@ -92,7 +92,7 @@ def run(DM_transport, country_list, years_ots, years_fts):
     # (Source: vision 2050)
     CITEC_2050_val_dict = {"TIM": 0.55, "TP": 0.38, "MA": 0.07}
     # 3.3% velo et 5% marche
-    obj_PCV2_2050 = {"TIM": 0.53, "TP": 0.38, "MA": 0.09}
+    obj_PCV2_2050 = {"TIM": 0.524, "TP": 0.38, "MA": 0.096}
     DLS_2050_val_dict = {
         "TIM": 587 / 3241,
         "TP": 1143 / 3241,
@@ -451,6 +451,18 @@ def run(DM_transport, country_list, years_ots, years_fts):
     DM_fts["fts"]["passenger_veh-efficiency_new"][4] = dm_new_eff_4
 
     # ======================  NEW SALES VEHICLES  ========================================================
+
+    dm_new_tech_share_1 = DM_transport["fts"]["passenger_technology-share_new"][
+        1
+    ].filter({"Country": ["Vaud"]})
+    dm_new_tech_share_1 = wkf.compute_tech_share_for_buses(dm_new_tech_share_1)
+    # dm_new
+
+    DM_transport["fts"]["passenger_technology-share_new"][
+        1
+    ].array = dm_new_tech_share_1.array
+    #
+
     dm_new_tech_share_2 = DM_transport["fts"]["passenger_technology-share_new"][
         2
     ].filter({"Country": ["Vaud"]})
@@ -520,7 +532,7 @@ def run(DM_transport, country_list, years_ots, years_fts):
     dm_new_tech_share_2_PVC = dm_new_tech_share_trend_PCV.filter(
         {"Years": dm_new_tech_share_2.col_labels["Years"]}
     )
-    DM_fts["fts"]["passenger_technology-share_new"] = {2: dm_new_tech_share_2_PVC}
+    # DM_fts["fts"]["passenger_technology-share_new"][2] = { 2: dm_new_tech_share_2_PVC}
 
     # Scénario DLS 4:
     values_2025_new_tech_share_4 = {
@@ -532,17 +544,28 @@ def run(DM_transport, country_list, years_ots, years_fts):
     }
     idx = dm_new_tech_share_4.idx
     dm_new_tech_share_4.array[
-        idx["Vaud"], :, idx["tra_passenger_technology-share_new"], :
+        idx["Vaud"],
+        1:,
+        idx["tra_passenger_technology-share_new"],
+        [idx["LDV"], idx["bus"]],
+        :,
     ] = np.nan
     for key, values in values_2025_new_tech_share_4.items():
         dm_new_tech_share_4.array[
             idx["Vaud"],
-            idx[2025] :,
+            idx[2030] :,
             idx["tra_passenger_technology-share_new"],
-            [idx["LDV"], idx["bus"]],
+            [idx["LDV"]],
             idx[key],
         ] = values
 
+    dm_new_tech_share_4.array[
+        idx["Vaud"],
+        idx[2030] :,
+        idx["tra_passenger_technology-share_new"],
+        [idx["bus"]],
+        idx["CEV"],
+    ] = 1
     dm_new_tech_share_trend_4 = dm_new_tech_share_ots.copy()
 
     dm_new_tech_share_trend_4.append(dm_new_tech_share_4, dim="Years")
@@ -555,7 +578,11 @@ def run(DM_transport, country_list, years_ots, years_fts):
     dm_new_tech_share_trend_4_fts = dm_new_tech_share_trend_4.filter(
         {"Years": dm_new_tech_share_4.col_labels["Years"]}
     )
-    DM_fts["fts"]["passenger_technology-share_new"][4] = dm_new_tech_share_trend_4_fts
+    DM_fts["fts"]["passenger_technology-share_new"] = {
+        1: dm_new_tech_share_1,
+        2: dm_new_tech_share_2_PVC,
+        4: dm_new_tech_share_trend_4_fts,
+    }
 
     # ======================  DEMANDE  ========================================================
 
