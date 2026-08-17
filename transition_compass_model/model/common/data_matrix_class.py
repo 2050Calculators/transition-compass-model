@@ -1217,6 +1217,7 @@ class DataMatrix:
     ):
         """Normalise the values of a datamatrix for a given variable, keeping the values of the fixed categories constant and adjusting the other categories accordingly.
         The function takes a datamatrix, a list of fixed categories, a starting year, and a variable name as input. It returns the modified datamatrix with the adjusted values.
+        Only for years where data is not nan
         """
         idx_fts = self.idx
         cat_labels = self.col_labels["Categories1"]
@@ -1231,9 +1232,11 @@ class DataMatrix:
         # compute sum of other categories (ignore NaNs)
         others = self.array[country_i, years_start, mode_i, other_idxs].astype(float)
         sum_others = np.nansum(others)
-        remaining = 1.0 - fixed_val.sum()
 
+        # create a factor to scale the other categories so that the sum of all categories is 1.0
+        remaining = 1.0 - fixed_val.sum()
         scale = remaining / sum_others
+        # Normalise only values that are non fixed and keep the fixed values constant
         self.array[country_i, years_start, mode_i, other_idxs] = others * scale
         return
 
