@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 
+import json
 import os
 import pickle
 from pathlib import Path
@@ -13,7 +14,6 @@ from scipy.optimize import linprog
 from transition_compass_model.model.common.auxiliary_functions import (
     calibration_rates,
     filter_country_and_load_data_from_pickles,
-    init_years_lever,
     read_level_data,
     simulate_input,
 )
@@ -28,6 +28,14 @@ from transition_compass_model.model.common.io_database import (
     read_database_fxa,
     read_database_to_ots_fts_dict_w_groups,
 )
+
+
+def init_years_lever():
+    # function that can be used when running the module as standalone to initialise years and levers
+    years_setting = [1990, 2015, 2020, 2050, 5]
+    f = open("../config/lever_position.json")
+    lever_setting = json.load(f)[0]
+    return years_setting, lever_setting
 
 
 # DatabaseToDatamatrix
@@ -1397,14 +1405,14 @@ def land_use(
     #     for key in DM_ind.keys():
     #         DM_ind[key].filter({'Country': cntr_list}, inplace=True)
 
-    # if interface.has_link(from_sector='agriculture', to_sector='land-use'):
-    #     DM_agr  = interface.get_link(from_sector='agriculture', to_sector='land-use')
-    # else:
-    #     if len(interface.list_link()) != 0:
-    #         print('You are missing agriculture to land-use interface')
-    #     DM_agr = simulate_agriculture_to_landuse_input()
-    #     for key in DM_agr.keys():
-    #         DM_agr[key].filter({'Country': cntr_list}, inplace=True)
+    if interface.has_link(from_sector="agriculture", to_sector="land-use"):
+        DM_agr = interface.get_link(from_sector="agriculture", to_sector="land-use")
+    else:
+        if len(interface.list_link()) != 0:
+            print("You are missing agriculture to land-use interface")
+        DM_agr = simulate_agriculture_to_landuse_input()
+        for key in DM_agr.keys():
+            DM_agr[key].filter({"Country": cntr_list}, inplace=True)
 
     # CalculationTree LAND USE
     dm_wood, dm_wood_TPE, df_cal_rates_wood = wood_workflow(
@@ -1444,9 +1452,11 @@ def land_use(
 
 def land_use_local_run():
     # Configures initial input for model run
-    years_setting, lever_setting = init_years_lever()
+    f = open("../config/lever_position.json")
+    lever_setting = json.load(f)[0]
+    years_setting = [1990, 2023, 2025, 2050, 5]
 
-    country_list = ["Switzerland", "Vaud"]
+    country_list = ["Switzerland", "EU27", "Vaud"]
 
     sectors = ["landuse"]
     # Filter geoscale
