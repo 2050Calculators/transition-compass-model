@@ -28,9 +28,7 @@ def extrapolate_missing_pkm_cap_based_on_pkm_CH(
     """
     Fills missing years in pkm/cap for Switzerland and Vaud based on the pkm curve of Switzerland, with the following steps:
     1. Interpolate swiss MRMT data for missing year with FSO data (by doing ratio than linear interpolation)
-    2. Use swiss MRMt interpolate to interpolate vaud MRMT with the smae method as before
-    3.     Say that the ratio between swiss OFS and swiss MRMT represent the differences in populations taken into account. MRMt inclunding only residential and OFS territorial and thus multiplying by the ratio previously computed would transform our data from residential to territorial ?
-    For VAud step 3 is finally not done
+    2. Use swiss MRMt interpolate to interpolate vaud MRMT with the smae method as beforess
     Args:
         dm_pkm_cap_MRMT (DataMatrix): _data for pkm/cap from the microrecencement, with missing years, for Switzerland and Vaud
         dm_pkm_CH (DataMatrix): pkm for Switzerland from FSO, with all years but no split for Vaud

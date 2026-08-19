@@ -1116,12 +1116,12 @@ class DataMatrix:
         # Create an empty figure
         if len(set(self.units.values())) > 1:
             fig = px.line(
-                x=plot_cols["Years"], labels={"x": "Années", "y": "Values"}, title=title
+                x=plot_cols["Years"], labels={"x": "Years", "y": "Values"}, title=title
             )
         else:
             fig = px.line(
                 x=plot_cols["Years"],
-                labels={"x": "Années", "y": list(self.units.values())[0]},
+                labels={"x": "Years", "y": list(self.units.values())[0]},
                 title=title,
             )
         fig.data[0]["y"] = np.nan * np.ones(shape=np.shape(fig.data[0]["y"]))
