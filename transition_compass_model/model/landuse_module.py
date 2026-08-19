@@ -1405,14 +1405,14 @@ def land_use(
     #     for key in DM_ind.keys():
     #         DM_ind[key].filter({'Country': cntr_list}, inplace=True)
 
-    # if interface.has_link(from_sector='agriculture', to_sector='land-use'):
-    #     DM_agr  = interface.get_link(from_sector='agriculture', to_sector='land-use')
-    # else:
-    #     if len(interface.list_link()) != 0:
-    #         print('You are missing agriculture to land-use interface')
-    #     DM_agr = simulate_agriculture_to_landuse_input()
-    #     for key in DM_agr.keys():
-    #         DM_agr[key].filter({'Country': cntr_list}, inplace=True)
+    if interface.has_link(from_sector="agriculture", to_sector="land-use"):
+        DM_agr = interface.get_link(from_sector="agriculture", to_sector="land-use")
+    else:
+        if len(interface.list_link()) != 0:
+            print("You are missing agriculture to land-use interface")
+        DM_agr = simulate_agriculture_to_landuse_input()
+        for key in DM_agr.keys():
+            DM_agr[key].filter({"Country": cntr_list}, inplace=True)
 
     # CalculationTree LAND USE
     dm_wood, dm_wood_TPE, df_cal_rates_wood = wood_workflow(

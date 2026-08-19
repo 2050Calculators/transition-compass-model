@@ -283,9 +283,9 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
 
     # interface.add_link(from_sector='buildings', to_sector='agriculture', dm=DM_energy_out['agriculture'])
 
-    interface.add_link(
-        from_sector="buildings", to_sector="oil-refinery", dm=DM_energy_out["refinery"]
-    )
+    # interface.add_link(
+    #     from_sector="buildings", to_sector="oil-refinery", dm=DM_energy_out["refinery"]
+    # )
 
     return results_run, KPI
 

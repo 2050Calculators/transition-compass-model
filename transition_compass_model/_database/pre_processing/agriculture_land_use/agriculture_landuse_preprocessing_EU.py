@@ -314,7 +314,7 @@ def diet_processing(list_countries, file):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_waste = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="food-waste_lifestyle",
     )
 
@@ -340,7 +340,8 @@ def diet_processing(list_countries, file):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_diet = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="diet_lifestyle"
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+        sheet_name="diet_lifestyle",
     )
 
     # Merge based on 'Item'
@@ -393,7 +394,7 @@ def food_waste_processing(df_diet):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_waste = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="food-waste_lifestyle",
     )
 
@@ -465,7 +466,9 @@ def energy_requirements_processing(country_list, years_ots):
     # Body Weight (constant through years) comes from https://pubs.acs.org/doi/10.1021/acs.est.5b05088 supplementary information
 
     # Read and format body weight
-    df_body_weight = pd.read_excel("data/body_weight.xlsx", sheet_name="body-weight")
+    df_body_weight = pd.read_excel(
+        "data/data/body_weight.xlsx", sheet_name="body-weight"
+    )
     df_body_weight_melted = pd.melt(
         df_body_weight,
         id_vars=["geoscale", "sex"],  # Columns to keep
@@ -481,7 +484,7 @@ def energy_requirements_processing(country_list, years_ots):
     df_body_weight_melted.sort_values(by=["geoscale", "sex"], inplace=True)
 
     # Read and format C and S
-    df_S_C = pd.read_excel("data/body_weight.xlsx", sheet_name="S_C")
+    df_S_C = pd.read_excel("data/data/body_weight.xlsx", sheet_name="S_C")
 
     # Merge df based on columns age and sex
     df_kcal_req = pd.merge(
@@ -507,7 +510,7 @@ def energy_requirements_processing(country_list, years_ots):
         ["geoscale", "sex_age", "Calorie requirement per demography [kcal/person/day]"]
     ]
     df_dict_kcal = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="energy-req_lifestyle",
     )
     df_kcal_req = pd.merge(df_dict_kcal, df_kcal_req, on="sex_age")
@@ -860,8 +863,8 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
         ]
         list_items = [
             "Molasses",
-            "Cake of  linseed",
-            "Cake of  soya beans",
+            "Cake of linseed",
+            "Cake of soya beans",
             "Cake of copra",
             "Cake of cottonseed",
             "Cake of groundnuts",
@@ -1050,12 +1053,12 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_ssr = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="self-sufficiency",
     )
 
     # Prepend 'SSR' and 'Processed'
-    pivot_df["Item"] = pivot_df["Item"].apply(lambda x: f"SSR {x}")
+    # pivot_df["Item"] = pivot_df["Item"].apply(lambda x: f"SSR {x}")
 
     # Melt the DataFrame
     pivot_df_processed = pivot_df_processed.melt(
@@ -1122,7 +1125,6 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
 
 # CalculationLeaf FXA PROCESSING YIELD & MILK FEED FOOD RATIO---------------------------------------------------------------------------------------------
 def fxa_processing_yield(df_processing_yield_fxa, pivot_df_milk):
-
     # PROCESSING YIELD
     # Pivot df
     pivot_df = df_processing_yield_fxa.pivot_table(
@@ -1251,7 +1253,7 @@ def fxa_processing_yield(df_processing_yield_fxa, pivot_df_milk):
     # Food item name matching with dictionary
     # Read excel file
     df_dict = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="fxa"
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="fxa"
     )
 
     # Renaming existing columns (geoscale, timsecale, value)
@@ -1631,7 +1633,7 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
     df_combined["value"] = df_combined["value"] / df_combined["Agricultural land [ha]"]
     # Read excel file
     df_dict_csc = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-crops",
     )
 
@@ -1970,7 +1972,7 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_csc = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-crops",
     )
 
@@ -2211,7 +2213,7 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_csc = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-crops",
     )
 
@@ -2345,7 +2347,9 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
     df_other_items = pivot_df[pivot_df["Item"] != "Fibre Crops, Fibre Equivalent"]
 
     # Read excel
-    df_kcal_t = pd.read_excel("dictionaries/kcal_to_t.xlsx", sheet_name="kcal_per_100g")
+    df_kcal_t = pd.read_excel(
+        "data/dictionaries/kcal_to_t.xlsx", sheet_name="kcal_per_100g"
+    )
     df_kcal_g = df_kcal_t[["Item crop yield", "kcal per 100g"]]
     # Merge
     merged_df = pd.merge(
@@ -2376,7 +2380,7 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_csc = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-crops",
     )
 
@@ -2527,7 +2531,6 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
 def climate_smart_livestock_processing(
     df_feed_ration, df_liv_pop, df_cropland_density, list_countries
 ):
-
     # ----------------------------------------------------------------------------------------------------------------------
     # LIVESTOCK DENSITY & GRAZING INTENSITY ---------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -2662,7 +2665,7 @@ def climate_smart_livestock_processing(
 
     # Read excel file
     df_dict_csl = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-livestock",
     )
 
@@ -2893,7 +2896,7 @@ def climate_smart_livestock_processing(
 
     # Reading excel lsu equivalent
     df_lsu = pd.read_excel(
-        "dictionaries/lsu_equivalent.xlsx", sheet_name="lsu_equivalent"
+        "data/dictionaries/lsu_equivalent.xlsx", sheet_name="lsu_equivalent"
     )
     # Merging
     df_enteric_1990_2021 = pd.merge(df_enteric_1990_2021, df_lsu, on="Item")
@@ -2952,7 +2955,7 @@ def climate_smart_livestock_processing(
     # Food item name matching with dictionary
     # Read excel file
     df_dict_csl_enteric = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-livestock_enteric",
     )
 
@@ -3106,7 +3109,7 @@ def climate_smart_livestock_processing(
 
     # Reading excel lsu equivalent (for aggregation)
     df_lsu = pd.read_excel(
-        "dictionaries/lsu_equivalent.xlsx", sheet_name="lsu_equivalent"
+        "data/dictionaries/lsu_equivalent.xlsx", sheet_name="lsu_equivalent"
     )
     # Merging
     df_manure_1990_2021 = pd.merge(df_manure_1990_2021, df_lsu, on="Item")
@@ -3210,7 +3213,7 @@ def climate_smart_livestock_processing(
     # Food item name matching with dictionary
     # Read excel file
     df_dict_csl = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-livestock",
     )
 
@@ -3371,7 +3374,7 @@ def climate_smart_livestock_processing(
     # Food item name matching with dictionary
     # Read excel file
     df_dict_csl_losses = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-livestock_losses",
     )
 
@@ -3458,7 +3461,7 @@ def climate_smart_livestock_processing(
 
     # Read excel file
     df_dict_csl = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-livestock",
     )
 
@@ -3604,7 +3607,7 @@ def climate_smart_livestock_processing(
 
     # Reading excel lsu equivalent
     df_lsu = pd.read_excel(
-        "dictionaries/lsu_equivalent.xlsx", sheet_name="lsu_equivalent"
+        "data/dictionaries/lsu_equivalent.xlsx", sheet_name="lsu_equivalent"
     )
     # Merging
     df_producing_animals_1990_2022 = pd.merge(
@@ -3802,7 +3805,7 @@ def climate_smart_livestock_processing(
 
     # Reading excel lsu equivalent
     df_lsu = pd.read_excel(
-        "dictionaries/lsu_equivalent.xlsx", sheet_name="lsu_equivalent"
+        "data/dictionaries/lsu_equivalent.xlsx", sheet_name="lsu_equivalent"
     )
     # Merging
     df_slaughtered_1990_2022 = pd.merge(df_slaughtered_1990_2022, df_lsu, on="Item")
@@ -3912,7 +3915,9 @@ def climate_smart_livestock_processing(
     df_yield_liv = pd.concat([df_yield_meat, pivot_df])
 
     # Read excel
-    df_kcal_t = pd.read_excel("dictionaries/kcal_to_t.xlsx", sheet_name="kcal_per_100g")
+    df_kcal_t = pd.read_excel(
+        "data/dictionaries/kcal_to_t.xlsx", sheet_name="kcal_per_100g"
+    )
     df_kcal_g = df_kcal_t[["Item livestock yield", "kcal per t"]]
     # Merge
     merged_df = pd.merge(
@@ -3929,11 +3934,11 @@ def climate_smart_livestock_processing(
     # Food item name matching with dictionary
     # Read excel file
     df_dict_csl_yield = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-livestock_yield",
     )
     df_dict_csl_slau = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-livestock_slau",
     )
 
@@ -4009,7 +4014,6 @@ def climate_smart_livestock_processing(
 
 
 def ruminant_feed_processing(df_csl_feed):
-
     # Use df_csl_feed as a structural basis & Filter only one row
     df_ruminant_feed = df_csl_feed[df_csl_feed["Item"] == "Beer"].copy()
 
@@ -4027,7 +4031,8 @@ def ruminant_feed_processing(df_csl_feed):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_csl = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="ruminant-feed"
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+        sheet_name="ruminant-feed",
     )
 
     # Merge based on 'Item'
@@ -4070,13 +4075,13 @@ def ruminant_feed_processing(df_csl_feed):
 def feed_processing_lca():
     # Read excel sheets
     df_LCA_livestock = pd.read_excel(
-        "agriculture_feed_v2025.xlsx", sheet_name="data_LCA_livestock"
+        "data/agriculture_feed_v2025.xlsx", sheet_name="data_LCA_livestock"
     )
     df_LCA_feed = pd.read_excel(
-        "agriculture_feed_v2025.xlsx", sheet_name="data_LCA_feed"
+        "data/agriculture_feed_v2025.xlsx", sheet_name="data_LCA_feed"
     )
     df_LCA_feed_yield = pd.read_excel(
-        "agriculture_feed_v2025.xlsx", sheet_name="data_LCA_feed_yield"
+        "data/agriculture_feed_v2025.xlsx", sheet_name="data_LCA_feed_yield"
     )
 
     # Divide all columns by the output to obtain values for 1 kg output
@@ -4275,7 +4280,6 @@ def feed_processing_lca():
 
 
 def feed_ssr_processing(years_ots):
-
     # Read excel (Link https://www.bfs.admin.ch/bfs/fr/home/statistiques/agriculture-sylviculture/agriculture.assetdetail.36135273.html)
     df_feed = pd.read_excel("data/OFS_bilan-fourrager.xlsx", sheet_name="T7.2.3.1.6")
 
@@ -4336,7 +4340,7 @@ def feed_ssr_processing(years_ots):
     # Pathwaycalc formatting
     # Read excel file
     df_dict_forestry = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="self-sufficiency",
     )
 
@@ -4368,7 +4372,6 @@ def feed_ssr_processing(years_ots):
 
 # CalculationLeaf CLIMATE SMART FORESTRY -------------------------------------------------------------------------------
 def climate_smart_forestry_processing():
-
     # ----------------------------------------------------------------------------------------------------------------------
     # INCREMENTAL GROWTH [m3/ha] -------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -4581,7 +4584,7 @@ def climate_smart_forestry_processing():
 
     # Read excel file
     df_dict_forestry = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-forestry",
     )
 
@@ -4730,7 +4733,7 @@ def climate_smart_forestry_processing():
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
     # Read excel file
     df_dict_forestry = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-forestry",
     )
 
@@ -4784,7 +4787,6 @@ def climate_smart_forestry_processing():
 
 # CalculationLeaf LAND MANAGEMENT --------------------------------------------------------------------------------------
 def land_management_processing(csf_managed):
-
     # ----------------------------------------------------------------------------------------------------------------------
     # LAND MATRIX & LAND MAN USE----------------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -5011,7 +5013,7 @@ def land_management_processing(csf_managed):
     # Match with dictionary for correct names
     # Read excel file
     df_dict_land_man = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="land-management",
     )
 
@@ -5627,7 +5629,6 @@ def biomass_bioernergy_hierarchy_processing(df_csl_feed):
 
 # CalculationLeaf LIVESTOCK PROTEIN MEALS ------------------------------------------------------------------------------------
 def livestock_protein_meals_processing(df_csl_feed):
-
     # Using and formatting df_csl_feed as a structural basis for constant ots values across all countries
     df_protein_meals_all = df_csl_feed.copy()
     df_protein_meals_all = df_protein_meals_all.drop(columns=["Item", "Feed"])
@@ -5919,7 +5920,8 @@ def lifestyle_calibration(list_countries):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="calibration"
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+        sheet_name="calibration",
     )
 
     # Prepend "Diet" to each value in the 'Item' column
@@ -6065,7 +6067,7 @@ def livestock_crop_calibration(df_energy_demand_cal, list_countries):
 
     # Reading excel lsu equivalent
     df_lsu = pd.read_excel(
-        "dictionaries/lsu_equivalent.xlsx", sheet_name="lsu_equivalent_GLE"
+        "data/dictionaries/lsu_equivalent.xlsx", sheet_name="lsu_equivalent_GLE"
     )
 
     # Converting into lsu
@@ -6120,7 +6122,8 @@ def livestock_crop_calibration(df_energy_demand_cal, list_countries):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="calibration"
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+        sheet_name="calibration",
     )
 
     # Merge based on 'Item'
@@ -6290,7 +6293,9 @@ def livestock_crop_calibration(df_energy_demand_cal, list_countries):
 
     # Unit conversion [t] => [kcal]
     # Read excel
-    df_kcal_t = pd.read_excel("dictionaries/kcal_to_t.xlsx", sheet_name="kcal_per_100g")
+    df_kcal_t = pd.read_excel(
+        "data/dictionaries/kcal_to_t.xlsx", sheet_name="kcal_per_100g"
+    )
     df_kcal_t = df_kcal_t[["Item", "kcal per t"]]
     # Merge
     merged_df = pd.merge(
@@ -6309,7 +6314,8 @@ def livestock_crop_calibration(df_energy_demand_cal, list_countries):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="calibration"
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+        sheet_name="calibration",
     )
 
     # Prepend "Diet" to each value in the 'Item' column
@@ -6501,7 +6507,8 @@ def manure_calibration(list_countries):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="calibration"
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+        sheet_name="calibration",
     )
 
     # Merge based on 'Item'
@@ -6793,7 +6800,8 @@ def energy_ghg_calibration(list_countries, df_CO2_cal, df_liming_urea):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="calibration"
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+        sheet_name="calibration",
     )
 
     # Concat
@@ -6902,7 +6910,8 @@ def nitrogen_calibration(list_countries):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="calibration"
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+        sheet_name="calibration",
     )
 
     # Prepend "Fertilizers" to each value in the 'Item' column
@@ -7229,7 +7238,8 @@ def feed_calibration(list_countries):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="calibration"
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+        sheet_name="calibration",
     )
 
     # Prepend "Diet" to each value in the 'Item' column
@@ -7369,7 +7379,8 @@ def land_calibration(list_countries):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="calibration"
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+        sheet_name="calibration",
     )
 
     # Prepend "Land" to each value in the 'Item' column
@@ -7488,7 +7499,8 @@ def cropland_calibration(list_countries):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_csc = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="calibration"
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+        sheet_name="calibration",
     )
 
     # Merge based on 'Item'
@@ -7571,7 +7583,8 @@ def CO2_emissions():
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="calibration"
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+        sheet_name="calibration",
     )
 
     # Adding a column geoscale
@@ -7738,7 +7751,8 @@ def wood_calibration(list_countries):
     # Food item name matching with dictionary
     # Read excel file
     df_dict_calibration = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx", sheet_name="calibration"
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+        sheet_name="calibration",
     )
 
     # Merge based on 'Item'
@@ -7770,7 +7784,6 @@ def calibration_formatting(
     df_emissions_calibration,
     df_cropland_fao_calibration,
 ):
-
     # AGRICULTURE MODULE -----------------------------------------------------------------------------------------------
 
     # Concatenate dfs
@@ -7938,7 +7951,6 @@ def constant():
 
 
 def manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa):
-
     # N2O EMISSIONS -------------------------------------------------------------
     # Filter & Rename
     df_manure_n_fxa = df_manure_n_fxa[
@@ -8024,7 +8036,7 @@ def manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_
     # Food item name matching with dictionary
     # Read excel file
     df_dict_csl = pd.read_excel(
-        "dictionaries/dictionnary_agriculture_landuse.xlsx",
+        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-livestock",
     )
 
@@ -8069,7 +8081,6 @@ def manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_
 
 # CalculationLeaf FXA FORMATTING
 def fxa_preprocessing():
-
     # Load FXA data
     df_fxa = pd.read_csv("../../data/csv/agriculture_fixed-assumptions.csv", sep=";")
 
@@ -9218,7 +9229,7 @@ DM_agriculture['constant']['cdm_feed_yield']['cp_ibp_processed','sugar-to-sugarc
 # KCAL TO T ----------------------------------------------------------------------------------------
 
 # Read excel
-df_kcal_t = pd.read_excel("dictionaries/kcal_to_t.xlsx", sheet_name="cp_kcal_t")
+df_kcal_t = pd.read_excel("data/dictionaries/kcal_to_t.xlsx", sheet_name="cp_kcal_t")
 
 # Filter columns
 df_kcal_t = df_kcal_t[["variables", "kcal per t"]].copy()
