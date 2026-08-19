@@ -28,9 +28,7 @@ def extrapolate_missing_pkm_cap_based_on_pkm_CH(
     """
     Fills missing years in pkm/cap for Switzerland and Vaud based on the pkm curve of Switzerland, with the following steps:
     1. Interpolate swiss MRMT data for missing year with FSO data (by doing ratio than linear interpolation)
-    2. Use swiss MRMt interpolate to interpolate vaud MRMT with the smae method as before
-    3. Say that the ratio between swiss OFS and swiss MRMT represent the differences in populations taken into account. MRMt inclunding only residential and OFS territorial and thus multiplying by the ratio previously computed would transform our data from residential to territorial ?
-
+    2. Use swiss MRMt interpolate to interpolate vaud MRMT with the smae method as beforess
     Args:
         dm_pkm_cap_MRMT (DataMatrix): _data for pkm/cap from the microrecencement, with missing years, for Switzerland and Vaud
         dm_pkm_CH (DataMatrix): pkm for Switzerland from FSO, with all years but no split for Vaud
@@ -87,19 +85,10 @@ def extrapolate_missing_pkm_cap_based_on_pkm_CH(
     dm_pkm_cap_new_VD = utils.fill_var_nans_based_on_var_curve(
         dm_tmp, var_nan="tra_pkm-cap_MRMT", var_ref="tra_pkm-cap_MRMT_CH"
     )
-    # Adjust Vaud demand to go from MRMT to official
-    dm_adj_fact = dm_pkm_cap_new_CH.filter({"Variables": ["adj_factor"]})
-    dm_adj_fact.rename_col("Switzerland", "Vaud", dim="Country")
-    dm_pkm_cap_new_VD.append(dm_adj_fact, dim="Variables")
-    dm_pkm_cap_new_VD.operation(
-        "adj_factor",
-        "*",
-        "tra_pkm-cap_MRMT",
-        out_col="tra_pkm-cap_official",
-        unit="pkm/cap",
+    # No adjusting factors are used
+    dm_pkm_cap_new_VD.rename_col(
+        "tra_pkm-cap_MRMT", "tra_pkm-cap_official", dim="Variables"
     )
-
-    # dm_pkm_cap_new_VD.rename_col("tra_pkm-cap_MRMT", "tra_pkm-cap_official", dim="Variables")
     # Keep only "official" data
     dm_pkm_cap_new_CH.filter({"Variables": ["tra_pkm-cap_official"]}, inplace=True)
     dm_pkm_cap_new_VD.filter({"Variables": ["tra_pkm-cap_official"]}, inplace=True)

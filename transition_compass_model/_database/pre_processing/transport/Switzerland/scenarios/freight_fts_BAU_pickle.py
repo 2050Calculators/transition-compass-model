@@ -35,6 +35,7 @@ from processors.freight_efficiency_tech_share import (
 
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
+    linear_fit_ratio,
     linear_fitting,
 )
 
@@ -233,7 +234,7 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
     # TODO levels 2-4: Swiss ARE freight demand scenario projections
     # ------------------------------------------------------------------
     dm_tkm = DM_transport["ots"]["freight_tkm"].copy()
-    linear_fitting(dm_tkm, years_fts, based_on=create_years_list(2010, 2019, 1))
+    linear_fitting(dm_tkm, years_fts, based_on=create_years_list(2010, 2023, 1))
     dm_tkm_fts = dm_tkm.filter({"Years": years_fts})
     DM_fts["fts"]["freight_tkm"] = {lev: dm_tkm_fts.copy() for lev in range(1, 5)}
 
@@ -242,8 +243,9 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
     # TODO levels 2-4: modal shift to rail (BAV/NEAT targets)
     # ------------------------------------------------------------------
     dm_ms = DM_transport["ots"]["freight_modal-share"].copy()
-    dm_ms.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
-    dm_ms.fill_nans("Years")
+    # dm_ms.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
+    # dm_ms.fill_nans("Years")
+    dm_ms = linear_fit_ratio(dm_ms, years_fts, years_range=[2010, 2023])
     dm_ms_fts = dm_ms.filter({"Years": years_fts})
     DM_fts["fts"]["freight_modal-share"] = {
         lev: dm_ms_fts.copy() for lev in range(1, 5)
@@ -254,8 +256,9 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
     # TODO levels 2-4: per-tech efficiency improvements (EP2050 ZERO-B)
     # ------------------------------------------------------------------
     dm_eff = DM_transport["ots"]["freight_vehicle-efficiency_new"].copy()
-    dm_eff.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
-    dm_eff.fill_nans("Years")
+    # dm_eff.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
+    # dm_eff.fill_nans("Years")
+    linear_fitting(dm_eff, years_fts, based_on=create_years_list(2010, 2023, 1))
     dm_eff_fts = dm_eff.filter({"Years": years_fts})
     DM_fts["fts"]["freight_vehicle-efficiency_new"] = {
         lev: dm_eff_fts.copy() for lev in range(1, 5)

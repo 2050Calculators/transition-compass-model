@@ -7,6 +7,7 @@ from scenarios.freight_fts_BAU_pickle import build_freight_fts
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
+    linear_fit_ratio,
     linear_fitting,
     my_pickle_dump,
     sort_pickle,
@@ -35,7 +36,7 @@ def _add_aviation_fts_to_dm(dm_target, dm_aviation_ch, country_list):
 
 
 def forecast_vkm_cap(dm_km, years_fts):
-    based_on_years = create_years_list(2010, 2019, 1)
+    based_on_years = create_years_list(2000, 2019, 1)
     linear_fitting(dm_km, years_fts, based_on=based_on_years, min_tb=0)
     # For metrotram extrapolate with flat line
     idx = dm_km.idx
@@ -65,7 +66,7 @@ def run(DM_transport_wo_aviation, country_list, years_ots, years_fts, DM_aviatio
         change={"Variables": ["tra_pkm-cap"]},
         units={"tra_pkm-cap": "pkm/cap"},
     )
-    based_on_years = create_years_list(2010, 2019, 1)
+    based_on_years = create_years_list(2000, 2019, 1)
     linear_fitting(dm_pkm_cap, years_fts, based_on=based_on_years)
 
     # For Switzerland metrotram use flat extrapolation
@@ -103,7 +104,13 @@ def run(DM_transport_wo_aviation, country_list, years_ots, years_fts, DM_aviatio
         "passenger_technology-share_new"
     ].copy()
     dm_fleet_new_tech_share.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
-    dm_fleet_new_tech_share.fill_nans("Years")
+    dm_fleet_new_tech_share = linear_fit_ratio(
+        dm_fleet_new_tech_share,
+        years_fts,
+        [2018, 2023],
+        category_to_normalise="Categories2",
+    )
+    # dm_fleet_new_tech_share.fill_nans("Years")
 
     DM_transport_wo_aviation["fts"]["passenger_technology-share_new"] = dict()
     for lev in range(4):

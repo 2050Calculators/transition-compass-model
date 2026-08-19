@@ -1085,7 +1085,12 @@ class DataMatrix:
         return
 
     def datamatrix_plot(
-        self, selected_cols={}, title="title", stacked=None, rename_cols={}
+        self,
+        selected_cols={},
+        title="title",
+        stacked=None,
+        rename_cols={},
+        dic_to_rename_end=None,
     ):
         if stacked is not None:
             stacked = "one"
@@ -1128,6 +1133,8 @@ class DataMatrix:
                     y_values = self.array[i[c], years_idx, i[v]]
                     if rename_cols == "end":
                         label = v.split("_")[-1]
+                        if isinstance(dic_to_rename_end, dict):
+                            label = dic_to_rename_end[label]
                     elif v not in rename_cols.keys():
                         label = c + "_" + v
                     else:
@@ -1140,6 +1147,7 @@ class DataMatrix:
                         mode="lines",
                         stackgroup=stacked,
                     )
+
         if dims == 4:
             for c in plot_cols["Country"]:
                 for v in plot_cols["Variables"]:
@@ -1198,6 +1206,38 @@ class DataMatrix:
                     units=units_new,
                 )
                 return dm_out
+        return
+
+    def normalise_non_fixed_values(
+        self,
+        fixed_cat,
+        years_start,
+        variable_name="tra_passenger_modal-share",
+        country_name="Vaud",
+    ):
+        """Normalise the values of a datamatrix for a given variable, keeping the values of the fixed categories constant and adjusting the other categories accordingly.
+        The function takes a datamatrix, a list of fixed categories, a starting year, and a variable name as input. It returns the modified datamatrix with the adjusted values.
+        Only for years where data is not nan
+        """
+        idx_fts = self.idx
+        cat_labels = self.col_labels["Categories1"]
+        other_cats = [c for c in cat_labels if c not in fixed_cat]
+        other_idxs = [idx_fts[c] for c in other_cats]
+        fixed_idx = [idx_fts[c] for c in fixed_cat]
+        country_i = idx_fts[country_name]
+        mode_i = idx_fts[variable_name]
+
+        fixed_val = self.array[country_i, years_start, mode_i, fixed_idx].astype(float)
+
+        # compute sum of other categories (ignore NaNs)
+        others = self.array[country_i, years_start, mode_i, other_idxs].astype(float)
+        sum_others = np.nansum(others)
+
+        # create a factor to scale the other categories so that the sum of all categories is 1.0
+        remaining = 1.0 - fixed_val.sum()
+        scale = remaining / sum_others
+        # Normalise only values that are non fixed and keep the fixed values constant
+        self.array[country_i, years_start, mode_i, other_idxs] = others * scale
         return
 
     def __getitem__(self, key):

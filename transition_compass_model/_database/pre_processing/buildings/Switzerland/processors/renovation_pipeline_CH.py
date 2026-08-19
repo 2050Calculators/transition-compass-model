@@ -29,6 +29,7 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
     # https://www.newsd.admin.ch/newsd/message/attachments/82234.pdf
     # "Programme bâtiments" rapports annuels 2014-2022, focus sur isolation thérmique
     nb_buildings_isolated = {
+        # 2023 : 8924,
         2022: 8148,
         2021: 8400,
         2020: 8050,
@@ -39,6 +40,7 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
         2014: 8303,
     }
     nb_buildings_systemic_renovation = {
+        # 2023 : 2520,
         2022: 2326,
         2021: 2320,
         2020: 2240,
@@ -65,6 +67,7 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
         2020: 0.16,
         2021: 0.193,
         2022: 0.15,
+        2023: 0.15,
     }
     share_by_bld = {
         "single-family-households": 0.55,
@@ -79,21 +82,40 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
     dm_renovation = renov.compute_renovation_rate(dm_renovation, years_ots)
 
     # SECTION Renovation by envelope cat ots
-    # According to the Programme Batiments the assenissment is
-    # Amélioration de +1 classes CECB 57%
-    # Amélioration de +2 classes CECB 15%
-    # Amélioration de +3 classes CECB 15%
-    # Amélioration de +4 classes CECB 13%
-    ren_map_in = {
-        (1990, 2000): {"F": 0, "E": 0.85, "D": 0.15, "C": 0, "B": 0},
-        (2001, 2010): {"F": 0, "E": 0.69, "D": 0.16, "C": 0.15, "B": 0},
-        (2011, 2023): {"F": 0, "E": 0.46, "D": 0.23, "C": 0.16, "B": 0.15},
-    }
+
+    # We assume that the building undergoing renovation are 80% in category F,G and 20% in category E.
     ren_map_out = {
         (1990, 2000): {"F": -0.8, "E": -0.2, "D": 0, "C": 0, "B": 0},
         (2001, 2010): {"F": -0.8, "E": -0.2, "D": 0, "C": 0, "B": 0},
         (2011, 2023): {"F": -0.8, "E": -0.2, "D": 0, "C": 0, "B": 0},
     }
+    # According to the Programme Batiments the assenissment is
+    # Amélioration de +1 classes CECB 57%
+    # Amélioration de +2 classes CECB 15%
+    # Amélioration de +3 classes CECB 15%
+    # Amélioration de +4 classes CECB 13%
+    ren_1_class = 0.57
+    ren_2_class = 0.15
+    ren_3_class = 0.15
+    ren_4_class = 0.13
+    # By assigning the rates above to the two categories we obtain the 2011, 2023 split
+    # This split is not valid before 2011 because there were no A,B categories yet. At the same time, there was no Programme Bâtiments.
+    # I do an educated guess and obtain the following
+    ren_map_in = {
+        (1990, 2000): {"F": 0, "E": 0.85, "D": 0.15, "C": 0, "B": 0},
+        (2001, 2010): {"F": 0, "E": 0.69, "D": 0.16, "C": 0.15, "B": 0},
+        (2011, 2023): {},
+    }  # 46, 24, 15,14
+
+    ren_map_in[(2011, 2023)]["E"] = round(0.8 * ren_1_class, 2)
+    ren_map_in[(2011, 2023)]["D"] = round(0.8 * ren_2_class + 0.2 * ren_1_class, 2)
+    ren_map_in[(2011, 2023)]["C"] = round(0.8 * ren_3_class + 0.2 * ren_2_class, 2)
+    # category B also contains category A so buildings renovated 3 times from E go to B
+    # and buildings renovated 4 times from E also go to B (but A in reality)
+    ren_map_in[(2011, 2023)]["B"] = round(
+        0.8 * ren_4_class + 0.2 * ren_3_class + 0.2 * ren_4_class, 2
+    )
+    # {"F": 0, "E": 0.46, "D": 0.23, "C": 0.15, "B": 0.16},
     dm_renov_distr = renov.extract_renovation_redistribuition(
         ren_map_in, ren_map_out, years_ots
     )

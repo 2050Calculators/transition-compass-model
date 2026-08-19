@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 
-import json
 import os
 import pickle
 from pathlib import Path
@@ -14,6 +13,7 @@ from scipy.optimize import linprog
 from transition_compass_model.model.common.auxiliary_functions import (
     calibration_rates,
     filter_country_and_load_data_from_pickles,
+    init_years_lever,
     read_level_data,
     simulate_input,
 )
@@ -28,14 +28,6 @@ from transition_compass_model.model.common.io_database import (
     read_database_fxa,
     read_database_to_ots_fts_dict_w_groups,
 )
-
-
-def init_years_lever():
-    # function that can be used when running the module as standalone to initialise years and levers
-    years_setting = [1990, 2015, 2020, 2050, 5]
-    f = open("../config/lever_position.json")
-    lever_setting = json.load(f)[0]
-    return years_setting, lever_setting
 
 
 # DatabaseToDatamatrix
@@ -1452,11 +1444,9 @@ def land_use(
 
 def land_use_local_run():
     # Configures initial input for model run
-    f = open("../config/lever_position.json")
-    lever_setting = json.load(f)[0]
-    years_setting = [1990, 2023, 2025, 2050, 5]
+    years_setting, lever_setting = init_years_lever()
 
-    country_list = ["Switzerland", "EU27", "Vaud"]
+    country_list = ["Switzerland", "Vaud"]
 
     sectors = ["landuse"]
     # Filter geoscale

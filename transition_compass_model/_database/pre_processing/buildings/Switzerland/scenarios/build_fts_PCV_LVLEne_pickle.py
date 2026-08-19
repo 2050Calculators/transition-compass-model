@@ -12,6 +12,38 @@ from transition_compass_model.model.common.auxiliary_functions import (
     my_pickle_dump,
     sort_pickle,
 )
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+
+
+def get_renov_rate_E(DM_buildings, yrs_fts, household_type="multi-family-households"):
+    # get the proportion of renovation for E buildings (not influenced by energy law) to add to the renovation rate of F buildings, as we assume that some of the renovation that would have been done in E will be done in F because of the energy law
+    ren_redistribution = DM_buildings["fts"]["building-renovation-rate"][
+        "bld_renovation-redistribution"
+    ][2].copy()
+    idx_redistrib = ren_redistribution.idx
+    prop_E_renovated = ren_redistribution.array[
+        idx_redistrib["Vaud"],
+        idx_redistrib[2035],
+        idx_redistrib["bld_renovation-redistribution-out"],
+        idx_redistrib["E"],
+    ]
+    dm_rr_fts_2 = DM_buildings["fts"]["building-renovation-rate"][
+        "bld_renovation-rate"
+    ][2].copy()
+    idx = dm_rr_fts_2.idx
+
+    idx_fts = [idx[yr] for yr in yrs_fts]
+
+    renovation_E = (
+        dm_rr_fts_2.array[
+            idx["Vaud"],
+            idx_fts,
+            idx["bld_renovation-rate"],
+            idx[household_type],
+        ]
+        * prop_E_renovated
+    )
+    return renovation_E
 
 
 def extract_stock_floor_area(table_id, file):
@@ -125,14 +157,30 @@ def replace_years_by_corresponding_categories(dm_num_bld, env_cat_sfh, env_cat_m
 
 
 def compute_renovation_loi_energie(
-    dm_stock_area,
-    dm_num_bld,
-    dm_stock_cat,
-    env_cat_mfh,
-    env_cat_sfh,
-    DM_buildings,
-    dm_num_bld_per_size_per_type,
+    dm_stock_area: DataMatrix,
+    dm_num_bld: DataMatrix,
+    env_cat_mfh: dict,
+    env_cat_sfh: dict,
+    DM_buildings: DataMatrix,
+    dm_num_bld_per_size_per_type: DataMatrix,
 ):
+    """_summary_
+
+    Args:
+        dm_stock_area (DataMatrix): _description_
+        dm_num_bld (DataMatrix): _description_
+        env_cat_mfh (dict): _description_
+        env_cat_sfh (dict): _description_
+        DM_buildings (DataMatrix): _description_
+        dm_num_bld_per_size_per_type (DataMatrix): _description_
+
+    Returns:
+        DataMatrix: DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"] for lever 3
+        float: proportion between 0 and 1 of the E buildings renovated over the total buoildings renovated before 2035
+        float: proportion between 0 and 1 of the E buildings renovated over the total buoildings renovated before 2040
+        float: proportion between 0 and 1 of the E proportion of the area for  multi households buildings F and G that must be renovated over the total area of multi households buldings
+    """
+
     dm_num_bld_per_size_per_cat = replace_years_by_corresponding_categories(
         dm_num_bld_per_size_per_type, env_cat_sfh, env_cat_mfh
     )
@@ -145,7 +193,7 @@ def compute_renovation_loi_energie(
     dm_bld = replace_years_by_corresponding_categories(
         dm_num_bld, env_cat_sfh, env_cat_mfh
     )
-
+    ###### NEW VERSION OF LAW : <750 m2 F and G renovated ######
     dm_num_bld_F = dm_bld.filter(
         {
             "Country": ["Vaud"],
@@ -159,43 +207,50 @@ def compute_renovation_loi_energie(
     dm_num_bld_F.append(dm_num_bld_per_size_F, dim="Variables")
 
     # We filter only for multi-family household sbecause they are probably the only one with superficy higher than 750 m2
-    dm_num_bld_F.filter(
-        {"Years": [2023], "Categories1": ["multi-family-households"]}, inplace=True
-    )
-    dm_num_bld_F.group_all(dim="Categories1")
 
+    dm_single_multi_grouped = dm_num_bld_F.copy()
+    dm_single_multi_grouped.group_all(dim="Categories1")
+    dm_num_bld_F.filter({"Categories1": ["multi-family-households"]}, inplace=True)
+    array_ratio = {}
+    idx = dm_num_bld_F.idx
     # Iterate in the size of buildings and compute the ratio of number of buildings it correspond to
     for col in dm_num_bld_per_size_F.col_labels["Variables"]:
-        dm_num_bld_F.operation(
-            col,
-            "/",
-            "bld_stock-number-bld",
-            out_col=f"ratio_num_bld_{col}",
-            unit="%",
+        array_ratio[col] = (
+            dm_num_bld_F.array[0, idx[2023], idx[col], idx["multi-family-households"]]
+            / dm_single_multi_grouped.array[0, idx[2023], idx["bld_stock-number-bld"]]
         )
 
-    idx = dm_num_bld_F.idx
+        # dm_num_bld_F.operation(
+        #     col,
+        #     "/",
+        #     "bld_stock-number-bld",
+        #     out_col=f"ratio_num_bld_{col}",
+        #     unit="%",
+        # )
 
-    array_per_surface = dm_num_bld_F.array[
-        idx["Vaud"], idx[2023], idx["ratio_num_bld_<30"] :
-    ]
+    resting_toget_to_20 = 0.20 - (array_ratio["150+"] + array_ratio["100-149"])
+
     # we only want the twentypercent  biggest buildings to be renovated
-    percent_building_renvoated_100_149 = (
-        1 - (array_per_surface[-2:].sum() - 0.20) / array_per_surface[-2]
-    )
+    # For this we need the percentage of dwellings with area between 100-149 meter square to be renovated and we renovate and the buildings
+    # with area bigger than 150 meter
+    percent_building_renvoated_70_99 = resting_toget_to_20 / array_ratio["70-99"]
     # We want to convert the number of building to the floor area that need to be renovated, and we assume that the average size of building bigger than 150m2 is 175m2
     # and the average size of building between 100 and 149 is 124.5 m2
     area_necessary_renovated = (
         dm_num_bld_F.array[idx["Vaud"], idx[2023], idx["150+"]] * 175
     )
     area_necessary_renovated += (
-        dm_num_bld_F.array[idx["Vaud"], idx[2023], idx["100-149"]]
-        * percent_building_renvoated_100_149
-        * 124.5
+        dm_num_bld_F.array[idx["Vaud"], idx[2023], idx["100-149"]] * 124.5
+    )
+    area_necessary_renovated += (
+        dm_num_bld_F.array[idx["Vaud"], idx[2023], idx["70-99"]]
+        * percent_building_renvoated_70_99
+        * 84.5
     )
 
     idx = dm_bld.idx
-    ren_rate_min_2035_class_F = area_necessary_renovated / np.sum(
+    # Get the ratio of renovation needed in 2040
+    ren_rate_min_class_F = area_necessary_renovated / np.sum(
         dm_bld.array[
             idx["Vaud"],
             idx[2023],
@@ -204,7 +259,9 @@ def compute_renovation_loi_energie(
             :,
         ]
     )
-
+    dm_rr_bau = DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][
+        2
+    ].copy()
     dm_rr_fts_2 = DM_buildings["fts"]["building-renovation-rate"][
         "bld_renovation-rate"
     ][2].copy()
@@ -212,34 +269,67 @@ def compute_renovation_loi_energie(
     idx = dm_rr_fts_2.idx
     yrs_fts = [yr for yr in dm_rr_fts_2.col_labels["Years"] if yr <= 2040]
     idx_fts = [idx[yr] for yr in yrs_fts]
+    renovation_E = get_renov_rate_E(DM_buildings, yrs_fts)
 
-    # get the proportion of renovation for E buildings (not influenced by energy law) to add to the renovation rate of F buildings, as we assume that some of the renovation that would have been done in E will be done in F because of the energy law
-    ren_redistribution = DM_buildings["fts"]["building-renovation-rate"][
-        "bld_renovation-redistribution"
-    ][2].copy()
-    idx_redistrib = ren_redistribution.idx
-    prop_E_renovated = ren_redistribution.array[
-        idx_redistrib["Vaud"],
-        idx_redistrib[2035],
-        idx_redistrib["bld_renovation-redistribution-out"],
-        idx_redistrib["E"],
-    ]
-    renovation_E = (
-        dm_rr_fts_2.array[
-            idx["Vaud"],
-            idx_fts,
-            idx["bld_renovation-rate"],
-            idx["multi-family-households"],
-        ]
-        * prop_E_renovated
-    )
-
+    perc_F = 0.5
+    perc_G = 0.5
+    # F buildings must be renovated before G buildings
+    renovation_rate_F = ren_rate_min_class_F / (yrs_fts[-1] - yrs_fts[0] + 1) * perc_F
+    renovation_rate_G = ren_rate_min_class_F / (yrs_fts[-2] - yrs_fts[0] + 1) * perc_G
+    # Before 2035 all type G buildings and some type E
     dm_rr_fts_2.array[
-        idx["Vaud"], idx_fts, idx["bld_renovation-rate"], idx["multi-family-households"]
-    ] = (
-        ren_rate_min_2035_class_F / (yrs_fts[-1] - yrs_fts[0] + 1) + renovation_E
-    )  # Renovation objective divided by the number of year to apply it
-    return dm_rr_fts_2
+        idx["Vaud"],
+        idx_fts[:-1],
+        idx["bld_renovation-rate"],
+        idx["multi-family-households"],
+    ] = (renovation_rate_G + renovation_rate_F) * 0.85 + renovation_E[:-1]
+
+    # Renovation objective divided by the number of year to apply it
+    dm_rr_fts_2.array[
+        idx["Vaud"],
+        idx_fts[-1],
+        idx["bld_renovation-rate"],
+        idx["multi-family-households"],
+    ] = renovation_rate_F * 0.85 + renovation_E[-1]
+
+    return dm_rr_fts_2, ren_rate_min_class_F
+
+
+def update_renovation_out(renov_distrib_fts_3, prop_E_renovated):
+    """update renovation out array with proportion of E buildings renovated"""
+    idx = renov_distrib_fts_3.idx
+    # Renovation out
+    renov_distrib_fts_3.array[
+        idx["Vaud"],
+        idx[2025] : idx[2035] + 1,
+        idx["bld_renovation-redistribution-out"],
+        idx["E"],
+    ] = prop_E_renovated[idx[2025] : idx[2035] + 1]
+
+    renov_distrib_fts_3.array[
+        idx["Vaud"],
+        idx[2025] : idx[2035] + 1,
+        idx["bld_renovation-redistribution-out"],
+        idx["F"],
+    ] = 1 - prop_E_renovated[idx[2025] : idx[2035] + 1]
+
+    renov_distrib_fts_3.array[
+        idx["Vaud"], idx[2040], idx["bld_renovation-redistribution-out"], idx["E"]
+    ] = prop_E_renovated[idx[2040]]
+
+    renov_distrib_fts_3.array[
+        idx["Vaud"], idx[2040], idx["bld_renovation-redistribution-out"], idx["F"]
+    ] = 1 - prop_E_renovated[idx[2040]]
+
+    renov_distrib_fts_3.array[
+        idx["Vaud"], idx[2045] :, idx["bld_renovation-redistribution-out"], idx["E"]
+    ] = prop_E_renovated[idx[2045] :]
+
+    renov_distrib_fts_3.array[
+        idx["Vaud"], idx[2045] :, idx["bld_renovation-redistribution-out"], idx["F"]
+    ] = 1 - prop_E_renovated[idx[2045] :]
+
+    return renov_distrib_fts_3
 
 
 def update_heating_change_proportion(
@@ -270,20 +360,18 @@ def update_heating_change_proportion(
     if household_type == "multi-family-households":
         # Proportion according to the study perspectives chaleur (fig. 1)
         renov_proportion = {
-            "district-heating": 0.563,
-            "heat-pump": 0.25,
-            "solar": 0.067,
-            "wood": 0.057,
-            "other-tech": 0.063,
+            "district-heating": 0.66,
+            "heat-pump": 0.27,
+            "solar": 0.04,
+            "wood": 0.03,
         }
     else:
         # Proportion according to the study perspectives chaleur (fig 3.)
         renov_proportion = {
-            "district-heating": 0.004,
-            "heat-pump": 0.822,
-            "solar": 0.081,
-            "wood": 0.061,
-            "other-tech": 0.031,
+            "district-heating": 0.0044,  # 0.004426002766251729
+            "heat-pump": 0.8488,
+            "solar": 0.0835,
+            "wood": 0.0633,
         }
 
     heating_types = list(renov_proportion.keys())
@@ -295,39 +383,63 @@ def update_heating_change_proportion(
     return dm_heating_fts_mfh
 
 
-def update_heating_fts_2(dm_heating_cat_fts_2):
+def update_heating_fts_2(dm_heating_cat_fts_2, dm_heating_cat_ots):
+    idx_ots = dm_heating_cat_ots.idx
     idx = dm_heating_cat_fts_2.idx
     idx_old_cat = [idx["E"], idx["F"]]
     idx_new_cat = [idx["B"], idx["C"], idx["D"]]
     # Fossil heating
     # article  40.1
     idx_fossil = [idx["coal"], idx["heating-oil"], idx["gas"]]
+    idx_ots_fossil = [idx_ots["coal"], idx_ots["heating-oil"], idx_ots["gas"]]
+    idx_ots_new_cat = [idx_ots["B"], idx_ots["C"], idx_ots["D"]]
     # dm_heating_cat_fts_2.array[idx['Vaud'], :, idx['bld_heating-mix'], :, idx['B'], idx_fossil] = 0
-    dm_heating_cat_fts_2.array[
-        idx["Vaud"],
-        1 : idx[2045],
-        idx["bld_heating-mix"],
-        :,
-        *np.ix_(idx_new_cat, idx_fossil),
-    ] = np.nan
-    dm_heating_cat_fts_2.array[
-        idx["Vaud"],
-        idx[2045] :,
-        idx["bld_heating-mix"],
-        :,
-        *np.ix_(idx_new_cat, idx_fossil),
-    ] = 0
     dm_heating_cat_fts_2.array[
         idx["Vaud"],
         1 : idx[2050],
         idx["bld_heating-mix"],
         :,
-        *np.ix_(idx_old_cat, idx_fossil),
+        :,
+        idx_fossil,
     ] = np.nan
     dm_heating_cat_fts_2.array[
-        idx["Vaud"], idx[2050] :, idx["bld_heating-mix"], :, :, idx_fossil
-    ] = 0
+        idx["Vaud"],
+        idx[2040],
+        idx["bld_heating-mix"],
+        :,
+        :,
+        idx_fossil,
+    ] = (
+        dm_heating_cat_ots.array[
+            idx_ots["Vaud"],
+            idx_ots[2023],
+            idx_ots["bld_heating-mix"],
+            :,
+            :,
+            idx_ots_fossil,
+        ]
+        * 0.25
+    )
 
+    # We suppose 5% of exception
+    dm_heating_cat_fts_2.array[
+        idx["Vaud"], idx[2045], idx["bld_heating-mix"], :, :, idx_fossil
+    ] = (
+        dm_heating_cat_ots.array[
+            idx_ots["Vaud"],
+            idx_ots[2023],
+            idx_ots["bld_heating-mix"],
+            :,
+            :,
+            idx_ots_fossil,
+        ]
+        * 0.05
+    )
+    dm_heating_cat_fts_2.array[
+        idx["Vaud"], idx[2050], idx["bld_heating-mix"], :, :, idx_fossil
+    ] = dm_heating_cat_fts_2.array[
+        idx["Vaud"], idx[2045], idx["bld_heating-mix"], :, :, idx_fossil
+    ]
     dm_heating_cat_fts_2.fill_nans("Years")
 
     dm_heating_fts_mfh = update_heating_change_proportion(
@@ -388,8 +500,61 @@ def create_renov_prop_hw(dm_bld_mix):
     return renov_prop_hw
 
 
+def compute_renov_fts_mapping(renov_distrib_fts: DataMatrix):
+    # the energy law forces to renovate directly to class D
+
+    # Got it from the programme batiment
+
+    ren_nb_class = {
+        1: 0.57,  # Amélioration de +1 classes CECB 57% des rénovations
+        2: 0.15,  # Amélioration de +2 classes CECB 15%
+        3: 0.15,
+        4: 0.13,
+    }
+
+    idx = renov_distrib_fts.idx
+
+    # et the percentage of buildings renovated that are E or F
+    # renov_out_E = renov_distrib_fts.array[
+    # idx["Vaud"], :, idx["bld_renovation-redistribution-out"], idx["E"]
+    # ]
+    # renov_out_F = renov_distrib_fts.array[
+    # idx["Vaud"], :, idx["bld_renovation-redistribution-out"], idx["F"]
+    # ]
+
+    # renov_distrib_fts.array[
+    # idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["E"]
+    # ] = np.round(renov_out_F* ren_nb_class[1], 2)
+
+    # renov_distrib_fts.array[
+    # idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["D"]
+    # ] = np.round(renov_out_F * ren_nb_class[2] +renov_out_E * ren_nb_class[1], 2)
+
+    # renov_distrib_fts.array[
+    # idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["C"]
+    # ] = np.round(renov_out_F* ren_nb_class[3] + renov_out_E * ren_nb_class[2], 2)
+
+    # renov_distrib_fts.array[
+    # idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["B"]
+    # ] =  np.round(
+    # renov_out_F * ren_nb_class[4] + renov_out_E* ren_nb_class[3] +renov_out_E * ren_nb_class[4], 2
+    # )
+
+    # Set renovation to 0 for class E and transfer all renovation to class D
+    renov_distrib_fts.array[
+        idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["D"]
+    ] += renov_distrib_fts.array[
+        idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["E"]
+    ]
+    renov_distrib_fts.array[
+        idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["E"]
+    ] = 0
+
+    return renov_distrib_fts
+
+
 def run(
-    DM_buildings, dm_pop, global_var, country_list, lev=2
+    DM_buildings, dm_stock_cat, dm_pop, global_var, country_list, lev=2
 ):  # lever =2 for energy law and 3 for PCV 4 is perfect world 1 is BAU
     construction_period_envelope_cat_sfh = global_var["envelope construction sfh"]
     construction_period_envelope_cat_mfh = global_var["envelope construction mfh"]
@@ -419,6 +584,7 @@ def run(
         )
         .copy()
     )
+
     dm_bld_mix = (
         DM_buildings["ots"]["building-renovation-rate"]["bld_building-mix"]
         .filter({"Country": country_list})
@@ -432,23 +598,164 @@ def run(
     dm_bld_mix.add(
         arr_stock, dim="Variables", col_label="bld_floor-area_stock", unit="m2"
     )
-    dm_stock_cat = dm_bld_mix.filter({"Variables": ["bld_floor-area_stock"]})
+    # dm_stock_cat_bis = dm_bld_mix.filter({"Variables": ["bld_floor-area_stock"]})
 
     # Compute renovation rate loi energie
-    dm_rr_fts_2 = compute_renovation_loi_energie(
+    dm_rr_fts_3, ren_rate_tot_above_750 = compute_renovation_loi_energie(
         dm_stock_area,
         dm_num_bld,
-        dm_stock_cat,
         env_cat_mfh,
         env_cat_sfh,
         DM_buildings,
         dm_num_bld_per_size_per_type,
     )
-    DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][3] = (
-        dm_rr_fts_2
+
+    ####Ren rate old version###
+    renov_copy_old = DM_buildings["fts"]["building-renovation-rate"][
+        "bld_renovation-rate"
+    ][2].copy()
+    # Get the proportion of area in every category by normalising the surface by the enveloppe area category
+    dm_stock_copy = dm_stock_cat.copy()
+    dm_stock_copy.normalise("Categories2")
+    idx = dm_stock_copy.idx
+    idx_renov_old = renov_copy_old.idx
+
+    # Get the list of years before the application of the law and the associated indexes
+    yrs_fts = [yr for yr in renov_copy_old.col_labels["Years"] if yr <= 2040]
+    idx_fts = [idx_renov_old[yr] for yr in yrs_fts]
+
+    renov_tot_F = {}
+    renov_yr_E = {}
+    for household_type in ["multi-family-households", "single-family-households"]:
+        # Proportion of area in F categoory
+        renov_tot_F[household_type] = dm_stock_copy.array[
+            idx["Vaud"],
+            idx[2023],
+            idx["bld_floor-area_stock"],
+            idx[household_type],
+            idx["F"],
+        ]
+        renov_yr_E[household_type] = get_renov_rate_E(
+            DM_buildings, yrs_fts, household_type=household_type
+        )
+
+    idx_renov_old = renov_copy_old.idx
+    # single family households renvoaton
+    renov_copy_old.array[
+        idx_renov_old["Vaud"],
+        idx_fts,
+        idx_renov_old["bld_renovation-rate"],
+        idx_renov_old["single-family-households"],
+    ] = (
+        renov_tot_F["single-family-households"] / (yrs_fts[-1] - yrs_fts[0] + 1)
+    ) * 0.85 + renov_yr_E["single-family-households"]
+
+    renov_copy_old.array[
+        idx_renov_old["Vaud"],
+        idx_renov_old[2045] :,
+        idx_renov_old["bld_renovation-rate"],
+        idx_renov_old["single-family-households"],
+    ] = renov_yr_E["single-family-households"][-2:]
+
+    # multi family household renovation
+    ren_rate_tot_under_750 = (
+        renov_tot_F["multi-family-households"] - ren_rate_tot_above_750
     )
+    # before 2035
+    renov_copy_old.array[
+        idx_renov_old["Vaud"],
+        idx_fts[:-1],
+        idx_renov_old["bld_renovation-rate"],
+        idx_renov_old["multi-family-households"],
+    ] = (
+        ren_rate_tot_under_750 / (yrs_fts[-1] - yrs_fts[0] + 1)
+        + ren_rate_tot_above_750 / (yrs_fts[-2] - yrs_fts[0] + 1)
+    ) * 0.85 + renov_yr_E["multi-family-households"][:-1]
+
+    # 2040
+    renov_copy_old.array[
+        idx_renov_old["Vaud"],
+        idx_fts[-1],
+        idx_renov_old["bld_renovation-rate"],
+        idx_renov_old["multi-family-households"],
+    ] = (ren_rate_tot_under_750 / (yrs_fts[-1] - yrs_fts[0] + 1)) * 0.85 + renov_yr_E[
+        "multi-family-households"
+    ][-1]
+
+    prop_E_renovated_before_2035_lev_4 = (
+        renov_yr_E["single-family-households"][1]
+        + renov_yr_E["multi-family-households"][1]
+    ) / renov_copy_old.array[
+        idx_renov_old["Vaud"],
+        idx_fts[1],
+        idx_renov_old["bld_renovation-rate"],
+        :,
+    ].sum()
+    prop_E_renovated_in_2040_lev_4 = (
+        renov_yr_E["single-family-households"][-1]
+        + renov_yr_E["multi-family-households"][-1]
+    ) / renov_copy_old.array[
+        idx_renov_old["Vaud"],
+        idx_fts[-1],
+        idx_renov_old["bld_renovation-rate"],
+        :,
+    ].sum()
+
+    # Add the BAU renovation rate of buildings uuder 750 m to all time series + after 2040 stop renovating above 750 because everything renovated already
+    bau_ren_rate = DM_buildings["fts"]["building-renovation-rate"][
+        "bld_renovation-rate"
+    ][2].copy()
+
+    idx = dm_rr_fts_3.idx
+    ren_rate_yr_under_750_bau_multi = (
+        (1 - ren_rate_tot_above_750 / renov_tot_F["multi-family-households"])
+        * 0.8
+        * bau_ren_rate.array[
+            idx["Vaud"],
+            :,
+            idx["bld_renovation-rate"],
+            idx["multi-family-households"],
+        ]
+    )
+
+    dm_rr_fts_3.array[
+        idx["Vaud"],
+        idx[2045] :,
+        idx["bld_renovation-rate"],
+        idx["multi-family-households"],
+    ] = renov_yr_E["multi-family-households"][-2:]
+
+    dm_rr_fts_3.array[
+        idx["Vaud"],
+        :,
+        idx["bld_renovation-rate"],
+        idx["multi-family-households"],
+    ] += ren_rate_yr_under_750_bau_multi
+
+    prop_E_renovated_after_2045_lev_3 = (
+        renov_yr_E["multi-family-households"][-1]
+        / dm_rr_fts_3.array[
+            idx["Vaud"],
+            -1,
+            idx["bld_renovation-rate"],
+            idx["multi-family-households"],
+        ]
+    )
+
+    # Update tthe dic
+    DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][3] = (
+        dm_rr_fts_3
+    )
+
+    renov_copy_old.array[
+        idx["Vaud"],
+        idx[2045] :,
+        idx["bld_renovation-rate"],
+        idx["multi-family-households"],
+    ] = renov_yr_E["multi-family-households"][-2:]
+
     DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][4] = (
-        dm_rr_fts_2
+        renov_copy_old
     )
 
     # renovation redistribution is also affected
@@ -456,20 +763,78 @@ def run(
     renov_distrib_fts_3 = DM_buildings["fts"]["building-renovation-rate"][
         "bld_renovation-redistribution"
     ][2].copy()
-    idx = renov_distrib_fts_3.idx
-    # the energy law forces to renovate directly to class D
-    renov_distrib_fts_3.array[
-        idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["D"]
-    ] += renov_distrib_fts_3.array[
-        idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["E"]
-    ]
-    renov_distrib_fts_3.array[
-        idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["E"]
-    ] = 0
-    for lever in range(3, 4 + 1):
-        DM_buildings["fts"]["building-renovation-rate"][
-            "bld_renovation-redistribution"
-        ][lever] = renov_distrib_fts_3.copy()
+    renov_distrib_fts_4 = DM_buildings["fts"]["building-renovation-rate"][
+        "bld_renovation-redistribution"
+    ][2].copy()
+
+    prop_E_renovated_fts_3 = (
+        renov_yr_E["multi-family-households"][0]
+        + renov_yr_E["single-family-households"][0]
+    ) / (
+        dm_rr_fts_3.array[
+            idx["Vaud"],
+            :,
+            idx["bld_renovation-rate"],
+            idx["multi-family-households"],
+        ]
+        + dm_rr_fts_3.array[
+            idx["Vaud"],
+            :,
+            idx["bld_renovation-rate"],
+            idx["single-family-households"],
+        ]
+    )
+
+    prop_E_renovated_fts_4 = (
+        renov_yr_E["multi-family-households"][0]
+        + renov_yr_E["single-family-households"][0]
+    ) / (
+        renov_copy_old.array[
+            idx["Vaud"],
+            :,
+            idx["bld_renovation-rate"],
+            idx["multi-family-households"],
+        ]
+        + renov_copy_old.array[
+            idx["Vaud"],
+            :,
+            idx["bld_renovation-rate"],
+            idx["single-family-households"],
+        ]
+    )
+
+    renov_distrib_fts_3 = update_renovation_out(
+        renov_distrib_fts_3, prop_E_renovated_fts_3
+    )
+
+    # In the 4 th scanerio all possibly reovable buildings in f and G have been renovated
+    renov_distrib_fts_4 = update_renovation_out(
+        renov_distrib_fts_4, prop_E_renovated_fts_4
+    )
+
+    # Renovation in
+    renov_distrib_fts_3 = compute_renov_fts_mapping(renov_distrib_fts_3)
+    renov_distrib_fts_4 = compute_renov_fts_mapping(renov_distrib_fts_4)
+    # renov_distrib_fts_3.array[
+    #     idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["D"]
+    # ] += renov_distrib_fts_3.array[
+    #     idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["E"]
+    # ]
+    # renov_distrib_fts_3.array[
+    #     idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["E"]
+    # ] = 0
+
+    DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-redistribution"][
+        3
+    ] = renov_distrib_fts_3.copy()
+
+    DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-redistribution"][
+        4
+    ] = renov_distrib_fts_4.copy()
+    # for lever in range(3, 4 + 1):
+    #     DM_buildings["fts"]["building-renovation-rate"][
+    #         "bld_renovation-redistribution"
+    #     ][lever] = renov_distrib_fts_3.copy()
 
     # SECTION: Loi energy - Heating tech
     # Plus de gaz, mazout, charbon dans les prochain 15-20 ans. Pas de gaz, mazout, charbon dans les nouvelles constructions
@@ -477,31 +842,90 @@ def run(
         "bld_heating-technology"
     ][1].copy()
 
-    dm_heating_cat_fts_2 = update_heating_fts_2(dm_heating_cat_fts_2)
+    dm_heating_cat_fts_2 = update_heating_fts_2(
+        dm_heating_cat_fts_2,
+        DM_buildings["ots"]["heating-technology-fuel"]["bld_heating-technology"],
+    )
     for lever in range(lev, 4 + 1):
         DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"][
             lev
         ] = dm_heating_cat_fts_2.copy()
+
+    # Compute renovation rate loi energie_refuse
+    # dm_renovation = DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][2].copy()
+
+    # dm_stock_mix =  DM_buildings["fxa"]["bld_type"].copy()
+    # idx_mix = dm_stock_mix.idx
+    # renov_rate    =  dm_stock_mix.array[
+    #         idx_mix["Vaud"],
+    #         idx_mix[2023],
+    #         idx_mix["bld_building-mix_stock"],
+    #         :,
+    #         idx_mix["F"],
+    #     ]
+    # renov_rate = np.ones_like(renov_rate)
+    # #get the number of years to divide the rnovation rate by to apply it gradually between 2025 and 2040
+    # idx_renov =dm_renovation.idx
+    # yrs_renov = [yr for yr in dm_rr_fts_2.col_labels["Years"] if yr <= 2040]
+    # idx_years_renov = [idx_renov[yr] for yr in yrs_renov]
+    # E_renov = get_renov_rate_E(DM_buildings)
+    # dm_renovation.array[
+    #     idx_renov["Vaud"], idx_years_renov, idx_renov["bld_renovation-rate"], :
+    # ] = (
+    #     renov_rate / (yrs_renov[-1] - yrs_renov[0] + 1) )+ E_renov[0]
+
+    # DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][4] = (
+    #     dm_renovation
+    # )
 
     ##### HOTWATER TECHNOLOGY MIX ######
 
     dm_hotwater_fts_2 = DM_buildings["fts"]["heating-technology-fuel"][
         "bld_hot-water-technology"
     ][1].copy()
+    dm_hotwater_ots = DM_buildings["ots"]["heating-technology-fuel"][
+        "bld_hot-water-technology"
+    ].copy()
 
     idx = dm_hotwater_fts_2.idx
     # Fossil heating
     # article  40.1
     idx_fossil = [idx["heating-oil"], idx["gas"]]
-
+    idx_ots = dm_hotwater_ots.idx
     # Replace the use of fossil fuel for hot water to 0 for new buildings from 2025 and for all buildings from 2035, and replace it by the ideal scenario proportion
     # There are no buildings catergoies for hotwater technology so we replace it for all the categories at once
+    dm_hotwater_fts_2.array[idx["Vaud"], 1:, idx["bld_hw_tech-mix"], idx_fossil] = (
+        np.nan
+    )
+
     dm_hotwater_fts_2.array[
-        idx["Vaud"], 1 : idx[2050], idx["bld_hw_tech-mix"], idx_fossil
-    ] = np.nan
+        idx["Vaud"], idx[2040], idx["bld_hw_tech-mix"], idx_fossil
+    ] = (
+        dm_hotwater_ots.array[
+            idx_ots["Vaud"],
+            idx_ots[2023],
+            idx["bld_hw_tech-mix"],
+            [idx_ots["heating-oil"], idx_ots["gas"]],
+        ]
+        * 0.25
+    )
+    dm_hotwater_fts_2.array[
+        idx["Vaud"], idx[2045], idx["bld_hw_tech-mix"], idx_fossil
+    ] = (
+        dm_hotwater_ots.array[
+            idx_ots["Vaud"],
+            idx_ots[2023],
+            idx["bld_hw_tech-mix"],
+            [idx_ots["heating-oil"], idx_ots["gas"]],
+        ]
+        * 0.05
+    )
     dm_hotwater_fts_2.array[
         idx["Vaud"], idx[2050], idx["bld_hw_tech-mix"], idx_fossil
-    ] = 0
+    ] = dm_hotwater_fts_2.array[
+        idx["Vaud"], idx[2045], idx["bld_hw_tech-mix"], idx_fossil
+    ]
+
     dm_hotwater_fts_2.fill_nans("Years")
 
     renov_prop_hotwater = create_renov_prop_hw(dm_bld_mix)
@@ -534,6 +958,23 @@ def run(
         DM_buildings["fts"]["heating-technology-fuel"]["bld_hot-water-technology"][
             lever
         ] = dm_hotwater_fts_2.copy()
+
+    ###### FLOOR AREA #####
+    dm_fts_floor_intensity = DM_buildings["fts"]["floor-intensity"][1].copy()
+    idx = dm_fts_floor_intensity.idx
+    dm_fts_floor_intensity.array[
+        idx["Vaud"], 1:, idx["lfs_floor-intensity_space-cap"]
+    ] = np.nan
+    dm_fts_floor_intensity.array[
+        idx["Vaud"], idx[2050], idx["lfs_floor-intensity_space-cap"]
+    ] = (
+        dm_fts_floor_intensity.array[
+            idx["Vaud"], idx[2025], idx["lfs_floor-intensity_space-cap"]
+        ]
+        - 23.9
+    )
+    dm_fts_floor_intensity.fill_nans("Years")
+    DM_buildings["fts"]["floor-intensity"][4] = dm_fts_floor_intensity
 
     this_dir = os.path.dirname(os.path.abspath(__file__))
     # !FIXME: use the actual values and not the calibration factor

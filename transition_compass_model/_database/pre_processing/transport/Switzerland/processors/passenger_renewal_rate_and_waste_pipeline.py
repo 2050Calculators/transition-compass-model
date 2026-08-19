@@ -118,7 +118,7 @@ def run(dm_private_fleet, dm_public_fleet):
         dm_public_fleet (DataMatrix):
 
     Returns:
-        dM: Dictionnary with the following keys: ['passenger_private-fleet', 'passenger_public-fleet', 'passenger_renewal-rate', 'passenger_new-vehicles', 'passenger_waste-fleet']
+        DM: Dictionnary with the following keys: ['passenger_private-fleet', 'passenger_public-fleet', 'passenger_renewal-rate', 'passenger_new-vehicles', 'passenger_waste-fleet']
     """
     var_names = {
         "stock": "tra_passenger_vehicle-fleet",
