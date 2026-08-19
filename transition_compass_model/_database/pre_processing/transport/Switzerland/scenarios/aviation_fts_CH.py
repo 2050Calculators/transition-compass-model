@@ -317,12 +317,30 @@ def run(ots_state, years_fts):
         )
 
     # ----------------------------------------------------------------
-    # UTILISATION RATE FTS — from Excel
+    # UTILISATION RATE FTS — from Excel, anchored to 2023 OTS
     # ----------------------------------------------------------------
     file = os.path.join(data_dir, "aviation_utilisation-rate-FTS.xlsx")
     df = pd.read_excel(file)
     dm_util_fts_base = DataMatrix.create_from_df(df, num_cat=1)
     dm_util_fts_base.filter({"Years": years_fts}, inplace=True)
+
+    # The Excel was derived from the pre-COVID 2010-2019 trend; CH 2023 actual is still
+    # well below it (~992K vs ~1,577K vkm/veh). Anchor 2025 to the 2023 OTS value and
+    # linearly interpolate to the 2050 Excel target to avoid a jump at the OTS/FTS boundary.
+    idx_u = dm_util_fts_base.idx
+    var_ur = "tra_passenger_utilisation-rate"
+    yr_2050 = 2050
+    fracs = np.array([(yr - 2023) / (yr_2050 - 2023) for yr in years_fts])
+    for c, country in enumerate(dm_util_fts_base.col_labels["Country"]):
+        if country not in dm_util_ots.col_labels["Country"]:
+            continue
+        c_ots = dm_util_ots.col_labels["Country"].index(country)
+        val_2023 = float(dm_util_ots.array[c_ots, dm_util_ots.idx[2023], 0, 0])
+        val_2050 = float(dm_util_fts_base.array[c, idx_u[yr_2050], idx_u[var_ur], 0])
+        new_vals = val_2023 + fracs * (val_2050 - val_2023)
+        for i, yr in enumerate(years_fts):
+            dm_util_fts_base.array[c, idx_u[yr], idx_u[var_ur], 0] = new_vals[i]
+
     DM_util_fts = {lev: dm_util_fts_base.copy() for lev in range(1, 5)}
 
     # ----------------------------------------------------------------

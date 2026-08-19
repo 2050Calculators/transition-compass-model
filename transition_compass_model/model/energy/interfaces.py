@@ -313,7 +313,7 @@ def reorganise_space_heat_hot_water(DM_bld, DM_ind):
     dm_house_hotwater.deepen(based_on="Variables")
     dm_house_hotwater.deepen(based_on="Variables")
 
-    # Extract household space-heating
+    # Extract household space-heating (residential buildings only)
     dm_house_heat = DM_bld["households_heating"].filter(
         {
             "Variables": ["bld_heating", "bld_energy-demand_heating"],
@@ -335,14 +335,14 @@ def reorganise_space_heat_hot_water(DM_bld, DM_ind):
     dm_house_heat.switch_categories_order("Categories3", "Categories2")
     dm_house_heat.switch_categories_order("Categories3", "Categories1")
 
-    # Extract service space-heating & hot-water
+    # Extract service hot-water
     dm_service_heat = DM_bld["services_all"].filter(
         {
             "Variables": [
                 "bld_services_useful-energy",
                 "bld_services_energy-consumption",
             ],
-            "Categories1": ["space-heating", "hot-water"],
+            "Categories1": ["hot-water"],
             "Categories2": ["district-heating", "electricity", "heat-pump"],
         }
     )
@@ -357,6 +357,34 @@ def reorganise_space_heat_hot_water(DM_bld, DM_ind):
     dm_service_heat.deepen(based_on="Variables")
     dm_service_heat.switch_categories_order("Categories3", "Categories1")
     dm_service_heat.switch_categories_order("Categories3", "Categories2")
+
+    # Extract non-residential space-heating (from bld_energy_workflow, split by building type)
+    dm_srv_space_src = DM_bld.get("services_space-heating")
+    if dm_srv_space_src is not None:
+        dm_srv_space = dm_srv_space_src.filter(
+            {
+                "Variables": ["bld_heating", "bld_energy-demand_heating"],
+                "Categories1": ["district-heating", "electricity", "heat-pump"],
+            }
+        )
+        dm_srv_space.rename_col(
+            "bld_heating", "bld_useful-energy_space-heating_services", "Variables"
+        )
+        dm_srv_space.rename_col(
+            "bld_energy-demand_heating",
+            "bld_energy-consumption_space-heating_services",
+            "Variables",
+        )
+        dm_srv_space.deepen(based_on="Variables")
+        dm_srv_space.deepen(based_on="Variables")
+        dm_srv_space.switch_categories_order("Categories3", "Categories2")
+        dm_srv_space.switch_categories_order("Categories3", "Categories1")
+        dm_service_heat.append(dm_srv_space, dim="Categories2")
+    else:
+        dm_service_heat.add(
+            np.nan, dim="Categories2", col_label="space-heating", dummy=True
+        )
+    dm_service_heat.sort("Categories2")
 
     # Extract service hot-water heating
     dm_heat = dm_house_heat.copy()
@@ -382,14 +410,14 @@ def impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind, cntr):
 
     validation = False
     if validation:
-        DM_bld["households_heating"].filter(
+        DM_bld["space-heating"].filter(
             {"Variables": ["bld_energy-demand_heating", "bld_energy-demand_cooling"]},
             inplace=True,
         )
-        DM_bld["households_heating"].filter(
+        DM_bld["space-heating"].filter(
             {"Categories1": ["electricity", "heat-pump"]}, inplace=True
         )
-        DM_bld["households_heating"].group_all("Categories1")
+        DM_bld["space-heating"].group_all("Categories1")
         DM_bld["households_hot-water"].filter(
             {
                 "Variables": ["bld_hot-water_energy-demand"],
@@ -398,7 +426,7 @@ def impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind, cntr):
             inplace=True,
         )
         DM_bld["households_hot-water"].group_all("Categories1")
-        dm_household_elec = DM_bld["households_heating"].copy()
+        dm_household_elec = DM_bld["space-heating"].copy()
         dm_household_elec.append(DM_bld["households_hot-water"], dim="Variables")
         dm_household_elec.append(DM_bld["households_lighting"], dim="Variables")
         dm_household_elec.append(DM_bld["households_electricity"], dim="Variables")

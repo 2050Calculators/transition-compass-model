@@ -17,6 +17,8 @@ def run(country_list, years_ots, years_fts):
     # U-value is computed as the average of the house element u-value (roof, wall, windows, ..) weighted by their area
     # U-value in: W/m^2 K
     # Single-family-households
+    # Non-residential values are proxied from EU Hotmaps data (same envelope U-values by class)
+    nonres_u = {"F": 2.01, "E": 1.74, "D": 1.44, "C": 1.20, "B": 0.69}
     envelope_cat_u_value = {
         "single-family-households": {
             "F": 0.82,
@@ -32,11 +34,17 @@ def run(country_list, years_ots, years_fts):
             "C": 0.48,
             "B": 0.29,
         },
+        "education": nonres_u,
+        "health": nonres_u,
+        "hotels": nonres_u,
+        "offices": nonres_u,
+        "other": nonres_u,
+        "trade": nonres_u,
     }
     cdm_u_value = ConstantDataMatrix(
         col_labels={
             "Variables": ["bld_u-value"],
-            "Categories1": ["multi-family-households", "single-family-households"],
+            "Categories1": sorted(envelope_cat_u_value.keys()),
             "Categories2": ["B", "C", "D", "E", "F"],
         },
         units={"bld_u-value": "W/m2K"},
@@ -56,15 +64,29 @@ def run(country_list, years_ots, years_fts):
     dm_u_value = cdm_to_dm(cdm_u_value, country_list, ["All"])
 
     # SECTION Surface to Floorarea factor - fixed assumption
-    # From the same dataset we obtain also the floor to surface area
+    # Residential values (sfh, mfh) from Pongelli et al. (2023), Swiss EPC database archetypes.
+    # Non-residential values estimated from building physics references:
+    #   education=1.2, offices=1.3, health=1.3: Delmastro et al. (2016), "A building stock analysis
+    #     for the Italian residential and service sector", Energy Build. 128, 247–263.
+    #   hotels=1.4: Fleiter et al. (2017), "A methodology for bottom-up modelling of energy transitions
+    #     in the industry and service sectors", Energy Effic. 10, 829–847.
+    #   trade=1.1: large-footprint single-storey retail, typical building physics assumption
+    #     (low external-surface-to-floor ratio); consistent with Hotmaps project CH building atlas.
+    #   other=1.3: generic proxy, same as offices/health.
     surface_to_floorarea = {
         "single-family-households": 2.0,
         "multi-family-households": 1.3,
+        "education": 1.2,
+        "health": 1.3,
+        "hotels": 1.4,
+        "offices": 1.3,
+        "other": 1.3,
+        "trade": 1.1,
     }
     cdm_s2f = ConstantDataMatrix(
         col_labels={
             "Variables": ["bld_surface-to-floorarea"],
-            "Categories1": ["multi-family-households", "single-family-households"],
+            "Categories1": sorted(surface_to_floorarea.keys()),
         }
     )
     arr = np.zeros(
@@ -81,11 +103,14 @@ def run(country_list, years_ots, years_fts):
     #########################################
     #####   HEATING-COOLING BEHAVIOUR   #####
     #########################################
+    nonres_types = ["education", "health", "hotels", "offices", "other", "trade"]
     col_label = {
         "Country": country_list,
         "Years": years_ots + years_fts,
         "Variables": ["bld_Tint-heating", "bld_Tint-cooling"],
-        "Categories1": ["multi-family-households", "single-family-households"],
+        "Categories1": sorted(
+            ["multi-family-households", "single-family-households"] + nonres_types
+        ),
         "Categories2": ["B", "C", "D", "E", "F"],
     }
     dm_Tint_heat = DataMatrix(
@@ -101,15 +126,23 @@ def run(country_list, years_ots, years_fts):
         dm_Tint_heat.array[
             :, :, idx["bld_Tint-heating"], idx["single-family-households"], idx[cat]
         ] = tint - 1
+    # Non-residential: flat 20°C across all building types and energy classes.
+    # Source: EN 15251 / ISO 13790 standard design indoor temperature for non-residential
+    # buildings (offices, schools, etc. = 20°C), adopted in Swiss SIA 380/1.
+    # No class variation assumed (unlike residential where higher-class buildings tend
+    # to be maintained at slightly higher temperatures).
 
     # SECION: Building age
     first_bld_sfh = {"F": 1900, "E": 1971, "D": 1981, "C": 2001, "B": 2011}
     first_bld_mfh = {"F": 1900, "E": 1981, "D": 1991, "C": 2001, "B": 2011}
+    # Non-residential: EP2050 construction period boundaries (vor 1946→F, 1947-1975→E, etc.)
+    first_bld_nonres = {"F": 1900, "E": 1947, "D": 1976, "C": 1991, "B": 2020}
     col_label = {
         "Country": country_list,
         "Years": years_ots + years_fts,
         "Variables": ["bld_age"],
-        "Categories1": ["multi-family-households", "single-family-households"],
+        "Categories1": ["multi-family-households", "single-family-households"]
+        + nonres_types,
         "Categories2": ["B", "C", "D", "E", "F"],
     }
     dm_age = DataMatrix(col_labels=col_label, units={"bld_age": "years"})
@@ -130,6 +163,12 @@ def run(country_list, years_ots, years_fts):
             dm_age.array[
                 idx_c, :, idx["bld_age"], idx["multi-family-households"], idx[cat]
             ] = arr_age
+    for t in nonres_types:
+        for cat, start_yr in first_bld_nonres.items():
+            arr_age = years_all - start_yr
+            arr_age = np.maximum(arr_age, 0)
+            for idx_c in range(nb_cntr):
+                dm_age.array[idx_c, :, idx["bld_age"], idx[t], idx[cat]] = arr_age
 
     ####################################
     #####     EMISSION FACTORS    ######

@@ -53,7 +53,9 @@ def industry(
 
     # get product production
     DM_production = wkf.product_production(
-        DM_buildings["floor-area"].filter({"Variables": ["bld_floor-area_new"]}),
+        DM_buildings["floor-area"].filter(
+            {"Variables": ["bld_floor-area_new", "bld_floor-area_renovated"]}
+        ),
         DM_buildings["domapp"].filter({"Variables": ["bld_domapp_new"]}),
         DM_buildings["electronics"].filter({"Variables": ["bld_electronics_new"]}),
         DM_transport["tra-infra"].filter({"Variables": ["tra_product-demand"]}),

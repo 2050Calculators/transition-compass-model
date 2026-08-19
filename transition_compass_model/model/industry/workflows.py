@@ -32,20 +32,27 @@ def product_production(
     # production [unit] = demand [unit] - net import [unit]
 
     # buildings
-    dm_netimport_bld_floor = dm_import.filter(
-        {"Categories1": ["floor-area-new-residential"]}
-    )
+    current_names = [
+        "floor-area-new-non-residential",
+        "floor-area-new-residential",
+        "floor-area-reno-non-residential",
+        "floor-area-reno-residential",
+    ]
+    dm_netimport_bld_floor = dm_import.filter({"Categories1": current_names})
+    dm_demand_bld_floor.rename_col_regex("area_", "area-", "Variables")
+    dm_demand_bld_floor.deepen(based_on="Variables")
+    dm_demand_bld_floor.switch_categories_order("Categories1", "Categories2")
+    dm_demand_bld_floor = dm_demand_bld_floor.flatten()
+    dm_demand_bld_floor.sort("Categories1")
     dm_netimport_bld_floor.array = (
         dm_netimport_bld_floor.array * dm_demand_bld_floor.array
     )
     dm_netimport_bld_floor.units["product-net-import"] = dm_demand_bld_floor.units[
-        "bld_floor-area_new"
+        "bld"
     ]
     dm_prod_bld_floor = dm_demand_bld_floor.copy()
     dm_prod_bld_floor.array = dm_demand_bld_floor.array - dm_netimport_bld_floor.array
-    dm_prod_bld_floor.rename_col(
-        "bld_floor-area_new", "product-production", "Variables"
-    )
+    dm_prod_bld_floor.rename_col("bld", "product-production", "Variables")
 
     # domapp
     dm_netimport_bld_domapp = dm_import.filter(
@@ -332,15 +339,29 @@ def apply_material_switch(
         dict_for_output=DM_input_matswitchimpact,
     )
 
-    # material_switch(dm = dm_material_demand, dm_ots_fts = dm_material_switch,
-    #                 cdm_const = cdm_material_switch, material_in = "steel", material_out = ["timber"],
-    #                 product = 'floor-area-new-non-residential', switch_percentage_prefix = "build-",
-    #                 switch_ratio_prefix = "material-switch-ratios_", dict_for_output = DM_input_matswitchimpact)
+    material_switch(
+        dm=dm_material_demand,
+        dm_ots_fts=dm_material_switch,
+        cdm_const=cdm_material_switch,
+        material_in="steel",
+        material_out=["timber"],
+        product="floor-area-new-non-residential",
+        switch_percentage_prefix="build-",
+        switch_ratio_prefix="material-switch-ratios_",
+        dict_for_output=DM_input_matswitchimpact,
+    )
 
-    # material_switch(dm = dm_material_demand, dm_ots_fts = dm_material_switch,
-    #                 cdm_const = cdm_material_switch, material_in = "cement", material_out = ["timber"],
-    #                 product = 'floor-area-new-non-residential', switch_percentage_prefix = "build-",
-    #                 switch_ratio_prefix = "material-switch-ratios_", dict_for_output = DM_input_matswitchimpact)
+    material_switch(
+        dm=dm_material_demand,
+        dm_ots_fts=dm_material_switch,
+        cdm_const=cdm_material_switch,
+        material_in="cement",
+        material_out=["timber"],
+        product="floor-area-new-non-residential",
+        switch_percentage_prefix="build-",
+        switch_ratio_prefix="material-switch-ratios_",
+        dict_for_output=DM_input_matswitchimpact,
+    )
 
     # renovated buildings: switch to insulated surfaces (chemicals to paper and natural fibers in renovated residential and non-residential)
 
@@ -355,10 +376,16 @@ def apply_material_switch(
         switch_ratio_prefix="material-switch-ratios_",
     )
 
-    # material_switch(dm = dm_material_demand, dm_ots_fts = dm_material_switch,
-    #                 cdm_const = cdm_material_switch, material_in = "chem", material_out = ["paper","natfibers"],
-    #                 product = "floor-area-reno-non-residential", switch_percentage_prefix = "reno-",
-    #                 switch_ratio_prefix = "material-switch-ratios_")
+    material_switch(
+        dm=dm_material_demand,
+        dm_ots_fts=dm_material_switch,
+        cdm_const=cdm_material_switch,
+        material_in="chem",
+        material_out=["paper", "natfibers"],
+        product="floor-area-reno-non-residential",
+        switch_percentage_prefix="reno-",
+        switch_ratio_prefix="material-switch-ratios_",
+    )
 
     return
 
@@ -695,27 +722,36 @@ def end_of_life(
     ##### BUILDINGS #####
     #####################
 
+    bld_cat = ["floor-area-new-non-residential", "floor-area-new-residential"]
+
     # get layers in %
     dm_bld_waste_layer1 = dm_waste_management.filter(
-        {"Variables": ["floor-area-new-residential"], "Categories1": layer1}
+        {"Variables": bld_cat, "Categories1": layer1}
     )
     dm_bld_waste_layer2 = dm_waste_management.filter(
-        {"Variables": ["floor-area-new-residential"], "Categories1": layer2}
+        {"Variables": bld_cat, "Categories1": layer2}
     )
 
     # layer 1 units
     arr_temp = (
-        dm_bld_waste[..., np.newaxis] * dm_bld_waste_layer1[:, :, :, np.newaxis, :]
+        dm_bld_waste[..., np.newaxis]
+        * dm_bld_waste_layer1[
+            :,
+            :,
+            np.newaxis,
+            :,
+            :,
+        ]
     )
     dm_bld_waste_bywsm_layer1 = DataMatrix.based_on(
         arr_temp, dm_bld_waste, {"Categories2": layer1}, units=dm_bld_waste.units
     )
 
     # layer 1 materials
-    cdm_temp = cdm_matdec_floor.filter({"Categories1": ["floor-area-new-residential"]})
+    cdm_temp = cdm_matdec_floor.filter({"Categories1": bld_cat})
     arr_temp = (
         dm_bld_waste_bywsm_layer1[..., np.newaxis]
-        * cdm_temp[np.newaxis, np.newaxis, np.newaxis, ...]
+        * cdm_temp[np.newaxis, np.newaxis, :, :, np.newaxis, :]
     )
     dm_bld_waste_bywsm_layer1_bymat = DataMatrix.based_on(
         arr_temp, dm_bld_waste_bywsm_layer1, {"Categories3": materials}, units="t"
@@ -730,7 +766,7 @@ def end_of_life(
         {"Categories2": ["waste-collected"]}
     ).group_all("Categories2", inplace=False)
     arr_temp = (
-        dm_collected[..., np.newaxis] * dm_bld_waste_layer2[:, :, :, np.newaxis, :]
+        dm_collected[..., np.newaxis] * dm_bld_waste_layer2[:, :, np.newaxis, :, :]
     )
     dm_bld_waste_bywsm_layer2 = DataMatrix.based_on(
         arr_temp, dm_collected, {"Categories2": layer2}, units=dm_collected.units
@@ -953,7 +989,7 @@ def end_of_life(
     dm_temp.rename_col(
         dm_temp.col_labels["Variables"][0], "material-recovered", "Variables"
     )
-    dm_temp.rename_col("residential", "floor-area", "Categories1")
+    # dm_temp.rename_col("residential", "floor-area", "Categories1")
     dm_rec.append(dm_temp, "Categories1")
 
     # packaging
@@ -1127,6 +1163,14 @@ def end_of_life(
     # extra waste = quantity * (1 - param)
     # -> extra waste = recovered / param * (1 - param)
     dm_param = dm_matrec.copy()
+    dm_param.rename_col(["floor-area"], ["residential"], "Categories1")
+    dm_param.add(
+        dm_param.filter({"Categories1": ["residential"]}).array,
+        "Categories1",
+        "non-residential",
+        unit="%",
+    )
+    dm_param.sort("Categories1")
     dm_extra_wst = dm_rec_corrected.copy()
     dm_extra_wst.array = dm_rec_corrected.array / dm_param.array * (1 - dm_param.array)
 

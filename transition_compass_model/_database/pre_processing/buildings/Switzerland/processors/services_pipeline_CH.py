@@ -623,11 +623,65 @@ def run(country_list, years_ots):
     linear_fitting(dm_tot_demand, years_ots, based_on=create_years_list(2000, 2010, 1))
     dm_tot_demand.array = np.maximum(dm_tot_demand.array, 0)
 
+    # Space-heating is computed by the physics model (floor_area × U-value × HDD_adj × 24).
+    # Drop it here so only elec, hot-water and lighting remain in the FXA.
+    dm_tot_demand.drop("Categories1", "space-heating")
+
     # dm_fuels_eud_cantons.flattest().datamatrix_plot({'Country': ['Switzerland']})
+
+    # Non-residential floor area from EP2050 Dienstleistung, distributed to cantons
+    # Result is 5D: Country × Years × Variables × Categories1[type] × Categories2[class]
+    dm_srv_floor_ch = fser.extract_services_floor_area_EP2050(this_dir, years_ots)
+
+    # Convert dm_tot_demand from total useful energy (TWh) to floor-area intensity (kWh/m²)
+    # using the national non-res floor area. Intensity is the same for all cantons because
+    # canton demand and canton floor area are both distributed proportionally to employees.
+    # Compute intensity from Switzerland only, then assign uniformly to all cantons.
+    # Dividing each canton's energy by Swiss floor area would give a canton-specific
+    # intensity that is proportionally smaller, causing double-discounting in the model
+    # (the model also multiplies by canton floor area which is already scaled by emp_share).
+    idx_dem = dm_tot_demand.idx
+    idx_ch = dm_tot_demand.col_labels["Country"].index("Switzerland")
+    for yr in dm_tot_demand.col_labels["Years"]:
+        if yr in dm_srv_floor_ch.idx:
+            floor_yr = dm_srv_floor_ch.array[0, dm_srv_floor_ch.idx[yr], 0, :, :].sum()
+            if floor_yr > 0:
+                ch_intensity = (
+                    dm_tot_demand.array[idx_ch, idx_dem[yr], 0, :] * 1e9 / floor_yr
+                )
+                dm_tot_demand.array[:, idx_dem[yr], 0, :] = ch_intensity
+    dm_tot_demand.units["bld_services_useful-energy"] = "kWh/m2"
+    dm_emp_srv = dm_employees_mapped.filter(
+        {"Categories1": ["services"]}, inplace=False
+    )
+    dm_emp_share = dm_emp_srv.normalise("Country", inplace=False)
+    # ch_arr shape: (n_years, n_vars, n_types, n_classes)
+    ch_arr = dm_srv_floor_ch.array[0]
+    arr_floors = []
+    for cntr in country_list:
+        if cntr == "Switzerland":
+            arr_floors.append(ch_arr)
+        else:
+            idx_c = dm_emp_share.idx[cntr]
+            # share shape: (n_years, 1, 1, 1) — broadcast over vars/types/classes
+            arr_share = dm_emp_share.array[idx_c, :, 0, 0][
+                :, np.newaxis, np.newaxis, np.newaxis
+            ]
+            arr_floors.append(ch_arr * arr_share)
+    # shape: (n_countries, n_years, n_vars, n_types, n_classes)
+    arr_combined = np.stack(arr_floors, axis=0)
+    dm_srv_floor = DataMatrix.based_on(
+        arr_combined,
+        dm_srv_floor_ch,
+        change={"Country": country_list},
+        units=dm_srv_floor_ch.units,
+    )
+
     DM = {
         "services_demand": dm_tot_demand.filter({"Country": country_list}),
         "services_tech-mix": dm_tech_mix.filter({"Country": country_list}),
         "services_efficiencies": dm_eff.filter({"Country": country_list}),
+        "services_floor-area": dm_srv_floor,
     }
 
     return DM

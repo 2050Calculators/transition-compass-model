@@ -267,6 +267,16 @@ def compute_stock_from_lifetime(dm_mode, dm_tech, var_names, years_setting):
     # dm_tech contains: the tech-share of the vehicle fleet (ots), the new vehicles (ots), the vehicle waste (ots),
     #   the lifetime (fts), the tech-share of the new vehicles (fts), the efficiency of new (fts) and of the fleet (ots)
 
+    # TODO: consider switching the waste calculation from the exact cohort lookback
+    #   waste(t) = new(t - lifetime)
+    # to the retirement-rate approximation
+    #   waste(t) = stock(t-1) / lifetime
+    # for all vehicle types globally. The cohort approach is more physically precise but
+    # propagates historical shocks (e.g. COVID near-zero aviation purchases in 2020-2021)
+    # forward exactly 'lifetime' years into the FTS, producing oscillations in new-vehicles
+    # (e.g. aviation: dip in 2045, spike in 2050). The retirement-rate approach gives
+    # smoother FTS series at the cost of losing cohort-level precision.
+
     # I need to do a for loop over the fts years (every year):
     #     - STEP0: fill_nans to have all the fts years
     #     - STEP1: compute waste(t) = new(t-lifetime) by tech

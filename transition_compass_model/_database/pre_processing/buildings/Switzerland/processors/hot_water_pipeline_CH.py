@@ -364,6 +364,11 @@ def run(country_list, years_ots):
     linear_fitting(dm_tech_mix_useful, years_ots)
     dm_tech_mix_useful.array = np.maximum(0, dm_tech_mix_useful.array)
     dm_tech_mix_useful.normalise("Categories1")
+    # Add coal and other-tech as zero categories to match EU HOTMAPS 9-technology structure.
+    # Both fuels are negligible for CH domestic hot water but must be present for pickle merging.
+    dm_tech_mix_useful.add(0.0, dummy=True, dim="Categories1", col_label="coal")
+    dm_tech_mix_useful.add(0.0, dummy=True, dim="Categories1", col_label="other-tech")
+    dm_tech_mix_useful.sort("Categories1")
 
     dm_add_missing_variables(
         dm_efficiencies, dict_all={"Country": cantons_en}, fill_nans=True
@@ -372,6 +377,11 @@ def run(country_list, years_ots):
     dm_efficiencies.rename_col(
         "bld_heating_efficiency", "bld_hot-water_efficiency", dim="Variables"
     )
+    # Add coal and other-tech to match EU 9-technology structure; negligible for CH hot water
+    dm_efficiencies.add(
+        0.6, dummy=True, dim="Categories1", col_label=["coal", "other-tech"]
+    )
+    dm_efficiencies.sort("Categories1")
 
     DM = {
         "hw-tech-mix": dm_tech_mix_useful.filter({"Country": country_list}),

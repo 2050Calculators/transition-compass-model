@@ -125,13 +125,20 @@ def bld_industry_interface(DM_floor, dm_appliances):
     dm_ele.add(np.nan, "Categories1", "phone", dummy=True)
     dm_ele.rename_col_regex("appliances", "electronics", "Variables")
 
+    dm_fa = DM_floor["floor-area"].copy()
+    if "floor-area-nonres" in DM_floor:
+        dm_nonres = DM_floor["floor-area-nonres"].copy()
+        dm_nonres.groupby(
+            {"non-residential": ".*"}, dim="Categories1", regex=True, inplace=True
+        )
+        dm_fa.append(dm_nonres, dim="Categories1")
+    dm_fa.sort("Categories1")
+
     DM_industry = {
-        "floor-area": DM_floor["floor-area"].copy(),
+        "floor-area": dm_fa,
         "domapp": dm_domapp,
         "electronics": dm_ele,
     }
-
-    # {'floor-area': DataMatrix with shape (1, 40, 4, 1), variables ['bld_floor-area_stock', 'bld_floor-area_waste', 'bld_floor-area_renovated', 'bld_floor-area_new'] and categories1 ['residential'], 'domapp': DataMatrix with shape (1, 40, 3, 5), variables ['bld_domapp_stock', 'bld_domapp_waste', 'bld_domapp_new'] and categories1 ['dishwasher', 'dryer', 'freezer', 'fridge', 'wmachine'], 'electronics': DataMatrix with shape (1, 40, 3, 3), variables ['bld_electronics_stock', 'bld_electronics_waste', 'bld_electronics_new'] and categories1 ['computer', 'phone', 'tv']}
 
     return DM_industry
 
@@ -230,6 +237,12 @@ def bld_TPE_interface(
     dm_tpe.append(dm_nonres_type.flattest(), dim="Variables")
     dm_tpe.append(dm_nonres_fuels.flattest(), dim="Variables")
     dm_tpe.append(DM_services["services_emissions"].flattest(), dim="Variables")
+    if "services_floor-area" in DM_services:
+        dm_srv_floor_tpe = DM_services["services_floor-area"].copy()
+        dm_srv_floor_tpe.change_unit(
+            "bld_floor-area_services", old_unit="m2", new_unit="Mm2", factor=1e-6
+        )
+        dm_tpe.append(dm_srv_floor_tpe.flattest(), dim="Variables")
 
     KPI = []
     yr = 2050
@@ -289,16 +302,20 @@ def bld_TPE_interface(
         .copy()
     )
     dm_hw_copy = dm_hw.copy()
-    dm_hw_copy.add(0, "Categories1", ["other-tech", "ambient-heat"], dummy=True)
+    for _cat in ["other-tech", "ambient-heat"]:
+        if _cat not in dm_hw_copy.col_labels["Categories1"]:
+            dm_hw_copy.add(0, "Categories1", [_cat], dummy=True)
     dm_energy_global.append(dm_hw_copy, dim="Variables")
     dmservices_flat = (
         DM_services["services_energy-consumption"]
-        .filter({"Categories1": ["hot-water", "space-heating"]})
+        .filter({"Categories1": ["hot-water"]})
         .flatten()
         .flatten()
     )
     dmservices_flat.deepen()
-    dmservices_flat.add(0, "Categories1", ["other-tech", "ambient-heat"], dummy=True)
+    for _cat in ["other-tech", "ambient-heat"]:
+        if _cat not in dmservices_flat.col_labels["Categories1"]:
+            dmservices_flat.add(0, "Categories1", [_cat], dummy=True)
     dm_energy_global.append(dmservices_flat, dim="Variables")
 
     # Create Categories1 dimension for appliances with heating technologies
@@ -317,7 +334,6 @@ def bld_TPE_interface(
         {
             "energy_consumption": [
                 "bld_services_energy-consumption_hot-water",
-                "bld_services_energy-consumption_space-heating",
                 "bld_energy-demand_heating",
                 "bld_hot-water_energy-demand",
                 "bld_appliances",

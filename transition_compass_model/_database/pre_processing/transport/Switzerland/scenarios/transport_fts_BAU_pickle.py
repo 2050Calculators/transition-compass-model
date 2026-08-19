@@ -158,6 +158,19 @@ def run(DM_transport_wo_aviation, country_list, years_ots, years_fts, DM_aviatio
     ].copy()
     linear_fitting(dm_utilisation, years_fts, based_on=create_years_list(2010, 2019, 1))
 
+    # Anchor FTS to 2023 OTS value to prevent a jump at the OTS/FTS boundary.
+    # linear_fitting uses the 2010-2019 trend, which can overshoot COVID-depressed 2023 actuals.
+    # Interpolate linearly from 2023 actual to the 2050 trend target for each country/mode.
+    idx_u = dm_utilisation.idx
+    yr_2050 = max(years_fts)
+    fracs = np.array([(yr - 2023) / (yr_2050 - 2023) for yr in years_fts])
+    val_2023 = dm_utilisation.array[:, idx_u[2023], :, :].copy()
+    val_2050 = dm_utilisation.array[:, idx_u[yr_2050], :, :].copy()
+    for i, yr in enumerate(years_fts):
+        dm_utilisation.array[:, idx_u[yr], :, :] = val_2023 + fracs[i] * (
+            val_2050 - val_2023
+        )
+
     DM_transport_wo_aviation["fts"]["passenger_utilization-rate"] = dict()
     for lev in range(4):
         DM_transport_wo_aviation["fts"]["passenger_utilization-rate"][lev + 1] = (

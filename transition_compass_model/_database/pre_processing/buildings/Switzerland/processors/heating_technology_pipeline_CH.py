@@ -327,6 +327,23 @@ def run(global_var, dm_all, country_list, years_ots):
     dm_heating_tech.sort("Categories3")
     dm_heating_tech.sort("Categories1")
 
+    # Proxy non-residential heating tech mix from multi-family-households.
+    # No type-specific data available in BFS API (px-x-0902010000_102) for non-residential.
+    # Multi-family-households used as proxy because non-res tech mix (especially district
+    # heating penetration and gas share) is closer to apartment blocks than detached houses.
+    # Source: assumption consistent with EP2050 data for CH non-residential sector
+    # (Prognos/TEP Energy/Infras, "Energieperspektiven 2050+", SFOE 2020, Fig. 4.2-4).
+    nonres_types = ["education", "health", "hotels", "offices", "other", "trade"]
+    idx_mfh = dm_heating_tech.idx["multi-family-households"]
+    for t in nonres_types:
+        dm_heating_tech.add(
+            dm_heating_tech.array[:, :, :, idx_mfh, :, :],
+            dim="Categories1",
+            col_label=t,
+            unit=dm_heating_tech.units.get("bld_heating-mix", ""),
+        )
+    dm_heating_tech.sort("Categories1")
+
     # Reconstruct heating-mix for new categories using archetypes for B and C
 
     # SECTION: Heating efficiency
