@@ -231,3 +231,4 @@ transition_compass_model/.vscode/launch.json
 # JSONs and ZIPs inside pre_processing
 transition_compass_model/_database/pre_processing/**/*.json
 transition_compass_model/_database/pre_processing/**/*.zip
+.vscode/launch.json
