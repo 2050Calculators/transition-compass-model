@@ -387,7 +387,6 @@ def run(dm_pop, DM_all, years_ots, years_fts):
     dm_hw_efficiency = DM_hotwater["hw-efficiency"]
     dm_add_missing_variables(dm_hw_efficiency, {"Years": years_fts}, fill_nans=False)
     dm_hw_tech_mix = DM_hotwater["hw-tech-mix"].copy()
-    dm_add_missing_variables(dm_hw_tech_mix, {"Years": years_fts}, fill_nans=False)
 
     DM_buildings["fxa"]["hot-water"] = {
         "hw-energy-demand": dm_hw_demand.copy(),
@@ -573,7 +572,7 @@ def run(dm_pop, DM_all, years_ots, years_fts):
 
     # SECTION: ots - heating-efficiency
     DM_buildings["ots"]["heating-efficiency"] = dm_heating_eff_cat.copy()
-    my_pickle_dump(DM_buildings, file)
+    my_pickle_dump(DM_buildings, file, refactoring_change=True)
     sort_pickle(file)
 
     # add_dummy_country_to_DM(DM_buildings, new_country='EU27', ref_country='Switzerland')

@@ -1122,7 +1122,6 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
 
 # CalculationLeaf FXA PROCESSING YIELD & MILK FEED FOOD RATIO---------------------------------------------------------------------------------------------
 def fxa_processing_yield(df_processing_yield_fxa, pivot_df_milk):
-
     # PROCESSING YIELD
     # Pivot df
     pivot_df = df_processing_yield_fxa.pivot_table(
@@ -2527,7 +2526,6 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
 def climate_smart_livestock_processing(
     df_feed_ration, df_liv_pop, df_cropland_density, list_countries
 ):
-
     # ----------------------------------------------------------------------------------------------------------------------
     # LIVESTOCK DENSITY & GRAZING INTENSITY ---------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -4009,7 +4007,6 @@ def climate_smart_livestock_processing(
 
 
 def ruminant_feed_processing(df_csl_feed):
-
     # Use df_csl_feed as a structural basis & Filter only one row
     df_ruminant_feed = df_csl_feed[df_csl_feed["Item"] == "Beer"].copy()
 
@@ -4070,13 +4067,13 @@ def ruminant_feed_processing(df_csl_feed):
 def feed_processing_lca():
     # Read excel sheets
     df_LCA_livestock = pd.read_excel(
-        "agriculture_feed_v2025.xlsx", sheet_name="data_LCA_livestock"
+        "data/agriculture_feed_v2025.xlsx", sheet_name="data_LCA_livestock"
     )
     df_LCA_feed = pd.read_excel(
-        "agriculture_feed_v2025.xlsx", sheet_name="data_LCA_feed"
+        "data/agriculture_feed_v2025.xlsx", sheet_name="data_LCA_feed"
     )
     df_LCA_feed_yield = pd.read_excel(
-        "agriculture_feed_v2025.xlsx", sheet_name="data_LCA_feed_yield"
+        "data/agriculture_feed_v2025.xlsx", sheet_name="data_LCA_feed_yield"
     )
 
     # Divide all columns by the output to obtain values for 1 kg output
@@ -4275,7 +4272,6 @@ def feed_processing_lca():
 
 
 def feed_ssr_processing(years_ots):
-
     # Read excel (Link https://www.bfs.admin.ch/bfs/fr/home/statistiques/agriculture-sylviculture/agriculture.assetdetail.36135273.html)
     df_feed = pd.read_excel("data/OFS_bilan-fourrager.xlsx", sheet_name="T7.2.3.1.6")
 
@@ -4368,7 +4364,6 @@ def feed_ssr_processing(years_ots):
 
 # CalculationLeaf CLIMATE SMART FORESTRY -------------------------------------------------------------------------------
 def climate_smart_forestry_processing():
-
     # ----------------------------------------------------------------------------------------------------------------------
     # INCREMENTAL GROWTH [m3/ha] -------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -4784,7 +4779,6 @@ def climate_smart_forestry_processing():
 
 # CalculationLeaf LAND MANAGEMENT --------------------------------------------------------------------------------------
 def land_management_processing(csf_managed):
-
     # ----------------------------------------------------------------------------------------------------------------------
     # LAND MATRIX & LAND MAN USE----------------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -5627,7 +5621,6 @@ def biomass_bioernergy_hierarchy_processing(df_csl_feed):
 
 # CalculationLeaf LIVESTOCK PROTEIN MEALS ------------------------------------------------------------------------------------
 def livestock_protein_meals_processing(df_csl_feed):
-
     # Using and formatting df_csl_feed as a structural basis for constant ots values across all countries
     df_protein_meals_all = df_csl_feed.copy()
     df_protein_meals_all = df_protein_meals_all.drop(columns=["Item", "Feed"])
@@ -7770,7 +7763,6 @@ def calibration_formatting(
     df_emissions_calibration,
     df_cropland_fao_calibration,
 ):
-
     # AGRICULTURE MODULE -----------------------------------------------------------------------------------------------
 
     # Concatenate dfs
@@ -7938,7 +7930,6 @@ def constant():
 
 
 def manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa):
-
     # N2O EMISSIONS -------------------------------------------------------------
     # Filter & Rename
     df_manure_n_fxa = df_manure_n_fxa[
@@ -8069,7 +8060,6 @@ def manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_
 
 # CalculationLeaf FXA FORMATTING
 def fxa_preprocessing():
-
     # Load FXA data
     df_fxa = pd.read_csv("../../data/csv/agriculture_fixed-assumptions.csv", sep=";")
 

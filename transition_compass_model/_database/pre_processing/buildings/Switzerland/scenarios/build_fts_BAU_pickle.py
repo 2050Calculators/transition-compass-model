@@ -270,8 +270,11 @@ def run(DM_buildings, country_list, years_fts):
     ###########################################
     #####    HOTWATER TECHNOLOGY MIX     #######
     ###########################################
-    dm_hotwater_cat = DM_buildings["fxa"]["hot-water"]["hw-tech-mix"].copy()
 
+    dm_hotwater_cat = DM_buildings["ots"]["heating-technology-fuel"][
+        "bld_hot-water-technology"
+    ].copy()
+    dm_hotwater_cat.add(np.nan, dim="Years", dummy=True, col_label=years_fts)
     dm_hotwater_cat = set_elec_to_zero(dm_hotwater_cat)
 
     # For hot water we do a linear extrapolation of the technology mix.
