@@ -14,9 +14,8 @@ from transition_compass_model.model.common.auxiliary_functions import (
 
 
 def define_variables_for_lever(DM_transport, lever: int):
-    dm_modal_share_lever = DM_transport["fts"]["passenger_modal-share"][lever].filter(
-        {"Country": ["Vaud"]}
-    )
+    dm_modal_share_lever = DM_transport["fts"]["passenger_modal-share"][lever]
+
     idx = dm_modal_share_lever.idx
     dm_modal_share_lever.array[idx["Vaud"], idx[2025] + 1 :, :, :] = (
         np.nan
@@ -50,10 +49,7 @@ def run(DM_transport, country_list, years_ots, years_fts):
     DM_fts = {"fts": dict()}
 
     # ======================  MODAL_SHARE  ========================================================
-    dm_modal_share_ots = DM_transport["ots"]["passenger_modal-share"].filter(
-        {"Country": ["Vaud"]}
-    )
-
+    dm_modal_share_ots = DM_transport["ots"]["passenger_modal-share"]
     cat_dict = {
         "TIM": ["LDV", "2W"],
         "TP": ["rail", "metrotram", "bus"],
@@ -255,12 +251,9 @@ def run(DM_transport, country_list, years_ots, years_fts):
     #  FIXME ! Level 4 is missing the LDV reduction in 2025 (should it be there?)
 
     # ======================  OCCUPANCY  ========================================================
-    dm_occupancy_2 = DM_transport["fts"]["passenger_occupancy"][2].filter(
-        {"Country": ["Vaud"]}
-    )
-    dm_occupancy_ots = DM_transport["ots"]["passenger_occupancy"].filter(
-        {"Country": ["Vaud"]}
-    )
+    dm_occupancy_2 = DM_transport["fts"]["passenger_occupancy"][2]
+
+    dm_occupancy_ots = DM_transport["ots"]["passenger_occupancy"]
 
     # Scénario PCV:
     idx = dm_occupancy_2.idx
@@ -277,15 +270,11 @@ def run(DM_transport, country_list, years_ots, years_fts):
 
     # ======================  NEW FUEL EFF  ========================================================
 
-    dm_new_eff_2 = DM_transport["fts"]["passenger_veh-efficiency_new"][2].filter(
-        {"Country": ["Vaud"]}
-    )
-    dm_new_eff_ots = DM_transport["ots"]["passenger_veh-efficiency_new"].filter(
-        {"Country": ["Vaud"]}
-    )
-    dm_new_eff_4 = DM_transport["fts"]["passenger_veh-efficiency_new"][4].filter(
-        {"Country": ["Vaud"]}
-    )
+    dm_new_eff_2 = DM_transport["fts"]["passenger_veh-efficiency_new"][2]
+
+    dm_new_eff_ots = DM_transport["ots"]["passenger_veh-efficiency_new"]
+
+    dm_new_eff_4 = DM_transport["fts"]["passenger_veh-efficiency_new"][4]
 
     # PCV: on prend les hypothèses d'amélioration ci dessous (source: canton de Vaud).
     reduction_2050_thermique = 1 - 0.39
@@ -424,9 +413,7 @@ def run(DM_transport, country_list, years_ots, years_fts):
 
     # ======================  NEW SALES VEHICLES  ========================================================
 
-    dm_new_tech_share_1 = DM_transport["fts"]["passenger_technology-share_new"][
-        1
-    ].filter({"Country": ["Vaud"]})
+    dm_new_tech_share_1 = DM_transport["fts"]["passenger_technology-share_new"][1]
     dm_new_tech_share_1 = wkf.compute_tech_share_for_buses(dm_new_tech_share_1)
     # dm_new
 
@@ -435,15 +422,9 @@ def run(DM_transport, country_list, years_ots, years_fts):
     ].array = dm_new_tech_share_1.array
     #
 
-    dm_new_tech_share_2 = DM_transport["fts"]["passenger_technology-share_new"][
-        2
-    ].filter({"Country": ["Vaud"]})
-    dm_new_tech_share_4 = DM_transport["fts"]["passenger_technology-share_new"][
-        4
-    ].filter({"Country": ["Vaud"]})
-    dm_new_tech_share_ots = DM_transport["ots"][
-        "passenger_technology-share_new"
-    ].filter({"Country": ["Vaud"]})
+    dm_new_tech_share_2 = DM_transport["fts"]["passenger_technology-share_new"][2]
+    dm_new_tech_share_4 = DM_transport["fts"]["passenger_technology-share_new"][4]
+    dm_new_tech_share_ots = DM_transport["ots"]["passenger_technology-share_new"]
 
     # PCV: ci dessous les valeurs fixées par le PCV pour 2035.
     prop_EV_PHEV_2035_PCV = 0.65
@@ -558,11 +539,11 @@ def run(DM_transport, country_list, years_ots, years_fts):
 
     # ======================  DEMANDE  ========================================================
 
-    dm_pkm_1 = DM_transport["fts"]["pkm"][1].filter({"Country": ["Vaud"]})
+    dm_pkm_1 = DM_transport["fts"]["pkm"][1]
 
-    dm_pkm_2 = DM_transport["fts"]["pkm"][2].filter({"Country": ["Vaud"]})
-    dm_pkm_4 = DM_transport["fts"]["pkm"][4].filter({"Country": ["Vaud"]})
-    dm_pkm_ots = DM_transport["ots"]["pkm"].filter({"Country": ["Vaud"]})
+    dm_pkm_2 = DM_transport["fts"]["pkm"][2]
+    dm_pkm_4 = DM_transport["fts"]["pkm"][4]
+    dm_pkm_ots = DM_transport["ots"]["pkm"]
 
     idx = dm_pkm_ots.idx
     demande_transport_2019 = dm_pkm_ots.array[idx["Vaud"], idx[2019], 0]
@@ -590,7 +571,7 @@ def run(DM_transport, country_list, years_ots, years_fts):
     dm_pkm_2 = dm_pkm_2.filter({"Years": years_fts})
 
     # SCENARIO STAT VAUD
-    dm_pkm_3 = DM_transport["fts"]["pkm"][3].filter({"Country": ["Vaud"]})
+    dm_pkm_3 = DM_transport["fts"]["pkm"][3]
     idx = dm_pkm_3.idx
     # Téléchargement de la population dans le futur
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
