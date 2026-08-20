@@ -387,7 +387,6 @@ def run(dm_pop, DM_all, years_ots, years_fts):
     dm_hw_efficiency = DM_hotwater["hw-efficiency"]
     dm_add_missing_variables(dm_hw_efficiency, {"Years": years_fts}, fill_nans=False)
     dm_hw_tech_mix = DM_hotwater["hw-tech-mix"].copy()
-    dm_add_missing_variables(dm_hw_tech_mix, {"Years": years_fts}, fill_nans=False)
 
     DM_buildings["fxa"]["hot-water"] = {
         "hw-energy-demand": dm_hw_demand.copy(),
