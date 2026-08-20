@@ -572,7 +572,7 @@ def run(dm_pop, DM_all, years_ots, years_fts):
 
     # SECTION: ots - heating-efficiency
     DM_buildings["ots"]["heating-efficiency"] = dm_heating_eff_cat.copy()
-    my_pickle_dump(DM_buildings, file, refactoring_change=True)
+    my_pickle_dump(DM_buildings, file)
     sort_pickle(file)
 
     # add_dummy_country_to_DM(DM_buildings, new_country='EU27', ref_country='Switzerland')
