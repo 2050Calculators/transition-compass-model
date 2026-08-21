@@ -17,18 +17,18 @@ def comput_prop_in_cat(dm_ots, list_cat):
 
 def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list):
     def get_lev_data(
-        DM_transport: DataMatrix, lev_name="passenger_modal-share"
+        lev_name="passenger_modal-share", lev_number=3
     ) -> tuple[DataMatrix, list, DataMatrix, list]:
-        dm_ots = DM_transport["ots"][lev_name]
+        dm_ots = DM_transport["ots"][lev_name].copy()
         idx_ots = dm_ots.idx
 
-        dm_fts_3 = DM_transport["fts"][lev_name][3]
+        dm_fts_3 = DM_transport["fts"][lev_name][lev_number].copy()
         idx_fts = dm_fts_3.idx
         return dm_ots, idx_ots, dm_fts_3, idx_fts
 
     #### MODAL SHARE ####
     dm_ots_modal, idx_ots_modal, dm_fts_3_modal, idx_fts = get_lev_data(
-        DM_transport, lev_name="passenger_modal-share"
+        lev_name="passenger_modal-share"
     )
 
     dm_fts_3_modal
@@ -79,19 +79,51 @@ def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list
             idx_fts[key],
         ] = value
 
-    # dm_freight_modal_share_3.array[idx_freight["Vaud"], 1:-1, :, :] = np.nan
-
-    # dm_freight_modal_share_3.array[
-    #     idx_freight["Vaud"], idx_freight[2050], :, idx_freight["rail"]
-    # ] = (
-    #     dm_freight_ots.array[idx_ots["Vaud"], idx_ots[2023], :, idx_ots["rail"]]
-    #     * 1.45
-    #     * share_without_aviation
-    # )
-    #
     dm_fts_3_modal.fill_nans("Years")
     dm_fts_3_modal.normalise(dim="Categories1", inplace=True)
     DM_transport["fts"]["passenger_modal-share"][3] = dm_fts_3_modal
+
+    # TODO : do aviation
+
+    #### TECHNOLOGY SHARE ####
+    dm_tech_ots, idx_ots_tech, dm_tech_fts, idx_fts_tech = get_lev_data(
+        "passenger_technology-share_new"
+    )
+
+    # Objective of 0 diesel bus in 2050
+    dm_tech_fts.array[idx_fts_tech["Vaud"], 1:-1, :, idx_fts_tech["bus"], :] = np.nan
+    dm_tech_fts.array[
+        idx_fts_tech["Vaud"],
+        idx_fts_tech[2050],
+        0,
+        idx_fts_tech["bus"],
+        [idx_fts_tech["CEV"], idx_fts_tech["ICE-diesel"]],
+    ] = [1, 0]
+    dm_tech_fts.fill_nans("Years")
+
+    # Objectif initial de la comission européenne de 0 voiture diesel en 2035
+    diesel_cat = ["ICE-diesel", "ICE-gasoline", "ICE-gas"]
+    idx_diesel = []
+    for i in diesel_cat:
+        idx_diesel += [idx_fts_tech[i]]
+    dm_tech_fts.array[idx_fts_tech["Vaud"], 1:, :, idx_fts_tech["LDV"], idx_diesel] = (
+        np.nan
+    )
+    dm_tech_fts.array[
+        idx_fts_tech["Vaud"], idx_fts_tech[2035] :, 0, idx_fts_tech["LDV"], idx_diesel
+    ] = 0
+    dm_tech_fts.fill_nans("Years")
+    dm_tech_fts.normalise(dim="Categories2", inplace=True)
+
+    DM_transport["fts"]["passenger_technology-share_new"][3] = dm_tech_fts
+
+    # DM_transport["fts"]['passenger_technology-share_new'][2] = midpoint(
+    #     DM_transport["fts"]['passenger_technology-share_new'][1],
+    #     DM_transport["fts"]['passenger_technology-share_new'][4],
+    #     0.25
+    # )
+
+    ###
 
     ##### Save pickle #########
     this_dir = os.path.dirname(os.path.abspath(__file__))

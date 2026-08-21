@@ -209,7 +209,9 @@ def bld_TPE_interface(
     DM_energy, DM_area, DM_services, DM_appliances, DM_light, DM_hotwater
 ):
     dm_tpe = DM_energy["energy-emissions-by-class"].flattest()
-    dm_tpe.append(DM_energy["energy-demand-heating"].flattest(), dim="Variables")
+    dm_tpe.append(
+        DM_energy["energy-demand-heating"].flattest(), dim="Variables"
+    )  # both services and residential
     dm_tpe.append(DM_energy["energy-demand-cooling"].flattest(), dim="Variables")
     dm_tpe.append(DM_energy["emissions"].flattest(), dim="Variables")
     dm_tpe.append(DM_area["floor-area-cumulated"].flattest(), dim="Variables")
@@ -343,7 +345,17 @@ def bld_TPE_interface(
     )
 
     dm_tpe.append(dm_energy_comsumption_tot.flattest(), dim="Variables")
-    # dm_energy_comsumption_tot.change_unit("energy_consumption", factor=1e6, old_unit="TWh", new_unit="MWh")
+    # dm_energy_heating = dm_energy_global.groupby(
+    #         {
+    #             "energy_consumption": [
+    #                 "bld_services_energy-consumption_hot-water",
+    #                 "bld_energy-demand_heating",
+    #                 "bld_hot-water_energy-demand",
+    #             ]
+    #         },
+    #         dim="Variables",
+    #     )
+    # dm_energy_heating.change_unit("energy_consumption", factor=1e6, old_unit="TWh", new_unit="MWh")
 
     # A-C buildings buildings %
     dm_area = DM_area["floor-area-cat"].normalise("Categories1", inplace=False)

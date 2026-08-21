@@ -243,12 +243,11 @@ def run(DM_transport, country_list, years_ots, years_fts):
     dm_modal_share_3.normalise(dim="Categories1", inplace=True)
 
     DM_fts["fts"]["passenger_modal-share"] = {
-        2: dm_modal_share_2,
+        1: DM_transport["fts"]["passenger_modal-share"][1],
+        2: dm_modal_share_3,
         3: dm_modal_share_3,
         4: dm_modal_share_4,
     }
-
-    #  FIXME ! Level 4 is missing the LDV reduction in 2025 (should it be there?)
 
     # ======================  OCCUPANCY  ========================================================
     dm_occupancy_2 = DM_transport["fts"]["passenger_occupancy"][2]
@@ -267,7 +266,10 @@ def run(DM_transport, country_list, years_ots, years_fts):
     dm_occupancy_2.fill_nans(dim_to_interp="Years")
 
     DM_fts["fts"]["passenger_occupancy"] = {2: dm_occupancy_2, 4: dm_occupancy_2.copy()}
-
+    for i in [1, 3]:
+        DM_fts["fts"]["passenger_occupancy"][i] = DM_transport["fts"][
+            "passenger_occupancy"
+        ][i].copy()
     # ======================  NEW FUEL EFF  ========================================================
 
     dm_new_eff_2 = DM_transport["fts"]["passenger_veh-efficiency_new"][2]
@@ -319,7 +321,10 @@ def run(DM_transport, country_list, years_ots, years_fts):
 
     linear_fitting(dm_new_eff_2, dm_new_eff_2.col_labels["Years"])
 
-    DM_fts["fts"]["passenger_veh-efficiency_new"] = {2: dm_new_eff_2}
+    DM_transport["fts"]["passenger_veh-efficiency_new"][2] = dm_new_eff_2
+    DM_fts["fts"]["passenger_veh-efficiency_new"] = DM_transport["fts"][
+        "passenger_veh-efficiency_new"
+    ]
 
     # Scénario 4:
     # on applique la réduction de 2/3 pour 2025 et 2050 due à la réduction de la taille des véhicules.
@@ -532,8 +537,9 @@ def run(DM_transport, country_list, years_ots, years_fts):
         {"Years": dm_new_tech_share_4.col_labels["Years"]}
     )
     DM_fts["fts"]["passenger_technology-share_new"] = {
-        1: dm_new_tech_share_1,
-        2: dm_new_tech_share_2_PVC,
+        1: dm_new_tech_share_2_PVC,
+        2: dm_new_tech_share_1,  # Extropolation sur les années récentes donne une pente plus grande que ce que simon a calculé pour le PCV juste échange pour l'instant.
+        3: dm_new_tech_share_1,
         4: dm_new_tech_share_trend_4_fts,
     }
 

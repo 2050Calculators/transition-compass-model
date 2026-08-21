@@ -1217,7 +1217,8 @@ class DataMatrix:
     ):
         """Normalise the values of a datamatrix for a given variable, keeping the values of the fixed categories constant and adjusting the other categories accordingly.
         The function takes a datamatrix, a list of fixed categories, a starting year, and a variable name as input. It returns the modified datamatrix with the adjusted values.
-        Only for years where data is not nan
+        Only for years where data is not nan.
+        ! This function works only for 1 dimension of categories right now.
         """
         idx_fts = self.idx
         cat_labels = self.col_labels["Categories1"]
