@@ -265,8 +265,8 @@ def run(DM_transport, country_list, years_ots, years_fts):
     ] = 1.9
     dm_occupancy_2.fill_nans(dim_to_interp="Years")
 
-    DM_fts["fts"]["passenger_occupancy"] = {2: dm_occupancy_2, 4: dm_occupancy_2.copy()}
-    for i in [1, 3]:
+    DM_fts["fts"]["passenger_occupancy"] = {2: dm_occupancy_2}
+    for i in [1, 3, 4]:
         DM_fts["fts"]["passenger_occupancy"][i] = DM_transport["fts"][
             "passenger_occupancy"
         ][i].copy()

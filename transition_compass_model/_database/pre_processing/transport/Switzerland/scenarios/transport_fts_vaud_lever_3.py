@@ -115,15 +115,29 @@ def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list
     dm_tech_fts.fill_nans("Years")
     dm_tech_fts.normalise(dim="Categories2", inplace=True)
 
-    DM_transport["fts"]["passenger_technology-share_new"][3] = dm_tech_fts
-
     # DM_transport["fts"]['passenger_technology-share_new'][2] = midpoint(
     #     DM_transport["fts"]['passenger_technology-share_new'][1],
     #     DM_transport["fts"]['passenger_technology-share_new'][4],
     #     0.25
     # )
 
-    ###
+    ### CAR OCCUPANCY ####
+
+    dm_occ_ots, idx_ots_occ, dm_occ_fts, idx_fts_occ = get_lev_data(
+        "passenger_occupancy", lev_number=1
+    )
+    occ_rate = round(
+        dm_occ_fts.array[idx_fts_occ["Vaud"], idx_fts_occ[2050], 0, idx_fts_occ["LDV"]],
+        1,
+    )
+    for i in [2, 3, 4]:
+        occ_rate += 0.1
+        dm_occ_fts.array[idx_fts_occ["Vaud"], 1:, :, idx_fts_occ["LDV"]] = np.nan
+        dm_occ_fts.array[
+            idx_fts_occ["Vaud"], idx_fts_occ[2050], 0, idx_fts_occ["LDV"]
+        ] = occ_rate
+        dm_occ_fts.fill_nans("Years")
+        DM_transport["fts"]["passenger_occupancy"][i] = dm_occ_fts.copy()
 
     ##### Save pickle #########
     this_dir = os.path.dirname(os.path.abspath(__file__))
