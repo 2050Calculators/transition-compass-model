@@ -272,11 +272,11 @@ def run(DM_transport, country_list, years_ots, years_fts):
         ][i].copy()
     # ======================  NEW FUEL EFF  ========================================================
 
-    dm_new_eff_2 = DM_transport["fts"]["passenger_veh-efficiency_new"][2]
+    dm_new_eff_2 = DM_transport["fts"]["passenger_veh-efficiency_new"][2].copy()
 
-    dm_new_eff_ots = DM_transport["ots"]["passenger_veh-efficiency_new"]
+    dm_new_eff_ots = DM_transport["ots"]["passenger_veh-efficiency_new"].copy()
 
-    dm_new_eff_4 = DM_transport["fts"]["passenger_veh-efficiency_new"][4]
+    dm_new_eff_4 = DM_transport["fts"]["passenger_veh-efficiency_new"][4].copy()
 
     # PCV: on prend les hypothèses d'amélioration ci dessous (source: canton de Vaud).
     reduction_2050_thermique = 1 - 0.39
@@ -321,10 +321,10 @@ def run(DM_transport, country_list, years_ots, years_fts):
 
     linear_fitting(dm_new_eff_2, dm_new_eff_2.col_labels["Years"])
 
-    DM_transport["fts"]["passenger_veh-efficiency_new"][2] = dm_new_eff_2
     DM_fts["fts"]["passenger_veh-efficiency_new"] = DM_transport["fts"][
         "passenger_veh-efficiency_new"
     ]
+    DM_transport["fts"]["passenger_veh-efficiency_new"][2] = dm_new_eff_2
 
     # Scénario 4:
     # on applique la réduction de 2/3 pour 2025 et 2050 due à la réduction de la taille des véhicules.

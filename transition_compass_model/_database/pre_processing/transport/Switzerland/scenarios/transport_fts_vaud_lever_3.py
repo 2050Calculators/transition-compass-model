@@ -3,6 +3,7 @@ import os
 import numpy as np
 
 from transition_compass_model.model.common.auxiliary_functions import (
+    midpoint,
     my_pickle_dump,
 )
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
@@ -138,6 +139,17 @@ def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list
         ] = occ_rate
         dm_occ_fts.fill_nans("Years")
         DM_transport["fts"]["passenger_occupancy"][i] = dm_occ_fts.copy()
+
+    #### VEHICLE EFFICIENCY ####
+    dic_dm_eff_fts = {}
+    dic_idx_eff_fts = {}
+    for lev_number in [2, 4]:
+        _, _, dic_dm_eff_fts[lev_number], dic_idx_eff_fts = get_lev_data(
+            "passenger_veh-efficiency_new", lev_number=lev_number
+        )
+    DM_transport["fts"]["passenger_veh-efficiency_new"][3] = midpoint(
+        dic_dm_eff_fts[2], dic_dm_eff_fts[4], 0.5
+    )
 
     ##### Save pickle #########
     this_dir = os.path.dirname(os.path.abspath(__file__))
