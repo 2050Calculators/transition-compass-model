@@ -9,39 +9,36 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def run(DM_transport: DataMatrix, country_list, years_ots, years_fts):
-    # TODO : see why only 2 and 3 levers
-    # MO- : favoriser les bus électriques
-
     dm_freight_ots = DM_transport["ots"]["freight_modal-share"]
     idx_ots = dm_freight_ots.idx
 
-    dm_freight_modal_share_3 = DM_transport["fts"]["freight_modal-share"][3]
-    idx_freight = dm_freight_modal_share_3.idx
+    dm_freight_modal_share_2 = DM_transport["fts"]["freight_modal-share"][2].copy()
+    idx_freight = dm_freight_modal_share_2.idx
 
     share_without_aviation = (
         1
-        - dm_freight_modal_share_3.array[
+        - dm_freight_modal_share_2.array[
             idx_freight["Vaud"], idx_freight[2050], :, idx_freight["aviation"]
         ]
     )
-    dm_freight_modal_share_3.array[idx_freight["Vaud"], 1:-1, :, :] = np.nan
+    dm_freight_modal_share_2.array[idx_freight["Vaud"], 1:-1, :, :] = np.nan
 
-    dm_freight_modal_share_3.array[
+    dm_freight_modal_share_2.array[
         idx_freight["Vaud"], idx_freight[2050], :, idx_freight["rail"]
     ] = (
         dm_freight_ots.array[idx_ots["Vaud"], idx_ots[2023], :, idx_ots["rail"]]
         * 1.45
         * share_without_aviation
     )
-    dm_freight_modal_share_3.normalise_non_fixed_values(
+    dm_freight_modal_share_2.normalise_non_fixed_values(
         ["rail"],
         idx_freight[2050],
         variable_name="tra_freight_modal-share",
     )
 
-    dm_freight_modal_share_3.fill_nans("Years")
-    dm_freight_modal_share_3.normalise(dim="Categories1", inplace=True)
-    DM_transport["fts"]["freight_modal-share"][4] = dm_freight_modal_share_3
+    dm_freight_modal_share_2.fill_nans("Years")
+    dm_freight_modal_share_2.normalise(dim="Categories1", inplace=True)
+    DM_transport["fts"]["freight_modal-share"][2] = dm_freight_modal_share_2
 
     # Réduction de la dmeande de transport
     tkm_ots = DM_transport["ots"]["freight_tkm"].copy()

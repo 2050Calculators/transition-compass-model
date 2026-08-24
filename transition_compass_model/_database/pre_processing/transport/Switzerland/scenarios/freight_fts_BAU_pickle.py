@@ -231,6 +231,7 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
 
     # ------------------------------------------------------------------
     # freight_tkm : linear OTS trend, all 4 levels identical
+    # https://www.are.admin.ch/fr/evolutions-relatives-au-transport-de-marchandises
     # TODO levels 2-4: Swiss ARE freight demand scenario projections
     # ------------------------------------------------------------------
     dm_tkm = DM_transport["ots"]["freight_tkm"].copy()
@@ -238,6 +239,10 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
     dm_tkm_fts = dm_tkm.filter({"Years": years_fts})
     DM_fts["fts"]["freight_tkm"] = {lev: dm_tkm_fts.copy() for lev in range(1, 5)}
 
+    ratio = (
+        dm_tkm.array[dm_tkm.idx["Vaud"], dm_tkm.idx[2050], 0]
+        / dm_tkm.array[dm_tkm.idx["Vaud"], dm_tkm.idx[2023], 0]
+    )
     # ------------------------------------------------------------------
     # freight_modal-share : flat continuation, all 4 levels identical
     # TODO levels 2-4: modal shift to rail (BAV/NEAT targets)

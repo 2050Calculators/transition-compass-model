@@ -16,20 +16,21 @@ def comput_prop_in_cat(dm_ots, list_cat):
     return share_road_TP, idx_road_TP
 
 
-def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list):
-    def get_lev_data(
-        lev_name="passenger_modal-share", lev_number=3
-    ) -> tuple[DataMatrix, list, DataMatrix, list]:
-        dm_ots = DM_transport["ots"][lev_name].copy()
-        idx_ots = dm_ots.idx
+def get_lev_data(
+    DM_transport, lev_name="passenger_modal-share", lev_number=3
+) -> tuple[DataMatrix, list, DataMatrix, list]:
+    dm_ots = DM_transport["ots"][lev_name].copy()
+    idx_ots = dm_ots.idx
 
-        dm_fts_3 = DM_transport["fts"][lev_name][lev_number].copy()
-        idx_fts = dm_fts_3.idx
-        return dm_ots, idx_ots, dm_fts_3, idx_fts
+    dm_fts_3 = DM_transport["fts"][lev_name][lev_number].copy()
+    idx_fts = dm_fts_3.idx
+    return dm_ots, idx_ots, dm_fts_3, idx_fts
 
+
+def implement_modal_share_fts(DM_transport):
     #### MODAL SHARE ####
     dm_ots_modal, idx_ots_modal, dm_fts_3_modal, idx_fts = get_lev_data(
-        lev_name="passenger_modal-share"
+        DM_transport, lev_name="passenger_modal-share"
     )
 
     dm_fts_3_modal
@@ -83,12 +84,12 @@ def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list
     dm_fts_3_modal.fill_nans("Years")
     dm_fts_3_modal.normalise(dim="Categories1", inplace=True)
     DM_transport["fts"]["passenger_modal-share"][3] = dm_fts_3_modal
+    return DM_transport
 
-    # TODO : do aviation
 
-    #### TECHNOLOGY SHARE ####
+def tech_share_fts(DM_transport):
     dm_tech_ots, idx_ots_tech, dm_tech_fts, idx_fts_tech = get_lev_data(
-        "passenger_technology-share_new"
+        DM_transport, lev_name="passenger_technology-share_new"
     )
 
     # Objective of 0 diesel bus in 2050
@@ -116,16 +117,13 @@ def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list
     dm_tech_fts.fill_nans("Years")
     dm_tech_fts.normalise(dim="Categories2", inplace=True)
 
-    # DM_transport["fts"]['passenger_technology-share_new'][2] = midpoint(
-    #     DM_transport["fts"]['passenger_technology-share_new'][1],
-    #     DM_transport["fts"]['passenger_technology-share_new'][4],
-    #     0.25
-    # )
+    DM_transport["fts"]["passenger_technology-share_new"][3] = dm_tech_fts
+    return DM_transport
 
-    ### CAR OCCUPANCY ####
 
+def occupancy_fts(DM_transport):
     dm_occ_ots, idx_ots_occ, dm_occ_fts, idx_fts_occ = get_lev_data(
-        "passenger_occupancy", lev_number=1
+        DM_transport, "passenger_occupancy", lev_number=1
     )
     occ_rate = round(
         dm_occ_fts.array[idx_fts_occ["Vaud"], idx_fts_occ[2050], 0, idx_fts_occ["LDV"]],
@@ -139,17 +137,54 @@ def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list
         ] = occ_rate
         dm_occ_fts.fill_nans("Years")
         DM_transport["fts"]["passenger_occupancy"][i] = dm_occ_fts.copy()
+    return DM_transport
 
-    #### VEHICLE EFFICIENCY ####
+
+def efficiency_fts(DM_transport):
+    # Take the average of lever 2 and 4 to get lever 3
     dic_dm_eff_fts = {}
-    dic_idx_eff_fts = {}
     for lev_number in [2, 4]:
-        _, _, dic_dm_eff_fts[lev_number], dic_idx_eff_fts = get_lev_data(
-            "passenger_veh-efficiency_new", lev_number=lev_number
+        _, _, dic_dm_eff_fts[lev_number], _ = get_lev_data(
+            DM_transport, "passenger_veh-efficiency_new", lev_number=lev_number
         )
     DM_transport["fts"]["passenger_veh-efficiency_new"][3] = midpoint(
         dic_dm_eff_fts[2], dic_dm_eff_fts[4], 0.5
     )
+    return DM_transport
+
+
+def freight_demand_fts(DM_transport):
+    dic_dm_freight_fts = {}
+    for lev_number in [1, 4]:
+        _, _, dic_dm_freight_fts[lev_number], _ = get_lev_data(
+            DM_transport, "freight_tkm", lev_number=lev_number
+        )
+    DM_transport["fts"]["freight_tkm"][2] = midpoint(
+        dic_dm_freight_fts[1], dic_dm_freight_fts[4], 0.25
+    )
+    DM_transport["fts"]["freight_tkm"][3] = midpoint(
+        dic_dm_freight_fts[1], dic_dm_freight_fts[4], 0.75
+    )
+
+    return DM_transport
+
+
+def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list):
+    ## Implement the modal share for Vaud
+    DM_transport = implement_modal_share_fts(DM_transport)
+
+    # TODO : do aviation
+    #### TECHNOLOGY SHARE ####
+    DM_transport = tech_share_fts(DM_transport)
+
+    ### CAR OCCUPANCY ####
+    DM_transport = occupancy_fts(DM_transport)
+
+    #### VEHICLE EFFICIENCY ####
+    DM_transport = efficiency_fts(DM_transport)
+
+    ### FReight demand ###
+    DM_transport = freight_demand_fts(DM_transport)
 
     ##### Save pickle #########
     this_dir = os.path.dirname(os.path.abspath(__file__))
