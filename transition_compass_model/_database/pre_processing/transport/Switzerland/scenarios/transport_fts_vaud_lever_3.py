@@ -169,6 +169,48 @@ def freight_demand_fts(DM_transport):
     return DM_transport
 
 
+def freight_modal_share_fts(DM_transport):
+    dic_dm_freight_fts = {}
+    dic_idx_fts = {}
+    dic_dm_freight_ots = {}
+    dic_idx_ots = {}
+    for lev_number in [1, 4]:
+        dm_ots, idx_ots, dic_dm_freight_fts[lev_number], dic_idx_fts[lev_number] = (
+            get_lev_data(DM_transport, "freight_modal-share", lev_number=lev_number)
+        )
+    dm_ots, idx_ots, dm_freight_fts, idx_fts = get_lev_data(
+        DM_transport, "freight_modal-share", lev_number=1
+    )
+
+    # The objectif are for terrestial transport only
+    share_without_aviation_2050 = (
+        1 - dm_freight_fts.array[idx_fts["Vaud"], idx_fts[2050], 0, idx_fts["aviation"]]
+    )
+
+    dm_copy = dm_freight_fts.copy()
+    for i, share in enumerate([0.6, 0.7]):
+        i += 3
+        dm_freight_fts = dm_copy.copy()
+
+        dm_freight_fts.array[idx_fts["Vaud"], 1:-1, :, :] = np.nan
+
+        dm_freight_fts.array[idx_fts["Vaud"], idx_fts[2050], :, idx_fts["rail"]] = (
+            share * share_without_aviation_2050
+        )
+
+        dm_freight_fts.normalise_non_fixed_values(
+            ["rail"],
+            idx_fts[2050],
+            variable_name="tra_freight_modal-share",
+        )
+
+        dm_freight_fts.fill_nans("Years")
+        dm_freight_fts.normalise(dim="Categories1", inplace=True)
+        DM_transport["fts"]["freight_modal-share"][i] = dm_freight_fts.copy()
+
+    return DM_transport
+
+
 def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list):
     ## Implement the modal share for Vaud
     DM_transport = implement_modal_share_fts(DM_transport)
@@ -183,9 +225,11 @@ def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list
     #### VEHICLE EFFICIENCY ####
     DM_transport = efficiency_fts(DM_transport)
 
-    ### FReight demand ###
+    ### Freight demand ###
     DM_transport = freight_demand_fts(DM_transport)
 
+    ### Freight modal share ###
+    DM_transport = freight_modal_share_fts(DM_transport)
     ##### Save pickle #########
     this_dir = os.path.dirname(os.path.abspath(__file__))
     pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")
