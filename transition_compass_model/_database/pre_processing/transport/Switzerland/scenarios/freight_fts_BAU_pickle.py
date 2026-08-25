@@ -231,8 +231,7 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
 
     # ------------------------------------------------------------------
     # freight_tkm : linear OTS trend, all 4 levels identical
-    # https://www.are.admin.ch/fr/evolutions-relatives-au-transport-de-marchandises
-    # TODO levels 2-4: Swiss ARE freight demand scenario projections
+    # level 4 in DLS and 2,3 midpoints
     # ------------------------------------------------------------------
     dm_tkm = DM_transport["ots"]["freight_tkm"].copy()
     linear_fitting(dm_tkm, years_fts, based_on=create_years_list(2010, 2023, 1))
@@ -244,12 +243,10 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
         / dm_tkm.array[dm_tkm.idx["Vaud"], dm_tkm.idx[2023], 0]
     )
     # ------------------------------------------------------------------
-    # freight_modal-share : flat continuation, all 4 levels identical
-    # TODO levels 2-4: modal shift to rail (BAV/NEAT targets)
+    # freight_modal-share : linear extrapolation
+    # For train lever 2 is PCV, 3 and 4 are random values
     # ------------------------------------------------------------------
     dm_ms = DM_transport["ots"]["freight_modal-share"].copy()
-    # dm_ms.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
-    # dm_ms.fill_nans("Years")
     dm_ms = linear_fit_ratio(dm_ms, years_fts, years_range=[2010, 2023])
     dm_ms_fts = dm_ms.filter({"Years": years_fts})
     DM_fts["fts"]["freight_modal-share"] = {
@@ -261,8 +258,6 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
     # TODO levels 2-4: per-tech efficiency improvements (EP2050 ZERO-B)
     # ------------------------------------------------------------------
     dm_eff = DM_transport["ots"]["freight_vehicle-efficiency_new"].copy()
-    # dm_eff.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
-    # dm_eff.fill_nans("Years")
     linear_fitting(dm_eff, years_fts, based_on=create_years_list(2010, 2023, 1))
     dm_eff_fts = dm_eff.filter({"Years": years_fts})
     DM_fts["fts"]["freight_vehicle-efficiency_new"] = {

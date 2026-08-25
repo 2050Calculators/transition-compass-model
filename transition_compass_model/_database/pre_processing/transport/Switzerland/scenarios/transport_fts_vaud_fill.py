@@ -212,6 +212,18 @@ def freight_modal_share_fts(DM_transport):
 
 
 def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list):
+    """Fill missing data with example from other countries, midpoint, or estimated values
+
+    Args:
+        DM_transport (dict)
+        country_list (list)
+        years_ots (list)
+        years_fts (list)
+
+    Returns:
+        dict: DM_transport updated
+    """
+
     ## Implement the modal share for Vaud
     DM_transport = implement_modal_share_fts(DM_transport)
 
