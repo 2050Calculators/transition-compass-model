@@ -28,9 +28,15 @@ import openpyxl
 import pandas as pd
 from processors.freight_efficiency_tech_share import (
     _EP2050_PATH,
+    _HDVH_HDVM_EFF_RATIO,
     _HDVH_SEG,
     _HDVL_SEG,
     _HDVM_SEG,
+    _ROAD_EFF_RATIOS,
+    _fill,
+    _read_ep2050_energy,
+    _read_ep2050_fleet_frac,
+    _read_ep2050_vkm,
 )
 
 from transition_compass_model.model.common.auxiliary_functions import (
@@ -194,6 +200,38 @@ def _zerob_utilization_road(years_fts):
     }
 
 
+def _zerob_efficiency_road(years_fts):
+    """Return ZERO-B road efficiency by mode/tech aligned to years_fts.
+
+    Returns {mode: {tech: np.ndarray(len(years_fts))}}.
+    """
+    ep_energy = _read_ep2050_energy()
+    ep_vkm = _read_ep2050_vkm()
+    frac_hdvh = _read_ep2050_fleet_frac(years_fts)
+
+    hgv_diesel_energy = _fill(
+        ep_energy["HGV"].get("diesel", pd.Series(dtype=float)), years_fts
+    )
+    hgv_vkm = _fill(ep_vkm["HGV"], years_fts)
+    lcv_diesel_energy = _fill(
+        ep_energy["LCV"].get("diesel", pd.Series(dtype=float)), years_fts
+    )
+    lcv_vkm = _fill(ep_vkm["LCV"], years_fts)
+
+    hgv_avg_eff = np.where(hgv_vkm > 0, hgv_diesel_energy * 1000.0 / hgv_vkm, np.nan)
+    R = _HDVH_HDVM_EFF_RATIO
+    denom = frac_hdvh * R + (1 - frac_hdvh)
+    hdvm_eff = np.where(denom > 0, hgv_avg_eff / denom, np.nan)
+    hdvh_eff = R * hdvm_eff
+    hdvl_eff = np.where(lcv_vkm > 0, lcv_diesel_energy * 1000.0 / lcv_vkm, np.nan)
+
+    road_base_eff = {"HDVH": hdvh_eff, "HDVM": hdvm_eff, "HDVL": hdvl_eff}
+    return {
+        mode: {tech: base_eff * ratio for tech, ratio in _ROAD_EFF_RATIOS.items()}
+        for mode, base_eff in road_base_eff.items()
+    }
+
+
 # ---------------------------------------------------------------------------
 # Midpoint helper
 # ---------------------------------------------------------------------------
@@ -254,14 +292,37 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
     }
 
     # ------------------------------------------------------------------
-    # freight_vehicle-efficiency_new : flat continuation, all 4 levels identical
-    # TODO levels 2-4: per-tech efficiency improvements (EP2050 ZERO-B)
+    # freight_vehicle-efficiency_new
+    # Level 1  : flat continuation of OTS 2023
+    # Level 4  : ZERO-B efficiency for road modes (EP2050)
+    # Levels 2-3: midpoints
     # ------------------------------------------------------------------
-    dm_eff = DM_transport["ots"]["freight_vehicle-efficiency_new"].copy()
-    linear_fitting(dm_eff, years_fts, based_on=create_years_list(2010, 2023, 1))
-    dm_eff_fts = dm_eff.filter({"Years": years_fts})
+    dm_eff_ots = DM_transport["ots"]["freight_vehicle-efficiency_new"].copy()
+    dm_eff_lev1 = dm_eff_ots.copy()
+    dm_eff_lev1.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
+    dm_eff_lev1.fill_nans("Years")
+    dm_eff_lev1 = dm_eff_lev1.filter({"Years": years_fts})
+
+    zerob_eff = _zerob_efficiency_road(years_fts)
+    dm_eff_lev4 = dm_eff_lev1.copy()
+    idx = dm_eff_lev4.idx
+    for mode in _ROAD_MODES:
+        for tech, vals in zerob_eff[mode].items():
+            if tech in idx:
+                dm_eff_lev4.array[idx[ch], :, 0, idx[mode], idx[tech]] = vals
+        for country in all_countries:
+            if country != ch:
+                dm_eff_lev4.array[idx[country], :, 0, idx[mode], :] = dm_eff_lev4.array[
+                    idx[ch], :, 0, idx[mode], :
+                ]
+
+    dm_eff_lev2 = _midpoint(dm_eff_lev1, dm_eff_lev4, 1 / 3)
+    dm_eff_lev3 = _midpoint(dm_eff_lev1, dm_eff_lev4, 2 / 3)
     DM_fts["fts"]["freight_vehicle-efficiency_new"] = {
-        lev: dm_eff_fts.copy() for lev in range(1, 5)
+        1: dm_eff_lev1,
+        2: dm_eff_lev2,
+        3: dm_eff_lev3,
+        4: dm_eff_lev4,
     }
 
     # ------------------------------------------------------------------
