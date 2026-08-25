@@ -514,32 +514,6 @@ def compute_renov_fts_mapping(renov_distrib_fts: DataMatrix):
 
     idx = renov_distrib_fts.idx
 
-    # et the percentage of buildings renovated that are E or F
-    # renov_out_E = renov_distrib_fts.array[
-    # idx["Vaud"], :, idx["bld_renovation-redistribution-out"], idx["E"]
-    # ]
-    # renov_out_F = renov_distrib_fts.array[
-    # idx["Vaud"], :, idx["bld_renovation-redistribution-out"], idx["F"]
-    # ]
-
-    # renov_distrib_fts.array[
-    # idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["E"]
-    # ] = np.round(renov_out_F* ren_nb_class[1], 2)
-
-    # renov_distrib_fts.array[
-    # idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["D"]
-    # ] = np.round(renov_out_F * ren_nb_class[2] +renov_out_E * ren_nb_class[1], 2)
-
-    # renov_distrib_fts.array[
-    # idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["C"]
-    # ] = np.round(renov_out_F* ren_nb_class[3] + renov_out_E * ren_nb_class[2], 2)
-
-    # renov_distrib_fts.array[
-    # idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["B"]
-    # ] =  np.round(
-    # renov_out_F * ren_nb_class[4] + renov_out_E* ren_nb_class[3] +renov_out_E * ren_nb_class[4], 2
-    # )
-
     # Set renovation to 0 for class E and transfer all renovation to class D
     renov_distrib_fts.array[
         idx["Vaud"], :, idx["bld_renovation-redistribution-in"], idx["D"]
@@ -851,33 +825,6 @@ def run(
             lev
         ] = dm_heating_cat_fts_2.copy()
 
-    # Compute renovation rate loi energie_refuse
-    # dm_renovation = DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][2].copy()
-
-    # dm_stock_mix =  DM_buildings["fxa"]["bld_type"].copy()
-    # idx_mix = dm_stock_mix.idx
-    # renov_rate    =  dm_stock_mix.array[
-    #         idx_mix["Vaud"],
-    #         idx_mix[2023],
-    #         idx_mix["bld_building-mix_stock"],
-    #         :,
-    #         idx_mix["F"],
-    #     ]
-    # renov_rate = np.ones_like(renov_rate)
-    # #get the number of years to divide the rnovation rate by to apply it gradually between 2025 and 2040
-    # idx_renov =dm_renovation.idx
-    # yrs_renov = [yr for yr in dm_rr_fts_2.col_labels["Years"] if yr <= 2040]
-    # idx_years_renov = [idx_renov[yr] for yr in yrs_renov]
-    # E_renov = get_renov_rate_E(DM_buildings)
-    # dm_renovation.array[
-    #     idx_renov["Vaud"], idx_years_renov, idx_renov["bld_renovation-rate"], :
-    # ] = (
-    #     renov_rate / (yrs_renov[-1] - yrs_renov[0] + 1) )+ E_renov[0]
-
-    # DM_buildings["fts"]["building-renovation-rate"]["bld_renovation-rate"][4] = (
-    #     dm_renovation
-    # )
-
     ##### HOTWATER TECHNOLOGY MIX ######
 
     dm_hotwater_fts_2 = DM_buildings["fts"]["heating-technology-fuel"][
@@ -958,23 +905,6 @@ def run(
         DM_buildings["fts"]["heating-technology-fuel"]["bld_hot-water-technology"][
             lever
         ] = dm_hotwater_fts_2.copy()
-
-    ###### FLOOR AREA #####
-    dm_fts_floor_intensity = DM_buildings["fts"]["floor-intensity"][1].copy()
-    idx = dm_fts_floor_intensity.idx
-    dm_fts_floor_intensity.array[
-        idx["Vaud"], 1:, idx["lfs_floor-intensity_space-cap"]
-    ] = np.nan
-    dm_fts_floor_intensity.array[
-        idx["Vaud"], idx[2050], idx["lfs_floor-intensity_space-cap"]
-    ] = (
-        dm_fts_floor_intensity.array[
-            idx["Vaud"], idx[2025], idx["lfs_floor-intensity_space-cap"]
-        ]
-        - 23.9
-    )
-    dm_fts_floor_intensity.fill_nans("Years")
-    DM_buildings["fts"]["floor-intensity"][4] = dm_fts_floor_intensity
 
     this_dir = os.path.dirname(os.path.abspath(__file__))
     # !FIXME: use the actual values and not the calibration factor
