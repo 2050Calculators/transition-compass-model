@@ -12,6 +12,8 @@ tra_freight_vehicle-efficiency_new : MJ/km
         and a fixed HDVH/HDVM efficiency ratio (_HDVH_HDVM_EFF_RATIO = 1.38) reflecting
         the heavier payload of articulated vs rigid trucks.
         #TODO change for a separation by weight instead of arrticulated/rigid https://publications.jrc.ec.europa.eu/repository/handle/JRC138593
+        #emission factors per weight are here https://www.eea.europa.eu/en/analysis/publications/emep-eea-guidebook-2023?activeTab=13e424cd-5934-4614-92ef-e6be8d05c441
+        in 1.A.b.iv Road Transport Appendix 4 Emission Factors 2025
         Other technologies: ICE-diesel × fixed ratio from physics/literature.
 
     Non-road (rail, IWW, marine, aviation): fixed literature constants.
