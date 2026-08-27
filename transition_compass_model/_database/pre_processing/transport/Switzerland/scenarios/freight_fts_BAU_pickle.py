@@ -36,6 +36,8 @@ from processors.freight_efficiency_tech_share import (
     _read_ep2050_energy,
     _read_ep2050_fleet_frac,
     _read_ep2050_vkm,
+    compute_efficiency,
+    compute_hdvm_hdvh_efficiency,
 )
 
 from transition_compass_model.model.common.auxiliary_functions import (
@@ -199,32 +201,33 @@ def _zerob_utilization_road(years_fts):
     }
 
 
-def _zerob_efficiency_road(years_fts):
+def _zerob_efficiency_road(dm_eff_fts, years_fts):
     """Return ZERO-B road efficiency by mode/tech aligned to years_fts.
 
     Returns {mode: {tech: np.ndarray(len(years_fts))}}.
     """
-    ep_energy = _read_ep2050_energy()
-    ep_vkm = _read_ep2050_vkm()
+    ep_energy = _read_ep2050_energy(scenario="ZERO-B")
+    ep_vkm = _read_ep2050_vkm(scenario="ZERO-B")
     frac_hdvh = _read_ep2050_fleet_frac(years_fts)
 
-    hgv_diesel_energy = ep_energy.loc[
-        (ep_energy["Fahrzeugart"] == "HGV") & (ep_energy["Treibstoff"] == "diesel"),
-        years_fts,
-    ].values
+    # efficiency(MJ/km) = energy(PJ) × 1000 / VKM(Mkm)
+    def get_energy_fts(mode, tech):
+        return ep_energy.loc[
+            (ep_energy["Fahrzeugart"] == mode) & (ep_energy["Treibstoff"] == tech),
+            years_fts,
+        ].values
 
-    hgv_vkm = ep_vkm.loc[
-        (ep_vkm["VehCat"] == "HGV") & (ep_vkm["Technology"] == "diesel"), years_fts
-    ].values
+    def get_vkm_fts(mode, tech):
+        return ep_vkm.loc[
+            (ep_vkm["VehCat"] == mode) & (ep_vkm["Technology"] == tech),
+            years_fts,
+        ].values
 
-    lcv_diesel_energy = ep_energy.loc[
-        (ep_energy["Fahrzeugart"] == "LCV") & (ep_energy["Treibstoff"] == "diesel"),
-        years_fts,
-    ].values
+    hgv_diesel_energy = get_energy_fts("HGV", "ICE-diesel")
+    lcv_diesel_energy = get_energy_fts("LCV", "ICE-diesel")
 
-    lcv_vkm = ep_vkm.loc[
-        (ep_vkm["VehCat"] == "LCV") & (ep_vkm["Technology"] == "diesel"), years_fts
-    ].values
+    hgv_vkm = get_vkm_fts("HGV", "ICE-diesel")
+    lcv_vkm = get_vkm_fts("LCV", "ICE-diesel")
 
     hgv_avg_eff = np.where(hgv_vkm > 0, hgv_diesel_energy * 1000.0 / hgv_vkm, np.nan)
     R = _HDVH_HDVM_EFF_RATIO
@@ -232,12 +235,44 @@ def _zerob_efficiency_road(years_fts):
     hdvm_eff = np.where(denom > 0, hgv_avg_eff / denom, np.nan)
     hdvh_eff = R * hdvm_eff
     hdvl_eff = np.where(lcv_vkm > 0, lcv_diesel_energy * 1000.0 / lcv_vkm, np.nan)
-
     road_base_eff = {"HDVH": hdvh_eff, "HDVM": hdvm_eff, "HDVL": hdvl_eff}
-    return {
-        mode: {tech: base_eff * ratio for tech, ratio in _ROAD_EFF_RATIOS.items()}
-        for mode, base_eff in road_base_eff.items()
-    }
+
+    ch = "Switzerland"
+    idx_e = dm_eff_fts.idx
+    # --- Road modes: efficiency ---
+    for mode in _ROAD_MODES:
+        base_eff = road_base_eff[mode]
+        for tech, ratio in _ROAD_EFF_RATIOS.items():
+            if tech not in idx_e:
+                continue
+            if (tech in ep_energy["Treibstoff"].values) and (
+                tech in ep_vkm["Technology"]
+            ):
+                if mode == "HDVL":
+                    dm_eff_fts.array[idx_e[ch], :, 0, idx_e[mode], idx_e[tech]] = (
+                        compute_efficiency(
+                            get_vkm_fts("LCV", tech), get_energy_fts("LCV", tech)
+                        )
+                    )
+                elif mode == "HDVH":
+                    # Compute HDVH and HDVM in one row
+                    hdvm, hdvh = compute_hdvm_hdvh_efficiency(
+                        get_vkm_fts("HGV", tech),
+                        get_energy_fts("HGV", tech),
+                        frac_hdvh[tech],
+                    )
+                    dm_eff_fts.array[idx_e[ch], :, 0, idx_e["HDVH"], idx_e[tech]] = hdvh
+                    dm_eff_fts.array[idx_e[ch], :, 0, idx_e["HDVM"], idx_e[tech]] = hdvm
+
+            else:
+                dm_eff_fts.array[idx_e[ch], :, 0, idx_e[mode], idx_e[tech]] = (
+                    base_eff * ratio
+                )
+
+    for country in dm_eff_fts.col_labels["Country"]:
+        if country != ch:
+            dm_eff_fts.array[idx_e[country], ...] = dm_eff_fts.array[idx_e[ch], ...]
+    return dm_eff_fts
 
 
 # ---------------------------------------------------------------------------
@@ -310,27 +345,16 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
     dm_eff_lev1.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
     dm_eff_lev1.fill_nans("Years")
     dm_eff_lev1 = dm_eff_lev1.filter({"Years": years_fts})
+    dm_eff_lev4 = dm_eff_lev1.copy()
+    dm_eff_lev4 = _zerob_efficiency_road(dm_eff_lev4, years_fts)
 
-    # zerob_eff = _zerob_efficiency_road(years_fts)
-    # dm_eff_lev4 = dm_eff_lev1.copy()
-    # idx = dm_eff_lev4.idx
-    # for mode in _ROAD_MODES:
-    #     for tech, vals in zerob_eff[mode].items():
-    #         if tech in idx:
-    #             dm_eff_lev4.array[idx[ch], :, 0, idx[mode], idx[tech]] = vals
-    #     for country in all_countries:
-    #         if country != ch:
-    #             dm_eff_lev4.array[idx[country], :, 0, idx[mode], :] = dm_eff_lev4.array[
-    #                 idx[ch], :, 0, idx[mode], :
-    #             ]
-
-    # dm_eff_lev2 = _midpoint(dm_eff_lev1, dm_eff_lev4, 1 / 3)
-    # dm_eff_lev1dm_eff_lev3 = _midpoint(dm_eff_lev1, dm_eff_lev4, 2 / 3)
+    dm_eff_lev2 = _midpoint(dm_eff_lev1, dm_eff_lev4, 1 / 3)
+    dm_eff_lev3 = _midpoint(dm_eff_lev1, dm_eff_lev4, 2 / 3)
     DM_fts["fts"]["freight_vehicle-efficiency_new"] = {
         1: dm_eff_lev1,
-        2: dm_eff_lev1,
-        3: dm_eff_lev1,
-        4: dm_eff_lev1,
+        2: dm_eff_lev2,
+        3: dm_eff_lev3,
+        4: dm_eff_lev4,
     }
 
     # ------------------------------------------------------------------

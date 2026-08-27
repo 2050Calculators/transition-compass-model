@@ -272,7 +272,7 @@ EP2050_tech_to_model = {
 # ---------------------------------------------------------------------------
 # EP2050 readers
 # ---------------------------------------------------------------------------
-def _read_ep2050_energy() -> pd.DataFrame:
+def _read_ep2050_energy(scenario="ZERO-Basis") -> pd.DataFrame:
     """Read ZERO-Basis road-freight energy consumption from EP2050.
 
     The data covers light commercial vehicles (LCV) and heavy goods vehicles
@@ -289,17 +289,22 @@ def _read_ep2050_energy() -> pd.DataFrame:
         Fuel names are normalized to the model terminology, including
         ``ICE-gasoline`` for petrol and ``BEV`` for electricity.
     """
-
+    if scenario == "ZERO-Basis":
+        header_scenar = 19
+    elif scenario == "ZERO-B":
+        header_scenar = 89
     df = pd.read_excel(
-        _EP2050_PATH, sheet_name="04 Energieverbrauch Strasse", header=19
+        _EP2050_PATH, sheet_name="04 Energieverbrauch Strasse", header=header_scenar
     )
-    df_zero_basis_freight = df.iloc[7:17, 1:]
-    df_zero_basis_freight.replace(EP2050_tech_to_model, inplace=True)
 
-    return df_zero_basis_freight
+    # Only keep truck data
+    df_freight = df.iloc[7:17, 1:]
+    df_freight.replace(EP2050_tech_to_model, inplace=True)
+
+    return df_freight
 
 
-def _read_ep2050_vkm() -> pd.DataFrame:
+def _read_ep2050_vkm(scenario="ZERO-Basis") -> pd.DataFrame:
     """Read ZERO-Basis road traffic activity from EP2050.
 
     The data covers light commercial vehicles (LCV) and heavy goods vehicles
@@ -317,8 +322,14 @@ def _read_ep2050_vkm() -> pd.DataFrame:
         Source technology names are normalized to the model terminology,
         including ``ICE-gasoline`` for petrol and ``BEV`` for electricity.
     """
+    if scenario == "ZERO-Basis":
+        header_scenar = 19
+    elif scenario == "ZERO-B":
+        header_scenar = 105
+    else:
+        print("This scenario isn't found")
 
-    df = pd.read_excel(_EP2050_PATH, sheet_name="03 Fahrleistung", header=19)
+    df = pd.read_excel(_EP2050_PATH, sheet_name="03 Fahrleistung", header=header_scenar)
     # Get the vkm For the basis scenario  for LDV and HGV
     df_zero_basis_freight = df.iloc[9:22, 1:]
 
