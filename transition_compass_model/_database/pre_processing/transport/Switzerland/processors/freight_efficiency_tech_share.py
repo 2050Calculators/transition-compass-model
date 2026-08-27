@@ -11,6 +11,7 @@ tra_freight_vehicle-efficiency_new : MJ/km
         HDVH and HDVM are split from the HGV aggregate using fleet-proportion weighting
         and a fixed HDVH/HDVM efficiency ratio (_HDVH_HDVM_EFF_RATIO = 1.38) reflecting
         the heavier payload of articulated vs rigid trucks.
+        #TODO change for a separation by weight instead of arrticulated/rigid https://publications.jrc.ec.europa.eu/repository/handle/JRC138593
         Other technologies: ICE-diesel × fixed ratio from physics/literature.
 
     Non-road (rail, IWW, marine, aviation): fixed literature constants.
@@ -156,6 +157,57 @@ _HDVM_SEG = {
     "RigidTruck >7,5-12t EE": "CEV",
 }
 
+# Separation by weights
+
+# # EP2050 Neuzulassungen segment → model technology, for HDVH (TT/AT)
+# _HDVH_SEG = {
+#     "RigidTruck >12-14t": "ICE-diesel",
+#     "RigidTruck >14-20t": "ICE-diesel",
+#     "RigidTruck >20-26t": "ICE-diesel",
+#     "RigidTruck >26-28t": "ICE-diesel",
+#     "RigidTruck >28-32t": "ICE-diesel",
+#     "RigidTruck >32t": "ICE-diesel",
+#     "RigidTruck CNG >12t": "ICE-gas",
+#     "RigidTruck LNG >12t": "ICE-gas",
+#     "RigidTruck BEV >12t": "BEV",
+#     "RigidTruck PHEV >12t": "PHEV-diesel",
+#     "TT/AT >14-20t": "ICE-diesel",
+#     "TT/AT >20-28t": "ICE-diesel",
+#     "TT/AT >28-34t": "ICE-diesel",
+#     "TT/AT >34-40t": "ICE-diesel",
+#     "TT/AT >40-50t": "ICE-diesel",
+#     "TT/AT >50-60t": "ICE-diesel",
+#     "TT/AT >60t": "ICE-diesel",
+#     "TT/AT CNG": "ICE-gas",
+#     "TT/AT LNG": "ICE-gas",
+#     "TT/AT BEV": "BEV",
+#     "TT/AT PHEV": "PHEV-diesel",
+#     "TT/AT FCEV": "FCEV",
+#     "TT/AT <28t EE": "CEV",
+#     "TT/AT 28-34t EE": "CEV",
+#     "RigidTruck FCEV >12t": "FCEV",
+# }
+
+# _HDVM_SEG = {
+#     "RT petrol": "ICE-gasoline",
+#     "TT/AT <=7,5t": "ICE-diesel",
+#     "TT/AT >7,5-14t": "ICE-diesel",
+#     "RigidTruck <7,5t": "ICE-diesel",
+#     "RigidTruck 7,5-12t": "ICE-diesel",
+#     "RigidTruck CNG ≤7,5t": "ICE-gas",
+#     "RigidTruck CNG >7,5-12t": "ICE-gas",
+#     "RigidTruck LNG <=7.5t": "ICE-gas",
+#     "RigidTruck LNG  >7.5-12t": "ICE-gas",
+#     "RigidTruck BEV ≤7.5t": "BEV",
+#     "RigidTruck BEV >7.5-12t": "BEV",
+#     "RigidTruck PHEV <=7,5t": "PHEV-diesel",
+#     "RigidTruck PHEV >7,5-12t": "PHEV-diesel",
+#     "RigidTruck FCEV <=7,5t": "FCEV",
+#     "RigidTruck FCEV >7,5-12t": "FCEV",
+#     "RigidTruck <=7,5t EE": "CEV",
+#         "RigidTruck >7,5-12t EE": "CEV",
+# }
+
 # EP2050 Neuzulassungen segment → model technology, for HDVL (LCV)
 _HDVL_SEG = {
     "LCV petrol M+N1-I": "ICE-gasoline",
@@ -199,95 +251,142 @@ _EP2050_PATH = os.path.join(
 )
 
 
+EP2050_tech_to_model = {
+    "electricity": "BEV",
+    "CNG": "ICE-gas",
+    "LNG": "ICE-gas",
+    "bifuel CNG/petrol": "ICE-gas",
+    "petrol 2S": "ICE-gasoline",
+    "petrol 4S": "ICE-gasoline",
+    "petrol (4S)": "ICE-gasoline",
+    "petrol": "ICE-gasoline",
+    "bifuel LPG/petrol": "ICE-gasoline",
+    "flex-fuel E85": "ICE-gasoline",
+    "Plug-in Hybrid diesel/electric": "PHEV-diesel",
+    "Plug-in Hybrid petrol/electric": "PHEV-gasoline",
+    "FuelCell": "FCEV",
+    "diesel": "ICE-diesel",
+}
+
+
 # ---------------------------------------------------------------------------
 # EP2050 readers
 # ---------------------------------------------------------------------------
-def _read_ep2050_energy() -> dict:
-    """Return {veh_cat: {fuel: pd.Series(year→PJ)}} for HGV and LCV."""
-    wb = openpyxl.load_workbook(_EP2050_PATH, read_only=True, data_only=True)
-    ws = wb["04 Energieverbrauch Strasse"]
-    rows = list(ws.iter_rows(min_row=20, max_row=200, values_only=True))
-    header = rows[0]
-    years_ep = [int(v) for v in header[4:] if isinstance(v, (int, float))]
-    n = len(years_ep)
+def _read_ep2050_energy() -> pd.DataFrame:
+    """Read ZERO-Basis road-freight energy consumption from EP2050.
 
-    result = {"HGV": {}, "LCV": {}}
-    for r in rows[1:]:
-        if r[0] is not None and isinstance(r[0], str) and r[0].startswith("ZERO"):
-            break
-        cat = r[1]
-        if cat not in ("HGV", "LCV"):
-            continue
-        fuel = r[2]
-        vals = [v if isinstance(v, (int, float)) else 0.0 for v in r[4 : 4 + n]]
-        result[cat][fuel] = pd.Series(dict(zip(years_ep, vals)))
-    return result
+    The data covers light commercial vehicles (LCV) and heavy goods vehicles
+    (HGV), disaggregated by fuel or propulsion technology. Energy values are
+    expressed in petajoules (PJ) per year.
 
+    Returns:
+        pd.DataFrame : df containing:
 
-def _read_ep2050_vkm() -> dict:
-    """Return {cat: pd.Series(year→million_vkm)} for HGV and LCV."""
-    wb = openpyxl.load_workbook(_EP2050_PATH, read_only=True, data_only=True)
-    ws = wb["03 Fahrleistung"]
-    rows = list(ws.iter_rows(min_row=20, max_row=300, values_only=True))
-    header = rows[0]
-    years_ep = [int(v) for v in header[4:] if isinstance(v, (int, float))]
-    n = len(years_ep)
+        - ``Fahrzeugart``: vehicle category (``LCV`` or ``HGV``)
+        - ``Treibstoff``: fuel or propulsion technology
+        - year columns from 1990 to 2060: energy consumption in PJ
 
-    lcv = np.zeros(n)
-    hgv = np.zeros(n)
-    in_lcv = in_hgv = done_lcv = done_hgv = False
-    for r in rows[1:]:
-        if r[1] == "LCV" and not done_lcv:
-            lcv += np.array(
-                [v if isinstance(v, (int, float)) else 0.0 for v in r[4 : 4 + n]]
-            )
-            in_lcv = True
-        elif in_lcv and r[1] != "LCV":
-            done_lcv = True
-        if r[1] == "HGV" and not done_hgv:
-            hgv += np.array(
-                [v if isinstance(v, (int, float)) else 0.0 for v in r[4 : 4 + n]]
-            )
-            in_hgv = True
-        elif in_hgv and r[1] != "HGV":
-            done_hgv = True
-        if done_lcv and done_hgv:
-            break
-    return {
-        "HGV": pd.Series(dict(zip(years_ep, hgv))),
-        "LCV": pd.Series(dict(zip(years_ep, lcv))),
-    }
+        Fuel names are normalized to the model terminology, including
+        ``ICE-gasoline`` for petrol and ``BEV`` for electricity.
+    """
+
+    df = pd.read_excel(
+        _EP2050_PATH, sheet_name="04 Energieverbrauch Strasse", header=19
+    )
+    df_zero_basis_freight = df.iloc[7:17, 1:]
+    df_zero_basis_freight.replace(EP2050_tech_to_model, inplace=True)
+
+    return df_zero_basis_freight
 
 
-def _read_ep2050_fleet_frac(years_list: list) -> np.ndarray:
-    """Return HDVH fraction of HGV fleet (array aligned to years_list)."""
-    wb = openpyxl.load_workbook(_EP2050_PATH, read_only=True, data_only=True)
-    ws = wb["02 Flottenbestand"]
-    rows = list(ws.iter_rows(min_row=20, max_row=300, values_only=True))
-    header = rows[0]
-    years_ep = [int(v) for v in header[4:] if isinstance(v, (int, float))]
-    n = len(years_ep)
+def _read_ep2050_vkm() -> pd.DataFrame:
+    """Read ZERO-Basis road traffic activity from EP2050.
 
-    hdvh = np.zeros(n)
-    hdvm = np.zeros(n)
-    for r in rows[1:]:
-        if r[0] is not None and isinstance(r[0], str) and r[0].startswith("ZERO"):
-            break
-        if r[1] is None:
-            continue
-        vals = np.array(
-            [v if isinstance(v, (int, float)) else 0.0 for v in r[4 : 4 + n]]
-        )
-        if r[1].startswith("TT/AT"):
-            hdvh += vals
-        elif r[1].startswith("RigidTruck"):
-            hdvm += vals
+    The data covers light commercial vehicles (LCV) and heavy goods vehicles
+    (HGV), disaggregated by propulsion technology. Traffic activity is given
+    in million vehicle-kilometres (Mio Vehkm) per year for 1990–2060.
 
-    total = hdvh + hdvm
-    frac = np.where(total > 0, hdvh / total, 0.25)
-    raw = pd.Series(dict(zip(years_ep, frac)))
-    filled = raw.reindex(years_list, fill_value=np.nan).astype(float)
-    return filled.interpolate(method="index").bfill().ffill().values
+    Returns : pd.DataFrame
+        DataFrame containing:
+
+        - ``VehCat``: vehicle category (``LCV`` or ``HGV``)
+        - ``Technology``: fuel or propulsion technology
+        - ``Unit``: source unit (``Mio Vehkm``)
+        - year columns from 1990 to 2060: vehicle-kilometres in million km
+
+        Source technology names are normalized to the model terminology,
+        including ``ICE-gasoline`` for petrol and ``BEV`` for electricity.
+    """
+
+    df = pd.read_excel(_EP2050_PATH, sheet_name="03 Fahrleistung", header=19)
+    # Get the vkm For the basis scenario  for LDV and HGV
+    df_zero_basis_freight = df.iloc[9:22, 1:]
+
+    df_zero_basis_freight.replace(EP2050_tech_to_model, inplace=True)
+
+    df_zero_basis_freight = df_zero_basis_freight.groupby(
+        ["VehCat", "Technology", "Unit"], as_index=False
+    ).sum(numeric_only=True)
+
+    return df_zero_basis_freight
+
+
+def _read_ep2050_fleet_frac(years_list: list) -> dict:
+    """Read the HDVH share of the HGV fleet by technology from EP2050.
+
+    TT/AT (articulated truck) are classified  as HDVH and Rigid truck as HDVM.
+    This separation is made because articulated trucks (TT/AT) consume ~38 % more fuel/km than rigid trucks.
+    However the nomination should be changed.
+
+    Args:
+        years_list : list of int
+
+    Returns:
+        dict[str, np.ndarray] :  Mapping from model technology to an array aligned with ``years_list``.
+        Each value is the HDVH fraction of the corresponding technology's HGV
+        fleet. If no fleet data is available for a technology and year, a
+        fallback fraction of ``0.25`` is used.
+    """
+
+    df = pd.read_excel(_EP2050_PATH, sheet_name="02 Flottenbestand", header=19).iloc[
+        9:, 1:
+    ]
+    df["mode"] = np.select(
+        [
+            df["Segment"].isin(_HDVH_SEG),
+            df["Segment"].isin(_HDVM_SEG),
+        ],
+        [
+            "HDVH",
+            "HDVM",
+        ],
+        default=None,  # or None if you want unmatched segments to be empty
+    )
+
+    df = df.loc[df["mode"].notnull()]
+    df["tech"] = df["Segment"].map({**_HDVH_SEG, **_HDVM_SEG})
+
+    frac_per_tech = {}
+    for tech in df["tech"].unique():
+        df_frac = pd.DataFrame(columns=years_list)
+
+        df_frac.loc["HDVM", years_list] = df.loc[
+            (df["mode"] == "HDVM") & (df["tech"] == tech), years_list
+        ].sum()
+        df_frac.loc["HDVH", years_list] = df.loc[
+            (df["mode"] == "HDVH") & (df["tech"] == tech), years_list
+        ].sum()
+
+        df_frac.loc["total", :] = df_frac.sum()
+
+        total = df_frac.loc["total", years_list]
+
+        frac = (
+            df_frac.loc["HDVH", years_list] / total.where(total > 0, np.nan)
+        ).fillna(0.25)
+        frac_per_tech[tech] = frac.values
+
+    return frac_per_tech
 
 
 def _read_ep2050_tech_shares_road(years_ots: list) -> dict:
@@ -378,6 +477,22 @@ def _fill(raw: pd.Series, years: list) -> np.ndarray:
     return s.bfill().ffill().values
 
 
+def compute_efficiency(vkm, energy):
+    # efficiency(MJ/km) = energy(PJ) × 1000 / VKM(Mkm)
+    return np.where(vkm > 0, energy * 1000.0 / vkm, np.nan)
+
+
+def compute_hdvm_hdvh_efficiency(hgv_vkm, hgv_energy, frac_hdvh):
+    hgv_avg_eff = compute_efficiency(hgv_vkm, hgv_energy)
+
+    # Split HDVH / HDVM using size ratio
+    R = _HDVH_HDVM_EFF_RATIO
+    denom = frac_hdvh * R + (1 - frac_hdvh)
+    hdvm_eff = np.where(denom > 0, hgv_avg_eff / denom, np.nan)
+    hdvh_eff = R * hdvm_eff
+    return hdvm_eff, hdvh_eff
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -401,24 +516,34 @@ def run(years_ots: list, country_list: list) -> dict:
     # --- Load EP2050 data ---
     ep_energy = _read_ep2050_energy()
     ep_vkm = _read_ep2050_vkm()
+    # For now frac hdvh is the same for all type of vehicles maybe extrcat the ratio depending on the type.
     frac_hdvh = _read_ep2050_fleet_frac(years_ots)
     road_shares = _read_ep2050_tech_shares_road(years_ots)
 
     # --- ICE-diesel fleet-avg efficiency per road category (MJ/km) ---
     # efficiency(MJ/km) = energy(PJ) × 1000 / VKM(Mkm)
-    hgv_diesel_energy = _fill(
-        ep_energy["HGV"].get("diesel", pd.Series(dtype=float)), years_ots
-    )
-    hgv_vkm = _fill(ep_vkm["HGV"], years_ots)
-    lcv_diesel_energy = _fill(
-        ep_energy["LCV"].get("diesel", pd.Series(dtype=float)), years_ots
-    )
-    lcv_vkm = _fill(ep_vkm["LCV"], years_ots)
+    def get_energy_ots(mode, tech):
+        return ep_energy.loc[
+            (ep_energy["Fahrzeugart"] == mode) & (ep_energy["Treibstoff"] == tech),
+            years_ots,
+        ].values
+
+    def get_vkm_ots(mode, tech):
+        return ep_vkm.loc[
+            (ep_vkm["VehCat"] == mode) & (ep_vkm["Technology"] == tech),
+            years_ots[0] : years_ots[-1],
+        ].values
+
+    hgv_diesel_energy = get_energy_ots("HGV", "ICE-diesel")
+    lcv_diesel_energy = get_energy_ots("LCV", "ICE-diesel")
+
+    hgv_vkm = get_vkm_ots("HGV", "ICE-diesel")
+    lcv_vkm = get_vkm_ots("LCV", "ICE-diesel")
 
     hgv_avg_eff = np.where(hgv_vkm > 0, hgv_diesel_energy * 1000.0 / hgv_vkm, np.nan)
     # Split HDVH / HDVM using size ratio
     R = _HDVH_HDVM_EFF_RATIO
-    denom = frac_hdvh * R + (1 - frac_hdvh)
+    denom = frac_hdvh["ICE-diesel"] * R + (1 - frac_hdvh["ICE-diesel"])
     hdvm_eff = np.where(denom > 0, hgv_avg_eff / denom, np.nan)
     hdvh_eff = R * hdvm_eff
     hdvl_eff = np.where(lcv_vkm > 0, lcv_diesel_energy * 1000.0 / lcv_vkm, np.nan)
@@ -450,7 +575,27 @@ def run(years_ots: list, country_list: list) -> dict:
         for tech, ratio in _ROAD_EFF_RATIOS.items():
             if tech not in idx_e:
                 continue
-            dm_eff.array[idx_e[ch], :, 0, idx_e[mode], idx_e[tech]] = base_eff * ratio
+            if tech in ep_energy["Treibstoff"].values:
+                if mode == "HDVL":
+                    dm_eff.array[idx_e[ch], :, 0, idx_e[mode], idx_e[tech]] = (
+                        compute_efficiency(
+                            get_vkm_ots("LCV", tech), get_energy_ots("LCV", tech)
+                        )
+                    )
+                elif mode == "HDVH":
+                    # Compute HDVH and HDVM in one row
+                    hdvm, hdvh = compute_hdvm_hdvh_efficiency(
+                        get_vkm_ots("HGV", tech),
+                        get_energy_ots("HGV", tech),
+                        frac_hdvh[tech],
+                    )
+                    dm_eff.array[idx_e[ch], :, 0, idx_e["HDVH"], idx_e[tech]] = hdvh
+                    dm_eff.array[idx_e[ch], :, 0, idx_e["HDVM"], idx_e[tech]] = hdvm
+
+            else:
+                dm_eff.array[idx_e[ch], :, 0, idx_e[mode], idx_e[tech]] = (
+                    base_eff * ratio
+                )
 
     # --- Road modes: tech share ---
     for mode in _ROAD_MODES:

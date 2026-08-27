@@ -33,7 +33,6 @@ from processors.freight_efficiency_tech_share import (
     _HDVL_SEG,
     _HDVM_SEG,
     _ROAD_EFF_RATIOS,
-    _fill,
     _read_ep2050_energy,
     _read_ep2050_fleet_frac,
     _read_ep2050_vkm,
@@ -209,18 +208,27 @@ def _zerob_efficiency_road(years_fts):
     ep_vkm = _read_ep2050_vkm()
     frac_hdvh = _read_ep2050_fleet_frac(years_fts)
 
-    hgv_diesel_energy = _fill(
-        ep_energy["HGV"].get("diesel", pd.Series(dtype=float)), years_fts
-    )
-    hgv_vkm = _fill(ep_vkm["HGV"], years_fts)
-    lcv_diesel_energy = _fill(
-        ep_energy["LCV"].get("diesel", pd.Series(dtype=float)), years_fts
-    )
-    lcv_vkm = _fill(ep_vkm["LCV"], years_fts)
+    hgv_diesel_energy = ep_energy.loc[
+        (ep_energy["Fahrzeugart"] == "HGV") & (ep_energy["Treibstoff"] == "diesel"),
+        years_fts,
+    ].values
+
+    hgv_vkm = ep_vkm.loc[
+        (ep_vkm["VehCat"] == "HGV") & (ep_vkm["Technology"] == "diesel"), years_fts
+    ].values
+
+    lcv_diesel_energy = ep_energy.loc[
+        (ep_energy["Fahrzeugart"] == "LCV") & (ep_energy["Treibstoff"] == "diesel"),
+        years_fts,
+    ].values
+
+    lcv_vkm = ep_vkm.loc[
+        (ep_vkm["VehCat"] == "LCV") & (ep_vkm["Technology"] == "diesel"), years_fts
+    ].values
 
     hgv_avg_eff = np.where(hgv_vkm > 0, hgv_diesel_energy * 1000.0 / hgv_vkm, np.nan)
     R = _HDVH_HDVM_EFF_RATIO
-    denom = frac_hdvh * R + (1 - frac_hdvh)
+    denom = frac_hdvh["ICE-diesel"] * R + (1 - frac_hdvh["ICE-diesel"])
     hdvm_eff = np.where(denom > 0, hgv_avg_eff / denom, np.nan)
     hdvh_eff = R * hdvm_eff
     hdvl_eff = np.where(lcv_vkm > 0, lcv_diesel_energy * 1000.0 / lcv_vkm, np.nan)
@@ -303,26 +311,26 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
     dm_eff_lev1.fill_nans("Years")
     dm_eff_lev1 = dm_eff_lev1.filter({"Years": years_fts})
 
-    zerob_eff = _zerob_efficiency_road(years_fts)
-    dm_eff_lev4 = dm_eff_lev1.copy()
-    idx = dm_eff_lev4.idx
-    for mode in _ROAD_MODES:
-        for tech, vals in zerob_eff[mode].items():
-            if tech in idx:
-                dm_eff_lev4.array[idx[ch], :, 0, idx[mode], idx[tech]] = vals
-        for country in all_countries:
-            if country != ch:
-                dm_eff_lev4.array[idx[country], :, 0, idx[mode], :] = dm_eff_lev4.array[
-                    idx[ch], :, 0, idx[mode], :
-                ]
+    # zerob_eff = _zerob_efficiency_road(years_fts)
+    # dm_eff_lev4 = dm_eff_lev1.copy()
+    # idx = dm_eff_lev4.idx
+    # for mode in _ROAD_MODES:
+    #     for tech, vals in zerob_eff[mode].items():
+    #         if tech in idx:
+    #             dm_eff_lev4.array[idx[ch], :, 0, idx[mode], idx[tech]] = vals
+    #     for country in all_countries:
+    #         if country != ch:
+    #             dm_eff_lev4.array[idx[country], :, 0, idx[mode], :] = dm_eff_lev4.array[
+    #                 idx[ch], :, 0, idx[mode], :
+    #             ]
 
-    dm_eff_lev2 = _midpoint(dm_eff_lev1, dm_eff_lev4, 1 / 3)
-    dm_eff_lev3 = _midpoint(dm_eff_lev1, dm_eff_lev4, 2 / 3)
+    # dm_eff_lev2 = _midpoint(dm_eff_lev1, dm_eff_lev4, 1 / 3)
+    # dm_eff_lev1dm_eff_lev3 = _midpoint(dm_eff_lev1, dm_eff_lev4, 2 / 3)
     DM_fts["fts"]["freight_vehicle-efficiency_new"] = {
         1: dm_eff_lev1,
-        2: dm_eff_lev2,
-        3: dm_eff_lev3,
-        4: dm_eff_lev4,
+        2: dm_eff_lev1,
+        3: dm_eff_lev1,
+        4: dm_eff_lev1,
     }
 
     # ------------------------------------------------------------------
