@@ -311,7 +311,7 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
     DM_fts = {"fts": {}}
 
     # ------------------------------------------------------------------
-    # freight_tkm : linear OTS trend, all 4 levels identical
+    # freight_tkm : linear OTS trend
     # level 4 in DLS and 2,3 midpoints
     # ------------------------------------------------------------------
     dm_tkm = DM_transport["ots"]["freight_tkm"].copy()
@@ -336,15 +336,13 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
 
     # ------------------------------------------------------------------
     # freight_vehicle-efficiency_new
-    # Level 1  : flat continuation of OTS 2023
+    # Level 1  : linear OTS trend
     # Level 4  : ZERO-B efficiency for road modes (EP2050)
     # Levels 2-3: midpoints
     # ------------------------------------------------------------------
     dm_eff_ots = DM_transport["ots"]["freight_vehicle-efficiency_new"].copy()
-    dm_eff_lev1 = dm_eff_ots.copy()
-    dm_eff_lev1.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
-    dm_eff_lev1.fill_nans("Years")
-    dm_eff_lev1 = dm_eff_lev1.filter({"Years": years_fts})
+    linear_fitting(dm_eff_ots, years_fts, based_on=create_years_list(2010, 2023, 1))
+    dm_eff_lev1 = dm_eff_ots.filter({"Years": years_fts})
     dm_eff_lev4 = dm_eff_lev1.copy()
     dm_eff_lev4 = _zerob_efficiency_road(dm_eff_lev4, years_fts)
 
