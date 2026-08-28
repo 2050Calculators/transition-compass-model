@@ -12,6 +12,7 @@ from processors.renovation_pipeline_CH import run as renovation_run
 from processors.services_pipeline_CH import run as services_run
 from scenarios.build_fts_BAU_pickle import run as fts_bau_pickle_run
 from scenarios.build_fts_DLS import run as fts_Vaud_DLS_run
+from scenarios.build_fts_fill import run as fts_fill_run
 from scenarios.build_fts_floor_area_pickle import run as fts_floor_area_run
 from scenarios.build_fts_heating_efficiency_pickle import run as fts_efficiency_run
 from scenarios.build_fts_PCV_LVLEne_pickle import run as fts_PCV_run
@@ -105,6 +106,8 @@ DM_buildings = fts_Vaud_DLS_run(DM_buildings, lev=4)
 print("Compile Scenario technosolution  - Vaud - level 4")
 DM_buildings = fts_techno_run(DM_buildings, lev=4)
 
+print("Compile Scenario interpolation  - all scenarios")
+DM_buildings = fts_fill_run(DM_buildings)
 
 print("Add scenarios for heating efficiency (heat-pumps)")
 fts_efficiency_run(DM_buildings, years_fts)

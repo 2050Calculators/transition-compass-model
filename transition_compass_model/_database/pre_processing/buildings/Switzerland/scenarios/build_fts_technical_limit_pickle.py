@@ -5,7 +5,6 @@ import numpy as np
 from scenarios.build_fts_PCV_LVLEne_pickle import update_heating_change_proportion
 
 from transition_compass_model.model.common.auxiliary_functions import (
-    create_years_list,
     my_pickle_dump,
     sort_pickle,
 )
@@ -191,12 +190,9 @@ def run(DM_buildings, lev=4):
 
 if __name__ == "__main__":
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    # !FIXME: use the actual values and not the calibration factor
+
     file = os.path.join(this_dir, "../../../../data/datamatrix/buildings.pickle")
     with open(file, "rb") as handle:
         DM_buildings = pickle.load(handle)
 
-    years_ots = create_years_list(1990, 2023, 1)
-    years_fts = create_years_list(2025, 2050, 5)
-
-    run(DM_buildings, years_ots, years_fts)
+    run(DM_buildings, lev=4)
