@@ -240,7 +240,7 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     interface.add_link(from_sector="transport", to_sector="industry", dm=DM_industry)
     interface.add_link(from_sector="transport", to_sector="lca", dm=DM_industry)
 
-    write_pickle = True
+    write_pickle = False
     if write_pickle:
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(
