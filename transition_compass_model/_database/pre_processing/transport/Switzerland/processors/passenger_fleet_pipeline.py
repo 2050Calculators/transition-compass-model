@@ -37,12 +37,15 @@ def downscale_public_fleet_VD(dm_public_fleet, dm_pkm):
     return dm_public_fleet
 
 
-def compute_passenger_new_fleet(table_id_new_veh, file_new_veh_ots1, file_new_veh_ots2):
+def compute_passenger_new_fleet(
+    agency_new_veh, dataflow_new_veh, file_new_veh_ots1, file_new_veh_ots2
+):
     """
     Compute the new passenger fleet by technology for Switzerland and Vaud.
 
     Args:
-        table_id_new_veh (str): The ID of the table containing new vehicle data.
+        agency_new_veh (str): The Swiss Stats SDMX agency ID for the new vehicle registrations dataflow.
+        dataflow_new_veh (str): The Swiss Stats SDMX dataflow ID for the new vehicle registrations data.
         file_new_veh_ots1 (str): The path to the file containing new vehicle data for the first period.
         file_new_veh_ots2 (str): The path to the file containing new vehicle data for the second period.
 
@@ -75,6 +78,7 @@ def compute_passenger_new_fleet(table_id_new_veh, file_new_veh_ots1, file_new_ve
         dm_new_fleet_tech_ots1.normalise(
             dim="Categories2", inplace=True, keep_original=True
         )
+        dm_new_fleet_tech_ots1.sort("Country")
 
         if (
             dm_new_fleet_tech_ots1.col_labels["Categories1"]
@@ -108,7 +112,7 @@ def compute_passenger_new_fleet(table_id_new_veh, file_new_veh_ots1, file_new_ve
 
     # New fleet Switzerland + Vaud: 2005 - now (by technology)
     dm_new_fleet_tech_ots1 = get_data.get_new_fleet_by_tech_raw(
-        table_id_new_veh, file_new_veh_ots1
+        agency_new_veh, dataflow_new_veh, file_new_veh_ots1
     )
     # Passenger new fleet Switzerland + Vaud: 2005 - new (by technology)
     dm_pass_new_fleet_tech_ots1, dm_new_tech = (
@@ -155,13 +159,14 @@ def allocate_other_to_new_technologies(dm_fleet, dm_new_tech):
     dm_fleet_other.drop(dim="Categories2", col_label="Other")
 
     # Map fuel technology to transport module category
+    # ['Petrol: hybrid electric vehicle (HEV)', 'Diesel: hybrid electric vehicle (HEV)', 'Fuel cell electric vehicle (FCEV)', 'Gas (mono- and bi-fuel)', 'Plug-in hybrid electric vehicle (PHEV): diesel', 'Plug-in hybrid electric vehicle (PHEV): petrol']
     dict_tech = {
-        "FCEV": ["Hydrogen"],
-        "ICE-diesel": ["Diesel-electricity: conventional hybrid"],
-        "ICE-gasoline": ["Petrol-electricity: conventional hybrid"],
-        "PHEV-diesel": ["Diesel-electricity: plug-in hybrid"],
-        "PHEV-gasoline": ["Petrol-electricity: plug-in hybrid"],
-        "ICE-gas": ["Gas (monovalent and bivalent)"],
+        "FCEV": ["Fuel cell electric vehicle (FCEV)"],
+        "ICE-diesel": ["Diesel: hybrid electric vehicle (HEV)"],
+        "ICE-gasoline": ["Petrol: hybrid electric vehicle (HEV)"],
+        "PHEV-diesel": ["Plug-in hybrid electric vehicle (PHEV): diesel"],
+        "PHEV-gasoline": ["Plug-in hybrid electric vehicle (PHEV): petrol"],
+        "ICE-gas": ["Gas (mono- and bi-fuel)"],
     }
     dm_fleet_other.groupby(dict_tech, dim="Categories2", regex=False, inplace=True)
 
@@ -233,22 +238,27 @@ def run(dm_pkm, years_ots):
     this_dir = os.path.dirname(os.path.abspath(__file__))
 
     # SECTION New vehicle fleet and technology share LDV, 2W ots
-    # FIXME!: this data is not available anymore on Stat-Tab, meaning we cannot access cantons other than Vaud
-    # FIXME: In order to access other cantons check out: "New registrations of road vehicles by vehicle group and type"
-    # FIXME: on https://stats.swiss/vis?pg=0&snb=21&df[ds]=ds%3Adisseminate&df[id]=DF_IVS_0_GENERAL&df[ag]=CH1.MFZ_IVS&df[vs]=1.0.0&dq=_T._T.N.100%2B200%2B300%2B400%2B500%2B600%2B700%2B_T%2B000._T.A&lom=LASTNPERIODS&lo=6&to[TIME_PERIOD]=false&lc=en
     ##### NEW passenger fleet by technology LDV, 2W
-    # https://www.bfs.admin.ch/asset/en/px-x-1103020200_120
-    table_id_new_veh = "px-x-1103020200_120"
+    # Migrated from STAT-TAB (px-x-1103020200_120, no longer available for cantons other
+    # than Vaud) to the Swiss Stats SDMX API: "New registrations of road vehicles by
+    # vehicle group and type" (agency CH1.MFZ_IVS, dataflow DF_IVS_0_GENERAL)
+    agency_new_veh = "CH1.MFZ_IVS"
+    dataflow_new_veh = "DF_IVS_0_GENERAL"
     # file is created if it doesn't exist
-    file_new_veh_ots1 = os.path.join(this_dir, "../data/tra_new_fleet.pickle")
+    file_new_veh_ots1 = os.path.join(
+        this_dir, "../data/tra_new_fleet_swiss_stats.pickle"
+    )
     # download this from https://www.bfs.admin.ch/asset/en/30305446, download csv file FSO number gr-e-11.03.02.02.01a
     file_new_veh_ots2 = os.path.join(
         this_dir, "../data/tra_new-vehicles_CH_1990-2023.csv"
     )
+
     # dm_new_tech is the number of new vehicles for new technologies (used to allocate "Other" category in dm_pass_fleet
     dm_pass_new_fleet, dm_new_tech = compute_passenger_new_fleet(
-        table_id_new_veh, file_new_veh_ots1, file_new_veh_ots2
+        agency_new_veh, dataflow_new_veh, file_new_veh_ots1, file_new_veh_ots2
     )
+    dm_pass_new_fleet.filter({"Years": years_ots}, inplace=True)
+    dm_new_tech.filter({"Years": years_ots}, inplace=True)
 
     # SECTION Vehicle fleet and technology share LDV, 2W ots
     #### Passenger fleet by technology (stock) LDV, 2W
@@ -258,6 +268,8 @@ def run(dm_pkm, years_ots):
     dm_pass_fleet_raw = get_data.get_passenger_stock_fleet_by_tech_raw(
         table_id_tot_veh, file_tot_veh
     )
+    dm_pass_fleet_raw.filter({"Years": years_ots}, inplace=True)
+
     # Allocate "Other" category to new technologies
     dm_pass_fleet = allocate_other_to_new_technologies(dm_pass_fleet_raw, dm_new_tech)
 
@@ -270,14 +282,12 @@ def run(dm_pkm, years_ots):
     local_filename = os.path.join(this_dir, "../data/tra_public_transport.xlsx")
     DM_public = get_public_transport_data(file_url, local_filename, years_ots)
     dm_public_fleet = DM_public["public_fleet"].copy()
-
+    dm_public_fleet.filter({"Years": years_ots}, inplace=True)
     #### Passenger fleet by technology (stock) bus, rail, metrotram - Downscale to Vaud
     dm_public_fleet = downscale_public_fleet_VD(dm_public_fleet, dm_pkm)
 
-    dm_private_fleet = dm_pass_fleet.filter({"Years": years_ots})
-    dm_private_fleet.append(
-        dm_pass_new_fleet.filter({"Years": years_ots}), dim="Variables"
-    )
+    dm_private_fleet = dm_pass_fleet
+    dm_private_fleet.append(dm_pass_new_fleet, dim="Variables")
 
     return dm_private_fleet, dm_public_fleet
 

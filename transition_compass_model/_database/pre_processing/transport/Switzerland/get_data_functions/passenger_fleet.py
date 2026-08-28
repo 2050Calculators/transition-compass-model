@@ -8,6 +8,9 @@ import requests
 from transition_compass_model._database.pre_processing.api_routines_CH import (
     get_data_api_CH,
 )
+from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
+    get_data_api_swiss_stats,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     add_missing_ots_years,
     linear_fitting,
@@ -16,51 +19,60 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 #### New fleet Switzerland + Vaud: 2005 - now
-def get_new_fleet_by_tech_raw(table_id, file):
+def get_new_fleet_by_tech_raw(agency, dataflow, file):
     # New fleet data are heavy, download them only once
     try:
         with open(file, "rb") as handle:
             dm_new_fleet = pickle.load(handle)
     except OSError:
-        structure, title = get_data_api_CH(table_id, mode="example")
-        i = 0
-        for month in structure["Month"]:
-            i = i + 1
-            filtering = {
-                "Year": structure["Year"],
-                "Month": [month],
-                "Vehicle group / type": structure["Vehicle group / type"],
-                "Canton": ["Switzerland", "Vaud"],  # structure['Canton'],
-                "Fuel": structure["Fuel"],
-            }
+        structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
+        fuel_types = [f for f in structure["UV_RV_FUEL"] if f != "Total"]
 
-            mapping_dim = {
-                "Country": "Canton",
-                "Years": "Year",
-                "Variables": "Month",
-                "Categories1": "Vehicle group / type",
-                "Categories2": "Fuel",
-            }
+        filtering = {
+            "FREQ": "Annual",
+            "UV_RV_OWNER_TYPE": "Total",
+            "UV_RV_REGISTRATION_TYPE": "First registrations of new vehicles",
+            # FIXME: "Passenger vehicles" (buses/coaches/minibuses, SDMX code 200) is only
+            # included here to match the old STAT-TAB pipeline's regex-based ".*Passenger.*"
+            # grouping, which wrongly folded it into "LDV" alongside "Passenger cars" (code
+            # 100 - a sibling category, not a parent). Kept for a clean migration parity
+            # check against the old pipeline's output; drop it once parity is confirmed.
+            "UV_RV_VEHICLE_GROUP_AND_TYPE": [
+                "Passenger cars",
+                "Passenger vehicles",
+                "Motorcycles",
+            ],
+            "UV_RV_FUEL": fuel_types,
+            "UV_HGDE_KT": ["Total", "Vaud"],  # "Total" = all of Switzerland
+        }
 
-            # Extract new fleet
-            dm_new_fleet_month = get_data_api_CH(
-                table_id,
-                mode="extract",
-                filter=filtering,
-                mapping_dims=mapping_dim,
-                units=["number"],
-            )
-            if dm_new_fleet_month is None:
-                raise ValueError(f"API returned None for {month}")
-            if i == 1:
-                dm_new_fleet = dm_new_fleet_month.copy()
-            else:
-                dm_new_fleet.append(dm_new_fleet_month, dim="Variables")
+        mapping_dim = {
+            "Country": "UV_HGDE_KT",
+            "Years": "TIME_PERIOD",
+            "Variables": "UV_RV_REGISTRATION_TYPE",
+            "Categories1": "UV_RV_VEHICLE_GROUP_AND_TYPE",
+            "Categories2": "UV_RV_FUEL",
+        }
 
-            current_file_directory = os.path.dirname(os.path.abspath(__file__))
-            f = os.path.join(current_file_directory, file)
-            with open(f, "wb") as handle:
-                pickle.dump(dm_new_fleet, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        # Extract new fleet (already annual, unlike the old STAT-TAB source which was
+        # monthly-only and had to be summed across all 12 months to get yearly totals)
+        dm_new_fleet = get_data_api_swiss_stats(
+            agency,
+            dataflow,
+            mode="extract",
+            filter=filtering,
+            mapping_dims=mapping_dim,
+            units=["number"],
+        )
+        if dm_new_fleet is None:
+            raise ValueError(f"API returned None for {agency},{dataflow}")
+        dm_new_fleet.rename_col("Total", "Switzerland", dim="Country")
+        dm_new_fleet.sort("Years")
+
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(current_file_directory, file)
+        with open(f, "wb") as handle:
+            pickle.dump(dm_new_fleet, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return dm_new_fleet
 
@@ -72,51 +84,51 @@ def extract_passenger_new_fleet_by_tech(dm_new_fleet):
         {"tra_passenger_new-vehicles": ".*"}, dim="Variables", regex=True, inplace=True
     )
 
-    # Keep only passenger car main categories
-    main_cat = [cat for cat in dm_new_fleet.col_labels["Categories1"] if ">" in cat]
-    passenger_cat = [
-        cat for cat in main_cat if "Passenger" in cat or "Motorcycles" in cat
-    ]
-
-    # Filter for Passenger vehicles
-    dm_pass_new_fleet = dm_new_fleet.filter(
-        {"Categories1": passenger_cat}, inplace=False
-    )
+    # The raw data is already fetched filtered to just these vehicle-type categories
+    # (see get_new_fleet_by_tech_raw), so just rename them to the transport module's labels
+    dm_pass_new_fleet = dm_new_fleet.copy()
+    # FIXME: "Passenger vehicles" (buses/coaches/minibuses) should not count as LDV - see
+    # FIXME in get_new_fleet_by_tech_raw. Drop it from this list once migration parity
+    # against the old pipeline's output is confirmed.
     dm_pass_new_fleet.groupby(
-        {"LDV": ".*Passenger.*"}, dim="Categories1", regex=True, inplace=True
-    )
-    dm_pass_new_fleet.groupby(
-        {"2W": ".*Motorcycles.*"}, dim="Categories1", regex=True, inplace=True
+        {"LDV": ["Passenger cars", "Passenger vehicles"], "2W": ["Motorcycles"]},
+        dim="Categories1",
+        regex=False,
+        inplace=True,
     )
 
     # Filter new technologies
     # (this is needed to later allocate the vehicle fleet "Other" category to the new technologies)
     new_technologies = [
-        "Hydrogen",
-        "Diesel-electricity: conventional hybrid",
-        "Petrol-electricity: conventional hybrid",
-        "Petrol-electricity: plug-in hybrid",
-        "Diesel-electricity: plug-in hybrid",
-        "Gas (monovalent and bivalent)",
+        "Fuel cell electric vehicle (FCEV)",
+        "Diesel: hybrid electric vehicle (HEV)",
+        "Petrol: hybrid electric vehicle (HEV)",
+        "Plug-in hybrid electric vehicle (PHEV): petrol",
+        "Plug-in hybrid electric vehicle (PHEV): diesel",
+        "Gas (mono- and bi-fuel)",
     ]
     dm_new_tech = dm_pass_new_fleet.filter({"Categories2": new_technologies})
 
     # Map fuel technology to transport module category
     dict_tech = {
-        "FCEV": ["Hydrogen"],
-        "BEV": ["Electricity"],
-        "ICE-diesel": ["Diesel", "Diesel-electricity: conventional hybrid"],
-        "ICE-gasoline": ["Petrol", "Petrol-electricity: conventional hybrid"],
-        "PHEV-diesel": ["Diesel-electricity: plug-in hybrid"],
-        "PHEV-gasoline": ["Petrol-electricity: plug-in hybrid"],
-        "ICE-gas": ["Gas (monovalent and bivalent)"],
+        "FCEV": ["Fuel cell electric vehicle (FCEV)"],
+        "BEV": ["Battery electric vehicle (BEV)"],
+        "ICE-diesel": ["Diesel: conventional", "Diesel: hybrid electric vehicle (HEV)"],
+        "ICE-gasoline": [
+            "Petrol: conventional",
+            "Petrol: hybrid electric vehicle (HEV)",
+        ],
+        "PHEV-diesel": ["Plug-in hybrid electric vehicle (PHEV): diesel"],
+        "PHEV-gasoline": ["Plug-in hybrid electric vehicle (PHEV): petrol"],
+        "ICE-gas": ["Gas (mono- and bi-fuel)"],
     }
     dm_pass_new_fleet.groupby(dict_tech, dim="Categories2", regex=False, inplace=True)
-    dm_pass_new_fleet.drop(col_label="Without motor", dim="Categories2")
+    # Note: unlike the old STAT-TAB source, the new source has no data rows at all for
+    # "No motor" fuel under passenger cars/motorcycles, so there's nothing to drop here.
     # Check that other categories are only a small contribution
     dm_tmp = dm_pass_new_fleet.normalise(dim="Categories2", inplace=False)
     dm_tmp.filter({"Categories2": ["Other"]}, inplace=True)
-    # If Other and Without motor are more than 0.1% you should account for it
+    # If Other is more than 1% you should account for it
     if (dm_tmp.array > 0.01).any():
         raise ValueError(
             '"Other" category is greater than 1% of the fleet, it cannot be discarded'
