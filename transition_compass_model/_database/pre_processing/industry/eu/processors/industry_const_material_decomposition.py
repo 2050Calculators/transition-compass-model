@@ -175,12 +175,43 @@ def make_material_decomposition_dm(current_file_directory, lever_file):
         "bus_PHEV-gasoline",
         unit="t/num",
     )
+    # trains: diesel copy of CEV (same mass, no catenary)
     cdm_tra_veh.add(
         cdm_tra_veh.array[idx["trains_CEV"], :],
         "Variables",
         "trains_ICE-diesel",
         unit="t/num",
     )
+
+    # Override trains_CEV with a weighted average of passenger and freight EU-configs.
+    # CH OTS average: 57 new passenger EU-configs/yr, 45 freight EU-configs/yr
+    # (passenger EU-config = 6.2 BFS carriages ÷ 6.2; freight EU-config = 63.2 wagons ÷ 63.2).
+    # Passenger values: 310 t per config (steel 186, Al 46.5, other 65.1, chem 6.2, glass 3.1, Cu 3.1)
+    # Freight values: 2788 t per config from literature (steel 1801, Al 279, other 620, chem 84, Cu 4)
+    # Weighted average (w_pass=0.557, w_fre=0.443):
+    mat_labels = cdm_tra_veh.col_labels["Categories1"]
+    mat_idx_map = {m: i for i, m in enumerate(mat_labels)}
+    avg_arr = np.zeros(len(mat_labels))
+    avg_arr[mat_idx_map["steel"]] = 901.4  # 0.557×186 + 0.443×1801
+    avg_arr[mat_idx_map["aluminium"]] = 149.4  # 0.557×46.5 + 0.443×279
+    avg_arr[mat_idx_map["other"]] = 311.0  # 0.557×65.1 + 0.443×620
+    avg_arr[mat_idx_map["chem"]] = 40.5  # 0.557×6.2  + 0.443×84
+    avg_arr[mat_idx_map["glass"]] = 1.7  # 0.557×3.1  + 0.443×0
+    avg_arr[mat_idx_map["copper"]] = 3.6  # 0.557×3.1  + 0.443×4.3
+    cdm_tra_veh.array[idx["trains_CEV"], :] = avg_arr
+    cdm_tra_veh.array[idx["trains_ICE-diesel"], :] = avg_arr
+
+    # Add body copper for HDV and bus: wiring harness, alternator/starter motor.
+    # Not reported in the literature review (data gap) but physically present in all powertrains.
+    # Values based on automotive industry data: HDV ~25 kg, bus ~30 kg.
+    idx = cdm_tra_veh.idx  # refresh after all add() calls
+    idx_cu = mat_idx_map["copper"]
+    for var in cdm_tra_veh.col_labels["Variables"]:
+        if var.startswith("HDV_"):
+            cdm_tra_veh.array[idx[var], idx_cu] = 0.025
+        elif var.startswith("bus_"):
+            cdm_tra_veh.array[idx[var], idx_cu] = 0.030
+
     cdm_tra_veh.sort("Variables")
     cdm_tra_veh.deepen(based_on="Variables")
     cdm_tra_veh.switch_categories_order("Categories1", "Categories2")
@@ -229,6 +260,10 @@ def make_material_decomposition_dm(current_file_directory, lever_file):
     # cdm_tra_infra
     tmp = create_constant(df_agg, ["road[t/km]", "rail[t/km]", "trolley-cables[t/km]"])
     cdm_tra_infra = ConstantDataMatrix.create_from_constant(tmp, 1)
+    # Rail steel: literature review stores 0.060 t/m (one UIC-60 rail at 60 kg/m), not t/km.
+    # Corrected value: 0.060 t/m × 1000 m/km × 2 rails = 120 t/km.
+    idx = cdm_tra_infra.idx
+    cdm_tra_infra.array[idx["rail"], idx["steel"]] = 120.0
     cdm_check = cdm_tra_infra.group_all("Categories1", inplace=False)
     df_check = pd.melt(cdm_check.write_df())
 

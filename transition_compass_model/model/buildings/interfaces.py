@@ -27,13 +27,29 @@ def bld_power_interface(dm_appliances, dm_energy, dm_fuel, dm_light_heat):
     return DM_pow
 
 
-def bld_emissions_interface(dm_emissions_heating, write_pickle=False):
+def bld_emissions_interface(
+    dm_emissions_heating,
+    dm_hotwater=None,
+    dm_services_hotwater=None,
+    write_pickle=False,
+):
     # TODO: we are missing appliances emissions
 
     dm_out = dm_emissions_heating.groupby(
         {"CO2": dm_emissions_heating.col_labels["Categories1"]}, "Categories1"
     )
     dm_out.rename_col("bld_CO2-emissions_heating", "buildings-heating", "Variables")
+
+    if dm_hotwater is not None:
+        dm_hw = dm_hotwater.copy()
+        dm_hw.group_all("Categories1", inplace=True)
+        dm_out.array += dm_hw.array[..., np.newaxis]
+
+    if dm_services_hotwater is not None:
+        dm_srv = dm_services_hotwater.copy()
+        dm_srv.group_all("Categories1", inplace=True)
+        dm_out.array += dm_srv.array[..., np.newaxis]
+
     dm_out.add(0, "Categories1", ["CH4"], dummy=True)
     dm_out.add(0, "Categories1", ["N2O"], dummy=True)
     dm_out.sort("Categories1")
@@ -101,7 +117,7 @@ def bld_emissions_interface(dm_emissions_heating, write_pickle=False):
 #     return DM_industry
 
 
-def bld_industry_interface(DM_floor, dm_appliances):
+def bld_industry_interface(DM_floor, dm_appliances, write_pickle=False):
     dm_domapp = dm_appliances.filter(
         {
             "Categories1": [
@@ -139,6 +155,16 @@ def bld_industry_interface(DM_floor, dm_appliances):
         "domapp": dm_domapp,
         "electronics": dm_ele,
     }
+
+    # if write_pickle is True, write pickle
+    if write_pickle is True:
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(
+            current_file_directory,
+            "../../_database/data/interface/buildings_to_industry.pickle",
+        )
+        with open(f, "wb") as handle:
+            pickle.dump(DM_industry, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return DM_industry
 
@@ -192,15 +218,24 @@ def bld_minerals_interface(DM_industry, write_xls):
     return DM_minerals
 
 
-def bld_agriculture_interface(dm_agriculture):
-    dm_agriculture.filter({"Categories2": ["gas-bio", "solid-bio"]}, inplace=True)
-    dm_agriculture.group_all("Categories1")
-    dm_agriculture.rename_col(
-        "bld_space-heating-energy-demand", "bld_bioenergy", "Variables"
-    )
-    dm_agriculture.change_unit(
-        "bld_bioenergy", factor=1e-3, old_unit="GWh", new_unit="TWh"
-    )
+def bld_agriculture_interface(dm_agriculture, write_pickle=False):
+    # Input: Variables=['bld_energy-demand_heating'], Categories1=['wood'], unit=TWh
+    # Output: Variables=['bld_bioenergy'], Categories1=['gas-bio', 'solid-bio'], unit=TWh
+    # gas-bio is zero because the heating workflow tracks 'gas' (FF+bio mix) not gas-bio separately.
+    dm_agriculture = dm_agriculture.copy()
+    dm_agriculture.rename_col("bld_energy-demand_heating", "bld_bioenergy", "Variables")
+    dm_agriculture.rename_col("wood", "solid-bio", "Categories1")
+    dm_agriculture.add(0.0, dummy=True, dim="Categories1", col_label="gas-bio")
+    dm_agriculture.sort("Categories1")
+
+    if write_pickle is True:
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(
+            current_file_directory,
+            "../../_database/data/interface/buildings_to_agriculture.pickle",
+        )
+        with open(f, "wb") as handle:
+            pickle.dump(dm_agriculture, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return dm_agriculture
 
@@ -262,6 +297,13 @@ def bld_TPE_interface(
             ]
         }
     )  # only keep scope 1 emissions emetter
+    # Add zero entries for electricity/heat-pump so dimensions match hotwater emissions
+    for _fuel in ["electricity", "heat-pump"]:
+        if _fuel not in dm_energy_emissions_scope1.col_labels["Categories1"]:
+            dm_energy_emissions_scope1.add(
+                0, dummy=True, dim="Categories1", col_label=_fuel
+            )
+    dm_energy_emissions_scope1.sort("Categories1")
     dm_emission_global.append(dm_energy_emissions_scope1, dim="Variables")
     dm_emission_global.groupby(
         {

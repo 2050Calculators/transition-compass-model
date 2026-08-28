@@ -181,6 +181,10 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
             current_file_directory, DM_passenger_out, DM_freight_out
         )
 
+    # Pre-compute outbound vs round-trip aviation variants once; shared by
+    # the emissions interface and prepare_TPE_output.
+    dm_aviation_local = inter.compute_aviation_emission_variants(DM_passenger_out)
+
     DM_power = inter.tra_energy_interface(
         DM_passenger_out["power"], DM_freight_out["power"], write_pickle=False
     )
@@ -225,7 +229,10 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     )
     dm_infrastructure = wkf.dummy_tra_infrastructure_workflow(dm_lfs, lever_setting)
     DM_industry = inter.tra_industry_interface(
-        dm_freight_veh.copy(), dm_passenger_veh.copy(), dm_infrastructure
+        dm_freight_veh.copy(),
+        dm_passenger_veh.copy(),
+        dm_infrastructure,
+        write_pickle=False,
     )
     # DM_minerals = tra_minerals_interface(dm_freight_veh, dm_passenger_veh, DM_industry, dm_infrastructure, write_xls=False)
     # !FIXME: add km infrastructure data, using compute_stock with tot_km and renovation rate as input.
@@ -243,18 +250,15 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
         my_pickle_dump(DM_industry, f)
     # interface.add_link(from_sector='transport', to_sector='minerals', dm=DM_minerals)
 
-    # Emissions
-    # TODO: for aviation differentiate between multiplier x1, x1.7 (IPCC average) and x3
-    # for emissions of CO2 tonnes at higher layer of atmosphere, we can plot graphs with the
-    # three versions
+    # Emissions: outbound aviation in "aviation"; round-trip in "aviation-roundtrip"
     dm_emissions = inter.tra_emissions_interface(
-        DM_passenger_out["emissions"], DM_freight_out["emissions"]
+        DM_passenger_out["emissions"],
+        DM_freight_out["emissions"],
+        dm_aviation_local=dm_aviation_local,
     )
     interface.add_link(
         from_sector="transport", to_sector="emissions", dm=dm_emissions.copy()
     )
-
-    # Local transport emissions
 
     dm_emissions = wkf.convert_to_cO2eq_emissions(DM_passenger_out["emissions"].copy())
     dm_emissions.rename_col(
@@ -262,16 +266,9 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     )
     DM_passenger_out["emissions"] = dm_emissions
 
-    dm_emissions_scope1 = wkf.convert_to_cO2eq_emissions(
-        DM_passenger_out["emissions_scope1"].copy()
+    results_run, KPI = inter.prepare_TPE_output(
+        DM_passenger_out, DM_freight_out, dm_aviation_local=dm_aviation_local
     )
-    dm_emissions_scope1.rename_col(
-        "tra_passenger_emissions-scope1",
-        "tra_emissions-CO2e_passenger-scope1",
-        dim="Variables",
-    )
-
-    results_run, KPI = inter.prepare_TPE_output(DM_passenger_out, DM_freight_out)
     return results_run, KPI
 
 

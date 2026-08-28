@@ -21,7 +21,7 @@ TECH_TO_SECTOR = {
     "cement-wet-kiln": 5,
     "cement-geopolym": 5,
     "cement-sec": 5,
-    "lime-lime": 5,
+    "lime-lime": 6,  # SFOE s6 "Autres minéraux non ferreux" (not s5 "Ciment et béton")
     "glass-glass": 6,
     "glass-sec": 6,
     "steel-BF-BOF": 7,
@@ -41,6 +41,58 @@ TECH_TO_SECTOR = {
 # SFOE data covers 1999-2024; clamp model years to this range
 SFOE_YEAR_MIN = 1999
 SFOE_YEAR_MAX = 2023  # align with OTS end year; 2024 extrapolated is not used
+
+# Swiss-specific intensity scale factors applied to EU27 base intensities.
+# A scale factor is included only where Swiss production processes are physically
+# different from the EU27 average (different product mix, different feedstock, or
+# genuinely different process grade). Sectors where the model underestimates SFOE
+# energy for other reasons are left at the EU27 default (1.0):
+#   - S2 textiles, S4 chem, S9 mae, S10 tra-equip: IO-to-tonne conversion
+#     underestimates physical production because Swiss products carry very high
+#     CHF/kg values; the energy gap is a known model limitation of the IO methodology.
+#   - S5 cement: SFOE sector 5 "Zement, Beton" covers clinker production AND
+#     concrete manufacturing (precast, ready-mix); the model captures clinker only.
+#     Inflating the clinker intensity to match SFOE would be physically incorrect —
+#     Swiss kilns (Holcim, HeidelbergMaterials, modern dry-process) are not more
+#     energy-intensive per tonne of clinker than the EU27 average.
+#   - S6 glass+lime, S8 Al/Cu: ratio ≈ 1.0 after sector mapping corrections; S8
+#     has a structural gap (Novelis imports scrap, processes for export — no domestic
+#     demand signal) that cannot be fixed by adjusting intensity.
+SWISS_INTENSITY_SCALE = {
+    # Sector 1 - FBT (scale < 1, physically driven): Swiss food manufacturing is
+    # dominated by specialty food and ingredients (Nestlé, Lindt, Givaudan) rather
+    # than bulk processing (grain milling, sugar refining, dairy). Bulk processing is
+    # more energy-intensive per tonne, so EU27 intensities — calibrated on a mix
+    # weighted toward bulk — overstate Swiss energy use per tonne. This is a genuine
+    # product-mix difference, not a production-quantity artefact.
+    # Derivation: SFOE S1 2022 (4.70 TWh) / (Swiss FBT production ~7 792 kt ×
+    # EU27 intensity 1.46 TWh/Mt) ≈ 0.41.
+    "fbt-tech": 0.41,
+    # Sector 3 - Paper/Pulp/WWP (scale < 1, physically driven): Switzerland has very
+    # high paper recycling rates. Recycled-fibre production genuinely requires ~30–40%
+    # less energy per tonne than virgin-pulp production because the energy-intensive
+    # wood pulping stage is avoided. This is a real process difference.
+    "paper-tech": 0.67,
+    "pulp-tech": 0.67,
+    "wwp-tech": 0.67,
+    "wwp-sec": 0.67,
+    # Sector 7 - Steel (scale > 1, physically driven): Swiss Steel Group produces
+    # specialty and tool steels (alloyed, stainless, bearing steels) that require more
+    # heat treatments, rolling passes and processing steps per tonne than commodity-grade
+    # steel, which dominates EU27 production. This is a genuine process difference in
+    # product grade, independent of any production-quantity uncertainty.
+    "steel-BF-BOF": 1.9,
+    "steel-hisarna": 1.9,
+    "steel-hydrog-DRI": 1.9,
+    "steel-scrap-EAF": 1.9,
+    # Sector 11 - OIS (scale < 1, physically driven): Switzerland's other-industry
+    # sector is genuinely weighted toward light manufacturing and service-adjacent
+    # activities relative to the EU27 average, which includes heavier industry from
+    # Central and Eastern Europe. EU27 OIS intensities structurally overestimate Swiss
+    # energy use per tonne.
+    "ois-tech": 0.7,
+    "ois-sec": 0.7,
+}
 
 
 def _build_carrier_shares(sfoe_df, all_carriers):
@@ -104,9 +156,10 @@ def _apply_swiss_shares(dm_eu27, shares, sfoe_years_arr):
 
             eu27_total = float(np.nansum(dm_eu27.array[0, y_idx, 0, t_idx, :]))
 
+            scale = SWISS_INTENSITY_SCALE.get(tech, 1.0)
             for c_idx, carrier in enumerate(carriers):
                 share = shares.get((sector, sfoe_yr, carrier), 0.0)
-                dm_ch.array[0, y_idx, 0, t_idx, c_idx] = eu27_total * share
+                dm_ch.array[0, y_idx, 0, t_idx, c_idx] = eu27_total * share * scale
 
     return dm_ch
 
@@ -174,15 +227,7 @@ def make_fxa_energy_demand(current_file_directory, years_ots, years_fts):
 
 def run(years_ots, years_fts):
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-
-    lever_file = "fxa_energy-demand.pickle"
-    filepath = os.path.join(current_file_directory, "../data/datamatrix/" + lever_file)
-    if os.path.exists(filepath):
-        with open(filepath, "rb") as handle:
-            DM_result = pickle.load(handle)
-    else:
-        DM_result = make_fxa_energy_demand(current_file_directory, years_ots, years_fts)
-
+    DM_result = make_fxa_energy_demand(current_file_directory, years_ots, years_fts)
     return DM_result
 
 
