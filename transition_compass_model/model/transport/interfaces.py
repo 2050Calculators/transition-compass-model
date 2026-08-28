@@ -1,3 +1,17 @@
+# Transport module — accounting basis
+#
+# Accounting basis: RESIDENCY-BASED (not territorial, not consumption-based).
+#   Passenger: Swiss residents' trips wherever they occur (source: MTMC survey).
+#   Freight road HDV: Swiss-registered vehicles only (source: BFS GTS IMMATRICULATION=="CH").
+#   Freight rail/IWW: territorial ≈ residency in practice (no registration split available).
+#
+# Emission scope: SCOPE 1 ONLY — direct combustion emissions from fuel burned in engines.
+#   EVs appear as zero direct emissions here; their electricity consumption is forwarded
+#   to the energy module, where generation-side emissions are handled (scope 2 for transport
+#   would mean attributing those electricity emissions back to transport — not done here).
+#   Scope 3 (vehicle manufacturing, upstream fuel, infrastructure) is handled by the
+#   industry and LCA modules via the industry interface.
+
 import os
 import pickle
 
@@ -56,11 +70,8 @@ def tra_industry_interface(
     dm_veh.groupby(
         {"ICE": ["ICE_old", "H2", "kerosene"]}, dim="Categories2", inplace=True
     )
-    dm_veh.groupby(
-        {"trains": ["trains", "rail"], "planes": ["planes", "aviation"]},
-        "Categories1",
-        inplace=True,
-    )
+    dm_veh.groupby({"trains": ["trains", "rail"]}, "Categories1", inplace=True)
+    dm_veh.groupby({"planes": ["planes", "aviation"]}, "Categories1", inplace=True)
     dm_veh.sort("Categories1")
 
     # get infrastructure
@@ -304,7 +315,42 @@ def prepare_KPIs(DM_kpi_dict):
     return KPI
 
 
-def prepare_TPE_output(DM_passenger_out, DM_freight_out):
+def compute_aviation_emission_variants(DM_passenger_out):
+    """Return DM with outbound and round-trip passenger aviation emissions.
+
+    Variables:
+      tra_passenger-emissions-total  — full round-trip (MTMC-based)
+      tra_passenger-emissions-local  — outbound only (×share-local)
+    Categories1: aviation (collapse with group_all before combining with other modes).
+
+    The share-local factor (~0.35 for CH in 2019) is defined as:
+      skm_CH / skm_monde = (pkm_suisse / occ_suisse) / (pkm_monde / occ_monde)
+    where pkm_suisse is territorial (flights departing from Swiss airports) and
+    pkm_monde is MTMC residency-based (Swiss residents' full flight chains).
+    The ratio is ~0.35, not ~0.5, because MTMC captures all legs including
+    connections through foreign hubs, while pkm_suisse counts only the first
+    Swiss-departing segment. So outbound ≈ Swiss territorial inventory;
+    round-trip ≈ 3× outbound (round-trip factor × connecting-flight factor).
+    """
+    dm = DM_passenger_out["aviation"]["emissions"].copy()
+    dm = dm.group_all("Categories2", inplace=False)
+    dm.group_all("Categories2", inplace=True)
+    dm.append(DM_passenger_out["aviation-share-local"], dim="Variables")
+    dm.operation(
+        "tra_passenger_emissions",
+        "*",
+        "tra_share-emissions-local",
+        out_col="tra_passenger-emissions-local",
+        unit="Mt",
+    )
+    dm.rename_col(
+        "tra_passenger_emissions", "tra_passenger-emissions-total", dim="Variables"
+    )
+    dm.drop(dim="Variables", col_label="tra_share-emissions-local")
+    return dm
+
+
+def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
     # Aviation Energy-demand
     dm_keep_aviation_energy = DM_passenger_out["aviation"]["energy"]
     dm_keep_aviation_energy.groupby(
@@ -318,24 +364,7 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out):
     )
 
     dm_keep_aviation_emissions = DM_passenger_out["aviation"]["emissions"].copy()
-    dm_keep_aviation_local = dm_keep_aviation_emissions.group_all(
-        "Categories2", inplace=False
-    )
-    dm_keep_aviation_local.group_all("Categories2", inplace=True)
-    dm_keep_aviation_local.append(
-        DM_passenger_out["aviation-share-local"], dim="Variables"
-    )
-    dm_keep_aviation_local.operation(
-        "tra_passenger_emissions",
-        "*",
-        "tra_share-emissions-local",
-        out_col="tra_passenger-emissions-local",
-        unit="Mt",
-    )
-    dm_keep_aviation_local.rename_col(
-        "tra_passenger_emissions", "tra_passenger-emissions-total", dim="Variables"
-    )
-    dm_keep_aviation_local.drop(dim="Variables", col_label="tra_share-emissions-local")
+    dm_keep_aviation_local = dm_aviation_local
 
     dm_keep_mode = DM_passenger_out["mode"].filter(
         {
@@ -463,34 +492,48 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out):
 
 
 def tra_emissions_interface(
-    dm_pass_emissions, dm_freight_emissions, write_pickle=False
+    dm_pass_emissions, dm_freight_emissions, dm_aviation_local, write_pickle=False
 ):
-    # dm_emi_aviation = dm_pass_emissions.filter({"Categories1": ["aviation"]})
-    # dm_emi_aviation.group_all("Categories1")
-    # dm_emi_aviation.rename_col("tra_passenger_emissions", "aviation", "Variables")
-    # dm_emi = dm_pass_emissions.filter(
-    #     {"Categories1": ["2W", "LDV", "bus", "metrotram", "rail"]}
-    # ).group_all("Categories1", inplace=False)
-    # dm_emi.groupby(
-    #     {"transport-wo-aviation": ["tra_passenger_emissions"]},
-    #     "Variables",
-    #     inplace=True,
-    # )
-    # dm_emi.append(dm_emi_aviation, "Variables")
+    # Extract outbound share (outbound / round-trip) per country×year as numpy array.
+    # dm_aviation_local has dims (n_c, n_y, 2_vars, 1_cat1=aviation).
+    dm_share_tmp = dm_aviation_local.copy()
+    dm_share_tmp.group_all("Categories1", inplace=True)  # → (n_c, n_y, 2)
+    _sidx = dm_share_tmp.idx
+    share_np = (
+        dm_share_tmp.array[:, :, _sidx["tra_passenger-emissions-local"]]
+        / dm_share_tmp.array[:, :, _sidx["tra_passenger-emissions-total"]]
+    )  # (n_c, n_y)
 
-    # get aviation as separate (as we have both national and international)
-    dm_emi_aviation = dm_pass_emissions.filter({"Categories1": ["aviation"]})
-    dm_emi_aviation.append(
-        dm_freight_emissions.filter({"Categories1": ["aviation"]}), "Variables"
+    # Build pass and freight aviation retaining the gas Categories1 dimension
+    # so the result is compatible with dm_emi (transport-wo-aviation) below.
+    dm_pass_avi = dm_pass_emissions.filter({"Categories1": ["aviation"]}).copy()
+    dm_pass_avi.group_all("Categories1", inplace=True)  # aviation drops; gases → Cat1
+    dm_freight_avi = dm_freight_emissions.filter({"Categories1": ["aviation"]}).copy()
+    dm_freight_avi.group_all("Categories1", inplace=True)
+
+    # Round-trip: unscaled pass + freight → "aviation-roundtrip" (supplementary graph)
+    dm_avi_rt = dm_pass_avi.copy()
+    dm_avi_rt.append(dm_freight_avi, "Variables")
+    dm_avi_rt.groupby(
+        {"aviation-roundtrip": ["tra_passenger_emissions", "tra_freight_emissions"]},
+        "Variables",
+        inplace=True,
     )
-    dm_emi_aviation.groupby(
+
+    # Outbound: scale pass by local share; freight is territorial so kept unchanged
+    dm_avi_out = dm_pass_avi.copy()
+    dm_avi_out.array *= share_np[:, :, np.newaxis, np.newaxis]
+    dm_avi_out.append(dm_freight_avi.copy(), "Variables")
+    dm_avi_out.groupby(
         {"aviation": ["tra_passenger_emissions", "tra_freight_emissions"]},
         "Variables",
         inplace=True,
     )
-    dm_emi_aviation.group_all("Categories1")
 
-    # make rest
+    dm_emi_aviation = dm_avi_out
+    dm_emi_aviation.append(dm_avi_rt, "Variables")
+
+    # Transport without aviation
     dm_emi = dm_pass_emissions.filter(
         {"Categories1": ["2W", "LDV", "bus", "metrotram", "rail"]}
     ).group_all("Categories1", inplace=False)
@@ -507,18 +550,6 @@ def tra_emissions_interface(
     )
     dm_emi.append(dm_emi_aviation, "Variables")
 
-    # dm_pass_emissions.rename_col(
-    #     "tra_passenger_emissions", "tra_emissions_passenger", dim="Variables"
-    # )
-    # dm_pass_emissions = dm_pass_emissions.flatten().flatten()
-    # dm_freight_emissions.rename_col(
-    #     "tra_freight_emissions", "tra_emissions_freight", dim="Variables"
-    # )
-    # dm_freight_emissions = dm_freight_emissions.flatten().flatten()
-
-    # dm_pass_emissions.append(dm_freight_emissions, dim="Variables")
-
-    # if write_pickle is True, write pickle
     if write_pickle is True:
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(
