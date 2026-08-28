@@ -264,7 +264,11 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     #     pickle.dump(DM_industry, handle, protocol=pickle.HIGHEST_PROTOCOL )
 
     # emission interface
-    dm_emi = inter.bld_emissions_interface(DM_energy_out["TPE"]["emissions"])
+    dm_emi = inter.bld_emissions_interface(
+        DM_energy_out["TPE"]["emissions"],
+        dm_hotwater=DM_hotwater_out["TPE"]["hotwater_emissions"],
+        dm_services_hotwater=DM_hotwater_out["nonres"]["TPE"]["services_emissions"],
+    )
     interface.add_link(
         from_sector="buildings",
         to_sector="emissions",
@@ -273,7 +277,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     #
     # industry interface
     DM_industry = inter.bld_industry_interface(
-        DM_floor_out["industry"], DM_appliances_out["industry"]
+        DM_floor_out["industry"], DM_appliances_out["industry"], write_pickle=False
     )
     interface.add_link(from_sector="buildings", to_sector="industry", dm=DM_industry)
 
@@ -281,7 +285,12 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
 
     interface.add_link(from_sector="buildings", to_sector="lca", dm=DM_industry)
 
-    # interface.add_link(from_sector='buildings', to_sector='agriculture', dm=DM_energy_out['agriculture'])
+    dm_agriculture = inter.bld_agriculture_interface(
+        DM_energy_out["agriculture"], write_pickle=False
+    )
+    interface.add_link(
+        from_sector="buildings", to_sector="agriculture", dm=dm_agriculture
+    )
 
     interface.add_link(
         from_sector="buildings", to_sector="oil-refinery", dm=DM_energy_out["refinery"]
