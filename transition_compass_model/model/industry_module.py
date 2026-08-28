@@ -256,6 +256,7 @@ def industry(
         DM_energy_demand["bycarr"],
         CDM_const["energy_excl-feedstock_eleclight-split"],
         CDM_const["energy_efficiency"],
+        write_pickle=False,
     )
     interface.add_link(from_sector="industry", to_sector="energy", dm=DM_ene)
 
@@ -265,9 +266,15 @@ def industry(
     )
     interface.add_link(from_sector="industry", to_sector="forestry", dm=dm_for)
 
-    # # interface lca
-    # DM_lca = inter.industry_lca_interface(CDM_const["material-decomposition_veh"], DM_eol["veh_eol_to_recycling"])
-    # interface.add_link(from_sector='industry', to_sector='lca', dm=DM_lca)
+    # interface lca
+    DM_lca = inter.industry_lca_interface(
+        CDM_const["material-decomposition_veh"],
+        CDM_const["material-decomposition_infra"],
+        CDM_const["material-decomposition_domapp"],
+        CDM_const["material-decomposition_electronics"],
+        CDM_const["material-decomposition_bat"],
+    )
+    interface.add_link(from_sector="industry", to_sector="lca", dm=DM_lca)
 
     # # interface refinery
     # dm_refinery = industry_refinery_interface(DM_energy_demand)
@@ -313,7 +320,7 @@ def industry(
 def local_industry_run():
     # Configures initial input for model run
     years_setting, lever_setting = init_years_lever()
-    country_list = ["Switzerland", "EU27", "Vaud"]
+    country_list = ["Switzerland"]
 
     sectors = ["industry"]
     # Filter geoscale
