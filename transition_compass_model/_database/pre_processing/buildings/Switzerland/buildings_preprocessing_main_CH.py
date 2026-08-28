@@ -15,6 +15,7 @@ from scenarios.build_fts_DLS import run as fts_Vaud_DLS_run
 from scenarios.build_fts_floor_area_pickle import run as fts_floor_area_run
 from scenarios.build_fts_heating_efficiency_pickle import run as fts_efficiency_run
 from scenarios.build_fts_PCV_LVLEne_pickle import run as fts_PCV_run
+from scenarios.build_fts_technical_limit_pickle import run as fts_techno_run
 from scenarios.build_fts_Tint_heating_pickle import run as fts_Tint_heating_run
 from scenarios.buildings_fts_EP2050_pickle import run as fts_Vaud_EP2050_run
 
@@ -100,6 +101,9 @@ DM_buildings = fts_Vaud_EP2050_run(DM_buildings, lev=3)
 
 print("Compile Scenario DLS - Vaud - level 4")
 DM_buildings = fts_Vaud_DLS_run(DM_buildings, lev=4)
+
+print("Compile Scenario technosolution  - Vaud - level 4")
+DM_buildings = fts_techno_run(DM_buildings, lev=4)
 
 
 print("Add scenarios for heating efficiency (heat-pumps)")

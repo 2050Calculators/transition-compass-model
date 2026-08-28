@@ -462,6 +462,8 @@ def update_heating_fts_2(dm_heating_cat_fts_2, dm_heating_cat_ots):
 
 
 def create_renov_prop_hw(dm_bld_mix):
+    # TODO : check that it makes sense.
+
     # Proportion according to the study perspectives chaleur (fig. 1)
     renov_proportion_multi = {
         "district-heating": 0.563,
@@ -479,6 +481,7 @@ def create_renov_prop_hw(dm_bld_mix):
     dm_prop_multi_single = dm_bld_mix.filter(
         {"Country": ["Vaud"], "Variables": ["bld_floor-area_stock"]}
     ).copy()
+    # Group by enveloppe categories
     dm_prop_multi_single.group_all("Categories2")
     dm_prop_multi_single.normalise("Categories1")
     idx_prop_multi_single = dm_prop_multi_single.idx
@@ -820,10 +823,10 @@ def run(
         dm_heating_cat_fts_2,
         DM_buildings["ots"]["heating-technology-fuel"]["bld_heating-technology"],
     )
-    for lever in range(lev, 4 + 1):
-        DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"][
-            lev
-        ] = dm_heating_cat_fts_2.copy()
+
+    DM_buildings["fts"]["heating-technology-fuel"]["bld_heating-technology"][lev] = (
+        dm_heating_cat_fts_2.copy()
+    )
 
     ##### HOTWATER TECHNOLOGY MIX ######
 
