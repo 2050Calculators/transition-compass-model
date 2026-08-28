@@ -1,10 +1,31 @@
 """
 Swiss freight OTS: total tkm and modal share by mode (1990-2023).
 
+Accounting basis
+----------------
+Road HDV (HDVH, HDVM): **residency-based** — Swiss-registered vehicles only
+  (IMMATRICULATION == "CH"). Foreign transit trucks (~44% of HDVH tkm, ~11% of
+  HDVM tkm) are excluded so that the demand is consistent with Swiss-owned fleet
+  activity and the industry interface (vehicle manufacturing demand for Swiss trucks).
+
+Rail: territorial — BFS T7.2.1 gives total tkm on Swiss rail network with no
+  operator-registration breakdown. Swiss rail freight is dominated by SBB Cargo
+  and BLS (both Swiss-owned), so territorial ≈ residency in practice. No
+  registration-based data available.
+
+IWW (Rhine navigation): territorial — BFS data gives only total import/export
+  tonnes with no vessel-registration breakdown. Rhine navigation involves Swiss,
+  German and Dutch-flagged vessels; no residency-based split is available. IWW
+  is a small share (~0.5% of total tkm) so the approximation is acceptable.
+
+Aviation (freight): computed as a residual share of total; calibrated to BAZL
+  Swiss airport cargo (territorial). Swiss freight aviation is operated by
+  Swiss carriers so territorial ≈ residency.
+
 Sources
 -------
 Road HDVH (HAV) + HDVM (LORRY):
-  BFS GTS survey (annual million tkm, 1993-2024, all registrations + all traffic types).
+  BFS GTS survey (annual million tkm, 1993-2024, Swiss registrations only).
   LORRY = rigid trucks ≥ 3.5 t → HDVM; HAV = articulated trucks → HDVH.
   # https://www.bfs.admin.ch/bfs/fr/home/statistiques/mobilite-transports/
   #   transport-marchandises/route/vehicules-lourds.html
@@ -81,10 +102,10 @@ _MODES = ["HDVH", "HDVL", "HDVM", "IWW", "aviation", "marine", "rail"]
 # Private readers
 # ---------------------------------------------------------------------------
 def _read_bfs_gts_road():
-    """Return dict {mode: pd.Series(year→million tkm)} for HDVH and HDVM."""
+    """Return dict {mode: pd.Series(year→million tkm)} for HDVH and HDVM, CH-registered only."""
     path = os.path.join(_DATA_DIR, "Freight/ts-x-11.05-GTS-E26.csv")
     df = pd.read_csv(path, sep=";")
-    df = df[(df["IMMATRICULATION"] == "_T") & (df["TRAFFIC_TYPE"] == "_T")]
+    df = df[(df["IMMATRICULATION"] == "CH") & (df["TRAFFIC_TYPE"] == "_T")]
     df = df[df["VEH_TYPE"].isin(["LORRY", "HAV"])]
     piv = df.pivot(index="REF_YEAR", columns="VEH_TYPE", values="OBS_VALUE")
     piv.index = piv.index.astype(int)
