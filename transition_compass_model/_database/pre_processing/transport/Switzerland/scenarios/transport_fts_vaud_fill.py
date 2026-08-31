@@ -5,6 +5,7 @@ import numpy as np
 from transition_compass_model.model.common.auxiliary_functions import (
     midpoint,
     my_pickle_dump,
+    sort_pickle,
 )
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
@@ -93,9 +94,9 @@ def tech_share_fts(DM_transport):
     )
 
     # Objective of 0 diesel bus in 2050
-    dm_tech_fts.array[idx_fts_tech["Vaud"], 1:-1, :, idx_fts_tech["bus"], :] = np.nan
+    dm_tech_fts.array[:, 1:-1, :, idx_fts_tech["bus"], :] = np.nan
     dm_tech_fts.array[
-        idx_fts_tech["Vaud"],
+        :,
         idx_fts_tech[2050],
         0,
         idx_fts_tech["bus"],
@@ -108,12 +109,8 @@ def tech_share_fts(DM_transport):
     idx_diesel = []
     for i in diesel_cat:
         idx_diesel += [idx_fts_tech[i]]
-    dm_tech_fts.array[idx_fts_tech["Vaud"], 1:, :, idx_fts_tech["LDV"], idx_diesel] = (
-        np.nan
-    )
-    dm_tech_fts.array[
-        idx_fts_tech["Vaud"], idx_fts_tech[2035] :, 0, idx_fts_tech["LDV"], idx_diesel
-    ] = 0
+    dm_tech_fts.array[:, 1:, :, idx_fts_tech["LDV"], idx_diesel] = np.nan
+    dm_tech_fts.array[:, idx_fts_tech[2035] :, 0, idx_fts_tech["LDV"], idx_diesel] = 0
     dm_tech_fts.fill_nans("Years")
     dm_tech_fts.normalise(dim="Categories2", inplace=True)
 
@@ -266,6 +263,7 @@ def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list
     this_dir = os.path.dirname(os.path.abspath(__file__))
     pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")
     my_pickle_dump(DM_new=DM_transport, local_pickle_file=pickle_file)
+    sort_pickle(pickle_file)
 
     #### Demande de transport de stat vaud #####
 
