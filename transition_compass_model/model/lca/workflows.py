@@ -1,15 +1,15 @@
 import numpy as np
 
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+
 
 def get_footprint_by_group(DM_footprint):
     def reshape_and_store(DM_footprint, keyword):
         DM = {}
         dm = DM_footprint[keyword].copy()
-        # FIXME : plane is doing weird things for now it is removed. It should be added back when the issue will be solved.
+
         dm_veh = dm.filter_w_regex(
-            (
-                {"Variables": "HDV_.*|LDV_.*|bus_.*|ships_.*|trains_.*"}  # |planes_.*
-            )
+            ({"Variables": "HDV_.*|LDV_.*|bus_.*|planes_.*|ships_.*|trains_.*"})
         )
         for v in dm_veh.col_labels["Variables"]:
             dm_veh.rename_col(v, f"{keyword}_" + v, "Variables")
@@ -95,17 +95,44 @@ def get_footprint(footprint, DM_demand, DM_footprint):
     dm_all_agg = dm_all.copy()
     dm_all_agg.group_all("Categories1")
 
+    # not aggregate
+    agg_sector_dict = {}
+    mylist = ["tra-infra", "domapp", "electronics"]
+    for sector in mylist:
+        agg_sector_dict[sector] = DM_demand[sector].col_labels["Categories1"]
+    dm_all_sectors = dm_all.groupby(agg_sector_dict, "Categories1", inplace=False)
+    all_names = dm_all.col_labels["Categories1"]
+    tra_products = np.array(all_names)[
+        [
+            element not in [x for v in agg_sector_dict.values() for x in v]
+            for element in all_names
+        ]
+    ]
+    dm_all_sectors.append(
+        dm_all.groupby({"transport": tra_products}, "Categories1", inplace=False),
+        "Categories1",
+    )
+    dm_all_sectors.sort("Categories1")
+
+    # put together
+    variab_name = dm_all_agg.col_labels["Variables"][0]
+    dm_all_agg.rename_col(variab_name, variab_name + "_all-sectors", "Variables")
+    dm_all_agg.deepen(based_on="Variables")
+    if len(dm_all_agg.dim_labels) > 4:
+        dm_all_agg.switch_categories_order("Categories1", "Categories2")
+    dm_all_agg.append(dm_all_sectors, "Categories1")
+
     return dm_all_agg
 
 
-def variables_for_tpe(DM_footprint_agg):
-    dm_tpe = DM_footprint_agg["materials"].flatten()
-    dm_tpe.append(DM_footprint_agg["ecological"], "Variables")
-    dm_tpe.append(DM_footprint_agg["gwp"], "Variables")
-    dm_tpe.append(DM_footprint_agg["water"], "Variables")
-    dm_tpe.append(DM_footprint_agg["air-pollutant"].flatten(), "Variables")
-    dm_tpe.append(DM_footprint_agg["heavy-metals"].flatten(), "Variables")
-    dm_tpe.append(DM_footprint_agg["energy-demand"], "Variables")
+def variables_for_tpe(DM_footprint_agg, DM_transport, DM_buildings, DM_industry):
+    dm_tpe = DM_footprint_agg["materials"].flatten().flatten()
+    dm_tpe.append(DM_footprint_agg["ecological"].flatten(), "Variables")
+    dm_tpe.append(DM_footprint_agg["gwp"].flatten(), "Variables")
+    dm_tpe.append(DM_footprint_agg["water"].flatten(), "Variables")
+    dm_tpe.append(DM_footprint_agg["air-pollutant"].flatten().flatten(), "Variables")
+    dm_tpe.append(DM_footprint_agg["heavy-metals"].flatten().flatten(), "Variables")
+    dm_tpe.append(DM_footprint_agg["energy-demand"].flatten(), "Variables")
 
     # # checks
     # DM_footprint_agg["materials"].datamatrix_plot(stacked=True)
@@ -116,5 +143,51 @@ def variables_for_tpe(DM_footprint_agg):
     # DM_footprint_agg['heavy-metals-to-soil'].datamatrix_plot(stacked=True)
     # DM_footprint_agg['energy-demand'].filter({"Variables" : ["energy-demand-elec"]}).datamatrix_plot()
     # DM_footprint_agg['energy-demand'].filter({"Variables" : ["energy-demand-ff"]}).datamatrix_plot()
+
+    # check material content vs footprint
+    check = False
+    if check == True:
+        # material decomp of vehicles
+        arr_temp = (
+            DM_transport["tra-veh"].array[..., np.newaxis]
+            * DM_industry["matdec-veh"].array[np.newaxis, np.newaxis, ...]
+        )
+        dm_material_content = DataMatrix.based_on(
+            arr_temp,
+            DM_transport["tra-veh"],
+            {"Categories3": DM_industry["matdec-veh"].col_labels["Categories3"]},
+            units="t",
+        )
+
+        # material decomp of batteries in vehicles
+        dm_temp = DM_transport["tra-veh"].filter({"Categories1": ["HDV", "LDV", "bus"]})
+        arr_temp = (
+            dm_temp.array[..., np.newaxis]
+            * DM_industry["matdec-veh-bat"].array[np.newaxis, np.newaxis, ...]
+        )
+        dm_material_content_bat = DataMatrix.based_on(
+            arr_temp,
+            dm_temp,
+            {"Categories3": DM_industry["matdec-veh-bat"].col_labels["Categories3"]},
+            units="t",
+        )
+        for cat in ["planes", "ships", "trains"]:
+            dm_material_content_bat.add(0, "Categories1", cat, unit="t", dummy=True)
+        dm_material_content_bat.rename_col("tra_product-demand", "bat", "Variables")
+        dm_material_content.append(dm_material_content_bat, "Variables")
+        dm_material_content.groupby(
+            {"tra_material-demand": ["tra_product-demand", "bat"]},
+            "Variables",
+            inplace=True,
+        )
+
+        dm_material_content.group_all("Categories1")
+        dm_material_content.group_all("Categories1")
+        dm_material_content_full = DM_footprint_agg["materials"].filter(
+            {"Categories1": ["transport"]}
+        )
+        dm_material_content_full.group_all("Categories1")
+        dm_material_content.datamatrix_plot(stacked=True)
+        dm_material_content_full.datamatrix_plot(stacked=True)
 
     return dm_tpe

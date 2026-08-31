@@ -86,7 +86,7 @@ def get_data_special_waste(current_file_directory):
     # get data dechet speciaux
     filepath = os.path.join(
         current_file_directory,
-        "../data/waste/2_Statistique_des_déchets_spéciaux/ALL.xlsx",
+        "../data/waste/2_Statistique des déchets spéciaux/ALL.xlsx",
     )
     df = pd.read_excel(filepath)
     df = subset_with_key_word(df, "batteries")
@@ -101,7 +101,7 @@ def get_data_special_waste(current_file_directory):
 def extract_waste_data_from_dechets_speciaux(current_file_directory, word, variable):
     filepath = os.path.join(
         current_file_directory,
-        "../data/waste/2_Statistique_des_déchets_spéciaux/ALL.xlsx",
+        "../data/waste/2_Statistique des déchets spéciaux/ALL.xlsx",
     )
     df = pd.read_excel(filepath)
     df = subset_with_key_word(df, word)

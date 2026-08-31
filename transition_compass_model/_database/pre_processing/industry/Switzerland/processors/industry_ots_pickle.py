@@ -2,6 +2,8 @@
 import os
 import pickle
 
+from processors.industry_lever_technology_share import make_ch_technology_share_ots
+
 from transition_compass_model.model.common.auxiliary_functions import create_years_list
 
 # import numpy as np
@@ -44,9 +46,12 @@ def run(DM_input, years_ots):
         "eol-material-recovery",
     ]
     for l in other_levers:
-        dm_temp = DM_industry_current["ots"][l].filter({"Country": ["EU27"]})
-        dm_temp.rename_col("EU27", "Switzerland", "Country")
-        DM["ots"][l] = dm_temp.copy()
+        if l == "technology-share":
+            DM["ots"][l] = make_ch_technology_share_ots(DM_industry_current["ots"][l])
+        else:
+            dm_temp = DM_industry_current["ots"][l].filter({"Country": ["EU27"]})
+            dm_temp.rename_col("EU27", "Switzerland", "Country")
+            DM["ots"][l] = dm_temp.copy()
 
     # for fxa on costs, for the moment put as EU
     other_fxa = ["cost-matprod", "cost-CC"]

@@ -3653,24 +3653,24 @@ def agriculture_emissions_interface(
     return dm_ems
 
 
-def agriculture_ammonia_interface(dm_mineral_fertilizer, write_xls=False):
+def agriculture_ammonia_interface(dm_mineral_fertilizer, write_pickle=False):
     # Demand for Mineral fertilizers
+    # TODO (pre-processing fix needed): FTS linear extrapolation drives per-ha application
+    # rates below zero for some nutrients (potash from ~2030, phosphate from ~2040, urea
+    # from ~2050 in the CH pickle). This makes agr_product-demand negative in those years.
+    # Fix: clip the FTS climate-smart-crop_input-use values to >= 0 in the agriculture
+    # pre-processing before building the pickle.
     dm_ammonia = dm_mineral_fertilizer.filter({"Variables": ["agr_input-use"]})
     dm_ammonia.rename_col("agr_input-use", "agr_product-demand", dim="Variables")
     dm_ammonia.rename_col("mineral", "fertilizer", dim="Categories1")
 
-    # this_dir = os.path.dirname(os.path.abspath(__file__))
-    # file = os.path.join(this_dir, '../_database/data/interface/agriculture_to_ammonia.pickle')
-    # with open(file, "wb") as handle:
-    #     pickle.dump(dm_ammonia, handle, protocol=pickle.HIGHEST_PROTOCOL )
-
-    # write
-    """if write_xls is True:
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        dm_ammonia = dm_ammonia.write_df()
-        dm_ammonia.to_excel(
-            current_file_directory + "/../_database/data/xls/" + 'All-Countries_interface_from-agriculture-to-ammonia.xlsx',
-            index=False)"""
+    if write_pickle == True:
+        this_dir = os.path.dirname(os.path.abspath(__file__))
+        file = os.path.join(
+            this_dir, "../_database/data/interface/agriculture_to_ammonia.pickle"
+        )
+        with open(file, "wb") as handle:
+            pickle.dump(dm_ammonia, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return dm_ammonia
 
@@ -3707,33 +3707,38 @@ def agriculture_storage_interface(DM_energy_ghg, write_xls=False):
     return dm_storage
 
 
-def agriculture_power_interface(DM_energy_ghg, DM_bioenergy, write_xls=False):
+def agriculture_energy_interface(DM_energy_ghg, write_pickle=False):
+    # NOTE: agr_climate-smart-crop_energy-demand electricity intensity is set to 0 in
+    # preprocessing — farm electricity is not yet modeled. agr_energy-consumption will
+    # therefore be 0 until the preprocessing is updated.
     dm_pow = DM_energy_ghg["energy_demand"].filter_w_regex(
-        {"Variables": "agr_energy-demand", "Categories1": ".*electricity.*"}
+        {"Variables": "^agr_energy-demand$", "Categories1": ".*electricity.*"}
     )
-    dm_pow = dm_pow.flatten()
-    ktoe_to_gwh = 0.0116222 * 1000  # from KNIME factor
-    dm_pow.array = dm_pow.array * ktoe_to_gwh
-    dm_pow.units["agr_energy-demand_electricity"] = "GWh"
-
-    dm_wood = DM_bioenergy["solid-mix"].filter(
-        {
-            "Variables": ["agr_bioenergy_biomass-demand_solid"],
-            "Categories1": ["fuelwood-and-res"],
-        }
+    # change_unit updates both array and units dict (avoids stale ktoe entry after rename)
+    dm_pow.change_unit(
+        "agr_energy-demand", old_unit="ktoe", new_unit="TWh", factor=0.0116222
     )
+    dm_pow.rename_col("agr_energy-demand", "agr_energy-consumption", "Variables")
+    elec_cats = dm_pow.col_labels.get("Categories1", [])
+    if len(elec_cats) != 1 or elec_cats[0] != "electricity":
+        dm_pow.group_all("Categories1", inplace=True)
+        dm_pow.rename_col(
+            dm_pow.col_labels["Categories1"][0], "electricity", "Categories1"
+        )
+    dm_pow.add(0, dim="Categories1", col_label="district-heating", dummy=True)
+    DM_energy = {"power": dm_pow}
 
-    DM_pow = {"wood": dm_wood, "pow": dm_pow}
-
-    # write
-    """if write_xls is True:
+    # if write_pickle is True, write pickle
+    if write_pickle is True:
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        dm_pow = dm_pow.write_df()
-        dm_pow.to_excel(
-            current_file_directory + "/../_database/data/xls/" + 'All-Countries_interface_from-agriculture-to-power.xlsx',
-            index=False)"""
+        f = os.path.join(
+            current_file_directory,
+            "../_database/data/interface/agriculture_to_energy.pickle",
+        )
+        with open(f, "wb") as handle:
+            pickle.dump(DM_energy, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    return DM_pow
+    return {"power": dm_pow}
 
 
 def agriculture_minerals_interface(DM_nitrogen, DM_bioenergy, dm_lgn, write_xls=False):
@@ -4466,9 +4471,9 @@ def agriculture(lever_setting, years_setting, DM_input, interface=Interface()):
     # dm_storage = agriculture_storage_interface(DM_energy_ghg, write_xls=False)
     # interface.add_link(from_sector='agriculture', to_sector='power', dm=dm_storage)
 
-    # interface to Power
-    DM_pow = agriculture_power_interface(DM_energy_ghg, DM_bioenergy)
-    interface.add_link(from_sector="agriculture", to_sector="power", dm=DM_pow)
+    # interface to Energy
+    DM_energy = agriculture_energy_interface(DM_energy_ghg, write_pickle=False)
+    interface.add_link(from_sector="agriculture", to_sector="energy", dm=DM_energy)
 
     # interface to Minerals
     dm_minerals = agriculture_minerals_interface(DM_nitrogen, DM_bioenergy, dm_lgn)
