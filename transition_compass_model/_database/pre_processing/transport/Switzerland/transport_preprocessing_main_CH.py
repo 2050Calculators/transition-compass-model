@@ -25,8 +25,8 @@ from scenarios.transport_fts_DLS import run as DLS_pickle_run
 from scenarios.transport_fts_PCV1 import run as fts_PCV1_pickle_run
 from scenarios.transport_fts_PCV2 import run as fts_PCV2_pickle_run
 
-from transition_compass_model._database.pre_processing.transport.Switzerland.scenarios.transport_fts_vaud_fill import (
-    run as fts_vaud_fill_pickle_run,
+from transition_compass_model._database.pre_processing.transport.Switzerland.scenarios.transport_fts_fill import (
+    run as fts_fill_pickle_run,
 )
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
@@ -206,8 +206,6 @@ print("Compile pickle fts - all BAU")
 DM_transport = fts_PCV1_pickle_run(DM_transport, country_list, years_ots, years_fts)
 DM_transport = fts_PCV2_pickle_run(DM_transport, country_list, years_ots, years_fts)
 DM_transport = DLS_pickle_run(DM_transport, country_list, years_ots, years_fts)
-DM_transport = fts_vaud_fill_pickle_run(
-    DM_transport, country_list, years_ots, years_fts
-)
+DM_transport = fts_fill_pickle_run(DM_transport, country_list, years_ots, years_fts)
 
 print("Hello")
