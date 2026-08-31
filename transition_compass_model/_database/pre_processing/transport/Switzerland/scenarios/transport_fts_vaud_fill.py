@@ -169,6 +169,22 @@ def freight_demand_fts(DM_transport):
     return DM_transport
 
 
+def interpolate_between_1_4(DM_transport, lever_name):
+    dic_dm_freight_fts = {}
+    for lev_number in [1, 4]:
+        _, _, dic_dm_freight_fts[lev_number], _ = get_lev_data(
+            DM_transport, lever_name, lev_number=lev_number
+        )
+    DM_transport["fts"][lever_name][2] = midpoint(
+        dic_dm_freight_fts[1], dic_dm_freight_fts[4], 0.25
+    )
+    DM_transport["fts"][lever_name][3] = midpoint(
+        dic_dm_freight_fts[1], dic_dm_freight_fts[4], 0.75
+    )
+
+    return DM_transport
+
+
 def freight_modal_share_fts(DM_transport):
     dic_dm_freight_fts = {}
     dic_idx_fts = {}
@@ -238,10 +254,14 @@ def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list
     DM_transport = efficiency_fts(DM_transport)
 
     ### Freight demand ###
-    DM_transport = freight_demand_fts(DM_transport)
+    DM_transport = interpolate_between_1_4(DM_transport, "freight_tkm")
 
     ### Freight modal share ###
     DM_transport = freight_modal_share_fts(DM_transport)
+
+    ### utilization rate ###
+    DM_transport = interpolate_between_1_4(DM_transport, "passenger_utilization-rate")
+
     ##### Save pickle #########
     this_dir = os.path.dirname(os.path.abspath(__file__))
     pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")

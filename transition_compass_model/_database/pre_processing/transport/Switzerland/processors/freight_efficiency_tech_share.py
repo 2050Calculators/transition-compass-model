@@ -255,9 +255,13 @@ _EP2050_PATH = os.path.join(
 
 EP2050_tech_to_model = {
     "electricity": "BEV",
+    "Electric": "CEV",
     "CNG": "ICE-gas",
     "LNG": "ICE-gas",
+    "FFV": "ICE-gasoline",  # TODO check if acceptable
     "bifuel CNG/petrol": "ICE-gas",
+    "CNG/petrol": "ICE-gas",
+    "LPG/petrol": "ICE-gas",
     "petrol 2S": "ICE-gasoline",
     "petrol 4S": "ICE-gasoline",
     "petrol (4S)": "ICE-gasoline",
