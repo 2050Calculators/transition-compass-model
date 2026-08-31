@@ -297,6 +297,17 @@ class DataMatrix:
 
         self.array = array
 
+    def __eq__(self, other):
+        """Check if two DataMatrix objects have identical data and structure."""
+        if not isinstance(other, DataMatrix):
+            return False
+        return (
+            np.array_equal(self.array, other.array, equal_nan=True)
+            and self.col_labels == other.col_labels
+            and self.units == other.units
+            and self.dim_labels == other.dim_labels
+        )
+
     def add(self, new_array, dim, col_label, unit=None, dummy=False):
         # Adds the numpy array new_array to the datamatrix over dimension dim.
         # The label associated with the array is in defined by the string col_label
