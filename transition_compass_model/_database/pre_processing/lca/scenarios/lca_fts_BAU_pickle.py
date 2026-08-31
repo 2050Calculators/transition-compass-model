@@ -10,6 +10,7 @@ warnings.simplefilter("ignore")
 from _database.pre_processing.lca.processors.lca_levers import (
     make_aggregates_footprint,
     make_footprint_dm,
+    scale_vehicle_units,
 )
 
 from transition_compass_model.model.common.auxiliary_functions import (
@@ -21,11 +22,10 @@ from transition_compass_model.model.common.auxiliary_functions import (
 
 
 def load_data(current_file_directory, pattern):
-
     filepath = os.path.join(
-        current_file_directory, f"../data/intermediate_databases/{pattern}.xlsx"
+        current_file_directory, f"../data/intermediate_databases/{pattern}.csv"
     )
-    df = pd.read_excel(filepath)
+    df = pd.read_csv(filepath)
 
     return df
 
@@ -33,7 +33,6 @@ def load_data(current_file_directory, pattern):
 def make_dm_fts(
     df, years_fts, scenario, agg_prod_dict=None, agg_mat_dict=None, deepen_n_cat=1
 ):
-
     # get fts data
     df_fts = df.loc[df["Scenario_year"].isin([scenario + "_2025"]), :]
     dm_fts = make_footprint_dm(df_fts, years_fts[0], deepen_n_cat=deepen_n_cat)
@@ -47,6 +46,8 @@ def make_dm_fts(
     # group products
     if agg_prod_dict is not None:
         dm_fts.groupby(agg_prod_dict, "Variables", "mean", regex=True, inplace=True)
+    # scale after groupby so trains_CEV and ships_ICE exist as variable names
+    scale_vehicle_units(dm_fts)
 
     # group materials
     if agg_mat_dict is not None:
@@ -73,7 +74,6 @@ def make_fts(
     agg_prod_dict=None,
     agg_mat_dict=None,
 ):
-
     # get data
     df_data = load_data(current_file_directory, variable)
 
@@ -90,7 +90,6 @@ def make_fts(
 
 
 def run(DM_lca, years_fts):
-
     # make space to store fts
     DM_lca["fts"] = {}
     DM_lca["fts"]["footprint"] = {}

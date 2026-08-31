@@ -695,6 +695,29 @@ def energyscope_pyomo(
         m, endyr, share_of_pop, DM_ind, DM_agr, country_dem
     )
 
+    # TODO: waste incineration link between buildings, industry, and energy is incomplete.
+    # Current state:
+    #   (i)  Industry accounts for emissions from burning solid-waste as an industrial
+    #        energy carrier (process heat). These appear in the industry → emissions interface.
+    #   (ii) Waste incineration for district heating (buildings DH demand) is handled
+    #        entirely by EnergyScope via the WASTE resource (avail, gwp_op). Related
+    #        emissions appear in GWP_op and are forwarded to the emissions module.
+    # Missing links:
+    #   - Energy recovered (electricity + heat) from industry EOL waste (packaging,
+    #     vehicles, electronics) is not fed back as a supply constraint to EnergyScope's
+    #     WASTE avail. The industry module computes waste tonnage by EOL route (energy-
+    #     recovery, incineration, landfill) but the resulting energy yield is a dead-end.
+    #   - The district heating module (district_heating_module.py) is dormant (commented
+    #     out in interactions.py). Industry has a placeholder interface function
+    #     (industry_district_heating_interface, dhg_energy-demand_contribution_heat-waste)
+    #     hardcoded at 0 that was intended to wire waste heat to district heating.
+    # TODO: the following FTS model settings produce counterintuitive BAU results that
+    # need review:
+    #   - Nuclear phased out by 2050 (22.6 TWh in 2025 → 0 TWh in 2050); gap filled by GasCC-CCS.
+    #     Is this intentional for BAU, or should nuclear have a longer lifetime?
+    #   - PV production declines from 4.25 TWh (2025) to 2.37 TWh (2050) despite capacity
+    #     fixed at 6.37 GW — EnergyScope LP reduces PV capacity factor. Needs investigation.
+    #   - Waste (KVA) drops from 0.97 TWh (2025) to 0 TWh (2050). Intentional phase-out?
     # Avail is in GWh
     # No nuclear
     m.avail["URANIUM"] = 0
@@ -761,9 +784,123 @@ def energyscope_pyomo(
         dm_prod_cap_cntr, dm_losses, dm_net_import, dm_demand_trend, share_of_pop
     )
 
+    # --- Electricity generation emissions (scope 1, sent to emissions module) ---
+    # Swiss scope 1 electricity CO2 comes from two sources:
+    #   FTS LP result: WASTE (KVA incineration) + NG_CCS (GasCC-CCS) via EnergyScope GWP_op.
+    #     GWP_op[NG] is excluded — it covers all NG uses (power + heating) and buildings/industry
+    #     already carry their own direct gas combustion scope 1.
+    #   Direct per-tech EF (OTS all years; FTS GasCC supplement):
+    #     OTS: GasCC, GasSC, Waste, Oil from historical production × EF.
+    #     FTS: GasCC × CCGT EF (not in LP GWP_op; isolated from heating NG).
+    #   Imported electricity CO2 is excluded (territorial principle: attributed to exporting country).
+    dm_gwp_gen = DM_2050["emissions"].copy()
+    gen_resources = [
+        r
+        for r in ["WASTE", "NG_CCS"]
+        if r in dm_gwp_gen.col_labels.get("Categories1", [])
+    ]
+    if gen_resources:
+        dm_gwp_gen.filter({"Categories1": gen_resources}, inplace=True)
+        dm_gwp_gen.group_all("Categories1", inplace=True)
+        gwp_endyr_mt = float(np.nansum(dm_gwp_gen.array)) / 1000.0  # kt → Mt CO2-eq
+    else:
+        gwp_endyr_mt = 0.0
+
+    all_years = years_ots + years_fts
+    n_years = len(all_years)
+    emi_ts = np.zeros(n_years)
+
+    fossil_cats = [
+        c
+        for c in ["GasCC", "GasCC-CCS"]
+        if c in dm_prod_cap_cntr.col_labels.get("Categories1", [])
+    ]
+    p_idx = dm_prod_cap_cntr.idx
+
+    if fossil_cats and country_prod in dm_prod_cap_cntr.col_labels.get("Country", []):
+        fossil_endyr = sum(
+            float(
+                dm_prod_cap_cntr.array[
+                    p_idx[country_prod], p_idx[endyr], p_idx["pow_production"], p_idx[c]
+                ]
+            )
+            for c in fossil_cats
+        )
+        for j, yr in enumerate(all_years):
+            if yr in years_fts and yr in p_idx:
+                if fossil_endyr > 1e-6:
+                    fossil_yr = sum(
+                        float(
+                            dm_prod_cap_cntr.array[
+                                p_idx[country_prod],
+                                p_idx[yr],
+                                p_idx["pow_production"],
+                                p_idx[c],
+                            ]
+                        )
+                        for c in fossil_cats
+                    )
+                    emi_ts[j] = gwp_endyr_mt * fossil_yr / fossil_endyr
+                else:
+                    emi_ts[j] = gwp_endyr_mt if yr == endyr else 0.0
+    else:
+        if endyr in [all_years[j] for j in range(n_years)]:
+            emi_ts[all_years.index(endyr)] = gwp_endyr_mt
+
+    # Direct per-tech emission factors (ktCO2/GWh_elec) derived from EnergyScope
+    # layers_in_out × gwp_op parameters.  Units: TWh_elec × ktCO2/GWh_elec = MtCO2.
+    # OTS: all fossil techs (LP not run, no GWP_op available).
+    # FTS: GasCC only — WASTE and GasCC-CCS already captured via gwp_endyr_mt above.
+    #      GasSC absent from FTS (phased out before 2025).
+    _direct_ef_ots = {
+        "GasCC": 0.4232,  # CCGT (NG, no CCS)
+        "GasSC": 0.8070,  # open-cycle gas turbine (~33 % efficiency)
+        "Waste": 0.7506,  # KVA waste incinerators (non-biogenic fraction)
+        "Oil": 0.8900,  # oil-fired backup plants
+    }
+    _direct_ef_fts = {
+        "GasCC": 0.4232,  # not in LP GWP_op (NG excluded); phased out by 2050
+        "Waste": 0.7506,  # LP GWP_op[WASTE]=0 at endyr 2050; captures 2025-2045 KVA CO2
+    }
+    if country_prod in dm_prod_cap_cntr.col_labels.get("Country", []):
+        for j, yr in enumerate(all_years):
+            if yr not in p_idx:
+                continue
+            ef_map = _direct_ef_ots if yr in years_ots else _direct_ef_fts
+            for tech, ef in ef_map.items():
+                if tech in p_idx:
+                    prod = float(
+                        dm_prod_cap_cntr.array[
+                            p_idx[country_prod],
+                            p_idx[yr],
+                            p_idx["pow_production"],
+                            p_idx[tech],
+                        ]
+                    )
+                    emi_ts[j] += max(0.0, prod) * ef
+
+    # Build DataMatrix: Variable "electricity-generation", Categories1 gas types.
+    # GWP_op is already CO2-equivalent → put in CO2; CH4 and N2O remain 0
+    # so make_co2_equivalent in emissions/workflows.py applies no additional factor.
+    all_countries = [country_prod] + [c for c in country_list if c != country_prod]
+    dm_energy_emi = DataMatrix(
+        col_labels={
+            "Country": all_countries,
+            "Years": all_years,
+            "Variables": ["electricity-generation"],
+            "Categories1": ["CH4", "CO2", "N2O"],
+        },
+        units={"electricity-generation": "Mt"},
+    )
+    e_idx = dm_energy_emi.idx
+    for country in all_countries:
+        dm_energy_emi.array[
+            e_idx[country], :, e_idx["electricity-generation"], e_idx["CO2"]
+        ] = emi_ts
+
     results_run = inter.prepare_TPE_output(dm_prod_cap_cntr, dm_demand_trend_by_sector)
 
-    return results_run
+    return results_run, dm_energy_emi
 
 
 def energy(lever_setting, years_setting, country_list, interface=Interface()):
@@ -846,7 +983,7 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
     data_filepath = os.path.join(
         current_file_directory, "../_database/data/datamatrix/energy.pickle"
     )
-    results_run = energyscope_pyomo(
+    results_run, dm_energy_emi = energyscope_pyomo(
         data_filepath,
         DM_transport,
         DM_buildings,
@@ -856,6 +993,8 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
         years_fts,
         country_list,
     )
+
+    interface.add_link(from_sector="energy", to_sector="emissions", dm=dm_energy_emi)
 
     return results_run
 

@@ -1,12 +1,21 @@
 """
 Swiss freight OTS: load factor and utilisation rate for road modes (HDVH, HDVL, HDVM).
 
+Accounting basis
+----------------
+Load factor for HDVH and HDVM uses CH-registered tkm (IMMATRICULATION == "CH")
+consistent with freight_tkm_modal_share. This ensures that tkm / load_factor /
+utilisation_rate recovers the Swiss-registered fleet (fleet_CH) from EP2050.
+EP2050 VKM (Fahrleistung) covers all road activity including some foreign transit;
+using CH-only tkm in the numerator corrects for this so the implied load factor
+reflects Swiss trucks' average payload, not the all-traffic average.
+
 Variables
 ---------
 tra_freight_load-factor : tkm/vkm
-    Average payload per km driven.
-    HDVH (TT/AT): BFS GTS HAV total tkm / EP2050 TT/AT VKM share.
-    HDVM (RigidTruck): BFS GTS LORRY total tkm / EP2050 RigidTruck VKM share.
+    Average payload per km driven, Swiss-registered trucks only.
+    HDVH (TT/AT): BFS GTS HAV CH-registered tkm / EP2050 TT/AT VKM share.
+    HDVM (RigidTruck): BFS GTS LORRY CH-registered tkm / EP2050 RigidTruck VKM share.
     HDVL (LCV): fixed at _HDVL_PAYLOAD_T_PER_VKM (0.2 t/vkm) by construction —
         HDVL tkm = LCV VKM × 0.2 in freight_tkm_modal_share.
 
@@ -18,8 +27,8 @@ tra_freight_utilisation-rate : vkm/year
 
 HGV VKM is split between HDVH and HDVM in proportion to their fleet counts,
 since EP2050 does not disaggregate HGV VKM by sub-type.
-BFS GTS tkm uses total traffic (CH + foreign registrations) to capture all
-freight demand in Switzerland, while EP2050 covers all road activity including transit.
+BFS GTS tkm uses CH-registered traffic only (residency-based), consistent with
+freight_tkm_modal_share. EP2050 VKM covers all road activity including transit.
 
 Sources
 -------
@@ -145,10 +154,10 @@ def _read_ep2050_fleet() -> dict:
 
 
 def _read_bfs_gts_road() -> dict:
-    """Return {mode: pd.Series(year->million_tkm)} for HDVH and HDVM from BFS GTS."""
+    """Return {mode: pd.Series(year->million_tkm)} for HDVH and HDVM, CH-registered only."""
     path = os.path.join(_DATA_DIR, "Freight/ts-x-11.05-GTS-E26.csv")
     df = pd.read_csv(path, sep=";")
-    df = df[(df["IMMATRICULATION"] == "_T") & (df["TRAFFIC_TYPE"] == "_T")]
+    df = df[(df["IMMATRICULATION"] == "CH") & (df["TRAFFIC_TYPE"] == "_T")]
     df = df[df["VEH_TYPE"].isin(["LORRY", "HAV"])]
     piv = df.pivot(index="REF_YEAR", columns="VEH_TYPE", values="OBS_VALUE")
     piv.index = piv.index.astype(int)
