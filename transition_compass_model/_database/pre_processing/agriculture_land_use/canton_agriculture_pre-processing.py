@@ -3,8 +3,10 @@ import pickle
 
 import numpy as np
 import pandas as pd
-from _database.pre_processing.api_routines_CH import get_data_api_CH
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     filter_DM,
@@ -16,7 +18,6 @@ from transition_compass_model.model.common.auxiliary_functions import (
 # Read Data
 ###############################################################################
 def read_pickle_agriculture():
-
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     f = os.path.join(current_file_directory, "../../data/datamatrix/agriculture.pickle")
     with open(f, "rb") as handle:

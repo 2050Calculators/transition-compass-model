@@ -6,17 +6,21 @@ import faostat
 import numpy as np
 import pandas as pd
 import requests
-from _database.pre_processing.api_routines_CH import get_data_api_CH
 
-from ....model.common.auxiliary_functions import (
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
+from transition_compass_model.model.common.auxiliary_functions import (
     add_dummy_country_to_DM,
     create_years_list,
     linear_fitting,
     my_pickle_dump,
     sort_pickle,
 )
-from ....model.common.constant_data_matrix_class import ConstantDataMatrix
-from ....model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import (
+    ConstantDataMatrix,
+)
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 # Initialize the Deepl Translator
 deepl_api_key = "9ecffb3f-5386-4254-a099-8bfc47167661:fx"
@@ -181,7 +185,6 @@ def get_wood_energy_by_sector(file_url, local_filename):
 
 
 def get_wood_energy_by_use(file_url, local_filename, clean_local_filename):
-
     def clean_excel_bloc(df):
         # header change
         df.columns = df.iloc[0]

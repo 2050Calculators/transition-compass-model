@@ -1058,7 +1058,7 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
     )
 
     # Prepend 'SSR' and 'Processed'
-    # pivot_df["Item"] = pivot_df["Item"].apply(lambda x: f"SSR {x}")
+    pivot_df["Item"] = pivot_df["Item"].apply(lambda x: f"SSR {x}")
 
     # Melt the DataFrame
     pivot_df_processed = pivot_df_processed.melt(
@@ -1304,7 +1304,7 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
     # Importing UNFCCC excel files and reading them with a loop (only for Switzerland) Table1.A(a)s4 ---------------------------
     # Putting in a df in 3 dimensions (from, to, year)
     # Define the path where the Excel files are located
-    folder_path = "data/data_unfccc_2023"
+    folder_path = "data/data/data_unfccc_2023"
 
     # List all files in the folder
     files = os.listdir(folder_path)
@@ -2445,7 +2445,7 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
     # For other value : gas-energycrop
     # Load from previous EuCalc Data
     df_yield_data = pd.read_csv(
-        "data/agriculture_climate-smart-crop_eucalc.csv", sep=";"
+        "data/data/agriculture_climate-smart-crop_eucalc.csv", sep=";"
     )
 
     # Filter columns
@@ -4281,7 +4281,9 @@ def feed_processing_lca():
 
 def feed_ssr_processing(years_ots):
     # Read excel (Link https://www.bfs.admin.ch/bfs/fr/home/statistiques/agriculture-sylviculture/agriculture.assetdetail.36135273.html)
-    df_feed = pd.read_excel("data/OFS_bilan-fourrager.xlsx", sheet_name="T7.2.3.1.6")
+    df_feed = pd.read_excel(
+        "data/data/OFS_bilan-fourrager.xlsx", sheet_name="T7.2.3.1.6"
+    )
 
     # List rows to filter
     rows_filter = "Année| Céréales| Tourteaux| Autres"
@@ -4378,11 +4380,11 @@ def climate_smart_forestry_processing():
 
     # Read csv
     df_g_inc = pd.read_excel(
-        "data/data_forestry.xlsx", sheet_name="annual_ginc_per_area_m3ha"
+        "data/data/data_forestry.xlsx", sheet_name="annual_ginc_per_area_m3ha"
     )
 
     # Read and format forest area for later
-    df_area = pd.read_csv("data/fra-extentOfForest.csv")
+    df_area = pd.read_csv("data/data/fra-extentOfForest.csv")
     df_area.columns = df_area.iloc[0]
     df_area = df_area[1:]
     # Rename column name 'geoscale'
@@ -4501,11 +4503,13 @@ def climate_smart_forestry_processing():
 
     # Read files (growing stock available fo wood supply and not)
     gstock_total = pd.read_excel(
-        "data/data_forestry.xlsx", sheet_name="gstock_total_Mm3"
+        "data/data/data_forestry.xlsx", sheet_name="gstock_total_Mm3"
     )
-    gstock_faws = pd.read_excel("data/data_forestry.xlsx", sheet_name="gstock_faws_Mm3")
+    gstock_faws = pd.read_excel(
+        "data/data/data_forestry.xlsx", sheet_name="gstock_faws_Mm3"
+    )
     area_faws = pd.read_excel(
-        "data/data_forestry.xlsx", sheet_name="forest_area_faws_1000ha"
+        "data/data/data_forestry.xlsx", sheet_name="forest_area_faws_1000ha"
     )
 
     # Format correctly
@@ -4619,7 +4623,7 @@ def climate_smart_forestry_processing():
     # HARVESTING RATE -------------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
     # Read files (growing stock available fo wood supply and not)
-    h_rate = pd.read_excel("data/data_forestry.xlsx", sheet_name="h-rate")
+    h_rate = pd.read_excel("data/data/data_forestry.xlsx", sheet_name="h-rate")
 
     # Replace - with Na
     # List of columns to modify
@@ -4672,7 +4676,7 @@ def climate_smart_forestry_processing():
 
     # Read file
     nat_losses = pd.read_excel(
-        "data/data_forestry.xlsx", sheet_name="nat-losses_1000ha"
+        "data/data/data_forestry.xlsx", sheet_name="nat-losses_1000ha"
     )
 
     # Format correctly
@@ -4794,7 +4798,7 @@ def land_management_processing(csf_managed):
     # Importing UNFCCC excel files and reading them with a loop (only for Switzerland) Table 4.1 ---------------------------
     # Putting in a df in 3 dimensions (from, to, year)
     # Define the path where the Excel files are located
-    folder_path = "data/data_unfccc_2023"
+    folder_path = "data/data/data_unfccc_2023"
 
     # List all files in the folder
     files = os.listdir(folder_path)
@@ -5430,7 +5434,7 @@ def biomass_bioernergy_hierarchy_processing(df_csl_feed):
     # ------------------------------------------------------------------------------------------------------------------
     # Load from previous EuCalc Data
     df_biomass_mix_data = pd.read_csv(
-        "data/agriculture_biomass-use-hierarchy_eucalc.csv", sep=";"
+        "data/data/agriculture_biomass-use-hierarchy_eucalc.csv", sep=";"
     )
 
     # Filter columns
@@ -5472,7 +5476,7 @@ def biomass_bioernergy_hierarchy_processing(df_csl_feed):
     # ------------------------------------------------------------------------------------------------------------------
     # Load from previous EuCalc Data
     df_biomass_residues_data = pd.read_csv(
-        "data/agriculture_biomass-use-hierarchy_eucalc.csv", sep=";"
+        "data/data/agriculture_biomass-use-hierarchy_eucalc.csv", sep=";"
     )
 
     # Filter columns
@@ -7114,8 +7118,8 @@ def feed_calibration(list_countries):
     list_elements = ["Feed"]
     list_items = [
         "Molasses",
-        "Cake of  linseed",
-        "Cake of  soya beans",
+        "Cake of linseed",
+        "Cake of soya beans",
         "Cake of copra",
         "Cake of cottonseed",
         "Cake of groundnuts",
@@ -7529,7 +7533,7 @@ def CO2_emissions():
     # Importing UNFCCC excel files and reading them with a loop (only for Switzerland) Table 4.1 ---------------------------
     # Putting in a df in 3 dimensions (from, to, year)
     # Define the path where the Excel files are located
-    folder_path = "data/data_unfccc_2023"
+    folder_path = "data/data/data_unfccc_2023"
 
     # List all files in the folder
     files = os.listdir(folder_path)
@@ -8983,37 +8987,7 @@ if not os.path.exists("data/faostat"):
     os.makedirs("data/faostat")
 
 df_feed_lsu_pathwaycalc = feed_processing_lca()
-list_countries = [
-    "Austria",
-    "Belgium",
-    "Bulgaria",
-    "Croatia",
-    "Cyprus",
-    "Czechia",
-    "Denmark",
-    "Estonia",
-    "Finland",
-    "France",
-    "Germany",
-    "Greece",
-    "Hungary",
-    "Ireland",
-    "Italy",
-    "Latvia",
-    "Lithuania",
-    "Luxembourg",
-    "Malta",
-    "Netherlands (Kingdom of the)",
-    "Poland",
-    "Portugal",
-    "Romania",
-    "Slovakia",
-    "Slovenia",
-    "Spain",
-    "Sweden",
-    "Switzerland",
-    "United Kingdom of Great Britain and Northern Ireland",
-]
+list_countries = ["Switzerland"]
 
 file = "data/faostat/diet.csv"
 df_diet_pathwaycalc, df_diet = diet_processing(list_countries, file)
