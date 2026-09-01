@@ -92,6 +92,26 @@ def vehicle_utilisation_DLS_fts(DM_transport):
     return DM_transport
 
 
+def passenger_distance_dls(DM_transport):
+    dm_pkm_4 = DM_transport["fts"]["pkm"][4].copy()
+
+    dm_pkm_ots = DM_transport["ots"]["pkm"]
+    idx = dm_pkm_ots.idx
+    demande_transport_2023 = dm_pkm_ots.array[:, idx[2023], 0]
+
+    # SCENARIO DLS:
+    idx = dm_pkm_4.idx
+    dm_pkm_4.array[:, 0 : idx[2050] + 1, 0] = np.nan
+    dm_pkm_4.array[:, idx[2025], 0] = demande_transport_2023
+    dm_pkm_4.array[:, idx[2050], 0] = 3241
+    linear_fitting(dm_pkm_4, dm_pkm_4.col_labels["Years"])
+    dm_pkm_4.array[:, idx[2025], 0] *= 0.95
+    linear_fitting(dm_pkm_4, dm_pkm_4.col_labels["Years"])
+
+    DM_transport["fts"]["pkm"][4] = dm_pkm_4
+    return DM_transport
+
+
 def run(DM_transport: DataMatrix, lev: int = 4) -> DataMatrix:
     #### Freight tkm ####
     DM_transport = freight_tkm_dls(DM_transport)
@@ -101,6 +121,9 @@ def run(DM_transport: DataMatrix, lev: int = 4) -> DataMatrix:
 
     #### MODAL SHARE ####
     DM_transport = modal_share_DLS_fts(DM_transport, lev)
+
+    #### PKM PASSENGER DISTANCE ####
+    DM_transport = passenger_distance_dls(DM_transport)
 
     ##### FREIGHT TRANSPORT #########
     this_dir = os.path.dirname(os.path.abspath(__file__))

@@ -10,6 +10,17 @@ from transition_compass_model.model.common.auxiliary_functions import (
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
+def get_lev_data(
+    DM_transport, lev_name="passenger_modal-share", lev_number=3
+) -> tuple[DataMatrix, list, DataMatrix, list]:
+    dm_ots = DM_transport["ots"][lev_name].copy()
+    idx_ots = dm_ots.idx
+
+    dm_fts_3 = DM_transport["fts"][lev_name][lev_number].copy()
+    idx_fts = dm_fts_3.idx
+    return dm_ots, idx_ots, dm_fts_3, idx_fts
+
+
 def interpolate_between_2_levers(DM_transport, lever_name, lev_list=[2, 4]):
     dic_dm_freight_fts = {}
     for lev_number in lev_list:
@@ -19,6 +30,35 @@ def interpolate_between_2_levers(DM_transport, lever_name, lev_list=[2, 4]):
     DM_transport["fts"][lever_name][2] = midpoint(
         dic_dm_freight_fts[lev_list[0]], dic_dm_freight_fts[lev_list[1]], 0.5
     )
+
+    return DM_transport
+
+
+def interpolate_between_1_4_filtered(DM_transport, lever_name, country_to_filter):
+    """When values is not defined for every countries we need to interpolate only on some countries.
+    This function will take the values for lever 1 and 4 and interpolate for lever 2 and 3 only for the country_to_filter.
+    The other countries will keep their original values.
+    """
+    dic_dm_freight_fts = {}
+    for lev_number in [1, 4]:
+        _, _, dic_dm_freight_fts[lev_number], _ = get_lev_data(
+            DM_transport, lever_name, lev_number=lev_number
+        )
+        dic_dm_freight_fts[lev_number] = dic_dm_freight_fts[lev_number].filter(
+            {"Country": [country_to_filter]}
+        )
+
+    dm_transport_lev_2 = midpoint(dic_dm_freight_fts[1], dic_dm_freight_fts[4], 0.25)
+
+    dm_transport_lev_3 = midpoint(dic_dm_freight_fts[1], dic_dm_freight_fts[4], 0.75)
+    idx_transport_lev_2 = dm_transport_lev_2.idx
+    idx_transport_lev_3 = dm_transport_lev_3.idx
+    DM_transport["fts"][lever_name][2].array[
+        idx_transport_lev_2[country_to_filter], ...
+    ] = dm_transport_lev_2.array
+    DM_transport["fts"][lever_name][3].array[
+        idx_transport_lev_3[country_to_filter], ...
+    ] = dm_transport_lev_3.array
 
     return DM_transport
 
@@ -44,17 +84,6 @@ def comput_prop_in_cat(dm_ots, list_cat):
     share_road_TP.normalise(dim="Categories1", inplace=True, keep_original=False)
     idx_road_TP = share_road_TP.idx
     return share_road_TP, idx_road_TP
-
-
-def get_lev_data(
-    DM_transport, lev_name="passenger_modal-share", lev_number=3
-) -> tuple[DataMatrix, list, DataMatrix, list]:
-    dm_ots = DM_transport["ots"][lev_name].copy()
-    idx_ots = dm_ots.idx
-
-    dm_fts_3 = DM_transport["fts"][lev_name][lev_number].copy()
-    idx_fts = dm_fts_3.idx
-    return dm_ots, idx_ots, dm_fts_3, idx_fts
 
 
 def implement_modal_share_fts(DM_transport):
@@ -290,6 +319,9 @@ def run(DM_transport: dict, country_list: list, years_ots: list, years_fts: list
 
     ### utilization rate ###
     DM_transport = interpolate_between_1_4(DM_transport, "passenger_utilization-rate")
+
+    #### Passenger distance ###
+    DM_transport = interpolate_between_1_4_filtered(DM_transport, "pkm", "Switzerland")
 
     ##### Save pickle #########
     this_dir = os.path.dirname(os.path.abspath(__file__))
