@@ -488,7 +488,6 @@ def run(DM_transport, country_list, years_ots, years_fts):
     dm_pkm_1 = DM_transport["fts"]["pkm"][1]
 
     dm_pkm_2 = DM_transport["fts"]["pkm"][2]
-    dm_pkm_4 = DM_transport["fts"]["pkm"][4]
     dm_pkm_ots = DM_transport["ots"]["pkm"]
 
     idx = dm_pkm_ots.idx
@@ -537,16 +536,8 @@ def run(DM_transport, country_list, years_ots, years_fts):
         10.4 * 10**9 / dm_pop.array[idx_pop["Vaud"], idx_pop[2050], 0]
     )
     dm_pkm_3.fill_nans("Years")
-    # SCENARIO DLS:
-    idx = dm_pkm_4.idx
-    dm_pkm_4.array[idx["Vaud"], 0 : idx[2050] + 1, 0] = np.nan
-    dm_pkm_4.array[idx["Vaud"], idx[2025], 0] = demande_transport_2023
-    dm_pkm_4.array[idx["Vaud"], idx[2050], 0] = 3241
-    linear_fitting(dm_pkm_4, dm_pkm_4.col_labels["Years"])
-    dm_pkm_4.array[idx["Vaud"], idx[2025], 0] *= 0.95
-    linear_fitting(dm_pkm_4, dm_pkm_4.col_labels["Years"])
 
-    DM_fts["fts"]["pkm"] = {1: dm_pkm_1, 2: dm_pkm_2, 3: dm_pkm_3, 4: dm_pkm_4}
+    DM_fts["fts"]["pkm"] = {1: dm_pkm_1, 2: dm_pkm_2, 3: dm_pkm_3, 4: dm_pkm_3}
 
     # ======================  MESURE 5  ==================================== (CALCULER LES EMISSIONS MOYENNES DU NOUVEAU PARC EN 2021)
 

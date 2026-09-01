@@ -10,6 +10,35 @@ from transition_compass_model.model.common.auxiliary_functions import (
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
+def interpolate_between_2_levers(DM_transport, lever_name, lev_list=[2, 4]):
+    dic_dm_freight_fts = {}
+    for lev_number in lev_list:
+        _, _, dic_dm_freight_fts[lev_number], _ = get_lev_data(
+            DM_transport, lever_name, lev_number=lev_number
+        )
+    DM_transport["fts"][lever_name][2] = midpoint(
+        dic_dm_freight_fts[lev_list[0]], dic_dm_freight_fts[lev_list[1]], 0.5
+    )
+
+    return DM_transport
+
+
+def interpolate_between_1_4(DM_transport, lever_name):
+    dic_dm_freight_fts = {}
+    for lev_number in [1, 4]:
+        _, _, dic_dm_freight_fts[lev_number], _ = get_lev_data(
+            DM_transport, lever_name, lev_number=lev_number
+        )
+    DM_transport["fts"][lever_name][2] = midpoint(
+        dic_dm_freight_fts[1], dic_dm_freight_fts[4], 0.25
+    )
+    DM_transport["fts"][lever_name][3] = midpoint(
+        dic_dm_freight_fts[1], dic_dm_freight_fts[4], 0.75
+    )
+
+    return DM_transport
+
+
 def comput_prop_in_cat(dm_ots, list_cat):
     share_road_TP = dm_ots.filter({"Categories1": list_cat})
     share_road_TP.normalise(dim="Categories1", inplace=True, keep_original=False)
@@ -90,6 +119,20 @@ def implement_modal_share_fts(DM_transport):
     dm_fts_3_modal.fill_nans("Years")
     dm_fts_3_modal.normalise(dim="Categories1", inplace=True)
     DM_transport["fts"]["passenger_modal-share"][3] = dm_fts_3_modal
+
+    # No lever 2  implemented for switzerland so we use midpoint
+    dm_fts_switzerland_2 = midpoint(
+        DM_transport["fts"]["passenger_modal-share"][1].filter(
+            {"Country": ["Switzerland"]}
+        ),
+        dm_fts_3_modal.filter({"Country": ["Switzerland"]}),
+        0.5,
+    )
+    idx_fts_switzerland_2 = dm_fts_switzerland_2.idx
+    DM_transport["fts"]["passenger_modal-share"][2].array[
+        idx_fts_switzerland_2["Switzerland"], ...
+    ] = dm_fts_switzerland_2.array
+
     return DM_transport
 
 
@@ -165,22 +208,6 @@ def freight_demand_fts(DM_transport):
         dic_dm_freight_fts[1], dic_dm_freight_fts[4], 0.25
     )
     DM_transport["fts"]["freight_tkm"][3] = midpoint(
-        dic_dm_freight_fts[1], dic_dm_freight_fts[4], 0.75
-    )
-
-    return DM_transport
-
-
-def interpolate_between_1_4(DM_transport, lever_name):
-    dic_dm_freight_fts = {}
-    for lev_number in [1, 4]:
-        _, _, dic_dm_freight_fts[lev_number], _ = get_lev_data(
-            DM_transport, lever_name, lev_number=lev_number
-        )
-    DM_transport["fts"][lever_name][2] = midpoint(
-        dic_dm_freight_fts[1], dic_dm_freight_fts[4], 0.25
-    )
-    DM_transport["fts"][lever_name][3] = midpoint(
         dic_dm_freight_fts[1], dic_dm_freight_fts[4], 0.75
     )
 
