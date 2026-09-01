@@ -102,9 +102,9 @@ def diet_processing(list_countries, file):
         ]
 
         # 1990 - 2013
-        ld = faostat.list_datasets()
+        # ld = faostat.list_datasets()
         code = "FBSH"
-        pars = faostat.list_pars(code)
+        # pars = faostat.list_pars(code)
         my_countries = [
             faostat.get_par(code, "area")[c] for c in list_countries
         ]  # faostat.get_par(code, 'elements')
@@ -610,9 +610,9 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
         ]
 
         # 1990 - 2013
-        ld = faostat.list_datasets()
+        # ld = faostat.list_datasets()
         code = "FBSH"
-        pars = faostat.list_pars(code)
+        # pars = faostat.list_pars(code)
         my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
         my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
         my_items = [faostat.get_par(code, "item")[i] for i in list_items]
@@ -1949,7 +1949,8 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
     # pivot_df[:].fillna(0.0, inplace=True)
 
     # Merge inputs with agricultural land
-    pivot_df["Year"] = pivot_df["Year"].astype(str)
+    df_agri_land["Year"] = df_agri_land["Year"].astype(int)
+
     df_input_land = pd.merge(pivot_df, df_agri_land, on=["Area", "Year"])
 
     # Compute the use per land [t/ha]
@@ -2543,6 +2544,7 @@ def climate_smart_livestock_processing(
     ]
     df_ruminant = df_ruminant.groupby(["Area", "Year"], as_index=False)["Value"].sum()
 
+    df_ruminant["Year"] = df_ruminant["Year"].astype(int)
     # Merge with cropland_density
     df_ruminant = pd.merge(df_ruminant, df_cropland_density, on=["Area", "Year"])
 
@@ -2556,100 +2558,6 @@ def climate_smart_livestock_processing(
 
     # Adding an Item column for name
     df_ruminant["Item"] = "Density"
-
-    """list_elements = ['Livestock units per agricultural land area', 'Share in total livestock']
-
-    list_items = ['Major livestock types > (List)']
-
-    # 1990 - 2021
-    code = 'EK'
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
-    my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
-    list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
-                  '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013',
-                  '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021']
-    my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
-
-    my_pars = {
-        'area': my_countries,
-        'element': my_elements,
-        'item': my_items,
-        'year': my_years
-    }
-    df_density_1990_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
-
-    # Renaming item as the same animal (for meat and live/producing/slaugthered animals)
-    # Commenting only to consider grazing animals (cattle, buffalo, sheep, goat, horse)
-    # df_density_1990_2021.loc[df_density_1990_2021['Item'].str.contains('Pig', case=False, na=False), 'Item'] = 'Pig'
-    df_density_1990_2021.loc[
-        df_density_1990_2021['Item'].str.contains('Cattle', case=False, na=False), 'Item'] = 'Cattle'
-    df_density_1990_2021.loc[
-        df_density_1990_2021['Item'].str.contains('Buffalo', case=False, na=False), 'Item'] = 'Cattle'
-    # df_density_1990_2021.loc[df_density_1990_2021['Item'].str.contains('Camel', case=False, na=False), 'Item'] = 'Other non-specified'
-    # df_density_1990_2021.loc[df_density_1990_2021['Item'].str.contains('Rodent', case=False, na=False), 'Item'] = 'Other non-specified'
-    # df_density_1990_2021.loc[df_density_1990_2021['Item'].str.contains('Chicken', case=False, na=False), 'Item'] = 'Chicken'
-    # df_density_1990_2021.loc[df_density_1990_2021['Item'].str.contains('Duck', case=False, na=False), 'Item'] = 'Duck'
-    # df_density_1990_2021.loc[df_density_1990_2021['Item'].str.contains('Geese', case=False, na=False), 'Item'] = 'Goose'
-    # df_density_1990_2021.loc[df_density_1990_2021['Item'].str.contains('Pigeon', case=False, na=False), 'Item'] = 'Pigeon'
-    df_density_1990_2021.loc[
-        df_density_1990_2021['Item'].str.contains('Horses', case=False, na=False), 'Item'] = 'Horse'
-    df_density_1990_2021.loc[df_density_1990_2021['Item'].str.contains('Sheep', case=False, na=False), 'Item'] = 'Sheep'
-    df_density_1990_2021.loc[df_density_1990_2021['Item'].str.contains('Goat', case=False, na=False), 'Item'] = 'Goat'
-    # df_density_1990_2021.loc[df_density_1990_2021['Item'].str.contains('Rabbits and hares', case=False, na=False), 'Item'] = 'Rabbit'
-
-    # Filter only for Cattle, sheep and goats
-    df_density_1990_2021 = df_density_1990_2021[df_density_1990_2021['Item'].isin(
-      ['Cattle', 'Sheep', 'Goat'])]
-
-    # Aggregating
-    # Reading excel lsu equivalent (for aggregation)
-    df_lsu = pd.read_excel(
-        'dictionaries/lsu_equivalent.xlsx',
-        sheet_name='lsu_equivalent')
-    # Merging
-    df_density_1990_2021 = pd.merge(df_density_1990_2021, df_lsu, on='Item')
-
-    # Aggregating
-    df_density_1990_2021 = \
-    df_density_1990_2021.groupby(['Aggregation', 'Area', 'Year', 'Element', 'Unit'], as_index=False)['Value'].sum()
-
-    # Pivot the df
-    pivot_df = df_density_1990_2021.pivot_table(index=['Area', 'Year', 'Aggregation'], columns='Element',
-                                                values='Value').reset_index()
-
-    # Normalize the share of ruminants
-    pivot_df['Total ruminant share [%]'] = pivot_df.groupby(['Area', 'Year'])['Share in total livestock'].transform(
-        'sum')
-    pivot_df['Normalized ruminant share [%]'] = pivot_df['Share in total livestock'] / pivot_df[
-        'Total ruminant share [%]']
-
-    # Multiply Livestock per ha per type [lsu/ha] with the normalized ratio
-    pivot_df['Livestock area per type per share [lsu/ha]'] = pivot_df['Livestock units per agricultural land area'] * \
-                                                             pivot_df['Normalized ruminant share [%]']
-
-    # Sum
-    # Livestock density [lsu/ha] = sum per year & country (Livestock area per type per share [lsu/ha])
-    pivot_df['Livestock density [lsu/ha]'] = pivot_df.groupby(['Area', 'Year'])[
-        'Livestock area per type per share [lsu/ha]'].transform('sum')
-
-    # Grouping for one value per country & year
-    grouped_df = pivot_df.groupby(['Year', 'Area', 'Livestock density [lsu/ha]']).size().reset_index(name='Count')
-    # Drop other columns by selecting only the desired columns
-    grouped_df = grouped_df[['Year', 'Area', 'Livestock density [lsu/ha]']]
-
-    # Merge with df_cropland_density
-    grouped_df = pd.merge(df_cropland_density, grouped_df, on=['Area', 'Year'])
-
-    # Density per grassland instead of density per agricultural land
-    # Calculate total livestock
-    grouped_df['total_livestock'] = grouped_df['Livestock density [lsu/ha]'] * (grouped_df['Cropland'] + grouped_df['Permanent meadows and pastures'])
-    # Calculate livestock density per grassland
-    grouped_df['Livestock density [lsu/ha]'] = grouped_df['total_livestock'] / grouped_df['Permanent meadows and pastures']
-    grouped_df = grouped_df[['Year', 'Area', 'Livestock density [lsu/ha]']]
-
-    # Adding an Item column for name
-    grouped_df['Item'] = 'Density' """
 
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
 
@@ -2775,124 +2683,136 @@ def climate_smart_livestock_processing(
     # ----------------------------------------------------------------------------------------------------------------------
     # ENTERIC EMISSIONS ----------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
-    list_elements = [
-        "Enteric fermentation (Emissions CH4)",
-        "Manure management (Emissions CH4)",
-        "Stocks",
-    ]
+    try:
+        df_enteric_1990_2021 = pd.read_csv(file_dict["enteric"])
+    except OSError:
+        list_elements = [
+            "Enteric fermentation (Emissions CH4)",
+            "Manure management (Emissions CH4)",
+            "Stocks",
+        ]
 
-    list_items = ["All Animals > (List)"]
-    list_sources = ["FAO TIER 1"]
+        list_items = ["All Animals > (List)"]
+        list_sources = ["FAO TIER 1"]
 
-    # 1990 - 2021
-    code = "GLE"
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    my_sources = [faostat.get_par(code, "sources")[i] for i in list_sources]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        # 1990 - 2021
+        code = "GLE"
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        my_sources = [faostat.get_par(code, "sources")[i] for i in list_sources]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-        "source": my_sources,
-    }
-    df_enteric_1990_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+            "source": my_sources,
+        }
+        df_enteric_1990_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    # Renaming item as the same animal (for meat and live/producing/slaugthered animals)
-    df_enteric_1990_2021.loc[
-        df_enteric_1990_2021["Item"].str.contains(
-            "Cattle, dairy", case=False, na=False
-        ),
-        "Item",
-    ] = "Dairy cows"
-    df_enteric_1990_2021.loc[
-        df_enteric_1990_2021["Item"].str.contains(
-            "Cattle, non-dairy", case=False, na=False
-        ),
-        "Item",
-    ] = "Cattle"
-    df_enteric_1990_2021.loc[
-        df_enteric_1990_2021["Item"].str.contains("Goat", case=False, na=False), "Item"
-    ] = "Goat"
-    df_enteric_1990_2021.loc[
-        df_enteric_1990_2021["Item"].str.contains(
-            "Chickens, broilers", case=False, na=False
-        ),
-        "Item",
-    ] = "Chicken"
-    df_enteric_1990_2021.loc[
-        df_enteric_1990_2021["Item"].str.contains(
-            "Chickens, layers", case=False, na=False
-        ),
-        "Item",
-    ] = "Chicken laying hens"
-    df_enteric_1990_2021.loc[
-        df_enteric_1990_2021["Item"].str.contains("Duck", case=False, na=False), "Item"
-    ] = "Duck"
-    df_enteric_1990_2021.loc[
-        df_enteric_1990_2021["Item"].str.contains("Horse", case=False, na=False), "Item"
-    ] = "Horse"
-    df_enteric_1990_2021.loc[
-        df_enteric_1990_2021["Item"].str.contains("Sheep", case=False, na=False), "Item"
-    ] = "Sheep"
-    df_enteric_1990_2021.loc[
-        df_enteric_1990_2021["Item"].str.contains("Swine", case=False, na=False), "Item"
-    ] = "Pig"
-    df_enteric_1990_2021.loc[
-        df_enteric_1990_2021["Item"].str.contains("Turkey", case=False, na=False),
-        "Item",
-    ] = "Turkey"
-    df_enteric_1990_2021.loc[
-        df_enteric_1990_2021["Item"].str.contains("Asse", case=False, na=False), "Item"
-    ] = "Asse"
-    df_enteric_1990_2021.loc[
-        df_enteric_1990_2021["Item"].str.contains("Buffalo", case=False, na=False),
-        "Item",
-    ] = "Buffalo"
-    df_enteric_1990_2021.loc[
-        df_enteric_1990_2021["Item"].str.contains("Mule", case=False, na=False), "Item"
-    ] = "Mule"
-    df_enteric_1990_2021.loc[
-        df_enteric_1990_2021["Item"].str.contains("Camel", case=False, na=False), "Item"
-    ] = "Other non-specified"
+        # Renaming item as the same animal (for meat and live/producing/slaugthered animals)
+        df_enteric_1990_2021.loc[
+            df_enteric_1990_2021["Item"].str.contains(
+                "Cattle, dairy", case=False, na=False
+            ),
+            "Item",
+        ] = "Dairy cows"
+        df_enteric_1990_2021.loc[
+            df_enteric_1990_2021["Item"].str.contains(
+                "Cattle, non-dairy", case=False, na=False
+            ),
+            "Item",
+        ] = "Cattle"
+        df_enteric_1990_2021.loc[
+            df_enteric_1990_2021["Item"].str.contains("Goat", case=False, na=False),
+            "Item",
+        ] = "Goat"
+        df_enteric_1990_2021.loc[
+            df_enteric_1990_2021["Item"].str.contains(
+                "Chickens, broilers", case=False, na=False
+            ),
+            "Item",
+        ] = "Chicken"
+        df_enteric_1990_2021.loc[
+            df_enteric_1990_2021["Item"].str.contains(
+                "Chickens, layers", case=False, na=False
+            ),
+            "Item",
+        ] = "Chicken laying hens"
+        df_enteric_1990_2021.loc[
+            df_enteric_1990_2021["Item"].str.contains("Duck", case=False, na=False),
+            "Item",
+        ] = "Duck"
+        df_enteric_1990_2021.loc[
+            df_enteric_1990_2021["Item"].str.contains("Horse", case=False, na=False),
+            "Item",
+        ] = "Horse"
+        df_enteric_1990_2021.loc[
+            df_enteric_1990_2021["Item"].str.contains("Sheep", case=False, na=False),
+            "Item",
+        ] = "Sheep"
+        df_enteric_1990_2021.loc[
+            df_enteric_1990_2021["Item"].str.contains("Swine", case=False, na=False),
+            "Item",
+        ] = "Pig"
+        df_enteric_1990_2021.loc[
+            df_enteric_1990_2021["Item"].str.contains("Turkey", case=False, na=False),
+            "Item",
+        ] = "Turkey"
+        df_enteric_1990_2021.loc[
+            df_enteric_1990_2021["Item"].str.contains("Asse", case=False, na=False),
+            "Item",
+        ] = "Asse"
+        df_enteric_1990_2021.loc[
+            df_enteric_1990_2021["Item"].str.contains("Buffalo", case=False, na=False),
+            "Item",
+        ] = "Buffalo"
+        df_enteric_1990_2021.loc[
+            df_enteric_1990_2021["Item"].str.contains("Mule", case=False, na=False),
+            "Item",
+        ] = "Mule"
+        df_enteric_1990_2021.loc[
+            df_enteric_1990_2021["Item"].str.contains("Camel", case=False, na=False),
+            "Item",
+        ] = "Other non-specified"
+        df_enteric_1990_2021.to_csv("data/faostat/enteric_1990_2021.csv", index=False)
 
     # Reading excel lsu equivalent
     df_lsu = pd.read_excel(
@@ -2993,119 +2913,135 @@ def climate_smart_livestock_processing(
     # ----------------------------------------------------------------------------------------------------------------------
     # MANURE EMISSIONS (APPLIED, PASTURE & TREATED) ------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
-    list_elements = [
-        "Amount excreted in manure (N content)",
-        "Manure left on pasture (N content)",
-        "Manure applied to soils (N content)",
-        "Manure management (manure treated, N content)",
-    ]
+    try:
+        df_manure_1990_2021 = pd.read_csv(file_dict["manure"])
+    except OSError:
+        list_elements = [
+            "Amount excreted in manure (N content)",
+            "Manure left on pasture (N content)",
+            "Manure applied to soils (N content)",
+            "Manure management (manure treated, N content)",
+        ]
 
-    list_items = ["All Animals > (List)"]
+        list_items = ["All Animals > (List)"]
 
-    # 1990 - 2022
-    code = "EMN"
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        # 1990 - 2022
+        code = "EMN"
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_manure_1990_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_manure_1990_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    # Renaming item as the same animal
-    df_manure_1990_2021.loc[
-        df_manure_1990_2021["Item"].str.contains("Cattle, dairy", case=False, na=False),
-        "Item",
-    ] = "Dairy cows"
-    df_manure_1990_2021.loc[
-        df_manure_1990_2021["Item"].str.contains(
-            "Cattle, non-dairy", case=False, na=False
-        ),
-        "Item",
-    ] = "Cattle"
-    df_manure_1990_2021.loc[
-        df_manure_1990_2021["Item"].str.contains("Goat", case=False, na=False), "Item"
-    ] = "Goat"
-    df_manure_1990_2021.loc[
-        df_manure_1990_2021["Item"].str.contains(
-            "Chickens, broilers", case=False, na=False
-        ),
-        "Item",
-    ] = "Chicken"
-    df_manure_1990_2021.loc[
-        df_manure_1990_2021["Item"].str.contains(
-            "Chickens, layers", case=False, na=False
-        ),
-        "Item",
-    ] = "Chicken laying hens"
-    df_manure_1990_2021.loc[
-        df_manure_1990_2021["Item"].str.contains("Duck", case=False, na=False), "Item"
-    ] = "Duck"
-    df_manure_1990_2021.loc[
-        df_manure_1990_2021["Item"].str.contains("Horse", case=False, na=False), "Item"
-    ] = "Horse"
-    df_manure_1990_2021.loc[
-        df_manure_1990_2021["Item"].str.contains("Sheep", case=False, na=False), "Item"
-    ] = "Sheep"
-    df_manure_1990_2021.loc[
-        df_manure_1990_2021["Item"].str.contains("Swine", case=False, na=False), "Item"
-    ] = "Pig"
-    df_manure_1990_2021.loc[
-        df_manure_1990_2021["Item"].str.contains("Turkey", case=False, na=False), "Item"
-    ] = "Turkey"
-    df_manure_1990_2021.loc[
-        df_manure_1990_2021["Item"].str.contains("Asse", case=False, na=False), "Item"
-    ] = "Asse"
-    df_manure_1990_2021.loc[
-        df_manure_1990_2021["Item"].str.contains("Buffalo", case=False, na=False),
-        "Item",
-    ] = "Buffalo"
-    df_manure_1990_2021.loc[
-        df_manure_1990_2021["Item"].str.contains("Mule", case=False, na=False), "Item"
-    ] = "Mule"
-    df_manure_1990_2021.loc[
-        df_manure_1990_2021["Item"].str.contains("Camel", case=False, na=False), "Item"
-    ] = "Other non-specified"
+        # Renaming item as the same animal
+        df_manure_1990_2021.loc[
+            df_manure_1990_2021["Item"].str.contains(
+                "Cattle, dairy", case=False, na=False
+            ),
+            "Item",
+        ] = "Dairy cows"
+        df_manure_1990_2021.loc[
+            df_manure_1990_2021["Item"].str.contains(
+                "Cattle, non-dairy", case=False, na=False
+            ),
+            "Item",
+        ] = "Cattle"
+        df_manure_1990_2021.loc[
+            df_manure_1990_2021["Item"].str.contains("Goat", case=False, na=False),
+            "Item",
+        ] = "Goat"
+        df_manure_1990_2021.loc[
+            df_manure_1990_2021["Item"].str.contains(
+                "Chickens, broilers", case=False, na=False
+            ),
+            "Item",
+        ] = "Chicken"
+        df_manure_1990_2021.loc[
+            df_manure_1990_2021["Item"].str.contains(
+                "Chickens, layers", case=False, na=False
+            ),
+            "Item",
+        ] = "Chicken laying hens"
+        df_manure_1990_2021.loc[
+            df_manure_1990_2021["Item"].str.contains("Duck", case=False, na=False),
+            "Item",
+        ] = "Duck"
+        df_manure_1990_2021.loc[
+            df_manure_1990_2021["Item"].str.contains("Horse", case=False, na=False),
+            "Item",
+        ] = "Horse"
+        df_manure_1990_2021.loc[
+            df_manure_1990_2021["Item"].str.contains("Sheep", case=False, na=False),
+            "Item",
+        ] = "Sheep"
+        df_manure_1990_2021.loc[
+            df_manure_1990_2021["Item"].str.contains("Swine", case=False, na=False),
+            "Item",
+        ] = "Pig"
+        df_manure_1990_2021.loc[
+            df_manure_1990_2021["Item"].str.contains("Turkey", case=False, na=False),
+            "Item",
+        ] = "Turkey"
+        df_manure_1990_2021.loc[
+            df_manure_1990_2021["Item"].str.contains("Asse", case=False, na=False),
+            "Item",
+        ] = "Asse"
+        df_manure_1990_2021.loc[
+            df_manure_1990_2021["Item"].str.contains("Buffalo", case=False, na=False),
+            "Item",
+        ] = "Buffalo"
+        df_manure_1990_2021.loc[
+            df_manure_1990_2021["Item"].str.contains("Mule", case=False, na=False),
+            "Item",
+        ] = "Mule"
+        df_manure_1990_2021.loc[
+            df_manure_1990_2021["Item"].str.contains("Camel", case=False, na=False),
+            "Item",
+        ] = "Other non-specified"
+
+        df_manure_1990_2021.to_csv(file_dict["manure"], index=False)
 
     # Reading excel lsu equivalent (for aggregation)
     df_lsu = pd.read_excel(
@@ -3142,6 +3078,7 @@ def climate_smart_livestock_processing(
     # Apply the replacement
     df_liv_pop["Item"] = df_liv_pop["Item"].replace(terms)
 
+    df_liv_pop["Year"] = df_liv_pop["Year"].astype(int)
     # Merge with stock from df_liv_pop
     pivot_df = pd.merge(
         pivot_df,
@@ -3259,96 +3196,102 @@ def climate_smart_livestock_processing(
     # ----------------------------------------------------------------------------------------------------------------------
 
     # FOOD BALANCE SHEETS (FBS) - For everything  -------------------------------------------------
-    # List of elements
-    list_elements = ["Losses", "Production Quantity"]
+    try:
+        df_losses_csl = pd.read_csv(file_dict["losses_csl"])
+    except FileNotFoundError:
+        print("File not found for losses data.")
 
-    list_items = ["Animal Products > (List)"]
+        # List of elements
+        list_elements = ["Losses", "Production Quantity"]
 
-    # 1990 - 2013
-    code = "FBSH"
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        list_items = ["Animal Products > (List)"]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_losses_csl_1990_2013 = faostat.get_data_df(code, pars=my_pars, strval=False)
+        # 1990 - 2013
+        code = "FBSH"
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    # Renaming Elements
-    df_losses_csl_1990_2013.loc[
-        df_losses_csl_1990_2013["Element"].str.contains(
-            "Production Quantity", case=False, na=False
-        ),
-        "Element",
-    ] = "Production"
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_losses_csl_1990_2013 = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    # 2010 - 2022
-    # Different list because different in item nomination such as rice
-    list_elements = ["Losses", "Production Quantity"]
-    code = "FBS"
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        # Renaming Elements
+        df_losses_csl_1990_2013.loc[
+            df_losses_csl_1990_2013["Element"].str.contains(
+                "Production Quantity", case=False, na=False
+            ),
+            "Element",
+        ] = "Production"
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_losses_csl_2010_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
-    # Renaming Elements
-    df_losses_csl_2010_2021.loc[
-        df_losses_csl_2010_2021["Element"].str.contains(
-            "Production Quantity", case=False, na=False
-        ),
-        "Element",
-    ] = "Production"
+        # 2010 - 2022
+        # Different list because different in item nomination such as rice
+        list_elements = ["Losses", "Production Quantity"]
+        code = "FBS"
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    # Concatenating
-    df_losses_csl = pd.concat([df_losses_csl_1990_2013, df_losses_csl_2010_2021])
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_losses_csl_2010_2021 = faostat.get_data_df(code, pars=my_pars, strval=False)
+        # Renaming Elements
+        df_losses_csl_2010_2021.loc[
+            df_losses_csl_2010_2021["Element"].str.contains(
+                "Production Quantity", case=False, na=False
+            ),
+            "Element",
+        ] = "Production"
+
+        # Concatenating
+        df_losses_csl = pd.concat([df_losses_csl_1990_2013, df_losses_csl_2010_2021])
+        df_losses_csl.to_csv(file_dict["losses_csl"], index=False)
 
     # Compute losses ([%] of production) -----------------------------------------------------------------------------------
     # Losses [%] = 1 / (1 - Losses [1000t] / Production [1000t]) (pre processing for multiplicating the workflow)
@@ -3495,115 +3438,122 @@ def climate_smart_livestock_processing(
     # ----------------------------------------------------------------------------------------------------------------------
     # YIELD (DAIRY & EGGS) -------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
+    try:
+        df_producing_animals_1990_2022 = pd.read_csv(file_dict["producing_animals"])
+    except OSError:
+        print("File not found for producing animals data.")
+        list_elements = ["Producing Animals/Slaughtered", "Production Quantity"]
 
-    list_elements = ["Producing Animals/Slaughtered", "Production Quantity"]
+        list_items = ["Milk, Total > (List)", "Eggs Primary > (List)"]
 
-    list_items = ["Milk, Total > (List)", "Eggs Primary > (List)"]
+        # 1990 - 2022
+        code = "QCL"
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+            "2023",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    # 1990 - 2022
-    code = "QCL"
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-        "2023",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_producing_animals_1990_2022 = faostat.get_data_df(
+            code, pars=my_pars, strval=False
+        )
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_producing_animals_1990_2022 = faostat.get_data_df(
-        code, pars=my_pars, strval=False
-    )
+        # Keep the rows where Production is not in Nb of Eggs
+        df_producing_animals_1990_2022 = df_producing_animals_1990_2022[
+            df_producing_animals_1990_2022["Unit"] != "1000 No"
+        ]
 
-    # Keep the rows where Production is not in Nb of Eggs
-    df_producing_animals_1990_2022 = df_producing_animals_1990_2022[
-        df_producing_animals_1990_2022["Unit"] != "1000 No"
-    ]
+        # Renaming item as the same animal (for meat and live/producing/slaugthered animals)
+        df_producing_animals_1990_2022.loc[
+            df_producing_animals_1990_2022["Item"].str.contains(
+                "Cattle", case=False, na=False
+            ),
+            "Item",
+        ] = "Dairy cows"
+        df_producing_animals_1990_2022.loc[
+            df_producing_animals_1990_2022["Item"].str.contains(
+                "Sheep", case=False, na=False
+            ),
+            "Item",
+        ] = "Dairy sheep"
+        df_producing_animals_1990_2022.loc[
+            df_producing_animals_1990_2022["Item"].str.contains(
+                "Goat", case=False, na=False
+            ),
+            "Item",
+        ] = "Dairy goat"
+        df_producing_animals_1990_2022.loc[
+            df_producing_animals_1990_2022["Item"].str.contains(
+                "Buffalo", case=False, na=False
+            ),
+            "Item",
+        ] = "Dairy buffalo"
+        df_producing_animals_1990_2022.loc[
+            df_producing_animals_1990_2022["Item"].str.contains(
+                "Hen eggs", case=False, na=False
+            ),
+            "Item",
+        ] = "Chicken laying hens"
+        df_producing_animals_1990_2022.loc[
+            df_producing_animals_1990_2022["Item"].str.contains(
+                "Eggs from other birds", case=False, na=False
+            ),
+            "Item",
+        ] = "Other laying hens"
 
-    # Renaming item as the same animal (for meat and live/producing/slaugthered animals)
-    df_producing_animals_1990_2022.loc[
-        df_producing_animals_1990_2022["Item"].str.contains(
-            "Cattle", case=False, na=False
-        ),
-        "Item",
-    ] = "Dairy cows"
-    df_producing_animals_1990_2022.loc[
-        df_producing_animals_1990_2022["Item"].str.contains(
-            "Sheep", case=False, na=False
-        ),
-        "Item",
-    ] = "Dairy sheep"
-    df_producing_animals_1990_2022.loc[
-        df_producing_animals_1990_2022["Item"].str.contains(
-            "Goat", case=False, na=False
-        ),
-        "Item",
-    ] = "Dairy goat"
-    df_producing_animals_1990_2022.loc[
-        df_producing_animals_1990_2022["Item"].str.contains(
-            "Buffalo", case=False, na=False
-        ),
-        "Item",
-    ] = "Dairy buffalo"
-    df_producing_animals_1990_2022.loc[
-        df_producing_animals_1990_2022["Item"].str.contains(
-            "Hen eggs", case=False, na=False
-        ),
-        "Item",
-    ] = "Chicken laying hens"
-    df_producing_animals_1990_2022.loc[
-        df_producing_animals_1990_2022["Item"].str.contains(
-            "Eggs from other birds", case=False, na=False
-        ),
-        "Item",
-    ] = "Other laying hens"
+        # Unit conversion Poultry : [1000 An] => [An]
+        df_producing_animals_1990_2022["Value"] = pd.to_numeric(
+            df_producing_animals_1990_2022["Value"], errors="coerce"
+        )
+        mask = df_producing_animals_1990_2022["Unit"].str.strip() == "1000 An"
+        df_producing_animals_1990_2022.loc[mask, "Value"] *= 1000
+        df_producing_animals_1990_2022.loc[mask, "Unit"] = "An"
+        df_producing_animals_1990_2022 = df_producing_animals_1990_2022.copy()
 
-    # Unit conversion Poultry : [1000 An] => [An]
-    df_producing_animals_1990_2022["Value"] = pd.to_numeric(
-        df_producing_animals_1990_2022["Value"], errors="coerce"
-    )
-    mask = df_producing_animals_1990_2022["Unit"].str.strip() == "1000 An"
-    df_producing_animals_1990_2022.loc[mask, "Value"] *= 1000
-    df_producing_animals_1990_2022.loc[mask, "Unit"] = "An"
-    df_producing_animals_1990_2022 = df_producing_animals_1990_2022.copy()
+        df_producing_animals_1990_2022.to_csv(
+            file_dict["producing_animals"], index=False
+        )
 
     # Reading excel lsu equivalent
     df_lsu = pd.read_excel(
@@ -5147,81 +5097,86 @@ def land_management_processing(csf_managed):
     # Difference in values between FAO and UNFCCC
 
     # Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
-    # List of countries
-    list_countries_CH = ["Switzerland"]
 
-    # List of elements
-    list_elements = ["Area"]
+    try:
+        df_land_use_fao = pd.read_csv(file_dict["fao_land_use"])
+    except FileNotFoundError:
+        print("File fao_land_use.csv not found calling via api")
+        # List of countries
+        list_countries_CH = ["Switzerland"]
 
-    list_items = ["-- Cropland", "-- Permanent meadows and pastures", "Forest land"]
+        # List of elements
+        list_elements = ["Area"]
 
-    # 1990 - 2022
-    ld = faostat.list_datasets()
-    code = "RL"
-    pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries_CH]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        list_items = ["-- Cropland", "-- Permanent meadows and pastures", "Forest land"]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_land_use_fao = faostat.get_data_df(code, pars=my_pars, strval=False)
-
-    # Drop columns
-    df_land_use_fao = df_land_use_fao.drop(
-        columns=[
-            "Domain Code",
-            "Domain",
-            "Area Code",
-            "Element Code",
-            "Item Code",
-            "Year Code",
-            "Unit",
-            "Element",
-            "Area",
+        # 1990 - 2022
+        # ld = faostat.list_datasets()
+        code = "RL"
+        # pars = faostat.list_pars(code)
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries_CH]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
         ]
-    )
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_land_use_fao = faostat.get_data_df(code, pars=my_pars, strval=False)
+
+        # Drop columns
+        df_land_use_fao = df_land_use_fao.drop(
+            columns=[
+                "Domain Code",
+                "Domain",
+                "Area Code",
+                "Element Code",
+                "Item Code",
+                "Year Code",
+                "Unit",
+                "Element",
+                "Area",
+            ]
+        )
+        df_land_use_fao.to_csv(file_dict["fao_land_use"], index=False)
     # Reshape
     df = df_land_use_fao.copy()
     # Reshape the DataFrame using pivot
@@ -5232,6 +5187,7 @@ def land_management_processing(csf_managed):
     # Read UNFCCC values (for Switzerland)
     # done in previous steps, result is df_land_use
 
+    df_land_use["timescale"] = df_land_use["timescale"].astype(int)
     # Merged based on timescale
     df_land_gap = pd.merge(
         reshaped_df, df_land_use, left_on="Year", right_on="timescale"
@@ -5951,177 +5907,188 @@ def livestock_crop_calibration(df_energy_demand_cal, list_countries):
     # ----------------------------------------------------------------------------------------------------------------------
     # LIVESTOCK POPULATION -------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
+    try:
+        df_liv_population = pd.read_csv("data/faostat/livestock_population.csv")
+    except FileNotFoundError:
+        df_liv_pop = None
+        # Read data ------------------------------------------------------------------------------------------------------------
 
-    # Read data ------------------------------------------------------------------------------------------------------------
+        # Common for all
+        # List of countries
 
-    # Common for all
-    # List of countries
+        # EMISSIONS FROM LIVESTOCK (GLE) - -------------------------------------------------
+        # List of elements
+        list_elements = ["Stocks"]
 
-    # EMISSIONS FROM LIVESTOCK (GLE) - -------------------------------------------------
-    # List of elements
-    list_elements = ["Stocks"]
+        list_items = [
+            "Swine + (Total)",
+            "Sheep and Goats + (Total)",
+            "Cattle, dairy",
+            "Cattle, non-dairy",
+            "Chickens, layers",
+        ]
 
-    list_items = [
-        "Swine + (Total)",
-        "Sheep and Goats + (Total)",
-        "Cattle, dairy",
-        "Cattle, non-dairy",
-        "Chickens, layers",
-    ]
+        list_items_poultry = ["Chickens, broilers", "Ducks", "Turkeys"]
 
-    list_items_poultry = ["Chickens, broilers", "Ducks", "Turkeys"]
+        list_items_others = [
+            "Asses",
+            "Buffalo",
+            "Camels",
+            "Horses",
+            "Llamas",
+            "Mules and hinnies",
+        ]
+        list_sources = ["FAO TIER 1"]
 
-    list_items_others = [
-        "Asses",
-        "Buffalo",
-        "Camels",
-        "Horses",
-        "Llamas",
-        "Mules and hinnies",
-    ]
-    list_sources = ["FAO TIER 1"]
+        # 1990 - 2022
+        ld = faostat.list_datasets()
+        code = "GLE"
+        pars = faostat.list_pars(code)
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        my_sources = [faostat.get_par(code, "sources")[i] for i in list_sources]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    # 1990 - 2022
-    ld = faostat.list_datasets()
-    code = "GLE"
-    pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    my_sources = [faostat.get_par(code, "sources")[i] for i in list_sources]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+            "source": my_sources,
+        }
+        df_liv_population = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-        "source": my_sources,
-    }
-    df_liv_population = faostat.get_data_df(code, pars=my_pars, strval=False)
+        my_items_poultry = [
+            faostat.get_par(code, "item")[i] for i in list_items_poultry
+        ]
+        my_pars_poultry = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items_poultry,
+            "year": my_years,
+            "source": my_sources,
+        }
+        df_liv_population_poultry = faostat.get_data_df(
+            code, pars=my_pars_poultry, strval=False
+        )
 
-    my_items_poultry = [faostat.get_par(code, "item")[i] for i in list_items_poultry]
-    my_pars_poultry = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items_poultry,
-        "year": my_years,
-        "source": my_sources,
-    }
-    df_liv_population_poultry = faostat.get_data_df(
-        code, pars=my_pars_poultry, strval=False
-    )
+        my_items_others = [faostat.get_par(code, "item")[i] for i in list_items_others]
+        my_pars_others = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items_others,
+            "year": my_years,
+            "source": my_sources,
+        }
+        df_liv_population_others = faostat.get_data_df(
+            code, pars=my_pars_others, strval=False
+        )
 
-    my_items_others = [faostat.get_par(code, "item")[i] for i in list_items_others]
-    my_pars_others = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items_others,
-        "year": my_years,
-        "source": my_sources,
-    }
-    df_liv_population_others = faostat.get_data_df(
-        code, pars=my_pars_others, strval=False
-    )
+        # Filtering to keep wanted columns
+        columns_to_filter = ["Area", "Element", "Item", "Year", "Value"]
+        df_liv_population = df_liv_population[columns_to_filter]
+        df_liv_population_poultry = df_liv_population_poultry[columns_to_filter]
+        df_liv_population_others = df_liv_population_others[columns_to_filter]
 
-    # Filtering to keep wanted columns
-    columns_to_filter = ["Area", "Element", "Item", "Year", "Value"]
-    df_liv_population = df_liv_population[columns_to_filter]
-    df_liv_population_poultry = df_liv_population_poultry[columns_to_filter]
-    df_liv_population_others = df_liv_population_others[columns_to_filter]
+        # Creating one column with Item and Element
+        # df_liv_population['Item'] = df_liv_population['Item'] + ' ' + df_liv_population['Element']
+        df_liv_population = df_liv_population.drop(columns=["Element"])
 
-    # Creating one column with Item and Element
-    # df_liv_population['Item'] = df_liv_population['Item'] + ' ' + df_liv_population['Element']
-    df_liv_population = df_liv_population.drop(columns=["Element"])
+        # Reading excel lsu equivalent
+        df_lsu = pd.read_excel(
+            "data/dictionaries/lsu_equivalent.xlsx", sheet_name="lsu_equivalent_GLE"
+        )
 
-    # Reading excel lsu equivalent
-    df_lsu = pd.read_excel(
-        "data/dictionaries/lsu_equivalent.xlsx", sheet_name="lsu_equivalent_GLE"
-    )
+        # Converting into lsu
+        df_liv_population = pd.merge(df_liv_population, df_lsu, on="Item")
+        df_liv_population["Value"] = (
+            df_liv_population["Value"] * df_liv_population["lsu"]
+        )
+        df_liv_population = df_liv_population.drop(columns=["lsu"])
 
-    # Converting into lsu
-    df_liv_population = pd.merge(df_liv_population, df_lsu, on="Item")
-    df_liv_population["Value"] = df_liv_population["Value"] * df_liv_population["lsu"]
-    df_liv_population = df_liv_population.drop(columns=["lsu"])
+        # Converting into lsu (other animals)
+        df_liv_population_others = pd.merge(df_liv_population_others, df_lsu, on="Item")
+        df_liv_population_others["Value"] = (
+            df_liv_population_others["Value"] * df_liv_population_others["lsu"]
+        )
+        df_liv_population_others = df_liv_population_others.drop(columns=["lsu"])
 
-    # Converting into lsu (other animals)
-    df_liv_population_others = pd.merge(df_liv_population_others, df_lsu, on="Item")
-    df_liv_population_others["Value"] = (
-        df_liv_population_others["Value"] * df_liv_population_others["lsu"]
-    )
-    df_liv_population_others = df_liv_population_others.drop(columns=["lsu"])
+        # Aggregating for other animals
+        df_liv_population_others = df_liv_population_others.groupby(
+            ["Area", "Element", "Year"], as_index=False
+        )["Value"].sum()
+        # Prepend "Others" to each value in the 'Element' column
+        df_liv_population_others["Element"] = df_liv_population_others["Element"].apply(
+            lambda x: f"Others {x}"
+        )
+        # Rename column
+        df_liv_population_others.rename(columns={"Element": "Item"}, inplace=True)
 
-    # Aggregating for other animals
-    df_liv_population_others = df_liv_population_others.groupby(
-        ["Area", "Element", "Year"], as_index=False
-    )["Value"].sum()
-    # Prepend "Others" to each value in the 'Element' column
-    df_liv_population_others["Element"] = df_liv_population_others["Element"].apply(
-        lambda x: f"Others {x}"
-    )
-    # Rename column
-    df_liv_population_others.rename(columns={"Element": "Item"}, inplace=True)
+        # Converting into lsu (poultry)
+        df_liv_population_poultry = pd.merge(
+            df_liv_population_poultry, df_lsu, on="Item"
+        )
+        df_liv_population_poultry["Value"] = (
+            df_liv_population_poultry["Value"] * df_liv_population_poultry["lsu"]
+        )
+        df_liv_population_poultry = df_liv_population_poultry.drop(columns=["lsu"])
 
-    # Converting into lsu (poultry)
-    df_liv_population_poultry = pd.merge(df_liv_population_poultry, df_lsu, on="Item")
-    df_liv_population_poultry["Value"] = (
-        df_liv_population_poultry["Value"] * df_liv_population_poultry["lsu"]
-    )
-    df_liv_population_poultry = df_liv_population_poultry.drop(columns=["lsu"])
+        # Aggregating for poultry
+        df_liv_population_poultry = df_liv_population_poultry.groupby(
+            ["Area", "Element", "Year"], as_index=False
+        )["Value"].sum()
+        # Prepend "Poultry" to each value in the 'Element' column
+        df_liv_population_poultry["Element"] = df_liv_population_poultry[
+            "Element"
+        ].apply(lambda x: f"Poultry {x}")
+        # Rename column
+        df_liv_population_poultry.rename(columns={"Element": "Item"}, inplace=True)
 
-    # Aggregating for poultry
-    df_liv_population_poultry = df_liv_population_poultry.groupby(
-        ["Area", "Element", "Year"], as_index=False
-    )["Value"].sum()
-    # Prepend "Poultry" to each value in the 'Element' column
-    df_liv_population_poultry["Element"] = df_liv_population_poultry["Element"].apply(
-        lambda x: f"Poultry {x}"
-    )
-    # Rename column
-    df_liv_population_poultry.rename(columns={"Element": "Item"}, inplace=True)
+        # Concatenating
+        df_liv_population = pd.concat([df_liv_population, df_liv_population_others])
+        df_liv_population = pd.concat([df_liv_population, df_liv_population_poultry])
 
-    # Concatenating
-    df_liv_population = pd.concat([df_liv_population, df_liv_population_others])
-    df_liv_population = pd.concat([df_liv_population, df_liv_population_poultry])
+        # Creating a copy for Livestock workflow
 
-    # Creating a copy for Livestock workflow
+        df_liv_population.to_csv("data/faostat/livestock_population.csv", index=False)
+
     df_liv_pop = df_liv_population.copy()
-
     # PathwayCalc formatting -----------------------------------------------------------------------------------------------
     # Food item name matching with dictionary
     # Read excel file
@@ -6148,203 +6115,220 @@ def livestock_crop_calibration(df_energy_demand_cal, list_countries):
     # DOMESTIC PRODUCTION (CROP & LIVESTOCK PRODUCTS) ----------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
     # Read data ------------------------------------------------------------------------------------------------------------
+    try:
+        df_domestic_supply = pd.read_csv("data/faostat/domestic_supply.csv")
+    except FileNotFoundError:
+        # Common for all
+        # List of countries
 
-    # Common for all
-    # List of countries
+        # FOOD BALANCE SHEETS (FBS) - -------------------------------------------------
+        # List of elements
+        list_elements = ["Production Quantity", "Losses"]
 
-    # FOOD BALANCE SHEETS (FBS) - -------------------------------------------------
-    # List of elements
-    list_elements = ["Production Quantity", "Losses"]
+        list_items = [
+            "Cereals - Excluding Beer + (Total)",
+            "Fruits - Excluding Wine + (Total)",
+            "Oilcrops + (Total)",
+            "Pulses + (Total)",
+            "Rice (Milled Equivalent)",
+            "Starchy Roots + (Total)",
+            "Sugar Crops + (Total)",
+            "Vegetables + (Total)",
+            "Milk - Excluding Butter + (Total)",
+            "Eggs + (Total)",
+            "Bovine Meat",
+            "Meat, Other",
+            "Pigmeat",
+            "Poultry Meat",
+            "Mutton & Goat Meat",
+            "Beverages, Fermented",
+            "Beverages, Alcoholic",
+            "Beer",
+            "Wine",
+        ]
 
-    list_items = [
-        "Cereals - Excluding Beer + (Total)",
-        "Fruits - Excluding Wine + (Total)",
-        "Oilcrops + (Total)",
-        "Pulses + (Total)",
-        "Rice (Milled Equivalent)",
-        "Starchy Roots + (Total)",
-        "Sugar Crops + (Total)",
-        "Vegetables + (Total)",
-        "Milk - Excluding Butter + (Total)",
-        "Eggs + (Total)",
-        "Bovine Meat",
-        "Meat, Other",
-        "Pigmeat",
-        "Poultry Meat",
-        "Mutton & Goat Meat",
-        "Beverages, Fermented",
-        "Beverages, Alcoholic",
-        "Beer",
-        "Wine",
-    ]
+        # 1990 - 2013
+        ld = faostat.list_datasets()
+        code = "FBSH"
+        pars = faostat.list_pars(code)
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    # 1990 - 2013
-    ld = faostat.list_datasets()
-    code = "FBSH"
-    pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_domestic_supply_1990_2013 = faostat.get_data_df(
+            code, pars=my_pars, strval=False
+        )
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_domestic_supply_1990_2013 = faostat.get_data_df(code, pars=my_pars, strval=False)
+        # 2010-2022
+        list_items = [
+            "Cereals - Excluding Beer + (Total)",
+            "Fruits - Excluding Wine + (Total)",
+            "Oilcrops + (Total)",
+            "Pulses + (Total)",
+            "Rice and products",
+            "Starchy Roots + (Total)",
+            "Sugar Crops + (Total)",
+            "Vegetables + (Total)",
+            "Milk - Excluding Butter + (Total)",
+            "Eggs + (Total)",
+            "Bovine Meat",
+            "Meat, Other",
+            "Pigmeat",
+            "Poultry Meat",
+            "Mutton & Goat Meat",
+            "Beverages, Fermented",
+            "Beverages, Alcoholic",
+            "Beer",
+            "Wine",
+        ]
+        code = "FBS"
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    # 2010-2022
-    list_items = [
-        "Cereals - Excluding Beer + (Total)",
-        "Fruits - Excluding Wine + (Total)",
-        "Oilcrops + (Total)",
-        "Pulses + (Total)",
-        "Rice and products",
-        "Starchy Roots + (Total)",
-        "Sugar Crops + (Total)",
-        "Vegetables + (Total)",
-        "Milk - Excluding Butter + (Total)",
-        "Eggs + (Total)",
-        "Bovine Meat",
-        "Meat, Other",
-        "Pigmeat",
-        "Poultry Meat",
-        "Mutton & Goat Meat",
-        "Beverages, Fermented",
-        "Beverages, Alcoholic",
-        "Beer",
-        "Wine",
-    ]
-    code = "FBS"
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_domestic_supply_2010_2022 = faostat.get_data_df(
+            code, pars=my_pars, strval=False
+        )
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_domestic_supply_2010_2022 = faostat.get_data_df(code, pars=my_pars, strval=False)
+        # Renaming the items for name matching
+        df_domestic_supply_1990_2013.loc[
+            df_domestic_supply_1990_2013["Item"].str.contains(
+                "Rice \(Milled Equivalent\)", case=False, na=False
+            ),
+            "Item",
+        ] = "Rice and products"
 
-    # Renaming the items for name matching
-    df_domestic_supply_1990_2013.loc[
-        df_domestic_supply_1990_2013["Item"].str.contains(
-            "Rice \(Milled Equivalent\)", case=False, na=False
-        ),
-        "Item",
-    ] = "Rice and products"
+        # Concatenating all the years together
+        df_domestic_supply = pd.concat(
+            [df_domestic_supply_1990_2013, df_domestic_supply_2010_2022]
+        )
 
-    # Concatenating all the years together
-    df_domestic_supply = pd.concat(
-        [df_domestic_supply_1990_2013, df_domestic_supply_2010_2022]
-    )
+        # Filtering to keep wanted columns
+        columns_to_filter = ["Area", "Element", "Item", "Year", "Value"]
+        df_domestic_supply = df_domestic_supply[columns_to_filter]
 
-    # Filtering to keep wanted columns
-    columns_to_filter = ["Area", "Element", "Item", "Year", "Value"]
-    df_domestic_supply = df_domestic_supply[columns_to_filter]
+        # Pivot the df
+        pivot_df_domestic_supply = df_domestic_supply.pivot_table(
+            index=["Area", "Year", "Item"], columns="Element", values="Value"
+        ).reset_index()
 
-    # Pivot the df
-    pivot_df_domestic_supply = df_domestic_supply.pivot_table(
-        index=["Area", "Year", "Item"], columns="Element", values="Value"
-    ).reset_index()
+        # Unit conversion [kt] => [t]
+        pivot_df_domestic_supply["Production [t]"] = (
+            1000 * pivot_df_domestic_supply["Production"]
+        )
 
-    # Unit conversion [kt] => [t]
-    pivot_df_domestic_supply["Production [t]"] = (
-        1000 * pivot_df_domestic_supply["Production"]
-    )
+        # Unit conversion [t] => [kcal]
+        # Read excel
+        df_kcal_t = pd.read_excel(
+            "data/dictionaries/kcal_to_t.xlsx", sheet_name="kcal_per_100g"
+        )
+        df_kcal_t = df_kcal_t[["Item", "kcal per t"]]
+        # Merge
+        merged_df = pd.merge(
+            df_kcal_t,
+            pivot_df_domestic_supply,
+            on=["Item"],  # Only keep the needed columns
+        )
+        # Operation
+        merged_df["Production [kcal]"] = (
+            merged_df["Production [t]"] * merged_df["kcal per t"]
+        )
+        pivot_df_domestic_supply = merged_df[
+            ["Area", "Year", "Item", "Production [kcal]"]
+        ]
+        pivot_df_domestic_supply = pivot_df_domestic_supply.copy()
 
-    # Unit conversion [t] => [kcal]
-    # Read excel
-    df_kcal_t = pd.read_excel(
-        "data/dictionaries/kcal_to_t.xlsx", sheet_name="kcal_per_100g"
-    )
-    df_kcal_t = df_kcal_t[["Item", "kcal per t"]]
-    # Merge
-    merged_df = pd.merge(
-        df_kcal_t,
-        pivot_df_domestic_supply,
-        on=["Item"],  # Only keep the needed columns
-    )
-    # Operation
-    merged_df["Production [kcal]"] = (
-        merged_df["Production [t]"] * merged_df["kcal per t"]
-    )
-    pivot_df_domestic_supply = merged_df[["Area", "Year", "Item", "Production [kcal]"]]
-    pivot_df_domestic_supply = pivot_df_domestic_supply.copy()
+        # PathwayCalc formatting -----------------------------------------------------------------------------------------------
+        # Food item name matching with dictionary
+        # Read excel file
+        df_dict_calibration = pd.read_excel(
+            "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+            sheet_name="calibration",
+        )
 
-    # PathwayCalc formatting -----------------------------------------------------------------------------------------------
-    # Food item name matching with dictionary
-    # Read excel file
-    df_dict_calibration = pd.read_excel(
-        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
-        sheet_name="calibration",
-    )
+        # Prepend "Diet" to each value in the 'Item' column
+        pivot_df_domestic_supply["Item"] = pivot_df_domestic_supply["Item"].apply(
+            lambda x: f"Production {x}"
+        )
 
-    # Prepend "Diet" to each value in the 'Item' column
-    pivot_df_domestic_supply["Item"] = pivot_df_domestic_supply["Item"].apply(
-        lambda x: f"Production {x}"
-    )
+        # Renaming existing columns (geoscale, timsecale, value)
+        pivot_df_domestic_supply.rename(
+            columns={
+                "Area": "geoscale",
+                "Year": "timescale",
+                "Production [kcal]": "value",
+            },
+            inplace=True,
+        )
 
-    # Renaming existing columns (geoscale, timsecale, value)
-    pivot_df_domestic_supply.rename(
-        columns={"Area": "geoscale", "Year": "timescale", "Production [kcal]": "value"},
-        inplace=True,
-    )
+        # Concat with energy demand
+        df_supply_and_energy = pd.concat(
+            [pivot_df_domestic_supply, df_energy_demand_cal]
+        )
 
-    # Concat with energy demand
-    df_supply_and_energy = pd.concat([pivot_df_domestic_supply, df_energy_demand_cal])
+        # Merge based on 'Item'
+        df_domestic_supply_calibration = pd.merge(
+            df_dict_calibration, df_supply_and_energy, on="Item"
+        )
 
-    # Merge based on 'Item'
-    df_domestic_supply_calibration = pd.merge(
-        df_dict_calibration, df_supply_and_energy, on="Item"
-    )
-
-    # Drop the 'Item' column
-    df_domestic_supply_calibration = df_domestic_supply_calibration.drop(
-        columns=["Item"]
-    )
+        # Drop the 'Item' column
+        df_domestic_supply_calibration = df_domestic_supply_calibration.drop(
+            columns=["Item"]
+        )
+        df_domestic_supply_calibration.to_csv(
+            "data/faostat/domestic_supply_calibration.csv", index=False
+        )
 
     return df_domestic_supply_calibration, df_liv_population_calibration, df_liv_pop
 
@@ -6358,199 +6342,215 @@ def manure_calibration(list_countries):
     # ----------------------------------------------------------------------------------------------------------------------
     # Read data ------------------------------------------------------------------------------------------------------------
 
-    # Common for all
+    try:
+        df_liv_emissions = pd.read_csv("data/faostat/livestock_emissions.csv")
+        df_liv_emissions_calibration = pd.read_csv(
+            "data/faostat/livestock_emissions_calibration.csv"
+        )
+    except FileNotFoundError:
+        pass
+        # Common for all
 
-    # EMISSIONS FROM LIVESTOCK (GLE) - -------------------------------------------------
-    # List of elements
-    list_elements = [
-        "Enteric fermentation (Emissions CH4)",
-        "Manure management (Emissions CH4)",
-        "Manure management (Emissions N2O)",
-        "Manure left on pasture (Emissions N2O)",
-        "Emissions (N2O) (Manure applied)",
-    ]
+        # EMISSIONS FROM LIVESTOCK (GLE) - -------------------------------------------------
+        # List of elements
+        list_elements = [
+            "Enteric fermentation (Emissions CH4)",
+            "Manure management (Emissions CH4)",
+            "Manure management (Emissions N2O)",
+            "Manure left on pasture (Emissions N2O)",
+            "Emissions (N2O) (Manure applied)",
+        ]
 
-    list_items = [
-        "Swine + (Total)",
-        "Sheep and Goats + (Total)",
-        "Cattle, dairy",
-        "Cattle, non-dairy",
-        "Chickens, layers",
-    ]
+        list_items = [
+            "Swine + (Total)",
+            "Sheep and Goats + (Total)",
+            "Cattle, dairy",
+            "Cattle, non-dairy",
+            "Chickens, layers",
+        ]
 
-    list_items_poultry = ["Chickens, broilers", "Ducks", "Turkeys"]
+        list_items_poultry = ["Chickens, broilers", "Ducks", "Turkeys"]
 
-    list_items_others = [
-        "Asses",
-        "Buffalo",
-        "Camels",
-        "Horses",
-        "Llamas",
-        "Mules and hinnies",
-    ]
-    list_sources = ["FAO TIER 1"]
+        list_items_others = [
+            "Asses",
+            "Buffalo",
+            "Camels",
+            "Horses",
+            "Llamas",
+            "Mules and hinnies",
+        ]
+        list_sources = ["FAO TIER 1"]
 
-    # 1990 - 2022
-    ld = faostat.list_datasets()
-    code = "GLE"
-    pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    my_sources = [faostat.get_par(code, "sources")[i] for i in list_sources]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        # 1990 - 2022
+        ld = faostat.list_datasets()
+        code = "GLE"
+        pars = faostat.list_pars(code)
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        my_sources = [faostat.get_par(code, "sources")[i] for i in list_sources]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-        "source": my_sources,
-    }
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+            "source": my_sources,
+        }
 
-    df_liv_emissions = faostat.get_data_df(code, pars=my_pars, strval=False)
+        df_liv_emissions = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    my_items_poultry = [faostat.get_par(code, "item")[i] for i in list_items_poultry]
-    my_pars_poultry = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items_poultry,
-        "year": my_years,
-        "source": my_sources,
-    }
-    df_liv_emissions_poultry = faostat.get_data_df(
-        code, pars=my_pars_poultry, strval=False
-    )
+        my_items_poultry = [
+            faostat.get_par(code, "item")[i] for i in list_items_poultry
+        ]
+        my_pars_poultry = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items_poultry,
+            "year": my_years,
+            "source": my_sources,
+        }
+        df_liv_emissions_poultry = faostat.get_data_df(
+            code, pars=my_pars_poultry, strval=False
+        )
 
-    my_items_others = [faostat.get_par(code, "item")[i] for i in list_items_others]
-    my_pars_others = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items_others,
-        "year": my_years,
-        "source": my_sources,
-    }
-    df_liv_emissions_others = faostat.get_data_df(
-        code, pars=my_pars_others, strval=False
-    )
+        my_items_others = [faostat.get_par(code, "item")[i] for i in list_items_others]
+        my_pars_others = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items_others,
+            "year": my_years,
+            "source": my_sources,
+        }
+        df_liv_emissions_others = faostat.get_data_df(
+            code, pars=my_pars_others, strval=False
+        )
 
-    # Filtering to keep wanted columns
-    columns_to_filter = ["Area", "Element", "Item", "Year", "Value"]
-    df_liv_emissions = df_liv_emissions[columns_to_filter]
-    df_liv_emissions_poultry = df_liv_emissions_poultry[columns_to_filter]
-    df_liv_emissions_others = df_liv_emissions_others[columns_to_filter]
+        # Filtering to keep wanted columns
+        columns_to_filter = ["Area", "Element", "Item", "Year", "Value"]
+        df_liv_emissions = df_liv_emissions[columns_to_filter]
+        df_liv_emissions_poultry = df_liv_emissions_poultry[columns_to_filter]
+        df_liv_emissions_others = df_liv_emissions_others[columns_to_filter]
 
-    # Creating one column with Item and Element
-    df_liv_emissions["Item"] = (
-        df_liv_emissions["Item"] + " " + df_liv_emissions["Element"]
-    )
-    df_liv_emissions = df_liv_emissions.drop(columns=["Element"])
+        # Creating one column with Item and Element
+        df_liv_emissions["Item"] = (
+            df_liv_emissions["Item"] + " " + df_liv_emissions["Element"]
+        )
+        df_liv_emissions = df_liv_emissions.drop(columns=["Element"])
 
-    # Aggregating for other animals
-    df_liv_emissions_others = df_liv_emissions_others.groupby(
-        ["Area", "Element", "Year"], as_index=False
-    )["Value"].sum()
-    # Prepend "Others" to each value in the 'Element' column
-    df_liv_emissions_others["Element"] = df_liv_emissions_others["Element"].apply(
-        lambda x: f"Others {x}"
-    )
-    # Rename column
-    df_liv_emissions_others.rename(columns={"Element": "Item"}, inplace=True)
+        # Aggregating for other animals
+        df_liv_emissions_others = df_liv_emissions_others.groupby(
+            ["Area", "Element", "Year"], as_index=False
+        )["Value"].sum()
+        # Prepend "Others" to each value in the 'Element' column
+        df_liv_emissions_others["Element"] = df_liv_emissions_others["Element"].apply(
+            lambda x: f"Others {x}"
+        )
+        # Rename column
+        df_liv_emissions_others.rename(columns={"Element": "Item"}, inplace=True)
 
-    # Aggregating for poultry
-    df_liv_emissions_poultry = df_liv_emissions_poultry.groupby(
-        ["Area", "Element", "Year"], as_index=False
-    )["Value"].sum()
-    # Prepend "Poultry" to each value in the 'Element' column
-    df_liv_emissions_poultry["Element"] = df_liv_emissions_poultry["Element"].apply(
-        lambda x: f"Poultry {x}"
-    )
-    # Rename column
-    df_liv_emissions_poultry.rename(columns={"Element": "Item"}, inplace=True)
+        # Aggregating for poultry
+        df_liv_emissions_poultry = df_liv_emissions_poultry.groupby(
+            ["Area", "Element", "Year"], as_index=False
+        )["Value"].sum()
+        # Prepend "Poultry" to each value in the 'Element' column
+        df_liv_emissions_poultry["Element"] = df_liv_emissions_poultry["Element"].apply(
+            lambda x: f"Poultry {x}"
+        )
+        # Rename column
+        df_liv_emissions_poultry.rename(columns={"Element": "Item"}, inplace=True)
 
-    # Concatenating
-    df_liv_emissions = pd.concat([df_liv_emissions, df_liv_emissions_others])
-    df_liv_emissions = pd.concat([df_liv_emissions, df_liv_emissions_poultry])
+        # Concatenating
+        df_liv_emissions = pd.concat([df_liv_emissions, df_liv_emissions_others])
+        df_liv_emissions = pd.concat([df_liv_emissions, df_liv_emissions_poultry])
 
-    # PathwayCalc formatting -----------------------------------------------------------------------------------------------
-    # Food item name matching with dictionary
-    # Read excel file
-    df_dict_calibration = pd.read_excel(
-        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
-        sheet_name="calibration",
-    )
+        # PathwayCalc formatting -----------------------------------------------------------------------------------------------
+        # Food item name matching with dictionary
+        # Read excel file
+        df_dict_calibration = pd.read_excel(
+            "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+            sheet_name="calibration",
+        )
 
-    # Merge based on 'Item'
-    df_liv_emissions_calibration = pd.merge(
-        df_dict_calibration, df_liv_emissions, on="Item"
-    )
+        # Merge based on 'Item'
+        df_liv_emissions_calibration = pd.merge(
+            df_dict_calibration, df_liv_emissions, on="Item"
+        )
 
-    # Drop the 'Item' column
-    df_liv_emissions_calibration = df_liv_emissions_calibration.drop(columns=["Item"])
+        # Drop the 'Item' column
+        df_liv_emissions_calibration = df_liv_emissions_calibration.drop(
+            columns=["Item"]
+        )
 
-    # Renaming existing columns (geoscale, timsecale, value)
-    df_liv_emissions_calibration.rename(
-        columns={"Area": "geoscale", "Year": "timescale", "Value": "value"},
-        inplace=True,
-    )
+        # Renaming existing columns (geoscale, timsecale, value)
+        df_liv_emissions_calibration.rename(
+            columns={"Area": "geoscale", "Year": "timescale", "Value": "value"},
+            inplace=True,
+        )
 
-    # Add empty rows for enteric poultry and hens eggs = 0
-    # Hens egg
-    df_to_duplicate = df_liv_emissions_calibration[
-        df_liv_emissions_calibration["variables"]
-        == "cal_agr_liv_CH4-emission_abp-hens-egg_treated[kt]"
-    ].copy()
-    # Modify the duplicated rows
-    df_to_duplicate["value"] = 0  # Set value to 0
-    df_to_duplicate["variables"] = (
-        "cal_agr_liv_CH4-emission_abp-hens-egg_enteric[kt]"  # Rename variable
-    )
-    # Append the new rows to the original DataFrame
-    df_liv_emissions_calibration = pd.concat(
-        [df_liv_emissions_calibration, df_to_duplicate], ignore_index=True
-    )
-    # Poultry meat
-    df_to_duplicate["variables"] = (
-        "cal_agr_liv_CH4-emission_meat-poultry_enteric[kt]"  # Rename variable
-    )
-    df_liv_emissions_calibration = pd.concat(
-        [df_liv_emissions_calibration, df_to_duplicate], ignore_index=True
-    )
+        # Add empty rows for enteric poultry and hens eggs = 0
+        # Hens egg
+        df_to_duplicate = df_liv_emissions_calibration[
+            df_liv_emissions_calibration["variables"]
+            == "cal_agr_liv_CH4-emission_abp-hens-egg_treated[kt]"
+        ].copy()
+        # Modify the duplicated rows
+        df_to_duplicate["value"] = 0  # Set value to 0
+        df_to_duplicate["variables"] = (
+            "cal_agr_liv_CH4-emission_abp-hens-egg_enteric[kt]"  # Rename variable
+        )
+        # Append the new rows to the original DataFrame
+        df_liv_emissions_calibration = pd.concat(
+            [df_liv_emissions_calibration, df_to_duplicate], ignore_index=True
+        )
+        # Poultry meat
+        df_to_duplicate["variables"] = (
+            "cal_agr_liv_CH4-emission_meat-poultry_enteric[kt]"  # Rename variable
+        )
+        df_liv_emissions_calibration = pd.concat(
+            [df_liv_emissions_calibration, df_to_duplicate], ignore_index=True
+        )
+        # save to csv
+        df_liv_emissions_calibration.to_csv(
+            "data/faostat/livestock_emissions_calibration.csv", index=False
+        )
+        df_liv_emissions.to_csv("data/faostat/livestock_emissions.csv", index=False)
 
     return df_liv_emissions_calibration, df_liv_emissions
 
@@ -6561,269 +6561,279 @@ def energy_ghg_calibration(list_countries, df_CO2_cal, df_liming_urea):
     # TOTAL GHG EMISSIONS ---------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
     # Read data ------------------------------------------------------------------------------------------------------------
+    try:
+        df_emissions_calibration = pd.read_csv(
+            "data/data/faostat/df_emissions_calibration.csv"
+        )
 
-    # Common for all
-    # List of countries
+    except OSError:
+        # Common for all
+        # List of countries
 
-    # EMISSIONS TOTAL (GT) - -------------------------------------------------
-    # List of elements
-    list_elements = ["Emissions (CH4)", "Emissions (N2O)", "Emissions (CO2)"]
+        # EMISSIONS TOTAL (GT) - -------------------------------------------------
+        # List of elements
+        list_elements = ["Emissions (CH4)", "Emissions (N2O)", "Emissions (CO2)"]
 
-    list_items = [
-        "-- Emissions on agricultural land + (Total)",
-        "On-farm energy use",
-        "Drained organic soils",
-    ]
-    list_sources = ["FAO TIER 1"]
+        list_items = [
+            "-- Emissions on agricultural land + (Total)",
+            "On-farm energy use",
+            "Drained organic soils",
+        ]
+        list_sources = ["FAO TIER 1"]
 
-    # 1990 - 2022
-    ld = faostat.list_datasets()
-    code = "GT"
-    pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    my_sources = [faostat.get_par(code, "sources")[i] for i in list_sources]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        # 1990 - 2022
+        ld = faostat.list_datasets()
+        code = "GT"
+        pars = faostat.list_pars(code)
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        my_sources = [faostat.get_par(code, "sources")[i] for i in list_sources]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-        "source": my_sources,
-    }
-    df_emissions = faostat.get_data_df(code, pars=my_pars, strval=False)
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+            "source": my_sources,
+        }
+        df_emissions = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    # Create a column with the Element and Item
-    df_emissions["Element"] = df_emissions["Element"] + " " + df_emissions["Item"]
+        # Create a column with the Element and Item
+        df_emissions["Element"] = df_emissions["Element"] + " " + df_emissions["Item"]
 
-    # Filtering to keep wanted columns
-    columns_to_filter = ["Area", "Element", "Year", "Value"]
-    df_emissions = df_emissions[columns_to_filter].copy()
+        # Filtering to keep wanted columns
+        columns_to_filter = ["Area", "Element", "Year", "Value"]
+        df_emissions = df_emissions[columns_to_filter].copy()
 
-    # 1. Pivot to have Elements as columns for easy calculation
-    df_pivot = df_emissions.pivot_table(
-        index=["Area", "Year"], columns="Element", values="Value"
-    )
+        # 1. Pivot to have Elements as columns for easy calculation
+        df_pivot = df_emissions.pivot_table(
+            index=["Area", "Year"], columns="Element", values="Value"
+        )
 
-    # 2. Perform the subtraction
-    df_pivot[
-        "Emissions (N2O) Emissions on agricultural land - Drained organic soils"
-    ] = (
-        df_pivot["Emissions (N2O) Emissions on agricultural land"]
-        - df_pivot["Emissions (N2O) Drained organic soils (N2O)"]
-    )
+        # 2. Perform the subtraction
+        df_pivot[
+            "Emissions (N2O) Emissions on agricultural land - Drained organic soils"
+        ] = (
+            df_pivot["Emissions (N2O) Emissions on agricultural land"]
+            - df_pivot["Emissions (N2O) Drained organic soils (N2O)"]
+        )
 
-    # 1. Reset index to bring Area and Year back as columns
-    df_reset = df_pivot.reset_index()
+        # 1. Reset index to bring Area and Year back as columns
+        df_reset = df_pivot.reset_index()
 
-    # 2. Melt to long format
-    df_emissions = df_reset.melt(
-        id_vars=["Area", "Year"], var_name="Element", value_name="Value"
-    )
+        # 2. Melt to long format
+        df_emissions = df_reset.melt(
+            id_vars=["Area", "Year"], var_name="Element", value_name="Value"
+        )
 
-    # Unit conversion [kt] => [t]
-    df_emissions["Value"] = df_emissions["Value"] * 10 ** (3)
+        # Unit conversion [kt] => [t]
+        df_emissions["Value"] = df_emissions["Value"] * 10 ** (3)
 
-    # Rename column
-    df_emissions.rename(columns={"Element": "Item"}, inplace=True)
+        # Rename column
+        df_emissions.rename(columns={"Element": "Item"}, inplace=True)
 
-    # ----------------------------------------------------------------------------------------------------------------------
-    # ENERGY DEMAND (electricity, gas, coal, heat) ---------------------------------------------------------------------------------------------------
-    # ----------------------------------------------------------------------------------------------------------------------
+        # ----------------------------------------------------------------------------------------------------------------------
+        # ENERGY DEMAND (electricity, gas, coal, heat) ---------------------------------------------------------------------------------------------------
+        # ----------------------------------------------------------------------------------------------------------------------
 
-    # Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
+        # Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
 
-    # List of elements
-    list_elements = ["Energy use in agriculture"]
+        # List of elements
+        list_elements = ["Energy use in agriculture"]
 
-    list_items = ["Natural gas", "Electricity", "Coal", "Heat"]
+        list_items = ["Natural gas", "Electricity", "Coal", "Heat"]
 
-    # 1990 - 2022
-    ld = faostat.list_datasets()
-    code = "GN"
-    pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        # 1990 - 2022
+        ld = faostat.list_datasets()
+        code = "GN"
+        pars = faostat.list_pars(code)
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_energy_fao = faostat.get_data_df(code, pars=my_pars, strval=False)
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_energy_fao = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    # Filtering to keep wanted columns
-    columns_to_filter = ["Area", "Item", "Year", "Value"]
-    df_energy_fao = df_energy_fao[columns_to_filter].copy()
+        # Filtering to keep wanted columns
+        columns_to_filter = ["Area", "Item", "Year", "Value"]
+        df_energy_fao = df_energy_fao[columns_to_filter].copy()
 
-    # Pivot the df
-    df_energy_fao = df_energy_fao.pivot_table(
-        index=["Area", "Year", "Item"], values="Value"
-    ).reset_index()
+        # Pivot the df
+        df_energy_fao = df_energy_fao.pivot_table(
+            index=["Area", "Year", "Item"], values="Value"
+        ).reset_index()
 
-    # ----------------------------------------------------------------------------------------------------------------------
-    # CO2 EMISSIONS FROM ENERGY USE ----------------------------------------------------------------------------------------
-    # ----------------------------------------------------------------------------------------------------------------------
+        # ----------------------------------------------------------------------------------------------------------------------
+        # CO2 EMISSIONS FROM ENERGY USE ----------------------------------------------------------------------------------------
+        # ----------------------------------------------------------------------------------------------------------------------
 
-    # Format value from UNFCCC
-    df_CO2_cal.rename(
-        columns={"CO2 emissions [kt]": "Value", "timescale": "Year"}, inplace=True
-    )
-    df_CO2_cal["Area"] = "Switzerland"
+        # Format value from UNFCCC
+        df_CO2_cal.rename(
+            columns={"CO2 emissions [kt]": "Value", "timescale": "Year"}, inplace=True
+        )
+        df_CO2_cal["Area"] = "Switzerland"
 
-    # ----------------------------------------------------------------------------------------------------------------------
-    # CO2 EMISSIONS TOTAL (ENERGY USE + LIMING + UREA UNFCCC)  -------------------------------------------------------------
-    # ----------------------------------------------------------------------------------------------------------------------
-    # Rename col
-    df_liming_urea = df_liming_urea.rename(columns={"geoscale": "Area"})
+        # ----------------------------------------------------------------------------------------------------------------------
+        # CO2 EMISSIONS TOTAL (ENERGY USE + LIMING + UREA UNFCCC)  -------------------------------------------------------------
+        # ----------------------------------------------------------------------------------------------------------------------
+        # Rename col
+        df_liming_urea = df_liming_urea.rename(columns={"geoscale": "Area"})
 
-    # Concat
-    df_CO2_cal_total = pd.concat([df_CO2_cal, df_liming_urea])
+        # Concat
+        df_CO2_cal_total = pd.concat([df_CO2_cal, df_liming_urea])
 
-    # Sum by Year & Area
-    df_CO2_cal_total = (
-        df_CO2_cal_total.groupby(["Area", "Year"])["Value"].sum().reset_index()
-    )
+        # Sum by Year & Area
+        df_CO2_cal_total = (
+            df_CO2_cal_total.groupby(["Area", "Year"])["Value"].sum().reset_index()
+        )
 
-    # Unit conversion [kt]=>[t]
-    df_CO2_cal_total["Value"] = df_CO2_cal_total["Value"] * 10**3
+        # Unit conversion [kt]=>[t]
+        df_CO2_cal_total["Value"] = df_CO2_cal_total["Value"] * 10**3
 
-    # Change the item name
-    df_CO2_cal_total["Item"] = "Emissions (CO2) Fuel, liming, urea"
+        # Change the item name
+        df_CO2_cal_total["Item"] = "Emissions (CO2) Fuel, liming, urea"
 
-    """'# Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
-    # List of elements
-    list_elements = ['Emissions (CO2)']
+        """'# Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
+        # List of elements
+        list_elements = ['Emissions (CO2)']
 
-    list_items = ['Total Energy + (Total)']
+        list_items = ['Total Energy + (Total)']
 
-    # 1990 - 2022
-    ld = faostat.list_datasets()
-    code = 'GN'
-    pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
-    my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
-    list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
-                  '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013',
-                  '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022']
-    my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
+        # 1990 - 2022
+        ld = faostat.list_datasets()
+        code = 'GN'
+        pars = faostat.list_pars(code)
+        my_countries = [faostat.get_par(code, 'area')[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, 'elements')[e] for e in list_elements]
+        my_items = [faostat.get_par(code, 'item')[i] for i in list_items]
+        list_years = ['1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999', '2000', '2001',
+                    '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013',
+                    '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022']
+        my_years = [faostat.get_par(code, 'year')[y] for y in list_years]
 
-    my_pars = {
-        'area': my_countries,
-        'element': my_elements,
-        'item': my_items,
-        'year': my_years
-    }
-    df_energy_use = faostat.get_data_df(code, pars=my_pars, strval=False)
+        my_pars = {
+            'area': my_countries,
+            'element': my_elements,
+            'item': my_items,
+            'year': my_years
+        }
+        df_energy_use = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    # Filtering to keep wanted columns
-    columns_to_filter = ['Area', 'Item', 'Year', 'Value']
-    df_energy_use = df_energy_use[columns_to_filter].copy()
+        # Filtering to keep wanted columns
+        columns_to_filter = ['Area', 'Item', 'Year', 'Value']
+        df_energy_use = df_energy_use[columns_to_filter].copy()
 
-    # Pivot the df
-    df_energy_use = df_energy_use.pivot_table(index=['Area', 'Year', 'Item'],
-                                              values='Value').reset_index()"""
+        # Pivot the df
+        df_energy_use = df_energy_use.pivot_table(index=['Area', 'Year', 'Item'],
+                                                values='Value').reset_index()"""
 
-    # PathwayCalc formatting -----------------------------------------------------------------------------------------------
-    # Food item name matching with dictionary
-    # Read excel file
-    df_dict_calibration = pd.read_excel(
-        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
-        sheet_name="calibration",
-    )
+        # PathwayCalc formatting -----------------------------------------------------------------------------------------------
+        # Food item name matching with dictionary
+        # Read excel file
+        df_dict_calibration = pd.read_excel(
+            "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+            sheet_name="calibration",
+        )
 
-    # Concat
-    df_emissions = pd.concat([df_emissions, df_energy_fao])
-    df_emissions = pd.concat([df_emissions, df_CO2_cal])
-    df_emissions = pd.concat([df_emissions, df_CO2_cal_total])
+        # Concat
+        df_emissions = pd.concat([df_emissions, df_energy_fao])
+        df_emissions = pd.concat([df_emissions, df_CO2_cal])
+        df_emissions = pd.concat([df_emissions, df_CO2_cal_total])
 
-    # Merge based on 'Item'
-    df_emissions_calibration = pd.merge(df_dict_calibration, df_emissions, on="Item")
+        # Merge based on 'Item'
+        df_emissions_calibration = pd.merge(
+            df_dict_calibration, df_emissions, on="Item"
+        )
 
-    # Drop the 'Item' column
-    df_emissions_calibration = df_emissions_calibration.drop(columns=["Item"])
+        # Drop the 'Item' column
+        df_emissions_calibration = df_emissions_calibration.drop(columns=["Item"])
 
-    # Renaming existing columns (geoscale, timsecale, value)
-    df_emissions_calibration.rename(
-        columns={"Area": "geoscale", "Year": "timescale", "Value": "value"},
-        inplace=True,
-    )
+        # Renaming existing columns (geoscale, timsecale, value)
+        df_emissions_calibration.rename(
+            columns={"Area": "geoscale", "Year": "timescale", "Value": "value"},
+            inplace=True,
+        )
+        df_emissions_calibration.to_csv(
+            "data/faostat/emissions_calibration.csv", index=False
+        )
 
     return df_emissions_calibration
 
@@ -6833,105 +6843,112 @@ def nitrogen_calibration(list_countries):
     # ----------------------------------------------------------------------------------------------------------------------
     # TOTAL GHG EMISSIONS ---------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
-    # Read data ------------------------------------------------------------------------------------------------------------
 
-    # Common for all
+    try:
+        df_nitrogen_calibration = pd.read_csv("data/faostat/nitrogen_emissions.csv")
+    except FileNotFoundError:
+        print("File nitrogen_emissions.csv not found calling via api")
+        # Read data ------------------------------------------------------------------------------------------------------------
 
-    # EMISSIONS TOTAL (GT) - -------------------------------------------------
-    # List of elements
-    list_elements = ["Emissions (N2O)"]
+        # Common for all
 
-    list_items = ["Synthetic Fertilizers"]
+        # EMISSIONS TOTAL (GT) - -------------------------------------------------
+        # List of elements
+        list_elements = ["Emissions (N2O)"]
 
-    # 1990 - 2022
-    ld = faostat.list_datasets()
-    code = "GT"
-    pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        list_items = ["Synthetic Fertilizers"]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_nitrogen = faostat.get_data_df(code, pars=my_pars, strval=False)
+        # 1990 - 2022
+        code = "GT"
+        # pars = faostat.list_pars(code)
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    # Filtering to keep wanted columns
-    columns_to_filter = ["Area", "Element", "Year", "Value"]
-    df_nitrogen = df_nitrogen[columns_to_filter]
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_nitrogen = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    # Pivot the df
-    df_nitrogen = df_nitrogen.pivot_table(
-        index=["Area", "Year", "Element"], values="Value"
-    ).reset_index()
+        # Filtering to keep wanted columns
+        columns_to_filter = ["Area", "Element", "Year", "Value"]
+        df_nitrogen = df_nitrogen[columns_to_filter]
 
-    # Unit conversion [kt] => [Mt]
-    df_nitrogen["Value"] = df_nitrogen["Value"] * 10 ** (-3)
+        # Pivot the df
+        df_nitrogen = df_nitrogen.pivot_table(
+            index=["Area", "Year", "Element"], values="Value"
+        ).reset_index()
 
-    # Rename column
-    df_nitrogen.rename(columns={"Element": "Item"}, inplace=True)
+        # Unit conversion [kt] => [Mt]
+        df_nitrogen["Value"] = df_nitrogen["Value"] * 10 ** (-3)
 
-    # PathwayCalc formatting -----------------------------------------------------------------------------------------------
-    # Food item name matching with dictionary
-    # Read excel file
-    df_dict_calibration = pd.read_excel(
-        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
-        sheet_name="calibration",
-    )
+        # Rename column
+        df_nitrogen.rename(columns={"Element": "Item"}, inplace=True)
 
-    # Prepend "Fertilizers" to each value in the 'Item' column
-    df_nitrogen["Item"] = df_nitrogen["Item"].apply(lambda x: f"Fertilizers {x}")
+        # PathwayCalc formatting -----------------------------------------------------------------------------------------------
+        # Food item name matching with dictionary
+        # Read excel file
+        df_dict_calibration = pd.read_excel(
+            "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+            sheet_name="calibration",
+        )
 
-    # Merge based on 'Item'
-    df_nitrogen_calibration = pd.merge(df_dict_calibration, df_nitrogen, on="Item")
+        # Prepend "Fertilizers" to each value in the 'Item' column
+        df_nitrogen["Item"] = df_nitrogen["Item"].apply(lambda x: f"Fertilizers {x}")
 
-    # Drop the 'Item' column
-    df_nitrogen_calibration = df_nitrogen_calibration.drop(columns=["Item"])
+        # Merge based on 'Item'
+        df_nitrogen_calibration = pd.merge(df_dict_calibration, df_nitrogen, on="Item")
 
-    # Renaming existing columns (geoscale, timsecale, value)
-    df_nitrogen_calibration.rename(
-        columns={"Area": "geoscale", "Year": "timescale", "Value": "value"},
-        inplace=True,
-    )
+        # Drop the 'Item' column
+        df_nitrogen_calibration = df_nitrogen_calibration.drop(columns=["Item"])
+
+        # Renaming existing columns (geoscale, timsecale, value)
+        df_nitrogen_calibration.rename(
+            columns={"Area": "geoscale", "Year": "timescale", "Value": "value"},
+            inplace=True,
+        )
+        df_nitrogen_calibration.to_csv(
+            "data/faostat/nitrogen_emissions.csv", index=False
+        )
 
     return df_nitrogen_calibration
 
@@ -6943,322 +6960,335 @@ def feed_calibration(list_countries):
     # ----------------------------------------------------------------------------------------------------------------------
     # HERE! FEED DEMAND PART I --------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
+    try:
+        df_feed_calibration = pd.read_csv("data/faostat/feed_calibration.csv")
+        df_feed_ration = pd.read_csv("data/faostat/feed_ration.csv")
+    except FileNotFoundError:
+        print("Files feed_calibration.csv or feed_ration.csv not found calling via api")
 
-    # Read data ------------------------------------------------------------------------------------------------------------
+        # Read data ------------------------------------------------------------------------------------------------------------
 
-    # FOOD BALANCE SHEETS (FBS) - -------------------------------------------------
-    # List of elements
-    list_elements = ["Feed"]
+        # FOOD BALANCE SHEETS (FBS) - -------------------------------------------------
+        # List of elements
+        list_elements = ["Feed"]
 
-    list_items = [
-        "Cereals - Excluding Beer + (Total)",
-        "Fruits - Excluding Wine + (Total)",
-        "Oilcrops + (Total)",
-        "Pulses + (Total)",
-        "Rice (Milled Equivalent)",
-        "Starchy Roots + (Total)",
-        "Sugar Crops + (Total)",
-        "Vegetables + (Total)",
-        "Fish, Seafood + (Total)",
-        "Animal Products + (Total)",
-        "Vegetable Oils + (Total)",
-        "Sugar & Sweeteners + (Total)",
-    ]
+        list_items = [
+            "Cereals - Excluding Beer + (Total)",
+            "Fruits - Excluding Wine + (Total)",
+            "Oilcrops + (Total)",
+            "Pulses + (Total)",
+            "Rice (Milled Equivalent)",
+            "Starchy Roots + (Total)",
+            "Sugar Crops + (Total)",
+            "Vegetables + (Total)",
+            "Fish, Seafood + (Total)",
+            "Animal Products + (Total)",
+            "Vegetable Oils + (Total)",
+            "Sugar & Sweeteners + (Total)",
+        ]
 
-    # 1990 - 2013
-    ld = faostat.list_datasets()
-    code = "FBSH"
-    pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        # 1990 - 2013
+        code = "FBSH"
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_feed_1990_2013 = faostat.get_data_df(code, pars=my_pars, strval=False)
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_feed_1990_2013 = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    # 2010-2022
-    list_items = [
-        "Cereals - Excluding Beer + (Total)",
-        "Fruits - Excluding Wine + (Total)",
-        "Oilcrops + (Total)",
-        "Pulses + (Total)",
-        "Rice and products",
-        "Starchy Roots + (Total)",
-        "Sugar Crops + (Total)",
-        "Vegetables + (Total)",
-        "Fish, Seafood + (Total)",
-        "Animal Products + (Total)",
-        "Vegetable Oils + (Total)",
-        "Sugar & Sweeteners + (Total)",
-    ]
-    code = "FBS"
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        # 2010-2022
+        list_items = [
+            "Cereals - Excluding Beer + (Total)",
+            "Fruits - Excluding Wine + (Total)",
+            "Oilcrops + (Total)",
+            "Pulses + (Total)",
+            "Rice and products",
+            "Starchy Roots + (Total)",
+            "Sugar Crops + (Total)",
+            "Vegetables + (Total)",
+            "Fish, Seafood + (Total)",
+            "Animal Products + (Total)",
+            "Vegetable Oils + (Total)",
+            "Sugar & Sweeteners + (Total)",
+        ]
+        code = "FBS"
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_feed_2010_2022 = faostat.get_data_df(code, pars=my_pars, strval=False)
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_feed_2010_2022 = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    # Renaming the items for name matching
-    df_feed_1990_2013.loc[
-        df_feed_1990_2013["Item"].str.contains(
-            "Rice \(Milled Equivalent\)", case=False, na=False
-        ),
-        "Item",
-    ] = "Rice and products"
+        # Renaming the items for name matching
+        df_feed_1990_2013.loc[
+            df_feed_1990_2013["Item"].str.contains(
+                "Rice \(Milled Equivalent\)", case=False, na=False
+            ),
+            "Item",
+        ] = "Rice and products"
 
-    # Concatenating all the years together
-    df_feed = pd.concat([df_feed_1990_2013, df_feed_2010_2022])
+        # Concatenating all the years together
+        df_feed = pd.concat([df_feed_1990_2013, df_feed_2010_2022])
 
-    # ----------------------------------------------------------------------------------------------------------------------
-    # FEED DEMAND PART II (molasse & cake) --------------------------------------------------------------------------------------------
-    # ----------------------------------------------------------------------------------------------------------------------
+        # ----------------------------------------------------------------------------------------------------------------------
+        # FEED DEMAND PART II (molasse & cake) --------------------------------------------------------------------------------------------
+        # ----------------------------------------------------------------------------------------------------------------------
 
-    # COMMODITY BALANCES (NON-FOOD) (OLD METHODOLOGY) - For molasse and cakes ----------------------------------------------
-    # 1990 - 2013
-    list_elements = ["Feed"]
-    list_items = [
-        "Copra Cake",
-        "Cottonseed Cake",
-        "Groundnut Cake",
-        "Oilseed Cakes, Other",
-        "Palmkernel Cake",
-        "Rape and Mustard Cake",
-        "Sesameseed Cake",
-        "Soyabean Cake",
-        "Sunflowerseed Cake",
-    ]
-    code = "CBH"
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        # COMMODITY BALANCES (NON-FOOD) (OLD METHODOLOGY) - For molasse and cakes ----------------------------------------------
+        # 1990 - 2013
+        list_elements = ["Feed"]
+        list_items = [
+            "Copra Cake",
+            "Cottonseed Cake",
+            "Groundnut Cake",
+            "Oilseed Cakes, Other",
+            "Palmkernel Cake",
+            "Rape and Mustard Cake",
+            "Sesameseed Cake",
+            "Soyabean Cake",
+            "Sunflowerseed Cake",
+        ]
+        code = "CBH"
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_feed_1990_2013_cake = faostat.get_data_df(code, pars=my_pars, strval=False)
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_feed_1990_2013_cake = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    # SUPPLY UTILIZATION ACCOUNTS (SCl) - For molasse and cakes ----------------------------------------------------------
-    # 2010 - 2022
-    list_elements = ["Feed"]
-    list_items = [
-        "Molasses",
-        "Cake of linseed",
-        "Cake of soya beans",
-        "Cake of copra",
-        "Cake of cottonseed",
-        "Cake of groundnuts",
-        "Cake of hempseed",
-        "Cake of kapok",
-        "Cake of maize",
-        "Cake of mustard seed",
-        "Cake of palm kernel",
-        "Cake of rapeseed",
-        "Cake of rice bran",
-        "Cake of safflowerseed",
-        "Cake of sesame seed",
-        "Cake of sunflower seed",
-        "Cake, oilseeds nes",
-        "Cake, poppy seed",
-    ]
-    code = "SCL"
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        # SUPPLY UTILIZATION ACCOUNTS (SCl) - For molasse and cakes ----------------------------------------------------------
+        # 2010 - 2022
+        list_elements = ["Feed"]
+        list_items = [
+            "Molasses",
+            "Cake of linseed",
+            "Cake of soya beans",
+            "Cake of copra",
+            "Cake of cottonseed",
+            "Cake of groundnuts",
+            "Cake of hempseed",
+            "Cake of kapok",
+            "Cake of maize",
+            "Cake of mustard seed",
+            "Cake of palm kernel",
+            "Cake of rapeseed",
+            "Cake of rice bran",
+            "Cake of safflowerseed",
+            "Cake of sesame seed",
+            "Cake of sunflower seed",
+            "Cake, oilseeds nes",
+            "Cake, poppy seed",
+        ]
+        code = "SCL"
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_feed_2010_2021_molasse_cake = faostat.get_data_df(
-        code, pars=my_pars, strval=False
-    )
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_feed_2010_2021_molasse_cake = faostat.get_data_df(
+            code, pars=my_pars, strval=False
+        )
 
-    # Aggregating cakes
-    df_feed_cake = pd.concat([df_feed_1990_2013_cake, df_feed_2010_2021_molasse_cake])
-    # Filtering
-    filtered_df = df_feed_cake[df_feed_cake["Item"].str.contains("cake", case=False)]
-    # Groupby Area, Year and Element and sum the Value
-    grouped_df = (
-        filtered_df.groupby(["Area", "Element", "Year"])["Value"].sum().reset_index()
-    )
-    # Unit conversion [t] => [kt]
-    grouped_df["Value"] = grouped_df["Value"] / 1000
-    # Adding a column 'Item' containing 'Cakes' for all row, before the 'Value' column
-    grouped_df["Item"] = "Cakes"
-    cols = grouped_df.columns.tolist()
-    cols.insert(cols.index("Value"), cols.pop(cols.index("Item")))
-    df_feed_cake = grouped_df[cols]
+        # Aggregating cakes
+        df_feed_cake = pd.concat(
+            [df_feed_1990_2013_cake, df_feed_2010_2021_molasse_cake]
+        )
+        # Filtering
+        filtered_df = df_feed_cake[
+            df_feed_cake["Item"].str.contains("cake", case=False)
+        ]
+        # Groupby Area, Year and Element and sum the Value
+        grouped_df = (
+            filtered_df.groupby(["Area", "Element", "Year"])["Value"]
+            .sum()
+            .reset_index()
+        )
+        # Unit conversion [t] => [kt]
+        grouped_df["Value"] = grouped_df["Value"] / 1000
+        # Adding a column 'Item' containing 'Cakes' for all row, before the 'Value' column
+        grouped_df["Item"] = "Cakes"
+        cols = grouped_df.columns.tolist()
+        cols.insert(cols.index("Value"), cols.pop(cols.index("Item")))
+        df_feed_cake = grouped_df[cols]
 
-    # Filtering for molasse
-    df_feed_molasses = df_feed_2010_2021_molasse_cake[
-        df_feed_2010_2021_molasse_cake["Item"].str.contains("Molasses", case=False)
-    ]
-    df_feed_molasses = df_feed_molasses.copy()
+        # Filtering for molasse
+        df_feed_molasses = df_feed_2010_2021_molasse_cake[
+            df_feed_2010_2021_molasse_cake["Item"].str.contains("Molasses", case=False)
+        ]
+        df_feed_molasses = df_feed_molasses.copy()
 
-    # Unit conversion [t] => [kt]
-    df_feed_molasses["Value"] = df_feed_molasses["Value"] / 1000
+        # Unit conversion [t] => [kt]
+        df_feed_molasses["Value"] = df_feed_molasses["Value"] / 1000
 
-    # Concatenating
-    df_feed = pd.concat([df_feed, df_feed_molasses])
-    df_feed = pd.concat([df_feed, df_feed_cake])
+        # Concatenating
+        df_feed = pd.concat([df_feed, df_feed_molasses])
+        df_feed = pd.concat([df_feed, df_feed_cake])
 
-    # Filtering to keep wanted columns
-    columns_to_filter = ["Area", "Element", "Item", "Year", "Value"]
-    df_feed = df_feed[columns_to_filter]
+        # Filtering to keep wanted columns
+        columns_to_filter = ["Area", "Element", "Item", "Year", "Value"]
+        df_feed = df_feed[columns_to_filter]
 
-    # Pivot the df
-    pivot_df_feed = df_feed.pivot_table(
-        index=["Area", "Year", "Item"], columns="Element", values="Value"
-    ).reset_index()
+        # Pivot the df
+        pivot_df_feed = df_feed.pivot_table(
+            index=["Area", "Year", "Item"], columns="Element", values="Value"
+        ).reset_index()
 
-    # Univ conversion [kt] => [t]
-    pivot_df_feed["Feed"] = 1000 * pivot_df_feed["Feed"]
+        # Univ conversion [kt] => [t]
+        pivot_df_feed["Feed"] = 1000 * pivot_df_feed["Feed"]
 
-    # Univ conversion [kt] => [kcal]
-    # Read excel
-    """df_kcal_t = pd.read_excel(
-        'dictionaries/kcal_to_t.xlsx',
-        sheet_name='kcal_per_100g')
-    df_kcal_t = df_kcal_t[['Item', 'kcal per t']]
-    # Merge
-    merged_df = pd.merge(
-        df_kcal_t,
-        pivot_df_feed,
-    )
-    # Operation
-    merged_df['Feed [kcal]'] = 1000 * merged_df['Feed'] * merged_df['kcal per t']
-    pivot_df_feed = merged_df[['Area', 'Year', 'Item', 'Feed [kcal]']]
-    pivot_df_feed = pivot_df_feed.copy()"""
+        # Univ conversion [kt] => [kcal]
+        # Read excel
+        """df_kcal_t = pd.read_excel(
+            'dictionaries/kcal_to_t.xlsx',
+            sheet_name='kcal_per_100g')
+        df_kcal_t = df_kcal_t[['Item', 'kcal per t']]
+        # Merge
+        merged_df = pd.merge(
+            df_kcal_t,
+            pivot_df_feed,
+        )
+        # Operation
+        merged_df['Feed [kcal]'] = 1000 * merged_df['Feed'] * merged_df['kcal per t']
+        pivot_df_feed = merged_df[['Area', 'Year', 'Item', 'Feed [kcal]']]
+        pivot_df_feed = pivot_df_feed.copy()"""
 
-    # Adding meat products with 0 everywhere (no meat used as feed from FAOSTAT)
-    duplicated_rows = pivot_df_feed[
-        pivot_df_feed["Item"] == "Pulses"
-    ].copy()  # Duplicate rows for random item
-    duplicated_rows["Item"] = (
-        "Animal Products"  # Change geoscale value to 'EU27' in duplicated rows
-    )
-    duplicated_rows["Feed"] = 0  # Set the value to 0
-    pivot_df_feed = pd.concat(
-        [pivot_df_feed, duplicated_rows], ignore_index=True
-    )  # Append duplicated rows back to the original DataFrame
+        # Adding meat products with 0 everywhere (no meat used as feed from FAOSTAT)
+        duplicated_rows = pivot_df_feed[
+            pivot_df_feed["Item"] == "Pulses"
+        ].copy()  # Duplicate rows for random item
+        duplicated_rows["Item"] = (
+            "Animal Products"  # Change geoscale value to 'EU27' in duplicated rows
+        )
+        duplicated_rows["Feed"] = 0  # Set the value to 0
+        pivot_df_feed = pd.concat(
+            [pivot_df_feed, duplicated_rows], ignore_index=True
+        )  # Append duplicated rows back to the original DataFrame
 
-    # Create a copy for Lever : feed ration
-    df_feed_ration = pivot_df_feed.copy()
+        # Create a copy for Lever : feed ration
+        df_feed_ration = pivot_df_feed.copy()
 
-    # PathwayCalc formatting -----------------------------------------------------------------------------------------------
-    # Food item name matching with dictionary
-    # Read excel file
-    df_dict_calibration = pd.read_excel(
-        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
-        sheet_name="calibration",
-    )
+        # PathwayCalc formatting -----------------------------------------------------------------------------------------------
+        # Food item name matching with dictionary
+        # Read excel file
+        df_dict_calibration = pd.read_excel(
+            "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+            sheet_name="calibration",
+        )
 
-    # Prepend "Diet" to each value in the 'Item' column
-    pivot_df_feed["Item"] = pivot_df_feed["Item"].apply(lambda x: f"Feed {x}")
+        # Prepend "Diet" to each value in the 'Item' column
+        pivot_df_feed["Item"] = pivot_df_feed["Item"].apply(lambda x: f"Feed {x}")
 
-    # Merge based on 'Item'
-    df_feed_calibration = pd.merge(df_dict_calibration, pivot_df_feed, on="Item")
+        # Merge based on 'Item'
+        df_feed_calibration = pd.merge(df_dict_calibration, pivot_df_feed, on="Item")
 
-    # Drop the 'Item' column
-    df_feed_calibration = df_feed_calibration.drop(columns=["Item"])
+        # Drop the 'Item' column
+        df_feed_calibration = df_feed_calibration.drop(columns=["Item"])
 
-    # Renaming existing columns (geoscale, timesecale, value)
-    df_feed_calibration.rename(
-        columns={"Area": "geoscale", "Year": "timescale", "Feed": "value"}, inplace=True
-    )
+        # Renaming existing columns (geoscale, timesecale, value)
+        df_feed_calibration.rename(
+            columns={"Area": "geoscale", "Year": "timescale", "Feed": "value"},
+            inplace=True,
+        )
+
+        df_feed_calibration.to_csv("data/faostat/feed_calibration.csv", index=False)
+        df_feed_ration.to_csv("data/faostat/feed_ration.csv", index=False)
 
     return df_feed_calibration, df_feed_ration
 
@@ -7268,80 +7298,86 @@ def feed_calibration(list_countries):
 
 def land_calibration(list_countries):
     # Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
+    try:
+        df_land_use_fao = pd.read_csv("data/faostat/landuse.csv")
+    except OSError:
+        print("land use data not found, downloading from FAOSTAT...")
 
-    # List of elements
-    list_elements = ["Area"]
+        # List of elements
+        list_elements = ["Area"]
 
-    list_items = [
-        "-- Cropland",
-        "---- Temporary crops",
-        "---- Temporary fallow",
-        "-- Permanent meadows and pastures",
-    ]
+        list_items = [
+            "-- Cropland",
+            "---- Temporary crops",
+            "---- Temporary fallow",
+            "-- Permanent meadows and pastures",
+        ]
 
-    # 1990 - 2022
-    ld = faostat.list_datasets()
-    code = "RL"
-    pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        # 1990 - 2022
+        # ld = faostat.list_datasets()
+        code = "RL"
+        # pars = faostat.list_pars(code)
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_land_use_fao = faostat.get_data_df(code, pars=my_pars, strval=False)
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_land_use_fao = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    # Filtering to keep wanted columns
-    columns_to_filter = ["Area", "Item", "Year", "Value"]
-    df_land_use_fao = df_land_use_fao[columns_to_filter]
+        # Filtering to keep wanted columns
+        columns_to_filter = ["Area", "Item", "Year", "Value"]
+        df_land_use_fao = df_land_use_fao[columns_to_filter]
 
-    # Pivot the df
-    df_land_use_fao = df_land_use_fao.pivot_table(
-        index=["Area", "Year", "Item"], values="Value"
-    ).reset_index()
+        # Pivot the df
+        df_land_use_fao = df_land_use_fao.pivot_table(
+            index=["Area", "Year", "Item"], values="Value"
+        ).reset_index()
 
-    # Unit conversion [k ha] => [ha]
-    df_land_use_fao["Value"] = df_land_use_fao["Value"] * 1000
+        # Unit conversion [k ha] => [ha]
+        df_land_use_fao["Value"] = df_land_use_fao["Value"] * 1000
+        # save to csv
+        df_land_use_fao.to_csv("data/faostat/landuse.csv", index=False)
 
     # Filter for Cropland for density lsu
     df_cropland_density = df_land_use_fao[
@@ -7621,155 +7657,161 @@ def wood_calibration(list_countries):
     # ----------------------------------------------------------------------------------------------------------------------
     # WOOD DEMAND ---------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
+    try:
+        wood_calibration = pd.read_csv("data/faostat/wood_calibration.csv")
 
-    # Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
+    except OSError:
+        print("wood data not found, downloading from FAOSTAT...")
+        # Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
 
-    # List of elements
-    list_elements = ["Production Quantity"]
+        # List of elements
+        list_elements = ["Production Quantity"]
 
-    list_items = [
-        "Wood fuel + (Total)",
-        "Industrial roundwood + (Total)",
-        "Pulpwood, round and split (production) + (Total)",
-        "Sawlogs and veneer logs + (Total)",
-    ]
+        list_items = [
+            "Wood fuel + (Total)",
+            "Industrial roundwood + (Total)",
+            "Pulpwood, round and split (production) + (Total)",
+            "Sawlogs and veneer logs + (Total)",
+        ]
 
-    # 1990 - 2022
-    ld = faostat.list_datasets()
-    code = "FO"
-    pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        # 1990 - 2022
+        # ld = faostat.list_datasets()
+        code = "FO"
+        # pars = faostat.list_pars(code)
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_wood = faostat.get_data_df(code, pars=my_pars, strval=False)
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_wood = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    # 1990 - 2022 ROUNDWOOD
-    list_items = ["Roundwood + (Total)"]
-    ld = faostat.list_datasets()
-    code = "FO"
-    pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        # 1990 - 2022 ROUNDWOOD
+        list_items = ["Roundwood + (Total)"]
+        # ld = faostat.list_datasets()
+        code = "FO"
+        # pars = faostat.list_pars(code)
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_roundwood = faostat.get_data_df(code, pars=my_pars, strval=False)
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_roundwood = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    # Concatenating dfs
-    df_wood = pd.concat([df_wood, df_roundwood], axis=0)
+        # Concatenating dfs
+        df_wood = pd.concat([df_wood, df_roundwood], axis=0)
 
-    # Filtering to keep wanted columns
-    columns_to_filter = ["Area", "Item", "Year", "Value"]
-    df_wood = df_wood[columns_to_filter]
+        # Filtering to keep wanted columns
+        columns_to_filter = ["Area", "Item", "Year", "Value"]
+        df_wood = df_wood[columns_to_filter]
 
-    # Pivot the df
-    df_wood = df_wood.pivot_table(
-        index=["Area", "Year", "Item"], values="Value"
-    ).reset_index()
+        # Pivot the df
+        df_wood = df_wood.pivot_table(
+            index=["Area", "Year", "Item"], values="Value"
+        ).reset_index()
 
-    # PathwayCalc formatting -----------------------------------------------------------------------------------------------
-    # Food item name matching with dictionary
-    # Read excel file
-    df_dict_calibration = pd.read_excel(
-        "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
-        sheet_name="calibration",
-    )
+        # PathwayCalc formatting -----------------------------------------------------------------------------------------------
+        # Food item name matching with dictionary
+        # Read excel file
+        df_dict_calibration = pd.read_excel(
+            "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
+            sheet_name="calibration",
+        )
 
-    # Merge based on 'Item'
-    df_wood_calibration = pd.merge(df_dict_calibration, df_wood, on="Item")
+        # Merge based on 'Item'
+        df_wood_calibration = pd.merge(df_dict_calibration, df_wood, on="Item")
 
-    # Drop the 'Item' column
-    df_wood_calibration = df_wood_calibration.drop(columns=["Item"])
+        # Drop the 'Item' column
+        df_wood_calibration = df_wood_calibration.drop(columns=["Item"])
 
-    # Renaming existing columns (geoscale, timsecale, value)
-    df_wood_calibration.rename(
-        columns={"Area": "geoscale", "Year": "timescale", "Value": "value"},
-        inplace=True,
-    )
+        # Renaming existing columns (geoscale, timsecale, value)
+        df_wood_calibration.rename(
+            columns={"Area": "geoscale", "Year": "timescale", "Value": "value"},
+            inplace=True,
+        )
+
+        df_wood_calibration.to_csv("data/faostat/wood_calibration.csv", index=False)
 
     return df_wood_calibration
 
@@ -7904,9 +7946,9 @@ def constant():
     list_items = ["Total Energy > (List)"]
 
     # 1990 - 2022
-    ld = faostat.list_datasets()
+    # ld = faostat.list_datasets()
     code = "GN"
-    pars = faostat.list_pars(code)
+    # pars = faostat.list_pars(code)
     my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
     my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
     my_items = [faostat.get_par(code, "item")[i] for i in list_items]
@@ -8010,6 +8052,8 @@ def manure_fxa(list_countries, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_
         return text
 
     df_liv_emissions["Item"] = df_liv_emissions["Item"].apply(replace_partial)
+
+    df_liv_emissions["Year"] = df_liv_emissions["Year"].astype(int)
 
     # Merge with NO2 emission df_liv_emissions_calibration
     df_manure_fxa = df_melted.merge(
@@ -8988,6 +9032,37 @@ if not os.path.exists("data/faostat"):
 
 df_feed_lsu_pathwaycalc = feed_processing_lca()
 list_countries = ["Switzerland"]
+# list_countries = [
+#     "Austria",
+#     "Belgium",
+#     "Bulgaria",
+#     "Croatia",
+#     "Cyprus",
+#     "Czechia",
+#     "Denmark",
+#     "Estonia",
+#     "Finland",
+#     "France",
+#     "Germany",
+#     "Greece",
+#     "Hungary",
+#     "Ireland",
+#     "Italy",
+#     "Latvia",
+#     "Lithuania",
+#     "Luxembourg",
+#     "Malta",
+#     "Netherlands (Kingdom of the)",
+#     "Poland",
+#     "Portugal",
+#     "Romania",
+#     "Slovakia",
+#     "Slovenia",
+#     "Spain",
+#     "Sweden",
+#     "Switzerland",
+#     "United Kingdom of Great Britain and Northern Ireland",
+# ]
 
 file = "data/faostat/diet.csv"
 df_diet_pathwaycalc, df_diet = diet_processing(list_countries, file)
@@ -9017,6 +9092,12 @@ file_dict = {
     "nitro": "data/faostat/nitro.csv",
     "pesticide": "data/faostat/pesticide.csv",
     "liming": "data/faostat/liming.csv",
+    "enteric": "data/faostat/enteric_1990_2021.csv",
+    "manure": "data/faostat/manure_1990_2021.csv",
+    "losses_csl": "data/faostat/losses_csl.csv",
+    "producing_animals": "data/faostat/producing_animals_1990_2022.csv",
+    "fao_land_use": "data/faostat/fao_land_use.csv",
+    "livestock_population": "data/faostat/livestock_population_1990_2022.csv",
 }
 df_climate_smart_crop_pathwaycalc, df_energy_demand_cal, df_CO2_cal = (
     climate_smart_crop_processing(list_countries, df_agri_land, file_dict)
@@ -9372,6 +9453,7 @@ dm_dom_prod_crop.rename_col(
     "cal_agr_domestic-production_food_raw",
     dim="Variables",
 )
+dm_dom_prod_crop.add(np.nan, "Categories1", "rice", dummy=True)
 dm_dom_prod_crop.append(dm_losses_crop, dim="Variables")
 dm_dom_prod_crop.operation(
     "agr_climate-smart-crop_losses",
