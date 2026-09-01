@@ -42,19 +42,18 @@ def implement_modal_share_fts(DM_transport):
     share_road_TIM, idx_road_TIM = comput_prop_in_cat(dm_ots_modal, ["LDV", "2W"])
 
     # Replace all value by nan for overwriting with interpolated values later
-    dm_fts_3_modal.array[idx_fts["Vaud"], 1:-1, :, :] = np.nan
+    dm_fts_3_modal.array[:, 1:-1, :, :] = np.nan
 
     # INput values for 2050
     values_2050 = {
         "rail": 0.32,
-        "metrotram": 0.09
-        * share_road_TP.array[
-            idx_road_TP["Vaud"], idx_road_TP[2023], :, idx_road_TP["metrotram"]
-        ],
-        "bus": 0.09
-        * share_road_TP.array[
-            idx_road_TP["Vaud"], idx_road_TP[2023], :, idx_road_TP["bus"]
-        ],
+        "metrotram": (
+            0.09
+            * share_road_TP.array[:, idx_road_TP[2023], :, idx_road_TP["metrotram"]]
+        ).flatten(),
+        "bus": (
+            0.09 * share_road_TP.array[:, idx_road_TP[2023], :, idx_road_TP["bus"]]
+        ).flatten(),
         "walk": 0.11,
         "bike": 0.09,
     }
@@ -64,19 +63,25 @@ def implement_modal_share_fts(DM_transport):
     values_2050["LDV"] = (
         TIM_ratio
         * share_road_TIM.array[
-            idx_road_TIM["Vaud"], idx_road_TIM[2023], :, idx_road_TIM["LDV"]
+            :,
+            idx_road_TIM[2023],
+            idx_road_TIM["tra_passenger_modal-share"],
+            idx_road_TIM["LDV"],
         ]
     )
     values_2050["2W"] = (
         TIM_ratio
         * share_road_TIM.array[
-            idx_road_TIM["Vaud"], idx_road_TIM[2023], :, idx_road_TIM["2W"]
+            :,
+            idx_road_TIM[2023],
+            idx_road_TIM["tra_passenger_modal-share"],
+            idx_road_TIM["2W"],
         ]
     )
 
     for key, value in values_2050.items():
         dm_fts_3_modal.array[
-            idx_fts["Vaud"],
+            :,
             idx_fts[2050],
             idx_fts["tra_passenger_modal-share"],
             idx_fts[key],

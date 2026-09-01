@@ -202,10 +202,12 @@ DM_transport["fts"] = fts_bau_pickle_run(
     DM_transport_wo_aviation, country_list, years_ots, years_fts, DM_aviation_ots
 )
 
-print("Compile pickle fts - all BAU")
+print("Compile pickle fts PCV1 scenario - all BAU")
 DM_transport = fts_PCV1_pickle_run(DM_transport, country_list, years_ots, years_fts)
+
 DM_transport = fts_PCV2_pickle_run(DM_transport, country_list, years_ots, years_fts)
-DM_transport = DLS_pickle_run(DM_transport, country_list, years_ots, years_fts)
+print("Compile pickle  DLS scenario - Lever 4")
+DM_transport = DLS_pickle_run(DM_transport, lev=4)
 DM_transport = fts_fill_pickle_run(DM_transport, country_list, years_ots, years_fts)
 
 print("Hello")
