@@ -130,35 +130,14 @@ def TCAF_health_diet_preprocessing():
     }
 
     # ----------------------------------------------------------------------------
-    # DALYs  (projected 2025-2050, one Forecast_DALY per disease x year)
+    # DALYs
     # ----------------------------------------------------------------------------
-
-    # Data -----------------------------------------------------------------------
-    df_dalys = pd.read_csv(
-        "data/health-diet-v2/Projected_DALYs.csv"
-    )  # Disease, Year, Forecast_DALY
-
-    # Preprocessing --------------------------------------------------------------
-    df_dalys = df_dalys.rename(columns={"Year": "Years", "Forecast_DALY": "value"})
-    df_dalys["Country"] = "Switzerland"
-    df_dalys["cause"] = df_dalys["Disease"].replace(disease_map)
-
-    # Create variables name
-    df_dalys["variables"] = "tcaf_health-diet_dalys_" + df_dalys["cause"] + "[DALYs/y]"
-
-    # Filter
-    df_dalys = df_dalys[["Country", "Years", "variables", "value"]]
-
-    # Format as dm  --------------------------------------------------------------
-    df_dalys_pivot = df_dalys.pivot_table(
-        index=["Country", "Years"], columns="variables", values="value"
-    ).reset_index()
-    dm_health_dalys = DataMatrix.create_from_df(df_dalys_pivot, num_cat=1)
-
-    # Linear fitting to expand over the full model horizon (years_all)
-    # NB: the projection covers 2025-2050; fitting extrapolates the remaining
-    # (ots) years so every model year carries a value.
-    linear_fitting(dm_health_dalys, years_all)
+    # The projected DALYs are no longer read from Projected_DALYs.csv. They are now
+    # computed at runtime in TCAF_health_diet_workflow (frozen-rate demographic
+    # projection): the 2023 GBD DALYs by age x sex x cause are projected with the
+    # model's live demography. Here we only build the static 2023 GBD table; it is
+    # constructed after the PAF block below so it can be aligned to the PAF disease
+    # set (see end of function).
 
     # ----------------------------------------------------------------------------
     # PAF  (dose-response grid: PAF as a function of intake x [g/day/cap])
@@ -222,6 +201,107 @@ def TCAF_health_diet_preprocessing():
         for var in var_missing:
             dm.add(0.0, dummy=True, col_label=var, dim="Variables", unit="-")
         DM_TCAF_health_diet_paf[rf] = dm
+
+    # ----------------------------------------------------------------------------
+    # DALYs - static 2023 GBD table (numerator of the frozen-rate projection)
+    # ----------------------------------------------------------------------------
+    # Mirrors 03_projection_dalys.R. Auto-detects the stratification of the input:
+    #   - if the file carries real age bands  -> table by disease x age x sex
+    #   - otherwise ("All ages")              -> table by disease x sex
+    # The workflow (_project_dalys) forms the 2025 per-capita rate and projects it
+    # with the model's demography at the matching stratification. Age / sex labels
+    # use the demography tokens (lfs_demography_<sex>-<age>) so they join directly.
+    # Only diseases present in BOTH the DALYs file and the PAF grid are kept.
+    paf_codes = [v.replace("tcaf_health-diet_paf_", "") for v in var_total]
+
+    df_gbd = pd.read_csv("data/health-diet-v2/Disease_sex_DALYs_2023.csv")
+    # harmonize disease naming (GBD uses a slightly different label)
+    df_gbd["cause"] = df_gbd["cause"].replace(
+        {"Tracheal, bronchus, and lung cancer": "Tracheal bronchus and lung cancer"}
+    )
+    # keep a single measure / metric / year (defensive, as in the R script)
+    if "measure" in df_gbd.columns:
+        df_gbd = df_gbd[df_gbd["measure"].astype(str).str.contains("DALY", na=False)]
+    if "metric" in df_gbd.columns:
+        df_gbd = df_gbd[df_gbd["metric"] == "Number"]
+    if "year" in df_gbd.columns:
+        df_gbd = df_gbd[df_gbd["year"] == 2023]
+    # if 'location' in df_gbd.columns:
+    #   df_gbd = df_gbd[df_gbd['location'] == 'Switzerland']
+
+    df_gbd = df_gbd.rename(columns={"age": "Age", "sex": "Sex", "val": "DALYs"})
+    df_gbd = df_gbd[df_gbd["Sex"].isin(["Male", "Female"])].copy()
+    df_gbd["Sex"] = df_gbd["Sex"].map({"Male": "male", "Female": "female"})
+    df_gbd["code"] = df_gbd["cause"].replace(disease_map)
+    df_gbd = df_gbd[df_gbd["code"].isin(paf_codes)]
+
+    # Diseases actually available (intersection with the PAF set), PAF ordering
+    diseases = [c for c in paf_codes if c in set(df_gbd["code"].unique())]
+    model_sexes = ["female", "male"]
+
+    # Detect real age bands
+    _non_age = {"All ages", "All Ages", "Age-standardized", "all ages", "nan"}
+    if "Age" in df_gbd.columns:
+        df_gbd["Age"] = df_gbd["Age"].astype(str).str.replace(" years", "", regex=False)
+        real_ages = [a for a in df_gbd["Age"].unique() if a not in _non_age]
+    else:
+        real_ages = []
+
+    if len(real_ages) > 0:
+        # ---- age x sex table -----------------------------------------------------
+        def _age_token(a):
+            if a in ("<5", "5-9", "10-14", "15-19"):
+                return "below19"
+            if a in ("20-24", "25-29"):
+                return "age20-29"
+            if a in ("30-34", "35-39", "40-44", "45-49", "50-54"):
+                return "age30-54"
+            if a in ("55-59", "60-64"):
+                return "age55-64"
+            return "above65"
+
+        df_gbd = df_gbd[~df_gbd["Age"].isin(_non_age)].copy()
+        df_gbd["Age"] = df_gbd["Age"].map(_age_token)
+        df_gbd = df_gbd.groupby(["Age", "Sex", "code"], as_index=False)["DALYs"].sum()
+
+        model_ages = ["below19", "age20-29", "age30-54", "age55-64", "above65"]
+        arr = np.zeros((1, 1, 1, len(diseases), len(model_ages), len(model_sexes)))
+        di = {d: i for i, d in enumerate(diseases)}
+        ai = {a: i for i, a in enumerate(model_ages)}
+        si = {s: i for i, s in enumerate(model_sexes)}
+        for row in df_gbd.itertuples(index=False):
+            arr[0, 0, 0, di[row.code], ai[row.Age], si[row.Sex]] = row.DALYs
+        dm_health_dalys = DataMatrix(
+            col_labels={
+                "Country": ["Switzerland"],
+                "Years": [2023],
+                "Variables": ["tcaf_health-diet_dalys"],
+                "Categories1": diseases,
+                "Categories2": model_ages,
+                "Categories3": model_sexes,
+            },
+            units={"tcaf_health-diet_dalys": "DALYs/y"},
+        )
+        dm_health_dalys.array = arr
+    else:
+        # ---- sex-only table (no age resolution: projection scales by sex totals) --
+        df_gbd = df_gbd.groupby(["Sex", "code"], as_index=False)["DALYs"].sum()
+        arr = np.zeros((1, 1, 1, len(diseases), len(model_sexes)))
+        di = {d: i for i, d in enumerate(diseases)}
+        si = {s: i for i, s in enumerate(model_sexes)}
+        for row in df_gbd.itertuples(index=False):
+            arr[0, 0, 0, di[row.code], si[row.Sex]] = row.DALYs
+        dm_health_dalys = DataMatrix(
+            col_labels={
+                "Country": ["Switzerland"],
+                "Years": [2023],
+                "Variables": ["tcaf_health-diet_dalys"],
+                "Categories1": diseases,
+                "Categories2": model_sexes,
+            },
+            units={"tcaf_health-diet_dalys": "DALYs/y"},
+        )
+        dm_health_dalys.array = arr
 
     return DM_TCAF_health_diet_paf, dm_health_dalys
 

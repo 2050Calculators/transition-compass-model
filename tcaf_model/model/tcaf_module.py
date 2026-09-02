@@ -10,6 +10,7 @@ from tcaf_model.model.common.auxiliary_functions import (
     linear_fitting,
 )
 from tcaf_model.model.common.config_loader import load_lever_config
+from tcaf_model.model.common.data_matrix_class import DataMatrix
 from tcaf_model.model.common.interface_class import Interface
 
 
@@ -270,6 +271,83 @@ def TCAF_lca_workflow(
 
 
 # CalculationLeaf TCAF HEALTH DIET
+def _project_dalys(dm_gbd, dm_demography, base_year=2025):
+    """
+    Frozen-rate demographic projection of DALYs (mirrors 03_projection_dalys.R).
+
+      rate_{S,d} = DALYs^2023_{S,d} / P_{S}(base_year)
+      D_d(y)     = sum_S rate_{S,d} * P_{S}(y)
+
+    S is the stratification carried by the 2023 GBD table: either (age, sex) when
+    age bands are available, or (sex) only. The 2023 per-capita rate is held
+    constant and applied to the model's projected demography aggregated to S. At
+    y = base_year, D_d = sum_S DALYs^2023_{S,d} (the GBD totals).
+
+    dm_gbd        : Country x [2023] x [tcaf_health-diet_dalys] x disease [x age] x sex
+    dm_demography : Country x Years  x [lfs_demography]         x (sex-age)   [inhabitants]
+    returns       : Country x Years  x [tcaf_health-diet_dalys] x disease     [DALYs/y]
+    """
+    country = dm_gbd.col_labels["Country"]
+    diseases = dm_gbd.col_labels["Categories1"]
+    years = list(dm_demography.col_labels["Years"])
+    has_age = (
+        "Categories3" in dm_gbd.dim_labels
+    )  # (disease, age, sex) vs (disease, sex)
+    sexes = (
+        dm_gbd.col_labels["Categories3"]
+        if has_age
+        else dm_gbd.col_labels["Categories2"]
+    )
+    ages = dm_gbd.col_labels["Categories2"] if has_age else None
+
+    # Full demography P[country, year, age, sex] parsed from the sex-age categories
+    demo_ages = sorted(
+        {t.split("-", 1)[1] for t in dm_demography.col_labels["Categories1"]}
+    )
+    n_c, n_y, n_s = len(country), len(years), len(sexes)
+    arr_demo = dm_demography.array[:, :, 0, :]  # (country, year, sex-age category)
+    P_full = np.zeros((n_c, n_y, len(demo_ages), n_s))
+    ida = {a: i for i, a in enumerate(demo_ages)}
+    for ci, token in enumerate(dm_demography.col_labels["Categories1"]):
+        sex, age = token.split("-", 1)  # e.g. 'female-below19' -> ('female', 'below19')
+        if sex in sexes and age in ida:
+            P_full[:, :, ida[age], sexes.index(sex)] = arr_demo[:, :, ci]
+
+    yb = years.index(base_year)
+    if has_age:
+        # align demography ages to the GBD age order, then project over (age, sex)
+        arr_gbd = dm_gbd.array[:, 0, 0, :, :, :]  # (c, d, a, s)
+        P = np.stack([P_full[:, :, ida[a], :] for a in ages], axis=2)  # (c, y, a, s)
+        base = P[:, yb, :, :]  # (c, a, s)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rate = np.where(
+                base[:, np.newaxis, :, :] > 0, arr_gbd / base[:, np.newaxis, :, :], 0.0
+            )  # (c, d, a, s)
+        arr_dalys = np.einsum("cdas,cyas->cyd", rate, P)  # (c, y, d)
+    else:
+        # aggregate demography over age -> P_s(y), then project over sex
+        arr_gbd = dm_gbd.array[:, 0, 0, :, :]  # (c, d, s)
+        P = P_full.sum(axis=2)  # (c, y, s)
+        base = P[:, yb, :]  # (c, s)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rate = np.where(
+                base[:, np.newaxis, :] > 0, arr_gbd / base[:, np.newaxis, :], 0.0
+            )  # (c, d, s)
+        arr_dalys = np.einsum("cds,cys->cyd", rate, P)  # (c, y, d)
+
+    dm_dalys = DataMatrix(
+        col_labels={
+            "Country": list(country),
+            "Years": years,
+            "Variables": ["tcaf_health-diet_dalys"],
+            "Categories1": list(diseases),
+        },
+        units={"tcaf_health-diet_dalys": "DALYs/y"},
+    )
+    dm_dalys.array = arr_dalys[:, :, np.newaxis, :]
+    return dm_dalys
+
+
 def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
     """
     Diet-attributable / avoidable DALYs, following the stratified-adherence logic
@@ -297,6 +375,11 @@ def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
       B     = diet-consumed_bau     (unweighted full BAU diet,     g/cap/day)
       T     = diet-consumed_target  (unweighted full target diet,  g/cap/day)
       alpha = diet-adherence        (share_diet_adherence,         -)
+      P     = demography            (population by sex x age,       inhabitants)
+
+    DALYs D_d(y) are projected inside the module (frozen-rate demographic
+    projection, see _project_dalys) from the static 2023 GBD table and the model's
+    live demography P.
 
     Monetization:
       MF    = CDM_MF['health-diet'] (value per DALY, CHF/DALY)  ->  cost = DALYs * MF
@@ -316,9 +399,10 @@ def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
     dm_data_paf = DM_TCAF_health_diet[
         "health-diet_paf"
     ]  # dict: food -> PAF dose-response curve
-    dm_data_dalys = DM_TCAF_health_diet[
-        "health-diet_dalys"
-    ]  # DM: Country x Years x [dalys] x disease
+    # DALYs are projected from the static 2023 GBD table x the model's demography
+    dm_data_dalys = _project_dalys(
+        DM_TCAF_health_diet["health-diet_dalys"], DM_diet["demography"], base_year=2025
+    )
 
     # Step 0 - Groupby categories relevant for health ----------------------------
     # Red meat = bovine + pig + sheep + other animal
@@ -442,7 +526,7 @@ def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
     mf_var = cdm_mf.col_labels["Variables"][0]
     mf = cdm_mf[mf_var]  # scalar CHF/DALY
     cost_of = {
-        "tcaf_health-diet_dalys": "tcaf_health-diet_cost-bau",
+        "tcaf_health-diet_dalys": "tcaf_health-diet_cost",
         "tcaf_health-diet_dalys-avoided": "tcaf_health-diet_cost-avoided",
         "tcaf_health-diet_dalys-residual": "tcaf_health-diet_cost-residual",
     }
