@@ -216,8 +216,6 @@ def run(DM_transport, country_list, years_ots, years_fts):
 
     dm_new_eff_ots = DM_transport["ots"]["passenger_veh-efficiency_new"].copy()
 
-    dm_new_eff_4 = DM_transport["fts"]["passenger_veh-efficiency_new"][4].copy()
-
     # PCV: on prend les hypothèses d'amélioration ci dessous (source: canton de Vaud).
     reduction_2050_thermique = 1 - 0.39
     reduction_2050_electrique = 1 - 0.13
@@ -265,96 +263,6 @@ def run(DM_transport, country_list, years_ots, years_fts):
         "passenger_veh-efficiency_new"
     ]
     DM_transport["fts"]["passenger_veh-efficiency_new"][2] = dm_new_eff_2
-
-    # Scénario 4:
-    # on applique la réduction de 2/3 pour 2025 et 2050 due à la réduction de la taille des véhicules.
-    reduction_map_4 = {cle: valeur * 2 / 3 for cle, valeur in reduction_map.items()}
-    idx = dm_new_eff_4.idx
-    idx0 = dm_new_eff_ots.idx
-    for cat, reduction_2050 in reduction_map_4.items():
-        dm_new_eff_4.array[
-            idx["Vaud"],
-            idx[2050],
-            idx["tra_passenger_veh-efficiency_new"],
-            idx["LDV"],
-            idx[cat],
-        ] = (
-            dm_new_eff_ots.array[
-                idx0["Vaud"],
-                idx0[2023],
-                idx0["tra_passenger_veh-efficiency_new"],
-                idx0["LDV"],
-                idx0[cat],
-            ]
-            * reduction_2050
-        )
-        dm_new_eff_4.array[
-            idx["Vaud"],
-            1 : idx[2050],
-            idx["tra_passenger_veh-efficiency_new"],
-            idx["LDV"],
-            idx[cat],
-        ] = np.nan
-        dm_new_eff_4.array[
-            idx["Vaud"],
-            idx[2025],
-            idx["tra_passenger_veh-efficiency_new"],
-            idx["LDV"],
-            idx[cat],
-        ] = (
-            2
-            / 3
-            * dm_new_eff_ots.array[
-                idx0["Vaud"],
-                idx0[2023],
-                idx0["tra_passenger_veh-efficiency_new"],
-                idx0["LDV"],
-                idx0[cat],
-            ]
-        )
-
-    # on réduit l'intensité énergétique des BEV car on vend 50% de véhicules intermédiaires dès 2025
-    prop_VUS = 0.5
-    efficiency_VUS = 0.11
-
-    efficiency_2025_bev = dm_new_eff_4.array[
-        idx["Vaud"],
-        idx[2025],
-        idx["tra_passenger_veh-efficiency_new"],
-        idx["LDV"],
-        idx["BEV"],
-    ]
-    efficiency_2025_bev_vus = (
-        efficiency_2025_bev * (1 - prop_VUS) + efficiency_VUS * prop_VUS
-    )
-    dm_new_eff_4.array[
-        idx["Vaud"],
-        idx[2025],
-        idx["tra_passenger_veh-efficiency_new"],
-        idx["LDV"],
-        idx["BEV"],
-    ] = efficiency_2025_bev_vus
-
-    efficiency_2050_bev = dm_new_eff_4.array[
-        idx["Vaud"],
-        idx[2050],
-        idx["tra_passenger_veh-efficiency_new"],
-        idx["LDV"],
-        idx["BEV"],
-    ]
-    efficiency_2050_bev_vus = (
-        efficiency_2050_bev * 2 / 3 * (1 - prop_VUS) + efficiency_VUS * prop_VUS
-    )
-    dm_new_eff_4.array[
-        idx["Vaud"],
-        idx[2050],
-        idx["tra_passenger_veh-efficiency_new"],
-        idx["LDV"],
-        idx["BEV"],
-    ] = efficiency_2050_bev_vus
-
-    linear_fitting(dm_new_eff_4, dm_new_eff_4.col_labels["Years"])
-    DM_fts["fts"]["passenger_veh-efficiency_new"][4] = dm_new_eff_4
 
     # ======================  NEW SALES VEHICLES  ========================================================
 
@@ -635,18 +543,6 @@ def run(DM_transport, country_list, years_ots, years_fts):
     df_mesure_5.loc["Total", "facteurs_CO2_2018"] = emissions_moyennes_2018
     df_mesure_5.loc["Total", "facteurs_CO2_2035"] = emissions_moyennes_2035
     # df_mesure_5.to_excel('mesure_5_nv.xlsx', index=True)
-
-    ratio_2018_2035 = emissions_moyennes_2035 / emissions_moyennes_2018
-
-    idx = dm_new_eff_4.idx
-    efficiency_bev_2035_DLS = dm_new_eff_4.array[
-        idx["Vaud"],
-        idx[2035],
-        idx["tra_passenger_veh-efficiency_new"],
-        idx["LDV"],
-        idx["BEV"],
-    ]
-    emissions_moyennes_2035_DLS = electricite_2035_intensity * efficiency_bev_2035_DLS
 
     # ======================  EXPORTS FINAUX   ===========================
     # Load existing DM_transport

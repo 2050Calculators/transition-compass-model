@@ -1,9 +1,11 @@
 import os
 
+import numpy as np
 import pandas as pd
 from processors.freight_efficiency_tech_share import _EP2050_PATH, EP2050_tech_to_model
 
 from transition_compass_model.model.common.auxiliary_functions import (
+    linear_fitting,
     my_pickle_dump,
 )
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
@@ -125,7 +127,123 @@ def read_ep2050_fleet(scenario="ZERO-Basis") -> pd.DataFrame:
     return df_grouped
 
 
-def run(DM_transport: DataMatrix, years_fts):
+def car_efficiency_techno_vaud(DM_transport):
+    """Scenario developped by martin simon.
+    The 1/3 optimization is due to the car size redution"""
+
+    dm_new_eff_4 = DM_transport["fts"]["passenger_veh-efficiency_new"][4].copy()
+    dm_new_eff_ots = DM_transport["ots"]["passenger_veh-efficiency_new"].copy()
+
+    # PCV: on prend les hypothèses d'amélioration ci dessous (source: canton de Vaud).
+    reduction_2050_thermique = 1 - 0.39
+    reduction_2050_electrique = 1 - 0.13
+    reduction_2050_PHEV = (
+        0.5 * reduction_2050_electrique + 0.5 * reduction_2050_thermique
+    )
+    reduction_map = {
+        "BEV": reduction_2050_electrique,
+        "ICE-diesel": reduction_2050_thermique,
+        "ICE-gasoline": reduction_2050_thermique,
+        "PHEV-diesel": reduction_2050_PHEV,
+        "PHEV-gasoline": reduction_2050_PHEV,
+    }
+    # Scénario 4:
+    # on applique la réduction de 2/3 pour 2025 et 2050 due à la réduction de la taille des véhicules.
+    reduction_map_4 = {cle: valeur * 2 / 3 for cle, valeur in reduction_map.items()}
+
+    idx = dm_new_eff_4.idx
+    idx0 = dm_new_eff_ots.idx
+    for cat, reduction_2050 in reduction_map_4.items():
+        dm_new_eff_4.array[
+            idx["Vaud"],
+            idx[2050],
+            idx["tra_passenger_veh-efficiency_new"],
+            idx["LDV"],
+            idx[cat],
+        ] = (
+            dm_new_eff_ots.array[
+                idx0["Vaud"],
+                idx0[2023],
+                idx0["tra_passenger_veh-efficiency_new"],
+                idx0["LDV"],
+                idx0[cat],
+            ]
+            * reduction_2050
+        )
+        dm_new_eff_4.array[
+            idx["Vaud"],
+            1 : idx[2050],
+            idx["tra_passenger_veh-efficiency_new"],
+            idx["LDV"],
+            idx[cat],
+        ] = np.nan
+        dm_new_eff_4.array[
+            idx["Vaud"],
+            idx[2025],
+            idx["tra_passenger_veh-efficiency_new"],
+            idx["LDV"],
+            idx[cat],
+        ] = (
+            2
+            / 3
+            * dm_new_eff_ots.array[
+                idx0["Vaud"],
+                idx0[2023],
+                idx0["tra_passenger_veh-efficiency_new"],
+                idx0["LDV"],
+                idx0[cat],
+            ]
+        )
+
+    # on réduit l'intensité énergétique des BEV car on vend 50% de véhicules intermédiaires dès 2025
+    prop_VUS = 0.5
+    efficiency_VUS = 0.11
+
+    efficiency_2025_bev = dm_new_eff_4.array[
+        idx["Vaud"],
+        idx[2025],
+        idx["tra_passenger_veh-efficiency_new"],
+        idx["LDV"],
+        idx["BEV"],
+    ]
+    efficiency_2025_bev_vus = (
+        efficiency_2025_bev * (1 - prop_VUS) + efficiency_VUS * prop_VUS
+    )
+    dm_new_eff_4.array[
+        idx["Vaud"],
+        idx[2025],
+        idx["tra_passenger_veh-efficiency_new"],
+        idx["LDV"],
+        idx["BEV"],
+    ] = efficiency_2025_bev_vus
+
+    efficiency_2050_bev = dm_new_eff_4.array[
+        idx["Vaud"],
+        idx[2050],
+        idx["tra_passenger_veh-efficiency_new"],
+        idx["LDV"],
+        idx["BEV"],
+    ]
+    efficiency_2050_bev_vus = (
+        efficiency_2050_bev * 2 / 3 * (1 - prop_VUS) + efficiency_VUS * prop_VUS
+    )
+    dm_new_eff_4.array[
+        idx["Vaud"],
+        idx[2050],
+        idx["tra_passenger_veh-efficiency_new"],
+        idx["LDV"],
+        idx["BEV"],
+    ] = efficiency_2050_bev_vus
+
+    linear_fitting(dm_new_eff_4, dm_new_eff_4.col_labels["Years"])
+    DM_transport["fts"]["passenger_veh-efficiency_new"][4] = dm_new_eff_4
+
+    return DM_transport
+
+
+def run(DM_transport: DataMatrix, lev: int = 4) -> DataMatrix:
+    DM_transport = car_efficiency_techno_vaud(DM_transport)
+
     ##### SAVE DATA #########
     this_dir = os.path.dirname(os.path.abspath(__file__))
     pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")
