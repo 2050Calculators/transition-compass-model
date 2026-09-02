@@ -7,6 +7,7 @@ import os
 import pickle
 
 import numpy as np
+import openpyxl
 import pandas as pd
 
 from transition_compass_model.model.common.auxiliary_functions import (
@@ -42,43 +43,93 @@ def run(dm_pop_ch_ots, years_ots, years_fts, dm_pkm_cap_aviation):
     data_dir = os.path.join(current_dir, "../data")
 
     # ----------------------------------------------------------------
-    # 1. WORLD PKM OTS — post-COVID interpolation
+    # 1. CH GHG INVENTORY — international aviation CO2 (growth proxy)
     # ----------------------------------------------------------------
+    # Source: Evolution_GHG_since_1990_2025-04.xlsx, sheet "Total",
+    # row 58 = "International aviation" memo item, MtCO2eq, 1990-2023.
+    _ghg_file = os.path.join(data_dir, "Evolution_GHG_since_1990_2025-04.xlsx")
+    _wb = openpyxl.load_workbook(_ghg_file, data_only=True)
+    _ws = _wb["Total"]
+    _ghg_rows = list(_ws.iter_rows(values_only=True))
+    _inv_years = [int(v) for v in _ghg_rows[4][2:] if isinstance(v, (int, float))]
+    _co2_inv = {}
+    for _i, _yr in enumerate(_inv_years):
+        _v = _ghg_rows[58][2 + _i]
+        if _v is not None:
+            try:
+                _co2_inv[_yr] = float(_v)
+            except (TypeError, ValueError):
+                pass
+
+    # ----------------------------------------------------------------
+    # 2. MONDE PKM OTS — MTMC anchors + CH CO2 growth for non-MTMC years
+    # ----------------------------------------------------------------
+    # MTMC survey years (2000, 2005, 2010, 2015, 2021) carry ground-truth
+    # residency-based pkm/cap from Part 1 and are kept unchanged.
+    # All other OTS years are filled by scaling the nearest anchor year
+    # using the CH GHG inventory international aviation CO2 as a growth proxy.
+    #
+    # Anchor mapping rationale:
+    #   1990-1999 : backward from 2000 MTMC (no earlier survey)
+    #   2001-2004 : forward from 2000 (Swissair 2001 collapse captured by CO2 dip)
+    #   2006-2009 : forward from 2005
+    #   2011-2014 : forward from 2010
+    #   2016-2019 : forward from 2015 (pre-COVID)
+    #   2020      : backward from 2021 MTMC (COVID trough; 2020 < 2021 in CO2)
+    #   2022-2023 : forward from 2015 (CO2-2023 ≈ CO2-2015: pre-COVID ratio restored)
+    _mtmc_years = {2000, 2005, 2010, 2015, 2021}
+    _anchor_map = {
+        **{yr: 2000 for yr in range(1990, 2005) if yr not in _mtmc_years},
+        **{yr: 2005 for yr in range(2005, 2010) if yr not in _mtmc_years},
+        **{yr: 2010 for yr in range(2010, 2015) if yr not in _mtmc_years},
+        **{yr: 2015 for yr in range(2015, 2020) if yr not in _mtmc_years},
+        2020: 2021,
+        2022: 2015,
+        2023: 2015,
+    }
+
     dm_pkm = dm_pkm_cap_aviation.filter({"Country": ["Switzerland"]}).copy()
-    # IATA (2025): 2024 global demand = 2019 × 1.038
+    for yr in years_ots:
+        if yr in _mtmc_years:
+            continue
+        anc = _anchor_map.get(yr)
+        if (
+            anc is None
+            or yr not in _co2_inv
+            or anc not in _co2_inv
+            or _co2_inv[anc] == 0
+        ):
+            continue
+        dm_pkm[0, yr, 0, 0] = float(dm_pkm[0, anc, 0, 0]) * (
+            _co2_inv[yr] / _co2_inv[anc]
+        )
+
+    # value_2024: IATA (2025) global 2024 demand = 2019 × 1.038; file ends at 2023
     value_2024 = float(dm_pkm[0, 2019, 0, 0]) * 1.038
-    dm_pkm.add(value_2024, dim="Years", col_label=[2024], dummy=True)
-    dm_pkm[0, 2023, 0, 0] = np.nan
-    dm_pkm[0, 2022, 0, 0] = np.nan
-    dm_pkm.fill_nans(dim_to_interp="Years")
-    dm_pkm.drop(col_label=[2024], dim="Years")
-    dm_pkm[0, 2020, 0, 0] = 3103.0  # apply US 2019/2020 COVID rate
     dm_pkm_monde_ots = dm_pkm
 
     # ----------------------------------------------------------------
-    # 2. SWISS PKM OTS — from CSV, adjust world using CH/world ratio
+    # 2b. TERRITORIAL PKM + MINIMUM BOUND
     # ----------------------------------------------------------------
+    # Load pkm_suisse (needed for occupancy weighting in Step 5).
+    # Enforce: monde (residency-based) >= 1.05 × territorial.
     file = os.path.join(data_dir, "aviation_pkm_suisse.csv")
     df = pd.read_csv(file, sep=";", decimal=",")
     df.drop(["Unnamed: 0"], axis=1, inplace=True)
     dm_pkmsuisse = DataMatrix.create_from_df(df, num_cat=1)
     dm_pkmsuisse.rename_col("tra_pkm-cap", "tra_pkm-suisse-cap", dim="Variables")
 
-    dm_pkm_adj = dm_pkm_monde_ots.copy()
-    idx = dm_pkm_adj.idx
-    dm_pkm_adj.array[:, 0 : idx[2005], ...] = np.nan
-    dm_pkm_adj.append(dm_pkmsuisse, dim="Variables")
-    dm_pkm_adj.operation(
-        "tra_pkm-cap", "/", "tra_pkm-suisse-cap", out_col="ratio", unit="%"
-    )
-    linear_fitting(dm_pkm_adj, years_ots, based_on=create_years_list(2006, 2017, 1))
-    dm_pkm_adj[:, :, "ratio", ...] = np.maximum(1.05, dm_pkm_adj[:, :, "ratio", ...])
-    dm_pkm_adj.operation(
-        "ratio", "*", "tra_pkm-suisse-cap", out_col="tra_pkm-cap_adj", unit="pkm/cap"
-    )
-    dm_pkm_adj.filter({"Variables": ["tra_pkm-cap_adj"]}, inplace=True)
-    dm_pkm_adj.rename_col("tra_pkm-cap_adj", "tra_pkm-cap", dim="Variables")
-    dm_pkm_monde_ots = dm_pkm_adj
+    for yr in dm_pkmsuisse.col_labels["Years"]:
+        if yr not in years_ots:
+            continue
+        suisse_val = float(dm_pkmsuisse[0, yr, 0, 0])
+        monde_val = float(dm_pkm_monde_ots[0, yr, 0, 0])
+        if (
+            not np.isnan(suisse_val)
+            and not np.isnan(monde_val)
+            and monde_val < 1.05 * suisse_val
+        ):
+            dm_pkm_monde_ots[0, yr, 0, 0] = 1.05 * suisse_val
 
     # ----------------------------------------------------------------
     # 3. EFFICIENCY NEW OTS — from Excel

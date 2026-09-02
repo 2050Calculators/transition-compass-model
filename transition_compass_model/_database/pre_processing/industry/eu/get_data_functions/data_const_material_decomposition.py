@@ -261,6 +261,9 @@ def get_material_decomposition_data():
         "floor-area-reno-non-residential[t/m2]": [],
         "new-dhg-pipe[t/km]": ["District heating pipes [t/km]"],
         "ships_ICE[t/num]": ["Ships [t/num]"],
+        # "Trains [t/num]" in the literature review is a full freight consist (63.2 wagons).
+        # industry_const_material_decomposition.py overrides this with a weighted average
+        # of passenger and freight EU-configs based on CH OTS new-vehicle counts.
         "trains_CEV[t/num]": ["Trains [t/num]"],
         "planes_ICE[t/num]": ["Planes [t/num]"],
         "road[t/km]": ["Road [t/km]"],

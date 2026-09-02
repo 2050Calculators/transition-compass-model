@@ -297,6 +297,17 @@ class DataMatrix:
 
         self.array = array
 
+    def __eq__(self, other):
+        """Check if two DataMatrix objects have identical data and structure."""
+        if not isinstance(other, DataMatrix):
+            return False
+        return (
+            np.array_equal(self.array, other.array, equal_nan=True)
+            and self.col_labels == other.col_labels
+            and self.units == other.units
+            and self.dim_labels == other.dim_labels
+        )
+
     def add(self, new_array, dim, col_label, unit=None, dummy=False):
         # Adds the numpy array new_array to the datamatrix over dimension dim.
         # The label associated with the array is in defined by the string col_label
@@ -1217,7 +1228,8 @@ class DataMatrix:
     ):
         """Normalise the values of a datamatrix for a given variable, keeping the values of the fixed categories constant and adjusting the other categories accordingly.
         The function takes a datamatrix, a list of fixed categories, a starting year, and a variable name as input. It returns the modified datamatrix with the adjusted values.
-        Only for years where data is not nan
+        Only for years where data is not nan.
+        ! This function works only for 1 dimension of categories right now.
         """
         idx_fts = self.idx
         cat_labels = self.col_labels["Categories1"]

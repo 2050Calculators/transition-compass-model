@@ -87,7 +87,7 @@ def get_packaging_data(current_file_directory, years_ots):
 
     filepath = os.path.join(
         current_file_directory,
-        "../data/waste/0_Déchets_Quantités_produites_et_recyclées/je-f-02.03.02.11.xlsx",
+        "../data/waste/0_Déchets Quantités produites et recyclées/je-f-02.03.02.11.xlsx",
     )
     df = pd.read_excel(filepath)
     df.columns = df.iloc[3, :]
@@ -130,7 +130,7 @@ def get_packaging_data(current_file_directory, years_ots):
     # note: I get the amount of waste of aluminium packages and assuming that that's the same of consumption
     filepath = os.path.join(
         current_file_directory,
-        "../data/waste/0_Déchets_Quantités_produites_et_recyclées/je-f-02.03.02.11.xlsx",
+        "../data/waste/0_Déchets Quantités produites et recyclées/je-f-02.03.02.11.xlsx",
     )
     df = pd.read_excel(filepath)
     df.columns = df.iloc[3, :]
@@ -155,7 +155,7 @@ def get_packaging_data(current_file_directory, years_ots):
     # glass pack
     filepath = os.path.join(
         current_file_directory,
-        "../data/waste/0_Déchets_Quantités_produites_et_recyclées/je-f-02.03.02.11.xlsx",
+        "../data/waste/0_Déchets Quantités produites et recyclées/je-f-02.03.02.11.xlsx",
     )
     df = pd.read_excel(filepath)
     df.columns = df.iloc[3, :]
