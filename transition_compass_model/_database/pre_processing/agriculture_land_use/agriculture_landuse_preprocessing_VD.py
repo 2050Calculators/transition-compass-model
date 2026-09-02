@@ -1379,4 +1379,6 @@ print("Hello")
 # Pickle overwriting
 ################################################################################
 f = "../../data/datamatrix/agriculture.pickle"
-my_pickle_dump(DM_agriculture, f)  # noqa: F821
+my_pickle_dump(DM_agriculture, f, refactoring_change=True)  # noqa: F821
+
+print("Hello")

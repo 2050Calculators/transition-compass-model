@@ -3608,150 +3608,177 @@ def climate_smart_livestock_processing(
     # ----------------------------------------------------------------------------------------------------------------------
     # YIELD (MEAT) --------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
-    list_elements = ["Producing Animals/Slaughtered", "Production Quantity"]
 
-    list_items = ["Meat, Total > (List)"]
+    try:
+        df_slaughtered_1990_2022 = pd.read_csv(file_dict["slaughtered"])
+    except OSError:
+        print("File not found for slaughtered animals data.")
+        list_elements = ["Producing Animals/Slaughtered", "Production Quantity"]
 
-    # 1990 - 2022 HERE
-    code = "QCL"
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = [
-        "1990",
-        "1991",
-        "1992",
-        "1993",
-        "1994",
-        "1995",
-        "1996",
-        "1997",
-        "1998",
-        "1999",
-        "2000",
-        "2001",
-        "2002",
-        "2003",
-        "2004",
-        "2005",
-        "2006",
-        "2007",
-        "2008",
-        "2009",
-        "2010",
-        "2011",
-        "2012",
-        "2013",
-        "2014",
-        "2015",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-        "2023",
-    ]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        list_items = ["Meat, Total > (List)"]
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_slaughtered_1990_2022 = faostat.get_data_df(code, pars=my_pars, strval=False)
+        # 1990 - 2022 HERE
+        code = "QCL"
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = [
+            "1990",
+            "1991",
+            "1992",
+            "1993",
+            "1994",
+            "1995",
+            "1996",
+            "1997",
+            "1998",
+            "1999",
+            "2000",
+            "2001",
+            "2002",
+            "2003",
+            "2004",
+            "2005",
+            "2006",
+            "2007",
+            "2008",
+            "2009",
+            "2010",
+            "2011",
+            "2012",
+            "2013",
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+            "2023",
+        ]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    # Dropping 'Bees'
-    df_slaughtered_1990_2022 = df_slaughtered_1990_2022[
-        df_slaughtered_1990_2022["Item"] != "Bees"
-    ]
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_slaughtered_1990_2022 = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    # Renaming item as the same animal (for meat and live/producing/slaugthered animals)
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Pig", case=False, na=False),
-        "Item",
-    ] = "Pig"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Cattle", case=False, na=False),
-        "Item",
-    ] = "Cattle"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Buffalo", case=False, na=False),
-        "Item",
-    ] = "Cattle"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Chicken", case=False, na=False),
-        "Item",
-    ] = "Chicken"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Duck", case=False, na=False),
-        "Item",
-    ] = "Duck"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Turkeys", case=False, na=False),
-        "Item",
-    ] = "Turkey"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Geese", case=False, na=False),
-        "Item",
-    ] = "Goose"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Pigeon", case=False, na=False),
-        "Item",
-    ] = "Pigeon"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Horse", case=False, na=False),
-        "Item",
-    ] = "Horse"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains(
-            "Rabbits and hares", case=False, na=False
-        ),
-        "Item",
-    ] = "Rabbit"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Sheep", case=False, na=False),
-        "Item",
-    ] = "Sheep"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Goat", case=False, na=False),
-        "Item",
-    ] = "Goat"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Asse", case=False, na=False),
-        "Item",
-    ] = "Asse"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Camel", case=False, na=False),
-        "Item",
-    ] = "Other non-specified"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Rodent", case=False, na=False),
-        "Item",
-    ] = "Other non-specified"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Other", case=False, na=False),
-        "Item",
-    ] = "Other non-specified"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Game", case=False, na=False),
-        "Item",
-    ] = "Game"
-    df_slaughtered_1990_2022.loc[
-        df_slaughtered_1990_2022["Item"].str.contains("Mule", case=False, na=False),
-        "Item",
-    ] = "Mule"
+        # Dropping 'Bees'
+        df_slaughtered_1990_2022 = df_slaughtered_1990_2022[
+            df_slaughtered_1990_2022["Item"] != "Bees"
+        ]
 
-    # HERE! Unit conversion Poultry : [1000 An] => [An]
-    df_slaughtered_1990_2022["Value"] = pd.to_numeric(
-        df_slaughtered_1990_2022["Value"], errors="coerce"
-    )
-    mask = df_slaughtered_1990_2022["Unit"].str.strip() == "1000 An"
-    df_slaughtered_1990_2022.loc[mask, "Value"] *= 1000
-    df_slaughtered_1990_2022.loc[mask, "Unit"] = "An"
-    df_slaughtered_1990_2022 = df_slaughtered_1990_2022.copy()
+        # Renaming item as the same animal (for meat and live/producing/slaugthered animals)
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains("Pig", case=False, na=False),
+            "Item",
+        ] = "Pig"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains(
+                "Cattle", case=False, na=False
+            ),
+            "Item",
+        ] = "Cattle"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains(
+                "Buffalo", case=False, na=False
+            ),
+            "Item",
+        ] = "Cattle"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains(
+                "Chicken", case=False, na=False
+            ),
+            "Item",
+        ] = "Chicken"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains("Duck", case=False, na=False),
+            "Item",
+        ] = "Duck"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains(
+                "Turkeys", case=False, na=False
+            ),
+            "Item",
+        ] = "Turkey"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains(
+                "Geese", case=False, na=False
+            ),
+            "Item",
+        ] = "Goose"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains(
+                "Pigeon", case=False, na=False
+            ),
+            "Item",
+        ] = "Pigeon"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains(
+                "Horse", case=False, na=False
+            ),
+            "Item",
+        ] = "Horse"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains(
+                "Rabbits and hares", case=False, na=False
+            ),
+            "Item",
+        ] = "Rabbit"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains(
+                "Sheep", case=False, na=False
+            ),
+            "Item",
+        ] = "Sheep"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains("Goat", case=False, na=False),
+            "Item",
+        ] = "Goat"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains("Asse", case=False, na=False),
+            "Item",
+        ] = "Asse"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains(
+                "Camel", case=False, na=False
+            ),
+            "Item",
+        ] = "Other non-specified"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains(
+                "Rodent", case=False, na=False
+            ),
+            "Item",
+        ] = "Other non-specified"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains(
+                "Other", case=False, na=False
+            ),
+            "Item",
+        ] = "Other non-specified"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains("Game", case=False, na=False),
+            "Item",
+        ] = "Game"
+        df_slaughtered_1990_2022.loc[
+            df_slaughtered_1990_2022["Item"].str.contains("Mule", case=False, na=False),
+            "Item",
+        ] = "Mule"
+
+        # HERE! Unit conversion Poultry : [1000 An] => [An]
+        df_slaughtered_1990_2022["Value"] = pd.to_numeric(
+            df_slaughtered_1990_2022["Value"], errors="coerce"
+        )
+        mask = df_slaughtered_1990_2022["Unit"].str.strip() == "1000 An"
+        df_slaughtered_1990_2022.loc[mask, "Value"] *= 1000
+        df_slaughtered_1990_2022.loc[mask, "Unit"] = "An"
+        df_slaughtered_1990_2022.to_csv(file_dict["slaughtered"], index=False)
 
     # Reading excel lsu equivalent
     df_lsu = pd.read_excel(
@@ -6582,9 +6609,7 @@ def energy_ghg_calibration(list_countries, df_CO2_cal, df_liming_urea):
         list_sources = ["FAO TIER 1"]
 
         # 1990 - 2022
-        ld = faostat.list_datasets()
         code = "GT"
-        pars = faostat.list_pars(code)
         my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
         my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
         my_items = [faostat.get_par(code, "item")[i] for i in list_items]
@@ -7658,7 +7683,7 @@ def wood_calibration(list_countries):
     # WOOD DEMAND ---------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
     try:
-        wood_calibration = pd.read_csv("data/faostat/wood_calibration.csv")
+        df_wood_calibration = pd.read_csv("data/faostat/wood_calibration.csv")
 
     except OSError:
         print("wood data not found, downloading from FAOSTAT...")
@@ -7938,57 +7963,60 @@ def constant():
     # ----------------------------------------------------------------------------------------------------------------------
     # EMISSION FACTOR [CO2/ktoe] ---------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
+    try:
+        df_ef = pd.read_csv("data/faostat/emission_factors.csv")
+    except FileNotFoundError:
+        # Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
 
-    # Read FAO Values (for Switzerland) --------------------------------------------------------------------------------------------
+        list_countries = ["Switzerland"]
+        list_elements = ["Energy use in agriculture", "Emissions (CO2)"]
+        list_items = ["Total Energy > (List)"]
 
-    list_countries = ["Switzerland"]
-    list_elements = ["Energy use in agriculture", "Emissions (CO2)"]
-    list_items = ["Total Energy > (List)"]
+        # 1990 - 2022
+        # ld = faostat.list_datasets()
+        code = "GN"
+        # pars = faostat.list_pars(code)
+        my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
+        my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
+        my_items = [faostat.get_par(code, "item")[i] for i in list_items]
+        list_years = ["2022"]
+        my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
-    # 1990 - 2022
-    # ld = faostat.list_datasets()
-    code = "GN"
-    # pars = faostat.list_pars(code)
-    my_countries = [faostat.get_par(code, "area")[c] for c in list_countries]
-    my_elements = [faostat.get_par(code, "elements")[e] for e in list_elements]
-    my_items = [faostat.get_par(code, "item")[i] for i in list_items]
-    list_years = ["2022"]
-    my_years = [faostat.get_par(code, "year")[y] for y in list_years]
+        my_pars = {
+            "area": my_countries,
+            "element": my_elements,
+            "item": my_items,
+            "year": my_years,
+        }
+        df_ef = faostat.get_data_df(code, pars=my_pars, strval=False)
 
-    my_pars = {
-        "area": my_countries,
-        "element": my_elements,
-        "item": my_items,
-        "year": my_years,
-    }
-    df_ef = faostat.get_data_df(code, pars=my_pars, strval=False)
+        # Filter
+        df_ef = df_ef[["Item", "Element", "Value"]]
 
-    # Filter
-    df_ef = df_ef[["Item", "Element", "Value"]]
+        # Pivot
+        df_ef = df_ef.pivot_table(
+            index=["Item"], columns="Element", values="Value"
+        ).reset_index()
 
-    # Pivot
-    df_ef = df_ef.pivot_table(
-        index=["Item"], columns="Element", values="Value"
-    ).reset_index()
+        # Add conversion factor from [TJ] to [ktoe]
+        tj_to_ktoe = 0.02388458966275  # source https://www.unitjuggler.com/convertir-energy-de-TJ-en-ktoe.html
+        df_ef["TJ to ktoe"] = tj_to_ktoe
 
-    # Add conversion factor from [TJ] to [ktoe]
-    tj_to_ktoe = 0.02388458966275  # source https://www.unitjuggler.com/convertir-energy-de-TJ-en-ktoe.html
-    df_ef["TJ to ktoe"] = tj_to_ktoe
+        # Compute emission factor
+        df_ef["EF [MtCO2/ktoe]"] = (
+            df_ef["Emissions (CO2)"]
+            * 10**-3
+            / (df_ef["Energy use in agriculture"] * df_ef["TJ to ktoe"])
+        )
 
-    # Compute emission factor
-    df_ef["EF [MtCO2/ktoe]"] = (
-        df_ef["Emissions (CO2)"]
-        * 10**-3
-        / (df_ef["Energy use in agriculture"] * df_ef["TJ to ktoe"])
-    )
+        # Filter and format
+        df_ef = df_ef[["Item", "EF [MtCO2/ktoe]"]].copy()
+        df_ef = df_ef.melt(id_vars=["Item"], var_name="Element", value_name="Value")
+        df_ef["Item"] = df_ef["Item"] + " " + df_ef["Element"]
+        df_ef = df_ef[["Item", "Value"]].copy()
 
-    # Filter and format
-    df_ef = df_ef[["Item", "EF [MtCO2/ktoe]"]].copy()
-    df_ef = df_ef.melt(id_vars=["Item"], var_name="Element", value_name="Value")
-    df_ef["Item"] = df_ef["Item"] + " " + df_ef["Element"]
-    df_ef = df_ef[["Item", "Value"]].copy()
-
-    # Merge with dict
+        # Save as csv
+        df_ef.to_csv("data/faostat/emission_factors.csv", index=False)
 
     return df_ef
 
@@ -9098,6 +9126,7 @@ file_dict = {
     "producing_animals": "data/faostat/producing_animals_1990_2022.csv",
     "fao_land_use": "data/faostat/fao_land_use.csv",
     "livestock_population": "data/faostat/livestock_population_1990_2022.csv",
+    "slaughtered": "data/faostat/slaughtered_1990_2022.csv",
 }
 df_climate_smart_crop_pathwaycalc, df_energy_demand_cal, df_CO2_cal = (
     climate_smart_crop_processing(list_countries, df_agri_land, file_dict)
@@ -9363,7 +9392,9 @@ DM_agriculture["constant"]["cdm_cp_efficiency"]["cp_efficiency_liv", "meat-sheep
 )
 
 # Change unit
-DM_agriculture["constant"]["cdm_cp_efficiency"].units = "kg DM feed/kg EW"
+DM_agriculture["constant"]["cdm_cp_efficiency"].units = {
+    "cp_efficiency_liv": "kg DM feed/kg EW"
+}
 
 # FXA EF NITROGEN FERTILIZER ----------------------------------------------------------------------------------------
 # Load data
@@ -9453,7 +9484,9 @@ dm_dom_prod_crop.rename_col(
     "cal_agr_domestic-production_food_raw",
     dim="Variables",
 )
-dm_dom_prod_crop.add(np.nan, "Categories1", "rice", dummy=True)
+if "rice" not in dm_dom_prod_crop.col_labels["Categories1"]:
+    dm_dom_prod_crop.add(np.nan, "Categories1", "rice", dummy=True)
+
 dm_dom_prod_crop.append(dm_losses_crop, dim="Variables")
 dm_dom_prod_crop.operation(
     "agr_climate-smart-crop_losses",
@@ -9467,6 +9500,17 @@ dm_dom_prod_crop.operation(
 DM_agriculture["fxa"]["cal_agr_domestic-production-liv"][
     "Switzerland", :, "cal_agr_domestic-production-liv", :
 ] = dm_dom_prod_liv["Switzerland", :, "cal_agr_domestic-production-liv", :]
+
+if (
+    "rice"
+    not in DM_agriculture["fxa"]["cal_agr_domestic-production_food"].col_labels[
+        "Categories1"
+    ]
+):
+    DM_agriculture["fxa"]["cal_agr_domestic-production_food"].add(
+        np.nan, "Categories1", "rice", dummy=True
+    )
+
 DM_agriculture["fxa"]["cal_agr_domestic-production_food"][
     "Switzerland", :, "cal_agr_domestic-production_food", :
 ] = dm_dom_prod_crop["Switzerland", :, "cal_agr_domestic-production_food", :]
@@ -10328,3 +10372,6 @@ add_dummy_country_to_DM(DM_agriculture, "Vaud", "Switzerland")
 f = "../../data/datamatrix/agriculture.pickle"
 with open(f, "wb") as handle:
     pickle.dump(DM_agriculture, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+print("Hello")
