@@ -1311,22 +1311,17 @@ def simulate_industry_to_landuse_input():
 
 
 def simulate_agriculture_to_landuse_input():
-    dm_lus = simulate_input(from_sector="agriculture", to_sector="landuse")
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    data_file = os.path.join(
+        current_file_directory,
+        "../_database/data/interface/agriculture_to_land-use.pickle",
+    )
+    with open(data_file, "rb") as handle:
+        dm_lus = pickle.load(handle)
 
-    dm_wood = dm_lus.filter(
-        {"Variables": ["agr_bioenergy_biomass-demand_solid_fuelwood-and-res"]}
-    )
-    dm_wood.deepen()
-    dm_lgn = dm_lus.filter(
-        {
-            "Variables": [
-                "agr_bioenergy_biomass-demand_liquid_lgn_lgn-btl-fuelwood-and-res"
-            ]
-        }
-    )
-    dm_lgn.deepen()
-    dm_land_use = dm_lus.filter_w_regex({"Variables": "agr_lus_land.*"})
-    dm_land_use.deepen()
+    dm_wood = dm_lus["wood"]
+    dm_lgn = dm_lus["lgn"]
+    dm_land_use = dm_lus["landuse"]
 
     DM_agr = {"wood": dm_wood, "lgn": dm_lgn, "landuse": dm_land_use}
 

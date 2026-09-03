@@ -3,6 +3,7 @@ import pickle
 
 import numpy as np
 import pandas as pd
+from scenarios.agr_fts_BAU_pickle import run as run_bau_fts
 
 from transition_compass_model._database.pre_processing.api_routines_CH import (
     get_data_api_CH,
@@ -1379,4 +1380,8 @@ dm_emission_total_co2e.append(dm_n2o_split_co2e, dim="Variables")
 f = "../../data/datamatrix/agriculture.pickle"
 my_pickle_dump(DM_agriculture, f)  # noqa: F821
 
+
+#### FTS ####
+
+DM_agriculture = run_bau_fts(DM_agriculture, years_ots, years_fts)
 print("Hello")

@@ -11,14 +11,11 @@ from transition_compass_model.model.common.auxiliary_functions import (
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
-def run(
-    DM_agriculture: DataMatrix, country_list: list, years_ots: list, years_fts: list
-) -> DataMatrix:
+def run(DM_agriculture: DataMatrix, years_ots: list, years_fts: list) -> DataMatrix:
     """Create fts BAU for agriculture
 
     Args:
         DM_agriculture (DataMatrix)
-        country_list (list)
         years_ots (list)
         years_fts (list)
 
@@ -76,6 +73,4 @@ if __name__ == "__main__":
     #     DM_agriculture = pickle.load(f)
 
     # Run the function to increase freight rail by 45%
-    DM_agriculture_updated = run(
-        DM_input["agriculture"], country_list, years_ots, years_fts
-    )
+    DM_agriculture_updated = run(DM_input["agriculture"], years_ots, years_fts)
