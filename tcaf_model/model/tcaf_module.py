@@ -356,7 +356,7 @@ def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
     For every food risk-factor r and disease d:
       PAF_r(B) : PAF read off the dose-response curve at the BAU (reference) intake
       PAF_r(T) : PAF read off the curve at the full target intake (full adherent)
-      PIF_r    : max((PAF_r(B) - PAF_r(T)) / (1 - PAF_r(T)), 0)      [full adoption]
+      PIF_r    : (PAF_r(B) - PAF_r(T)) / (1 - PAF_r(T))   [full adoption; may be < 0 if the diet worsens]
     PAF is read by linear interpolation with flat extrapolation
     (numpy.interp == R's approx(..., rule = 2)).
 
@@ -475,9 +475,11 @@ def TCAF_health_diet_workflow(DM_diet, DM_TCAF_health_diet, CDM_MF):
     arr_paf_T = eval_paf(dm_T)  # PAF at full target intake
 
     # Step 3 - Full-adoption PIF per food x disease ------------------------------
+    # No floor at 0: a food moving in the harmful direction yields a negative PIF
+    # (added burden), so any diet - including worsening ones - can be evaluated.
     with np.errstate(divide="ignore", invalid="ignore"):
         arr_pif = (arr_paf_B - arr_paf_T) / (1.0 - arr_paf_T)
-    arr_pif = np.maximum(np.nan_to_num(arr_pif, nan=0.0), 0.0)
+    arr_pif = np.nan_to_num(arr_pif, nan=0.0, posinf=0.0, neginf=0.0)
 
     # Step 4 - Combine the food risk-factors of a disease: 1 - prod(1 - p) -------
     af_ref_comb = 1.0 - np.prod(1.0 - arr_paf_B, axis=2)  # (n_c, n_y, n_d)
@@ -696,7 +698,13 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
         DM_livestock_to_TCAF = simulate_livestock_to_TCAF_input()
 
     # CalculationTree ---------------------------------------------------------------------------------------------------
-    # DM_TCAF_lca = TCAF_lca_workflow(DM_TCAF_lca, DM_crop_to_TCAF, DM_landuse_to_TCAF, DM_livestock_to_TCAF, CDM_const)
+    DM_TCAF_lca = TCAF_lca_workflow(
+        DM_TCAF_lca,
+        DM_crop_to_TCAF,
+        DM_landuse_to_TCAF,
+        DM_livestock_to_TCAF,
+        CDM_const,
+    )
     dm_health_diet_detailed, dm_health_diet_tot = TCAF_health_diet_workflow(
         DM_diet, DM_TCAF_health_diet, CDM_MF
     )
