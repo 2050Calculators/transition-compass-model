@@ -1373,8 +1373,6 @@ dm_emission_total_co2e = dm_emission_total_co2e.flatten()
 dm_emission_total_co2e.append(dm_ch4_split_co2e, dim="Variables")
 dm_emission_total_co2e.append(dm_n2o_split_co2e, dim="Variables")
 
-print("Hello")
-
 ################################################################################
 # Pickle overwriting
 ################################################################################
