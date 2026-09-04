@@ -85,7 +85,6 @@ def df_fso_excel_to_dm(
 
 
 def translate_text(text):
-
     translation = translator.translate_text(text, target_lang="EN-GB")
     return translation.text
 
@@ -104,7 +103,6 @@ def create_ots_years_list(years_setting):
 
 
 def extract_energy_data(file_url, local_filename, baseyear, years_ots, outfile_dm):
-
     # If the routine had already run and the dm was created, it skips everything and it just loads the dm
     # this is mainly done to avoid calling deepl on repeat which only allows a limited number of calls
     if not os.path.exists(outfile_dm):
@@ -287,7 +285,6 @@ def extract_nexuse_capacity_data(file):
 
 
 def extract_renewable_capacity_data(file_url, local_filename):
-
     if not os.path.exists(local_filename):
         response = requests.get(file_url, stream=True)
         # Check if the request was successful
@@ -508,7 +505,6 @@ def extract_importexport_data(file_url, local_filename, sheet_name, var_name, ma
 
 
 def compute_capacity_factor(dm_capacity, dm_production):
-
     dm_capacity_ots = dm_capacity.filter(
         {"Years": years_ots, "Country": ["Switzerland"]}, inplace=False
     )
@@ -587,7 +583,6 @@ def extract_hydro_capacity_at_year(df, yr):
 
 
 def extract_old_hydro_capacity_data(url_dict):
-
     dm_all = None
     for yr in url_dict.keys():
         local_filename = url_dict[yr]["local_filename"]
@@ -627,7 +622,6 @@ def extract_old_hydro_capacity_data(url_dict):
 
 
 def extract_old_hydro_capacity_zip(url_dict):
-
     dm_all = None
     for yr in url_dict.keys():
         df = pd.read_excel(url_dict[yr]["local_filename"])
@@ -803,7 +797,6 @@ def extract_oil_gas_capacity_data(local_filename):
 
 
 def extract_energy_statistics_data(file_url, local_filename, sheet_name, parameters):
-
     mapping = parameters["mapping"]  # dictionary,  to rename column headers
     var_name = parameters["var name"]  # string, dm variable name
     headers_idx = parameters[
@@ -876,7 +869,6 @@ def extract_energy_statistics_data(file_url, local_filename, sheet_name, paramet
 def extract_districtheating_demand(
     file_url, local_filename, sheet_name, mapping, var_name
 ):
-
     if not os.path.exists(local_filename):
         response = requests.get(file_url, stream=True)
         # Check if the request was successful
@@ -1431,18 +1423,12 @@ dm_fuels_supply.change_unit(
 #  but they are not appearing correctly in the final dm_capacity
 # Correct this. Then I think the rest is good.
 
-file = "../../../data/datamatrix/energy.pickle"
-with open(file, "rb") as handle:
-    DM_energy = pickle.load(handle)
-
 dm_capacity.rename_col("VD", "Vaud", dim="Country")
-DM_energy["capacity"] = dm_capacity.filter({"Country": ["Switzerland", "Vaud"]})
-DM_energy["production"] = dm_production.filter({"Country": ["Switzerland"]})
-DM_energy["fuels"] = dm_fuels_supply
+DM_energy = {
+    "capacity": dm_capacity.filter({"Country": ["Switzerland", "Vaud"]}),
+    "production": dm_production.filter({"Country": ["Switzerland"]}),
+    "fuels": dm_fuels_supply,
+}
 
 file = "../../../data/datamatrix/energy.pickle"
-# with open(file, 'wb') as handle:
-#    pickle.dump(DM_energy, handle, protocol=pickle.HIGHEST_PROTOCOL)
 my_pickle_dump(DM_energy, file)
-
-print("Hello")
