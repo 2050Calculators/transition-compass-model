@@ -1,5 +1,7 @@
 import os
 
+import numpy as np
+
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     filter_country_and_load_data_from_pickles,
@@ -23,7 +25,12 @@ def run(DM_agriculture: DataMatrix, years_ots: list, years_fts: list) -> DataMat
         DataMatrix: DM_agriculture updated with fts BAU for agriculture
     """
     # Levers to be normalised
-    list_norm = ["climate-smart-livestock_ration"]
+    list_norm = [
+        "climate-smart-livestock_ration",
+        "share",
+        "biomass-hierarchy_biomass-mix_digestor",
+    ]  #'biomass-hierarchy_bioenergy_liquid_biodiesel'
+    #'biomass-hierarchy_bioenergy_liquid_biogasoline'
 
     for key in DM_agriculture["ots"].keys():
         if isinstance(DM_agriculture["ots"][key], dict):
@@ -38,6 +45,7 @@ def run(DM_agriculture: DataMatrix, years_ots: list, years_fts: list) -> DataMat
 
                 else:
                     linear_fitting(dm, years_fts, based_on=years_ots)
+                    dm.array = np.where(dm.array < 0, 0, dm.array)
                 for lev in range(1, 5):
                     DM_agriculture["fts"][key][subkey][lev] = dm.filter(
                         {"Years": years_fts}
@@ -46,6 +54,7 @@ def run(DM_agriculture: DataMatrix, years_ots: list, years_fts: list) -> DataMat
         else:
             dm = DM_agriculture["ots"][key].copy()
             linear_fitting(dm, years_fts, based_on=years_ots)
+            dm.array = np.where(dm.array < 0, 0, dm.array)
             for lev in range(1, 5):
                 DM_agriculture["fts"][key][lev] = dm.filter({"Years": years_fts})
 
