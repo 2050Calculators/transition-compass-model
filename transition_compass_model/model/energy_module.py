@@ -273,16 +273,27 @@ def extract_sankey_energy_flow(DM):
     return DM
 
 
-def extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy):
+def extract_2050_output_pyomo(m, country_prod, endyr, years_fts):
     # DM.keys = {'installed_GW', 'installed_N', 'emissions', 'storage_in',
     # 'storage_out', 'monthly_operation_GW', 'Losses'}
     DM = utils.get_pyomo_output(m, country_prod, endyr)
 
     # From ses_eval.mod
-    # Hours in a month
-    DM["hours_month"] = DM_energy["index0"].filter(
-        {"Variables": ["t_op"], "Years": [endyr]}
+    # Hours in a month (t_op, from ses_main.json, as loaded onto the model)
+    periods = list(m.PERIODS)
+    dm_hours = DataMatrix(
+        col_labels={
+            "Country": ["Switzerland"],
+            "Years": [endyr],
+            "Variables": ["t_op"],
+            "Categories1": [str(p) for p in periods],
+        },
+        units={"t_op": "-"},
     )
+    dm_hours.array = np.array([pyo.value(m.t_op[p]) for p in periods]).reshape(
+        1, 1, 1, len(periods)
+    )
+    DM["hours_month"] = dm_hours
     # Efficiency (layers_in_out)
     resources = set(m.RESOURCES)
     technologies = set(m.TECHNOLOGIES)
@@ -735,7 +746,7 @@ def energyscope_pyomo(
     attach(opt, m)
     res = solve(opt, m, warmstart=True)
 
-    DM_2050 = extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy)
+    DM_2050 = extract_2050_output_pyomo(m, country_prod, endyr, years_fts)
 
     # I should map the losses based on the canton share of the country production
     dm_prod_cap_cntr, dm_losses, dm_net_import = create_future_country_production_trend(
@@ -1008,7 +1019,7 @@ def local_energy_run():
     # Function to run only transport module without converter and tpe
 
     # get geoscale
-    country_list = ["Vaud"]
+    country_list = ["Switzerland"]
 
     results_run = energy(lever_setting, years_setting, country_list)
 
