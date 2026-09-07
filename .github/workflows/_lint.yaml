@@ -1,0 +1,31 @@
+name: Lint
+on: workflow_call
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Ruff lint
+        if: success() || failure()
+        run: uv run ruff check transition_compass_model
+
+      - name: Ruff format
+        if: success() || failure()
+        run: uv run ruff format --check transition_compass_model
+
+      - name: Codespell
+        if: success() || failure()
+        run: uv run codespell transition_compass_model

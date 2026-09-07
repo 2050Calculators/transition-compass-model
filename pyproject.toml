@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=65.0", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transition-compass-model"
+dynamic = ["version"]
+description = "True Cost Accounting of Food (TCAF) build of the Transition Compass model: food, diet, land use and true cost modules"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Programming Language :: Python :: 3.12",
+]
+# Only what the TCAF modules and their pre-processing import. The energy
+# modules (pyomo, amplpy, highspy) are not in this build.
+dependencies = [
+    "deepl",
+    "eurostat>=1.1.1",
+    "faostat>=1.1.2",
+    "numpy>=1.21,<2",
+    "openpyxl>=3.1.5",
+    "pandas==2.2.3",
+    "plotly==5.18.0",
+    "pycountry>=26.2.16",
+    "rapidfuzz>=3.9.0",
+    "requests",
+    "scikit-learn>=1.8.0",
+    "scipy==1.15.3",
+    "statsmodels>=0.14.0",
+    "xlrd>=2.0.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/2050Calculators/tcaf-model"
+Repository = "https://github.com/2050Calculators/tcaf-model"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.5.0",
+    "mypy>=1.11.0",
+    "pre-commit>=3.0.0",
+    "pytest>=8.0.0",
+    "codespell>=2.3.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["transition_compass_model*"]
+
+[tool.setuptools.package-data]
+"*" = ["**/*.pickle", "**/*.json", "**/*.csv", "**/*.xlsx", "**/*.mod"]
+
+# Releases here are tagged tcaf-v1.2.3, not v1.2.3, so the tags of this repo
+# never look like a release of the main model.
+[tool.setuptools_scm]
+tag_regex = "^tcaf-v(?P<version>[0-9]+(?:\\.[0-9]+){0,2}[^+]*)(?:\\+.*)?$"
+git_describe_command = "git describe --dirty --tags --long --match tcaf-v*"
+fallback_version = "0.0.0"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+# Same list as main, plus F403/F405: the TCAF modules use star imports.
+ignore = ["E501", "E402", "E741", "F841", "E712", "F403", "F405"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["transition_compass_model"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+exclude = ["tests", "old", ".venv"]
+
+[tool.codespell]
+skip = "*/_database/*"
+ignore-words-list = "classe,ans,vie,variante,habitant,habitants,ot,ois,ore,tre,fo,caf,reste,mesure,calculs,categorie,formating,dowload,comute,lenght,blanck,syntetic,catpure,crate,arrray,moteur,correspondance,temporarely,substracting,fallow,exlcuded,mangement"
