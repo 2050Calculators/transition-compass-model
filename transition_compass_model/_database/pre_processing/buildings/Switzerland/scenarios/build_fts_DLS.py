@@ -27,7 +27,7 @@ def floor_area_fts_dls(DM_buildings, lev):
     Decent living area thus estimated to 19,1 m2 /cap"""
 
     # TODO : update with the services update.
-    dm_fts_floor_intensity = DM_buildings["fts"]["floor-intensity"][1].copy()
+    dm_fts_floor_intensity = DM_buildings["fts"]["floor-intensity"][4].copy()
     idx = dm_fts_floor_intensity.idx
 
     dm_fts_floor_intensity.array[
