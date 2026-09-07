@@ -3,13 +3,17 @@ import pickle
 
 import numpy as np
 import pandas as pd
-from _database.pre_processing.api_routines_CH import get_data_api_CH
+from scenarios.agr_fts_BAU_pickle import run as run_bau_fts
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     add_dummy_country_to_DM,
     create_years_list,
     filter_DM,
     linear_fitting,
+    my_pickle_dump,
 )
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
@@ -1370,10 +1374,14 @@ dm_emission_total_co2e = dm_emission_total_co2e.flatten()
 dm_emission_total_co2e.append(dm_ch4_split_co2e, dim="Variables")
 dm_emission_total_co2e.append(dm_n2o_split_co2e, dim="Variables")
 
-print("Hello")
-
 ################################################################################
 # Pickle overwriting
 ################################################################################
 f = "../../data/datamatrix/agriculture.pickle"
 my_pickle_dump(DM_agriculture, f)  # noqa: F821
+
+
+#### FTS ####
+
+DM_agriculture = run_bau_fts(DM_agriculture, years_ots, years_fts)
+print("Hello")
