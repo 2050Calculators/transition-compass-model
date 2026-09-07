@@ -2,7 +2,7 @@ import re
 import numpy as np
 import copy
 import pandas as pd
-from model.common.io_database import read_database
+from transition_compass_model.model.common.io_database import read_database
 
 # ConstantDataMatrix is a class used to deal with constants in a way that is similar to DataMatrix class.
 # The main difference if that ConstantDataMatrix has no Country or Years dimensions.

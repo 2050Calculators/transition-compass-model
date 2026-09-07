@@ -1,6 +1,6 @@
 import numpy as np
-from model.common.auxiliary_functions import interpolate_nans, add_missing_ots_years, linear_fitting_ots_db, linear_fitting, create_years_list, dm_match_countries
-from model.common.auxiliary_functions import filter_unreliable_country_category
+from transition_compass_model.model.common.auxiliary_functions import interpolate_nans, add_missing_ots_years, linear_fitting_ots_db, linear_fitting, create_years_list, dm_match_countries
+from transition_compass_model.model.common.auxiliary_functions import filter_unreliable_country_category
 #from _database.pre_processing.api_routines_CH import get_data_api_CH
 from scipy.stats import linregress
 import pandas as pd
@@ -9,13 +9,13 @@ import copy
 from _database.pre_processing.api_routines_CH import get_data_api_CH
 import os
 import re
-from model.common.data_matrix_class import DataMatrix
-from model.common.constant_data_matrix_class import ConstantDataMatrix
-from model.common.io_database import read_database, read_database_fxa, edit_database, database_to_df, dm_to_database, database_to_dm
-from model.common.io_database import read_database_to_ots_fts_dict, read_database_to_ots_fts_dict_w_groups, read_database_to_dm
-from model.common.interface_class import Interface
-from model.common.auxiliary_functions import compute_stock,  filter_geoscale, calibration_rates, filter_DM, add_dummy_country_to_DM, my_pickle_dump
-from model.common.auxiliary_functions import read_level_data, simulate_input
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.io_database import read_database, read_database_fxa, edit_database, database_to_df, dm_to_database, database_to_dm
+from transition_compass_model.model.common.io_database import read_database_to_ots_fts_dict, read_database_to_ots_fts_dict_w_groups, read_database_to_dm
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.common.auxiliary_functions import compute_stock,  filter_geoscale, calibration_rates, filter_DM, add_dummy_country_to_DM, my_pickle_dump
+from transition_compass_model.model.common.auxiliary_functions import read_level_data, simulate_input
 from scipy.optimize import linprog
 import pickle
 import json

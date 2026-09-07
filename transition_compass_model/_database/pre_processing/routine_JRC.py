@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import re
 import os
-from model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 def get_jrc_data(dict_extract, dict_countries, current_file_directory, years = list(range(2000,2021+1)), 
                  levels_to_industry_preproc = "../../../Industry"):

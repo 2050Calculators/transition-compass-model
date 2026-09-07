@@ -1,9 +1,9 @@
-from model.buildings_module import buildings
+from transition_compass_model.model.buildings_module import buildings
 
-from model.forestry_module import forestry
-# from model.minerals_module import minerals
-from model.common.interface_class import Interface
-from model.agriculture_module import agriculture
+from transition_compass_model.model.forestry_module import forestry
+# from transition_compass_model.model.minerals_module import minerals
+from transition_compass_model.model.common.interface_class import Interface
+from transition_compass_model.model.agriculture_module import agriculture
 
 import math
 import copy
