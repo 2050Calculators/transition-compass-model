@@ -230,9 +230,20 @@ def TCAF_lca_workflow(
         DM_crop_to_TCAF.filter({"Variables": ["agr_production-lca"]}), dim="Categories1"
     )
 
-    # Multiply with Monetized LCA impacts fixme sure already monetized?
-    food_cat = dm_lca_world.col_labels["Categories1"]
-    DM_TCAF_lca["lca-world"].filter({"Categories1": food_cat}, inplace=True)
+    # Multiply with Monetized LCA impacts
+    # Keep only food categories present in BOTH matrices and align their order,
+    # otherwise the element-wise multiply over Categories1 is misaligned (it is
+    # positional, so a mismatched order silently pairs the wrong food with the
+    # wrong impact vector, and a mismatched count raises a broadcast error).
+    common_cat = sorted(
+        set(dm_lca_world.col_labels["Categories1"])
+        & set(DM_TCAF_lca["lca-world"].col_labels["Categories1"])
+    )
+    dm_lca_world.filter({"Categories1": common_cat}, inplace=True)
+    dm_lca_world.sort("Categories1")
+    DM_TCAF_lca["lca-world"].filter({"Categories1": common_cat}, inplace=True)
+    DM_TCAF_lca["lca-world"].sort("Categories1")
+
     array_temp = (
         dm_lca_world[:, :, "agr_production-lca", :, np.newaxis]
         * DM_TCAF_lca["lca-world"][:, :, "lca-impacts", :, :]
@@ -240,8 +251,6 @@ def TCAF_lca_workflow(
     DM_TCAF_lca["lca-world"].add(
         array_temp, dim="Variables", col_label="agr_production-tcaf", unit="CHF"
     )
-
-    # Multiply with Monetization Factors (MF)
 
     # Step Switzerland
     # Append together:
@@ -262,10 +271,57 @@ def TCAF_lca_workflow(
         DM_landuse_to_TCAF["prod-ch"].filter({"Variables": ["agr_production-lca"]}),
         dim="Categories1",
     )
+    # dm_lca_ch: [Country, Years, 'agr_production-lca', Categories1=food, Categories2=method]
 
-    # Multiply with LCA impacts
+    # Multiply with (already monetized) LCA impacts - method-resolved
+    # DM_TCAF_lca['lca-switzerland']: [Country, Years, 'lca-impacts',
+    #                                  Categories1=food, Categories2=method,
+    #                                  Categories3=impact-category], unit CHF/kg.
+    # Impacts are monetized in preprocessing, so production [kg] * impacts [CHF/kg]
+    # gives cost [CHF], kept in full detail per food x method x impact category.
+    #
+    # The multiply is positional over Categories1 (food) and Categories2 (method),
+    # so both axes must hold the SAME labels in the SAME order on both matrices.
+    # lca-switzerland carries an 'extensive' method that CH production does not;
+    # the intersection drops it. Impact category (Categories3) has no counterpart
+    # on the production side and is broadcast over (np.newaxis).
+    common_food = sorted(
+        set(dm_lca_ch.col_labels["Categories1"])
+        & set(DM_TCAF_lca["lca-switzerland"].col_labels["Categories1"])
+    )
+    common_method = sorted(
+        set(dm_lca_ch.col_labels["Categories2"])
+        & set(DM_TCAF_lca["lca-switzerland"].col_labels["Categories2"])
+    )
+    common_years = sorted(
+        set(dm_lca_ch.col_labels["Years"])
+        & set(DM_TCAF_lca["lca-switzerland"].col_labels["Years"])
+    )
 
-    # Multiply with Monetization Factors (MF)
+    for dm in (dm_lca_ch, DM_TCAF_lca["lca-switzerland"]):
+        dm.filter(
+            {
+                "Years": common_years,
+                "Categories1": common_food,
+                "Categories2": common_method,
+            },
+            inplace=True,
+        )
+        dm.sort("Categories1")
+        dm.sort("Categories2")
+        dm.sort("Years")
+
+    # production (c, y, food, method) x impacts (c, y, food, method, impact)
+    array_temp = (
+        dm_lca_ch[:, :, "agr_production-lca", :, :, np.newaxis]
+        * DM_TCAF_lca["lca-switzerland"][:, :, "lca-impacts", :, :, :]
+    )
+    DM_TCAF_lca["lca-switzerland"].add(
+        array_temp, dim="Variables", col_label="agr_production-tcaf", unit="CHF"
+    )
+
+    # Monetization is already embedded in 'lca-impacts' (CHF/kg), so no separate
+    # Monetization Factor multiply is needed here - unlike health-diet.
 
     return DM_TCAF_lca
 

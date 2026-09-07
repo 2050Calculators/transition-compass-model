@@ -440,6 +440,115 @@ def TCAF_biodiversity_preprocessing():
     return DM_TCAF_biodiversity
 
 
+# CalculationLeaf TCAF - LCA MONETIZATION
+
+# Crosswalk: ReCiPe 2016 midpoint category (as stored on the LCA impact axis)
+# -> monetization-factor 'Variable' stem (text before '['). Only categories that
+# can be monetized are listed here; any impact category NOT in this dict is
+# dropped from the monetized matrix (it cannot be converted to money).
+#
+# EXCLUDED ON PURPOSE (do not add without a proper midpoint-level factor):
+#   - human-carcinogenic-toxicity / human-non-carcinogenic-toxicity:
+#       ReCiPe midpoint is kg 1,4-DCB, the only toxicity factor here is
+#       'human-toxicity' per DALY (endpoint) -> dimensionally incompatible.
+#   - land-use: ReCiPe m2a crop-eq vs 'land-occupation-*' per MSA*ha*yr,
+#       biome-split -> not directly multipliable.
+#   - ionizing-radiation: no monetization factor available.
+# APPROXIMATE (accepted for now):
+#   - mineral-resource-scarcity -> other-non-renewable-material-depletion
+#   - water-consumption         -> scarce-blue-water-use (AWARE-weighted m3)
+_LCA_MF_CROSSWALK = {
+    "global-warming": "climate-change-ghg",
+    "terrestrial-acidification": "acidification",
+    "freshwater-eutrophication": "freshwater-eutrophication",
+    "marine-eutrophication": "marine-eutrophication",
+    "freshwater-ecotoxicity": "freshwater-ecotoxicity",
+    "marine-ecotoxicity": "marine-ecotoxicity",
+    "terrestrial-ecotoxicity": "terrestrial-ecotoxicity",
+    "stratospheric-ozone-depletion": "ozone-depletion",
+    "fine-particulate-matter-formation": "pm-formation",
+    "ozone-formation,-human-health": "photochemical-oxidant-formation-human-health",
+    "ozone-formation,-terrestrial-ecosystems": "photochemical-oxidant-formation-ecosystems",
+    "fossil-resource-scarcity": "fossil-fuel-depletion",
+    "mineral-resource-scarcity": "other-non-renewable-material-depletion",  # approx
+    "water-consumption": "scarce-blue-water-use",  # approx
+}
+
+# FIXME: provisional EUR2022 -> CHF conversion. Verify the rate and the currency
+# year (factors are eur2022; the rest of TCAF mixes EUR2024/CHF) before release.
+_EUR_TO_CHF = 0.94
+
+
+def _load_lca_monetization_factors_chf(current_file_directory):
+    """Return {recipe_category: CHF per impact-unit} from monetization-factor.csv.
+
+    Uses the EUR factor set, converts to CHF with _EUR_TO_CHF, and keys the result
+    by ReCiPe category via _LCA_MF_CROSSWALK. Impact categories not in the
+    crosswalk are intentionally absent (they get dropped during monetization).
+    """
+    f = os.path.join(
+        current_file_directory, "data/monetization-factors/monetization-factor.csv"
+    )
+    df = pd.read_csv(f)
+    df = df[df["Key"] == "EUR"].copy()
+    df["stem"] = df["Variable"].str.split("[").str[0]
+    eur_by_stem = dict(zip(df["stem"], df["Value"]))
+
+    mf_by_recipe = {}
+    for recipe_cat, stem in _LCA_MF_CROSSWALK.items():
+        if stem in eur_by_stem:
+            mf_by_recipe[recipe_cat] = eur_by_stem[stem] * _EUR_TO_CHF
+        else:
+            print(
+                f"  ⚠️ Monetization factor stem '{stem}' not found for "
+                f"ReCiPe category '{recipe_cat}' - it will be dropped."
+            )
+    return mf_by_recipe
+
+
+def _monetize_lca_dm(dm, mf_by_recipe):
+    """In place: multiply physical ReCiPe impacts by their CHF factor.
+
+    The impact-category axis is NOT at a fixed position across the two LCA matrices
+    (and differs from their finished form), so it is detected by content: the
+    categorical dimension whose labels are ReCiPe impact categories (i.e. overlap
+    the crosswalk keys). Non-monetizable categories are dropped, the axis is
+    sorted, and the aligned factor vector is broadcast along that exact axis.
+    After this, 'lca-impacts' is a monetized value in CHF per kg of product.
+    """
+    # Identify which Categories* dimension holds the impact categories.
+    cat_dims = [d for d in dm.col_labels if d.startswith("Categories")]
+    impact_dim = None
+    for d in cat_dims:
+        labels = set(dm.col_labels[d])
+        if labels & set(mf_by_recipe):  # this axis carries ReCiPe impacts
+            impact_dim = d
+            break
+    if impact_dim is None:
+        raise ValueError(
+            "_monetize_lca_dm: no axis matched the ReCiPe impact "
+            f"crosswalk. Axes seen: "
+            f"{ {d: dm.col_labels[d] for d in cat_dims} }"
+        )
+
+    keep = [c for c in dm.col_labels[impact_dim] if c in mf_by_recipe]
+    dropped = [c for c in dm.col_labels[impact_dim] if c not in mf_by_recipe]
+    if dropped:
+        print(f"  ℹ️ Dropping non-monetizable impact categories: {sorted(dropped)}")
+    dm.filter({impact_dim: keep}, inplace=True)
+    dm.sort(impact_dim)
+
+    # Build the factor vector aligned to the (now sorted) impact axis and multiply
+    # along that axis explicitly, wherever it sits in the array.
+    mf_vec = np.array([mf_by_recipe[c] for c in dm.col_labels[impact_dim]], dtype=float)
+    axis = list(dm.col_labels).index(impact_dim)  # position in the array
+    shape = [1] * dm.array.ndim
+    shape[axis] = mf_vec.size
+    dm.array = dm.array * mf_vec.reshape(shape)  # broadcast on that axis
+    dm.units["lca-impacts"] = "CHF/kg"
+    return dm
+
+
 # CalculationLeaf TCAF - LCA
 
 
@@ -469,6 +578,24 @@ def TCAF_lca_preprocessing():
         ),
         "Category",
     ] = "avian-egg"
+
+    # Milk: the AGRIBALYSE 'dairy' file tags every row Category='dairy', mixing
+    # cow/goat/sheep milk AND a cull-goat (meat). Re-assign by reference product so
+    # only cow milk feeds abp-dairy-milk; goat/sheep milk are excluded (no matching
+    # production category) and the cull goat is routed to caprine meat.
+    proc_lower = df_lcia_animal_production_recipe["Process"].str.lower()
+    df_lcia_animal_production_recipe.loc[
+        proc_lower.str.contains("cow milk", na=False), "Category"
+    ] = "dairy-milk"
+    df_lcia_animal_production_recipe.loc[
+        proc_lower.str.contains("goat milk", na=False), "Category"
+    ] = "milk-goat"
+    df_lcia_animal_production_recipe.loc[
+        proc_lower.str.contains("sheep milk", na=False), "Category"
+    ] = "milk-sheep"
+    df_lcia_animal_production_recipe.loc[
+        proc_lower.str.contains("cull goat", na=False), "Category"
+    ] = "caprine"
 
     # Convert values to numeric
     df_lcia_animal_production_recipe["Value"] = pd.to_numeric(
@@ -572,6 +699,7 @@ def TCAF_lca_preprocessing():
         "crop-sugarcrop": ["sugarcrops"],
         "crop-veg": ["vegetables"],
         "abp-hens-egg": ["avian-egg"],
+        "abp-dairy-milk": ["dairy-milk"],
         "meat-bovine": ["bovine"],
         "meat-poultry": ["avian"],
         "meat-pig": ["porcine"],
@@ -585,6 +713,8 @@ def TCAF_lca_preprocessing():
             "fish",
             "fish-market",
             "fish-transformation",
+            "milk-goat",
+            "milk-sheep",
         ],
     }
 
@@ -596,6 +726,41 @@ def TCAF_lca_preprocessing():
         mapping_lca, dim="Categories1", aggregation="mean", inplace=True
     )
     dm_lcia_recipe_all_world.drop("Categories1", "to-exclude")
+
+    # Step Monetization: convert physical ReCiPe impacts [impact-unit/kg] to money
+    # [CHF/kg] using the EUR monetization factors (EUR->CHF via _EUR_TO_CHF).
+    # Non-monetizable impact categories (see _LCA_MF_CROSSWALK) are dropped here,
+    # so 'lca-impacts' is already in CHF/kg by the time the module multiplies it by
+    # production [kg] to get costs [CHF]. Applied before linear_fitting: the factor
+    # is a constant scaling, so fitting monetized values is equivalent to fitting
+    # physical values then monetizing.
+    mf_by_recipe = _load_lca_monetization_factors_chf(current_file_directory)
+    _monetize_lca_dm(dm_lcia_recipe_all_ch, mf_by_recipe)
+    _monetize_lca_dm(dm_lcia_recipe_all_world, mf_by_recipe)
+
+    # Debug
+    dm = dm_lcia_recipe_all_ch
+    arr, cl = dm.array, dm.col_labels
+    m_axis = list(cl).index("Categories2")
+    f_axis = list(cl).index("Categories1")
+    imp_axis = list(cl).index("Categories3")
+    for mi, m in enumerate(cl["Categories2"]):
+        sl = [slice(None)] * arr.ndim
+        sl[m_axis] = mi
+        print(
+            f"{m:12s} populated fraction = {1 - float(np.isnan(arr[tuple(sl)]).mean()):.3f}"
+        )
+    # per food: which methods are populated?
+    print()
+    for fi, food in enumerate(cl["Categories1"]):
+        present = []
+        for mi, m in enumerate(cl["Categories2"]):
+            sl = [slice(None)] * arr.ndim
+            sl[f_axis] = fi
+            sl[m_axis] = mi
+            if not np.isnan(arr[tuple(sl)]).all():
+                present.append(m)
+        print(f"{food:20s} has data for: {present}")
 
     # Step Linear fitting for all years
     linear_fitting(dm_lcia_recipe_all_ch, years_all)
