@@ -11,6 +11,7 @@ import json
 import os
 import numpy as np
 import time
+from transition_compass_model.model.common.config_loader import load_lever_config
 
 
 def read_data(DM_forestry, lever_setting):
@@ -401,8 +402,7 @@ def local_forestry_run():
     # Function to run only transport module without converter and tpe
     years_setting = [1990, 2023, 2025, 2050, 5]
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    f = open(os.path.join(current_file_directory, '../config/lever_position.json'))
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
 
     # get geoscale
     country_list = ['Switzerland', 'Vaud']

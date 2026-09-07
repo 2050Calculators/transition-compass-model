@@ -11,13 +11,13 @@ import json
 import os
 import numpy as np
 import time
+from transition_compass_model.model.common.config_loader import load_lever_config
 
 
 def init_years_lever():
     # function that can be used when running the module as standalone to initialise years and levers
     years_setting = [1990, 2023, 2025, 2050, 5]
-    f = open('../config/lever_position.json')
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
     return years_setting, lever_setting
 
 
@@ -515,8 +515,8 @@ def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, write_pi
     # INTERFACES IN ---------------------------------------------------------------------------------------------------
 
     # Link interface or Simulate data from other modules
-    if interface.has_link(from_sector='lifestyles', to_sector='dietary-habits'):
-        DM_pop = interface.get_link(from_sector='lifestyles', to_sector='dietary-habits')
+    if interface.has_link(from_sector='population', to_sector='dietary-habits'):
+        DM_pop = interface.get_link(from_sector='population', to_sector='dietary-habits')
     else:
         if len(interface.list_link()) != 0:
             print('You are missing lifestyles to dietary-habits interface')
@@ -570,7 +570,7 @@ def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, write_pi
                        '../_database/data/interface/dietary-habits_to_livestock.pickle')
       with open(f, 'wb') as handle:
         pickle.dump(DM_diet_livestock, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    interface.add_link(from_sector='dietary-habits', to_sector='livestock', dm=dm_demand)
+    interface.add_link(from_sector='dietary-habits', to_sector='livestock', dm=DM_diet_livestock)
 
     # Dietary Habits to Crop
     dm_demand = dm_lfs.filter({'Variables':['agr_demand']}, inplace=False)
@@ -581,7 +581,7 @@ def dietaryhabits(lever_setting, years_setting, DM_input, tpe_scenario, write_pi
                        '../_database/data/interface/dietary-habits_to_crop.pickle')
       with open(f, 'wb') as handle:
         pickle.dump(DM_diet_crop, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    interface.add_link(from_sector='dietary-habits', to_sector='crop', dm=dm_demand)
+    interface.add_link(from_sector='dietary-habits', to_sector='crop', dm=DM_diet_crop)
 
     # TPE OUTPUT -------------------------------------------------------------------------------------------------------
     results_run = dietaryhabits_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_food)

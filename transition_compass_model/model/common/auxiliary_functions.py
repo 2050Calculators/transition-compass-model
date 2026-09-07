@@ -1140,7 +1140,7 @@ def load_module_input_from_pickle(module):
   return DM_module
 
 
-def filter_country_and_load_data_from_pickles(country_list, modules_list, filter_country):
+def filter_country_and_load_data_from_pickles(country_list, modules_list, filter_country=True):
   # Loads DM from pickles that correspond to the modules in modules_list
   # It keeps only the required countries from country_list
   if isinstance(modules_list, str):

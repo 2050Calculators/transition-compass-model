@@ -12,12 +12,12 @@ import json
 import os
 import numpy as np
 import time
+from transition_compass_model.model.common.config_loader import load_lever_config
 
 def init_years_lever():
     # function that can be used when running the module as standalone to initialise years and levers
     years_setting = [1990, 2023, 2025, 2050, 5]
-    f = open('../config/lever_position.json')
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
     return years_setting, lever_setting
 
 

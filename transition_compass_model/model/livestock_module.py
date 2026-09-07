@@ -11,13 +11,13 @@ import json
 import os
 import numpy as np
 import time
+from transition_compass_model.model.common.config_loader import load_lever_config
 
 
 def init_years_lever():
     # function that can be used when running the module as standalone to initialise years and levers
     years_setting = [1990, 2023, 2025, 2050, 5]
-    f = open('../config/lever_position.json')
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
     return years_setting, lever_setting
 
 
@@ -833,7 +833,7 @@ def livestock(lever_setting, years_setting, DM_input, write_pickle, interface=In
                            '../_database/data/interface/livestock_to_land-use.pickle')
       with open(f, 'wb') as handle:
         pickle.dump(dm_livestock_landuse, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    interface.add_link(from_sector='livestock', to_sector='TCAF',dm=dm_livestock_landuse)
+    interface.add_link(from_sector='livestock', to_sector='land-use', dm=dm_livestock_landuse)
 
     """# Livestock to TCAF
     DM_TCAF_livestock = livestock_TCAF_interface()
@@ -870,7 +870,7 @@ def livestock(lever_setting, years_setting, DM_input, write_pickle, interface=In
                        '../_database/data/interface/livestock_to_land-use.pickle')
       with open(f, 'wb') as handle:
         pickle.dump(DM_livestock_to_crop, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    interface.add_link(from_sector='livestock', to_sector='crop',
+    interface.add_link(from_sector='livestock', to_sector='land-use',
                            dm=DM_livestock_to_crop)
 
 

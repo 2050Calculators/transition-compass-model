@@ -10,6 +10,7 @@ import os
 import warnings
 import transition_compass_model.model.buildings.workflows as wkf
 import transition_compass_model.model.buildings.interfaces as inter
+from transition_compass_model.model.common.config_loader import load_lever_config
 
 warnings.simplefilter("ignore")
 
@@ -18,8 +19,7 @@ def init_years_lever():
     # function that can be used when running the module as standalone to initialise years and levers
     years_setting = [1990, 2023, 2025, 2050, 5]
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    f = open(os.path.join(current_file_directory, '../config/lever_position.json'))
-    lever_setting = json.load(f)[0]
+    lever_setting = load_lever_config()
     return years_setting, lever_setting
 
 

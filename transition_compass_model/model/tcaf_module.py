@@ -13,13 +13,13 @@ import os
 import numpy as np
 from collections import Counter
 import time
+from transition_compass_model.model.common.config_loader import load_lever_config
 
 
 def init_years_lever():
   # function that can be used when running the module as standalone to initialise years and levers
   years_setting = [1990, 2023, 2025, 2050, 5]
-  f = open('../config/lever_position.json')
-  lever_setting = json.load(f)[0]
+  lever_setting = load_lever_config()
   return years_setting, lever_setting
 
 
@@ -279,8 +279,8 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
 
     # CalculationLeaf Link interface or Simulate data from other modules
     # dietary-habits
-    if interface.has_link(from_sector='dietary-habits', to_sector='TCAF_health-diet'):
-      DM_diet = interface.get_link(from_sector='dietary-habits', to_sector='TCAF_health-diet')
+    if interface.has_link(from_sector='dietary-habits', to_sector='TCAF'):
+      DM_diet = interface.get_link(from_sector='dietary-habits', to_sector='TCAF')
     else:
       if len(interface.list_link()) != 0:
         print('You are missing dietary-habits to TCAF interface')
