@@ -1,29 +1,24 @@
-import numpy as np
-from transition_compass_model.model.common.auxiliary_functions import interpolate_nans, add_missing_ots_years, linear_fitting_ots_db, linear_fitting, create_years_list, dm_match_countries
-#from _database.pre_processing.api_routines_CH import get_data_api_CH
-from scipy.stats import linregress
+import os
+import pickle
+import unicodedata
+
+# from _database.pre_processing.api_routines_CH import get_data_api_CH
 import pandas as pd
 import pycountry
-import unicodedata
-from rapidfuzz import process
-import faostat
-import copy
-from _database.pre_processing.api_routines_CH import get_data_api_CH
-import os
-import re
+
+from transition_compass_model.model.common.auxiliary_functions import (
+    create_years_list,
+    dm_match_countries,
+    harmonize_countries,
+    linear_fitting,
+)
+from transition_compass_model.model.common.constant_data_matrix_class import (
+    ConstantDataMatrix,
+)
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
-from transition_compass_model.model.common.constant_data_matrix_class import ConstantDataMatrix
-from transition_compass_model.model.common.io_database import read_database, read_database_fxa, edit_database, database_to_df, dm_to_database, database_to_dm, database_to_df_robust
-from transition_compass_model.model.common.io_database import read_database_to_ots_fts_dict, read_database_to_ots_fts_dict_w_groups, read_database_to_dm
-from transition_compass_model.model.common.interface_class import Interface
-from transition_compass_model.model.common.auxiliary_functions import compute_stock,  filter_geoscale, calibration_rates, filter_DM, add_dummy_country_to_DM, my_pickle_dump
-from transition_compass_model.model.common.auxiliary_functions import read_level_data, simulate_input, harmonize_countries, country_to_iso3
-from scipy.optimize import linprog
-import pickle
-import json
-import os
-import numpy as np
-import time
+from transition_compass_model.model.common.io_database import (
+    database_to_df_robust,
+)
 
 # CalculationLeaf other functions
 
@@ -71,111 +66,121 @@ def match_countries_iso3(list_faostat, list_biodiversity):
 
     return mapping, unmatched
 
+
 # SimulateInteractions crop to TCAF
 def simulate_crop_to_TCAF_input():
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    f = os.path.join(current_file_directory, "../_database/data/interface/crop_to_TCAF.pickle")
-    with open(f, 'rb') as handle:
+    f = os.path.join(
+        current_file_directory, "../_database/data/interface/crop_to_TCAF.pickle"
+    )
+    with open(f, "rb") as handle:
         dm_production = pickle.load(handle)
     return dm_production
+
 
 # SimulateInteractions land-use to TCAF
 def simulate_landuse_to_TCAF_input():
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
 
     f = os.path.normpath(
-      os.path.join(current_file_directory,
-                  "../../data/interface/land-use_to_TCAF.pickle")
+        os.path.join(
+            current_file_directory, "../../data/interface/land-use_to_TCAF.pickle"
+        )
     )
-    with open(f, 'rb') as handle:
+    with open(f, "rb") as handle:
         DM_landuse_to_TCAF = pickle.load(handle)
     return DM_landuse_to_TCAF
+
 
 # CalculationLeaf TCAF MONETIZATION FACTORS
 def TCAF_MF_preprocessing():
 
-  # Data -----------------------------------------------------------------------
-  df_data = pd.read_excel('data/monetization-factors/TCAF_monetization-factors.xlsx',
-                          sheet_name='MFs')
-  df_data = df_data[['name', 'value']]
+    # Data -----------------------------------------------------------------------
+    df_data = pd.read_excel(
+        "data/monetization-factors/TCAF_monetization-factors.xlsx", sheet_name="MFs"
+    )
+    df_data = df_data[["name", "value"]]
 
-  # Format as constant datamatrix
-  CDM_MF = ConstantDataMatrix.create_from_constant(df_data, num_cat=0)
-  return CDM_MF
+    # Format as constant datamatrix
+    CDM_MF = ConstantDataMatrix.create_from_constant(df_data, num_cat=0)
+    return CDM_MF
+
 
 # CalculationLeaf TCAF - Health diet
 def TCAF_health_diet_preprocessing():
 
-  # ----------------------------------------------------------------------------
-  # DALYs
-  # ----------------------------------------------------------------------------
+    # ----------------------------------------------------------------------------
+    # DALYs
+    # ----------------------------------------------------------------------------
 
-  # Data -----------------------------------------------------------------------
-  df_dalys = pd.read_csv('data/health-diet/Disease_sex_DALYs_2023.csv')
+    # Data -----------------------------------------------------------------------
+    df_dalys = pd.read_csv("data/health-diet/Disease_sex_DALYs_2023.csv")
 
-  # Preprocessing --------------------------------------------------------------
+    # Preprocessing --------------------------------------------------------------
 
-  # Filter
-  df_dalys = df_dalys[['location', 'sex', 'cause', 'year', 'val']]
+    # Filter
+    df_dalys = df_dalys[["location", "sex", "cause", "year", "val"]]
 
-  # Rename cols
-  df_dalys.rename(columns={'location':'Country', 'year':'Years', 'val':'value'}, inplace=True)
+    # Rename cols
+    df_dalys.rename(
+        columns={"location": "Country", "year": "Years", "val": "value"}, inplace=True
+    )
 
-  # Groupby gender (sum total DALYs)
-  df_dalys = df_dalys.groupby(['Country', 'Years', 'cause'], as_index=False)[
-    'value'].sum()
+    # Groupby gender (sum total DALYs)
+    df_dalys = df_dalys.groupby(["Country", "Years", "cause"], as_index=False)[
+        "value"
+    ].sum()
 
-  # Rename terms
-  cause_map = {
-    'Colon and rectum cancer': 'CRC',
-    'Diabetes mellitus type 2': 'DT2',
-    'Intracerebral hemorrhage': 'ICH',
-    'Ischemic heart disease': 'IHD',
-    'Ischemic stroke': 'IS',
-    'Subarachnoid hemorrhage': 'SH',
-    'Tracheal, bronchus, and lung cancer': 'TBLC',
-    'Esophageal cancer': 'EC'
-  }
-  df_dalys['cause'] = df_dalys['cause'].replace(cause_map)
+    # Rename terms
+    cause_map = {
+        "Colon and rectum cancer": "CRC",
+        "Diabetes mellitus type 2": "DT2",
+        "Intracerebral hemorrhage": "ICH",
+        "Ischemic heart disease": "IHD",
+        "Ischemic stroke": "IS",
+        "Subarachnoid hemorrhage": "SH",
+        "Tracheal, bronchus, and lung cancer": "TBLC",
+        "Esophageal cancer": "EC",
+    }
+    df_dalys["cause"] = df_dalys["cause"].replace(cause_map)
 
-  # Create variables name
-  df_dalys['variables'] = 'tcaf_health-diet_dalys_' + df_dalys['cause'] \
-                                      + '[DALYs/y]'
+    # Create variables name
+    df_dalys["variables"] = "tcaf_health-diet_dalys_" + df_dalys["cause"] + "[DALYs/y]"
 
-  # Filter
-  df_dalys = df_dalys[['Country', 'Years', 'variables', 'value']]
+    # Filter
+    df_dalys = df_dalys[["Country", "Years", "variables", "value"]]
 
-  # Format as dm  --------------------------------------------------------------
+    # Format as dm  --------------------------------------------------------------
 
-  df_dalys_pivot = df_dalys.pivot_table(index=['Country', 'Years'],
-                                    columns='variables',
-                                    values='value').reset_index()
-  dm_health_dalys = DataMatrix.create_from_df(df_dalys_pivot, num_cat=1)
+    df_dalys_pivot = df_dalys.pivot_table(
+        index=["Country", "Years"], columns="variables", values="value"
+    ).reset_index()
+    dm_health_dalys = DataMatrix.create_from_df(df_dalys_pivot, num_cat=1)
 
-  """# Compute total DALYs
+    """# Compute total DALYs
   dm_temp = dm_health_dalys.groupby({'combined': '.*'}, dim='Categories1', regex=True, inplace=False)
   dm_health_dalys.append(dm_temp, dim='Categories1')"""
 
-  # Linear fitting to expand the constant value
-  linear_fitting(dm_health_dalys, years_all)
+    # Linear fitting to expand the constant value
+    linear_fitting(dm_health_dalys, years_all)
 
+    # ----------------------------------------------------------------------------
+    # PAF
+    # ----------------------------------------------------------------------------
 
-  # ----------------------------------------------------------------------------
-  # PAF
-  # ----------------------------------------------------------------------------
+    # Data -----------------------------------------------------------------------
+    df_data = pd.read_excel("data/health-diet/PAF_Idriss.xlsx", sheet_name="Sheet1")
 
-  # Data -----------------------------------------------------------------------
-  df_data = pd.read_excel('data/health-diet/PAF_Idriss.xlsx',
-                            sheet_name='Sheet1')
+    # Preprocessing --------------------------------------------------------------
 
-  # Preprocessing --------------------------------------------------------------
+    # Average PAF per risk factor, cause, grams
+    df_data_grouped = (
+        df_data.groupby(["Risk_Factor", "cause", "grams"])["paf"].mean().reset_index()
+    )
 
-  # Average PAF per risk factor, cause, grams
-  df_data_grouped = df_data.groupby(['Risk_Factor','cause','grams'])['paf'].mean().reset_index()
+    # Add gender
 
-  # Add gender
-
-  """# Combined PAF = 1 - PROD(1-PAFi)
+    """# Combined PAF = 1 - PROD(1-PAFi)
   df_paf_comb = df_data_grouped.copy()
   df_paf_comb = (
     df_paf_comb
@@ -185,215 +190,239 @@ def TCAF_health_diet_preprocessing():
   )
   df_paf_comb['cause'] = 'Combined'"""
 
-  # Concat dfs
-  df_tcaf_health_diet = df_data_grouped
-  #df_tcaf_health_diet = pd.concat([df_data_grouped, df_paf_comb])
+    # Concat dfs
+    df_tcaf_health_diet = df_data_grouped
+    # df_tcaf_health_diet = pd.concat([df_data_grouped, df_paf_comb])
 
-  # Formatting -----------------------------------------------------------------
+    # Formatting -----------------------------------------------------------------
 
-  # Add country 'Switzerland'
-  df_tcaf_health_diet['Country'] = 'Switzerland'
+    # Add country 'Switzerland'
+    df_tcaf_health_diet["Country"] = "Switzerland"
 
-  # Rename cols
-  df_tcaf_health_diet.rename(columns={'paf': 'value', 'grams':'Years'}, inplace=True)
+    # Rename cols
+    df_tcaf_health_diet.rename(columns={"paf": "value", "grams": "Years"}, inplace=True)
 
-  # Rename terms
-  risk_factor_map = {
-    'Fruits': 'crop-fruit',
-    'Whole_Grains': 'crop-cereal-whole',
-    'Calcium': 'calcium',
-    'Fiber': 'fiber',
-    'Legumes': 'crop-pulse',
-    'Milk': 'pro-liv-abp-dairy-milk',
-    'Nuts': 'crop-oilcrop',
-    'Omega_3': 'omega',
-    'PUFA': 'pufa',
-    'Processed_Meat': 'pro-liv-meat-processed',
-    'Red_Meat': 'pro-liv-meat-red',
-    'SSB': 'pro-bev-ssb',
-    'Vegetables': 'crop-veg'
-  }
-  df_tcaf_health_diet['Risk_Factor'] = df_tcaf_health_diet['Risk_Factor'].replace(risk_factor_map)
+    # Rename terms
+    risk_factor_map = {
+        "Fruits": "crop-fruit",
+        "Whole_Grains": "crop-cereal-whole",
+        "Calcium": "calcium",
+        "Fiber": "fiber",
+        "Legumes": "crop-pulse",
+        "Milk": "pro-liv-abp-dairy-milk",
+        "Nuts": "crop-oilcrop",
+        "Omega_3": "omega",
+        "PUFA": "pufa",
+        "Processed_Meat": "pro-liv-meat-processed",
+        "Red_Meat": "pro-liv-meat-red",
+        "SSB": "pro-bev-ssb",
+        "Vegetables": "crop-veg",
+    }
+    df_tcaf_health_diet["Risk_Factor"] = df_tcaf_health_diet["Risk_Factor"].replace(
+        risk_factor_map
+    )
 
-  # Rename terms
-  df_tcaf_health_diet['cause'] = df_tcaf_health_diet['cause'].replace(cause_map)
+    # Rename terms
+    df_tcaf_health_diet["cause"] = df_tcaf_health_diet["cause"].replace(cause_map)
 
-  # Create variables name
-  df_tcaf_health_diet['variables'] = 'tcaf_health-diet_paf_' + \
-                                     df_tcaf_health_diet['cause'] \
-                                      + '[-]'
+    # Create variables name
+    df_tcaf_health_diet["variables"] = (
+        "tcaf_health-diet_paf_" + df_tcaf_health_diet["cause"] + "[-]"
+    )
 
-  # Format as separate dm, according to the risk factor (or food categories)
-  # Note : here, the intake is processed as the 'Years' dimensions, and renamed
-  # afterwards. Therefore, this DM has not timescale
-  DM_TCAF_health_diet_paf = {}
+    # Format as separate dm, according to the risk factor (or food categories)
+    # Note : here, the intake is processed as the 'Years' dimensions, and renamed
+    # afterwards. Therefore, this DM has not timescale
+    DM_TCAF_health_diet_paf = {}
 
-  var_total = [
-    'tcaf_health-diet_paf_CRC','tcaf_health-diet_paf_DT2',
-    'tcaf_health-diet_paf_ICH', 'tcaf_health-diet_paf_IHD',
-    'tcaf_health-diet_paf_IS', 'tcaf_health-diet_paf_SH',
-    'tcaf_health-diet_paf_EC', 'tcaf_health-diet_paf_TBLC'
-  ]
+    var_total = [
+        "tcaf_health-diet_paf_CRC",
+        "tcaf_health-diet_paf_DT2",
+        "tcaf_health-diet_paf_ICH",
+        "tcaf_health-diet_paf_IHD",
+        "tcaf_health-diet_paf_IS",
+        "tcaf_health-diet_paf_SH",
+        "tcaf_health-diet_paf_EC",
+        "tcaf_health-diet_paf_TBLC",
+    ]
 
-  for rf in df_tcaf_health_diet["Risk_Factor"].unique():
-    sub_df = df_tcaf_health_diet[df_tcaf_health_diet["Risk_Factor"] == rf].copy()
-    sub_df_pivot = sub_df.pivot_table(index=['Country', 'Years'], columns='variables', values='value').reset_index()
-    dm = DataMatrix.create_from_df(sub_df_pivot, num_cat=0)
-    dm.dim_labels[1] = 'Intake [g/day/cap]'
-    # Add dummies
-    var_rf = dm.col_labels['Variables']
-    var_missing = set(var_total) - set(var_rf)
-    for var in var_missing:
-      dm.add(0.0, dummy=True, col_label=var,dim='Variables', unit='-')
-    DM_TCAF_health_diet_paf[rf] = dm
+    for rf in df_tcaf_health_diet["Risk_Factor"].unique():
+        sub_df = df_tcaf_health_diet[df_tcaf_health_diet["Risk_Factor"] == rf].copy()
+        sub_df_pivot = sub_df.pivot_table(
+            index=["Country", "Years"], columns="variables", values="value"
+        ).reset_index()
+        dm = DataMatrix.create_from_df(sub_df_pivot, num_cat=0)
+        dm.dim_labels[1] = "Intake [g/day/cap]"
+        # Add dummies
+        var_rf = dm.col_labels["Variables"]
+        var_missing = set(var_total) - set(var_rf)
+        for var in var_missing:
+            dm.add(0.0, dummy=True, col_label=var, dim="Variables", unit="-")
+        DM_TCAF_health_diet_paf[rf] = dm
 
-  return DM_TCAF_health_diet_paf, dm_health_dalys
+    return DM_TCAF_health_diet_paf, dm_health_dalys
 
 
 # CalculationLeaf TCAF - Biodiversity
 
+
 def TCAF_biodiversity_preprocessing():
-  import sys
-  import transition_compass_model.model.common.data_matrix_class as dmc
+    import sys
 
-  sys.modules["common.data_matrix_class"] = dmc
-  
-  # Read biodiversity_world.csv from TCAF Datapool
-  current_file_directory = os.path.dirname(os.path.abspath(__file__))
-  f = os.path.join(
-    current_file_directory,
-    "data/data_pool/biodiversity_world.csv"
-  )
-  df_biodiversity_world = pd.read_csv(f)
+    import transition_compass_model.model.common.data_matrix_class as dmc
 
-  # Read biodiversity_switzerland.csv from TCAF Datapool
-  current_file_directory = os.path.dirname(os.path.abspath(__file__))
-  f = os.path.join(
-    current_file_directory,
-    "data/data_pool/biodiversity_switzerland.csv"
-  )
-  df_biodiversity_ch = pd.read_csv(f)
+    sys.modules["common.data_matrix_class"] = dmc
 
-  # Format as Datamatrix (CH)
-  lever = 'dummy'
-  df_biodiversity_ch['lever'] = lever
-  df_ots, df_fts = database_to_df_robust(df_biodiversity_ch, lever, level='all')
-  df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
-  dm_biodiversity_ch = DataMatrix.create_from_df(df_ots, num_cat=2)
-  dm_biodiversity_ch.switch_categories_order(cat1='Categories2', cat2='Categories1')
-  dm_biodiversity_ch.rename_col_regex('crop-', '', dim='Categories2')
+    # Read biodiversity_world.csv from TCAF Datapool
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    f = os.path.join(current_file_directory, "data/data_pool/biodiversity_world.csv")
+    df_biodiversity_world = pd.read_csv(f)
 
-  # Format as Datamatrix (world)
-  lever = 'dummy'
-  df_biodiversity_ch['lever'] = lever
-  df_ots, df_fts = database_to_df_robust(df_biodiversity_world, lever, level='all')
-  df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
-  dm_biodiversity_world = DataMatrix.create_from_df(df_ots, num_cat=0)
+    # Read biodiversity_switzerland.csv from TCAF Datapool
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    f = os.path.join(
+        current_file_directory, "data/data_pool/biodiversity_switzerland.csv"
+    )
+    df_biodiversity_ch = pd.read_csv(f)
 
-  # Fixme change unit eco-cost EUR2024 to CHF
+    # Format as Datamatrix (CH)
+    lever = "dummy"
+    df_biodiversity_ch["lever"] = lever
+    df_ots, df_fts = database_to_df_robust(df_biodiversity_ch, lever, level="all")
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm_biodiversity_ch = DataMatrix.create_from_df(df_ots, num_cat=2)
+    dm_biodiversity_ch.switch_categories_order(cat1="Categories2", cat2="Categories1")
+    dm_biodiversity_ch.rename_col_regex("crop-", "", dim="Categories2")
 
-  # Create copies for to divide  "baltic states" in ["Estonia", "Latvia", "Lithuania"]
-  for country_baltic in ["Estonia", "Latvia", "Lithuania"]:
-    dm_biodiversity_world.add(0.0, dummy=True, col_label=country_baltic,dim='Country')
-    dm_biodiversity_world[country_baltic,:,:] = dm_biodiversity_world['baltic states',:,:]
-  dm_biodiversity_world.drop(dim='Country', col_label='baltic states')
+    # Format as Datamatrix (world)
+    lever = "dummy"
+    df_biodiversity_ch["lever"] = lever
+    df_ots, df_fts = database_to_df_robust(df_biodiversity_world, lever, level="all")
+    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
+    dm_biodiversity_world = DataMatrix.create_from_df(df_ots, num_cat=0)
 
-  # Read pickle from landuse_module to TCAF
-  DM_landuse_to_TCAF = simulate_landuse_to_TCAF_input()
-  dm_cropland = DM_landuse_to_TCAF['cropland-world']
+    # Fixme change unit eco-cost EUR2024 to CHF
 
-  # Format country names to match the ones in dm_production
+    # Create copies for to divide  "baltic states" in ["Estonia", "Latvia", "Lithuania"]
+    for country_baltic in ["Estonia", "Latvia", "Lithuania"]:
+        dm_biodiversity_world.add(
+            0.0, dummy=True, col_label=country_baltic, dim="Country"
+        )
+        dm_biodiversity_world[country_baltic, :, :] = dm_biodiversity_world[
+            "baltic states", :, :
+        ]
+    dm_biodiversity_world.drop(dim="Country", col_label="baltic states")
 
-  # Manual fixes for typos & alternative names
-  # -----------------------------
-  mapping_manual = {
-    "hungaria": "Hungary",
-    "sri lanca": "Sri Lanka",
-    "mauretania": "Mauritania",
-    "tunesia": "Tunisia",
-    "ivory coast": "Côte d'Ivoire",
-    "zaire": "Democratic Republic of the Congo",
-    "south korea": "Republic of Korea",
-    "north korea": "Democratic People's Republic of Korea",
-    "russia": "Russian Federation",
-    "bolivia": "Bolivia",
-    "netherlands": "Netherlands (kingdom of the)",
-    # depending on your ISO mapping, could be "Bolivia (Plurinational State of)"
-    "iran": "Iran",
-    "venezuela": "Venezuela (Bolivarian Republic of)",
-    "turkey": "Türkiye",
-    "us": "United States of America",
-    "uk": "United Kingdom of Great Britain and Northern Ireland",
-    "dominican rep": "Dominican Republic",
-    "greenland": "Greenland",
-    "new guinea": "Papua New Guinea",
-    "surinam": "Suriname",
-    "china": "China, mainland"
-  }
+    # Read pickle from landuse_module to TCAF
+    DM_landuse_to_TCAF = simulate_landuse_to_TCAF_input()
+    dm_cropland = DM_landuse_to_TCAF["cropland-world"]
 
-  # Rename with manual fixes
-  for key in mapping_manual.keys():
-    dm_biodiversity_world.rename_col(key, mapping_manual[key], 'Country')
+    # Format country names to match the ones in dm_production
 
-  list_faostat = dm_cropland.col_labels['Country']
-  list_biodiversity = dm_biodiversity_world.col_labels['Country']
+    # Manual fixes for typos & alternative names
+    # -----------------------------
+    mapping_manual = {
+        "hungaria": "Hungary",
+        "sri lanca": "Sri Lanka",
+        "mauretania": "Mauritania",
+        "tunesia": "Tunisia",
+        "ivory coast": "Côte d'Ivoire",
+        "zaire": "Democratic Republic of the Congo",
+        "south korea": "Republic of Korea",
+        "north korea": "Democratic People's Republic of Korea",
+        "russia": "Russian Federation",
+        "bolivia": "Bolivia",
+        "netherlands": "Netherlands (kingdom of the)",
+        # depending on your ISO mapping, could be "Bolivia (Plurinational State of)"
+        "iran": "Iran",
+        "venezuela": "Venezuela (Bolivarian Republic of)",
+        "turkey": "Türkiye",
+        "us": "United States of America",
+        "uk": "United Kingdom of Great Britain and Northern Ireland",
+        "dominican rep": "Dominican Republic",
+        "greenland": "Greenland",
+        "new guinea": "Papua New Guinea",
+        "surinam": "Suriname",
+        "china": "China, mainland",
+    }
 
-  # Rename with ISO3 codes
-  mapping, unmatched = harmonize_countries(list_biodiversity, list_faostat)
+    # Rename with manual fixes
+    for key in mapping_manual.keys():
+        dm_biodiversity_world.rename_col(key, mapping_manual[key], "Country")
 
-  # Group same country when necessary using mean values
-  dm_biodiversity_world.groupby({'united states of america': 'united states.*'}, dim='Country', aggregation='mean', regex=True, inplace=True)
-  dm_biodiversity_world.groupby({'indonesia': 'indonesia.*'},dim='Country', aggregation='mean', regex=True, inplace=True)
+    list_faostat = dm_cropland.col_labels["Country"]
+    list_biodiversity = dm_biodiversity_world.col_labels["Country"]
 
-  # Format country names to match the ones in dm_production
-  for key in mapping.keys():
-    if mapping[key] is not None:
-      dm_biodiversity_world.rename_col(key, mapping[key], 'Country')
+    # Rename with ISO3 codes
+    mapping, unmatched = harmonize_countries(list_biodiversity, list_faostat)
 
-  # Add missing countries with dummy values
-  dm_match_countries(dm_biodiversity_world, dm_cropland, parameter='perfect match')
+    # Group same country when necessary using mean values
+    dm_biodiversity_world.groupby(
+        {"united states of america": "united states.*"},
+        dim="Country",
+        aggregation="mean",
+        regex=True,
+        inplace=True,
+    )
+    dm_biodiversity_world.groupby(
+        {"indonesia": "indonesia.*"},
+        dim="Country",
+        aggregation="mean",
+        regex=True,
+        inplace=True,
+    )
 
-  # Format separately between Switzerland and other countries
-  dm_biodiversity_world.drop(dim='Country', col_label='Switzerland')
-  DM_TCAF_biodiversity = {
-    'TCAF-biodiversity-CH': dm_biodiversity_ch,
-    'TCAF-biodiversity-world': dm_biodiversity_world
-  }
+    # Format country names to match the ones in dm_production
+    for key in mapping.keys():
+        if mapping[key] is not None:
+            dm_biodiversity_world.rename_col(key, mapping[key], "Country")
 
-  # Change unti from money/m2 to money/ha
-  for key in DM_TCAF_biodiversity.keys():
-    old_unit = DM_TCAF_biodiversity[key].units['eco-cost']
-    DM_TCAF_biodiversity[key].change_unit('eco-cost', old_unit=old_unit, new_unit='CHF/ha', factor=10**(4))
+    # Add missing countries with dummy values
+    dm_match_countries(dm_biodiversity_world, dm_cropland, parameter="perfect match")
 
-  return DM_TCAF_biodiversity
+    # Format separately between Switzerland and other countries
+    dm_biodiversity_world.drop(dim="Country", col_label="Switzerland")
+    DM_TCAF_biodiversity = {
+        "TCAF-biodiversity-CH": dm_biodiversity_ch,
+        "TCAF-biodiversity-world": dm_biodiversity_world,
+    }
+
+    # Change unti from money/m2 to money/ha
+    for key in DM_TCAF_biodiversity.keys():
+        old_unit = DM_TCAF_biodiversity[key].units["eco-cost"]
+        DM_TCAF_biodiversity[key].change_unit(
+            "eco-cost", old_unit=old_unit, new_unit="CHF/ha", factor=10 ** (4)
+        )
+
+    return DM_TCAF_biodiversity
+
 
 # CalculationLeaf CREATE PICKLE
 def database_from_csv_to_datamatrix(years_ots, years_fts):
 
-  # Make list with years from 2020 to 2050 (steps of 5 years)
-  years_all = years_ots + years_fts
+    # Make list with years from 2020 to 2050 (steps of 5 years)
+    years_all = years_ots + years_fts
 
-  # FixedAssumptionsToDatamatrix -----------------------------------------------
+    # FixedAssumptionsToDatamatrix -----------------------------------------------
 
-  # Initialise
-  dict_fxa = {}
+    # Initialise
+    dict_fxa = {}
 
-  # Add in fxa
-  dict_fxa['health-diet_paf'] = DM_TCAF_health_diet
-  dict_fxa['health-diet_dalys'] = dm_health_dalys
-  dict_fxa['biodiversity'] = DM_TCAF_biodiversity
+    # Add in fxa
+    dict_fxa["health-diet_paf"] = DM_TCAF_health_diet
+    dict_fxa["health-diet_dalys"] = dm_health_dalys
+    dict_fxa["biodiversity"] = DM_TCAF_biodiversity
 
-  # CalibrationDataToDatamatrix ------------------------------------------------
+    # CalibrationDataToDatamatrix ------------------------------------------------
 
-  # LeversToDatamatrix OTS -----------------------------------------------------
-  dict_ots = {}
+    # LeversToDatamatrix OTS -----------------------------------------------------
+    dict_ots = {}
 
+    # LeversToDatamatrix FTS -----------------------------------------------------
+    dict_fts = {}
 
-  # LeversToDatamatrix FTS -----------------------------------------------------
-  dict_fts = {}
-
-  # FTS linear fitting of ots
-  '''DM_ots = DM_agriculture_old['ots'].copy()
+    # FTS linear fitting of ots
+    """DM_ots = DM_agriculture_old['ots'].copy()
   DM_fts = DM_agriculture_old['fts'].copy()
 
   # To do once when adding a new lever
@@ -434,26 +463,26 @@ def database_from_csv_to_datamatrix(years_ots, years_fts):
   __file__ = "agriculture_landuse_preprocessing_EU.py"
 
   # directories
-  current_file_directory = os.path.dirname(os.path.abspath(__file__))'''
+  current_file_directory = os.path.dirname(os.path.abspath(__file__))"""
 
-  # ConstantsToDatamatrix ------------------------------------------------------
-  dict_const = {}
-  dict_const = CDM_MF
+    # ConstantsToDatamatrix ------------------------------------------------------
+    dict_const = {}
+    dict_const = CDM_MF
 
-  # Group all datamatrix in a single structure ---------------------------------
-  DM_TCAF = {
-    'fxa': dict_fxa,
-    'constant': dict_const,
-    'fts': dict_fts,
-    'ots': dict_ots
-  }
+    # Group all datamatrix in a single structure ---------------------------------
+    DM_TCAF = {
+        "fxa": dict_fxa,
+        "constant": dict_const,
+        "fts": dict_fts,
+        "ots": dict_ots,
+    }
 
-  # Write datamatrix to pickle -------------------------------------------------
-  f = '../../data/datamatrix/TCAF.pickle'
-  with open(f, 'wb') as handle:
-    pickle.dump(DM_TCAF, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    # Write datamatrix to pickle -------------------------------------------------
+    f = "../../data/datamatrix/TCAF.pickle"
+    with open(f, "wb") as handle:
+        pickle.dump(DM_TCAF, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-  return
+    return
 
 
 # CalculationTree RUNNING PREPROCESSING ----------------------------------------

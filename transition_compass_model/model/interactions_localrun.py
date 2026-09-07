@@ -1,21 +1,19 @@
+import copy
+import logging
+import math
+import time
 
-from transition_compass_model.model.population_module import population
+from transition_compass_model.model.agriculture_module import agriculture
 from transition_compass_model.model.buildings_module import buildings
+from transition_compass_model.model.common.auxiliary_functions import (
+    filter_country_and_load_data_from_pickles,
+)
+from transition_compass_model.model.common.config_loader import load_lever_config
 
-from transition_compass_model.model.forestry_module import forestry
 # from transition_compass_model.model.minerals_module import minerals
 from transition_compass_model.model.common.interface_class import Interface
-from transition_compass_model.model.agriculture_module import agriculture
-
-
-from transition_compass_model.model.common.auxiliary_functions import filter_country_and_load_data_from_pickles
-import logging
-
-import math
-import copy
-import time
-import json
-from transition_compass_model.model.common.config_loader import load_lever_config
+from transition_compass_model.model.forestry_module import forestry
+from transition_compass_model.model.population_module import population
 
 
 def runner(lever_setting, years_setting, DM_in, sectors, logger):
@@ -28,95 +26,147 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
     KPI = {}
     interface = Interface()
     DM_input = copy.deepcopy(DM_in)
-    if 'climate' in sectors:
-      start_time = time.time()
-      TPE["climate"] = climate(lever_setting, years_setting, DM_input['climate'], interface)
-      logger.info("Execution time Climate: {0:.3g} s".format(time.time() - start_time))
-    if 'population' in sectors:
-      start_time = time.time()
-      TPE["population"] = population(lever_setting, years_setting, DM_input['lifestyles'], interface)
-      logger.info("Execution time Lifestyles: {0:.3g} s".format(time.time() - start_time))
-    if 'transport' in sectors:
-      start_time = time.time()
-      TPE["transport"] , KPI['transport'] = transport(lever_setting, years_setting,DM_input['transport'], interface)
-      logger.info("Execution time Transport: {0:.3g} s".format(time.time() - start_time))
-    if 'buildings' in sectors:
-      start_time = time.time()
-      TPE['buildings'], KPI['buildings'] = buildings(lever_setting, years_setting, DM_input['buildings'], interface)
-      logger.info('Execution time Buildings: {0:.3g} s'.format(time.time() - start_time))
-    if 'industry' in sectors:
-      start_time = time.time()
-      TPE['industry'] = industry(lever_setting, years_setting, DM_input['industry'], interface)
-      logger.info('Execution time Industry: {0:.3g} s'.format(time.time() - start_time))
-    if 'forestry' in sectors:
-      start_time = time.time()
-      TPE['forestry'] = forestry(lever_setting, years_setting, DM_input['forestry'], interface)
-      logger.info('Execution time Forestry: {0:.3g} s'.format(time.time() - start_time))
-    if 'agriculture' in sectors:
-      start_time = time.time()
-      TPE['agriculture'] = agriculture(lever_setting, years_setting, DM_input['agriculture'], interface)
-      logger.info('Execution time Agriculture: {0:.3g} s'.format(time.time() - start_time))
-    if 'ammonia' in sectors:
+    if "climate" in sectors:
         start_time = time.time()
-        TPE['ammonia'] = ammonia(lever_setting, years_setting, DM_input['ammonia'], interface)
-        logger.info('Execution time Ammonia: {0:.3g} s'.format(time.time() - start_time))
-    if 'lca' in sectors:
+        TPE["climate"] = climate(
+            lever_setting, years_setting, DM_input["climate"], interface
+        )
+        logger.info(
+            "Execution time Climate: {0:.3g} s".format(time.time() - start_time)
+        )
+    if "population" in sectors:
         start_time = time.time()
-        TPE['lca'] = lca(lever_setting, years_setting, DM_input['lca'], interface)
-        logger.info('Execution time LCA: {0:.3g} s'.format(time.time() - start_time))
-    
-    #start_time = time.time()
-    #TPE['agriculture'] = agriculture(lever_setting, years_setting, interface)
-    #logger.info('Execution time Agriculture: {0:.3g} s'.format(time.time() - start_time))
-    #start_time = time.time()
-    #TPE['ammonia'] = ammonia(lever_setting, years_setting, interface)
-    #logger.info('Execution time Ammonia: {0:.3g} s'.format(time.time() - start_time))
-    #start_time = time.time()
-    #TPE['power'] = power(lever_setting, years_setting, interface)
-    #logger.info('Execution time Power: {0:.3g} s'.format(time.time() - start_time))
-    #start_time = time.time()
-    #TPE['oil-refinery'] = refinery(lever_setting, years_setting, interface)
-    #logger.info('Execution time Oil-refinery: {0:.3g} s'.format(time.time() - start_time))
-    #start_time = time.time()
-    #TPE['district-heating'] = district_heating(lever_setting, years_setting, interface)
-    #logger.info('Execution time District-Heating: {0:.3g} s'.format(time.time() - start_time))
-    #start_time = time.time()
-    #TPE['land-use'] = land_use(lever_setting, years_setting, interface)
-    #logger.info('Execution time Land-use: {0:.3g} s'.format(time.time() - start_time))
-    #start_time = time.time()
-    #TPE['minerals'], TPE['minerals_EU'] = minerals(interface)
-    #logger.info('Execution time Minerals: {0:.3g} s'.format(time.time() - start_time))
-    #start_time = time.time()
-    #TPE['emissions'] = emissions(lever_setting, years_setting, interface)
-    #logger.info('Execution time Emissions: {0:.3g} s'.format(time.time() - start_time))
-    #start_time = time.time()
+        TPE["population"] = population(
+            lever_setting, years_setting, DM_input["lifestyles"], interface
+        )
+        logger.info(
+            "Execution time Lifestyles: {0:.3g} s".format(time.time() - start_time)
+        )
+    if "transport" in sectors:
+        start_time = time.time()
+        TPE["transport"], KPI["transport"] = transport(
+            lever_setting, years_setting, DM_input["transport"], interface
+        )
+        logger.info(
+            "Execution time Transport: {0:.3g} s".format(time.time() - start_time)
+        )
+    if "buildings" in sectors:
+        start_time = time.time()
+        TPE["buildings"], KPI["buildings"] = buildings(
+            lever_setting, years_setting, DM_input["buildings"], interface
+        )
+        logger.info(
+            "Execution time Buildings: {0:.3g} s".format(time.time() - start_time)
+        )
+    if "industry" in sectors:
+        start_time = time.time()
+        TPE["industry"] = industry(
+            lever_setting, years_setting, DM_input["industry"], interface
+        )
+        logger.info(
+            "Execution time Industry: {0:.3g} s".format(time.time() - start_time)
+        )
+    if "forestry" in sectors:
+        start_time = time.time()
+        TPE["forestry"] = forestry(
+            lever_setting, years_setting, DM_input["forestry"], interface
+        )
+        logger.info(
+            "Execution time Forestry: {0:.3g} s".format(time.time() - start_time)
+        )
+    if "agriculture" in sectors:
+        start_time = time.time()
+        TPE["agriculture"] = agriculture(
+            lever_setting, years_setting, DM_input["agriculture"], interface
+        )
+        logger.info(
+            "Execution time Agriculture: {0:.3g} s".format(time.time() - start_time)
+        )
+    if "ammonia" in sectors:
+        start_time = time.time()
+        TPE["ammonia"] = ammonia(
+            lever_setting, years_setting, DM_input["ammonia"], interface
+        )
+        logger.info(
+            "Execution time Ammonia: {0:.3g} s".format(time.time() - start_time)
+        )
+    if "lca" in sectors:
+        start_time = time.time()
+        TPE["lca"] = lca(lever_setting, years_setting, DM_input["lca"], interface)
+        logger.info("Execution time LCA: {0:.3g} s".format(time.time() - start_time))
+
+    # start_time = time.time()
+    # TPE['agriculture'] = agriculture(lever_setting, years_setting, interface)
+    # logger.info('Execution time Agriculture: {0:.3g} s'.format(time.time() - start_time))
+    # start_time = time.time()
+    # TPE['ammonia'] = ammonia(lever_setting, years_setting, interface)
+    # logger.info('Execution time Ammonia: {0:.3g} s'.format(time.time() - start_time))
+    # start_time = time.time()
+    # TPE['power'] = power(lever_setting, years_setting, interface)
+    # logger.info('Execution time Power: {0:.3g} s'.format(time.time() - start_time))
+    # start_time = time.time()
+    # TPE['oil-refinery'] = refinery(lever_setting, years_setting, interface)
+    # logger.info('Execution time Oil-refinery: {0:.3g} s'.format(time.time() - start_time))
+    # start_time = time.time()
+    # TPE['district-heating'] = district_heating(lever_setting, years_setting, interface)
+    # logger.info('Execution time District-Heating: {0:.3g} s'.format(time.time() - start_time))
+    # start_time = time.time()
+    # TPE['land-use'] = land_use(lever_setting, years_setting, interface)
+    # logger.info('Execution time Land-use: {0:.3g} s'.format(time.time() - start_time))
+    # start_time = time.time()
+    # TPE['minerals'], TPE['minerals_EU'] = minerals(interface)
+    # logger.info('Execution time Minerals: {0:.3g} s'.format(time.time() - start_time))
+    # start_time = time.time()
+    # TPE['emissions'] = emissions(lever_setting, years_setting, interface)
+    # logger.info('Execution time Emissions: {0:.3g} s'.format(time.time() - start_time))
+    # start_time = time.time()
 
     logger.info("Total runtime: {0:.3g} s".format(time.time() - init_time))
 
     return TPE, KPI
 
+
 def local_interactions_run():
-    
+
     # Configure logger
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     logger = logging.getLogger(__name__)
-    
+
     # Configures initial input for model run
     lever_setting = load_lever_config()
     years_setting = [1990, 2023, 2025, 2050, 5]
 
     country_list = ["Switzerland"]
 
-    sectors = ['climate', 'population', 'buildings', 'transport', 'industry', 'forestry', 'ammonia', 'agriculture', 'lca']
+    sectors = [
+        "climate",
+        "population",
+        "buildings",
+        "transport",
+        "industry",
+        "forestry",
+        "ammonia",
+        "agriculture",
+        "lca",
+    ]
     # Filter geoscale
     # from database/data/datamatrix/.* reads the pickles, filters the geoscale, and loads them
-    DM_input = filter_country_and_load_data_from_pickles(country_list= country_list, modules_list = sectors)
-    
+    DM_input = filter_country_and_load_data_from_pickles(
+        country_list=country_list, modules_list=sectors
+    )
+
     # run
-    output, KPI = runner(lever_setting, years_setting, DM_input, sectors, logger, )
-    
+    output, KPI = runner(
+        lever_setting,
+        years_setting,
+        DM_input,
+        sectors,
+        logger,
+    )
+
     # return
     return output
+
 
 # run local
 results_run = local_interactions_run()
@@ -128,4 +178,3 @@ results_run = local_interactions_run()
 # df = results_run["emissions"].filter(['Country', 'Years', 'fos_emissions-CO2e[Mt]', 'ind_emissions-CO2e[Mt]'])
 # df = pd.melt(df, id_vars = ["Country","Years"])
 # df = df.groupby(["variable","Years",])['value'].agg(sum)
-

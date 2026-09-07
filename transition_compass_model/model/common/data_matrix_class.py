@@ -1,8 +1,8 @@
-import numpy as np
 import re
+
+import numpy as np
 import pandas as pd
 import plotly.express as px
-
 
 # DataMatrix is the by-default class used by the calculator.
 # DataMatrix contains:
@@ -27,7 +27,6 @@ import plotly.express as px
 
 
 class DataMatrix:
-
     def __init__(self, col_labels=dict(), units=dict(), idx=dict(), empty=False):
         # Empty = True does not crate the arrray
         self.dim_labels = ["Country", "Years", "Variables"]  # list
@@ -55,27 +54,26 @@ class DataMatrix:
             arr_shape = []
             for dim in self.dim_labels:
                 arr_shape.append(len(self.col_labels[dim]))
-            self.array = np.nan*np.ones(tuple(arr_shape))
+            self.array = np.nan * np.ones(tuple(arr_shape))
         return
-
 
     def __repr__(self):
 
         if len(self.col_labels) == 3:
-            return f'DataMatrix with shape {self.array.shape} and variables {self.col_labels["Variables"]}'
+            return f"DataMatrix with shape {self.array.shape} and variables {self.col_labels['Variables']}"
         if len(self.col_labels) == 4:
-            return f'DataMatrix with shape {self.array.shape}, variables {self.col_labels["Variables"]} and categories1 {self.col_labels["Categories1"]}'
+            return f"DataMatrix with shape {self.array.shape}, variables {self.col_labels['Variables']} and categories1 {self.col_labels['Categories1']}"
         if len(self.col_labels) == 5:
-            return f'DataMatrix with shape {self.array.shape}, variables {self.col_labels["Variables"]}, categories1 {self.col_labels["Categories1"]} and categories2 {self.col_labels["Categories2"]}'
+            return f"DataMatrix with shape {self.array.shape}, variables {self.col_labels['Variables']}, categories1 {self.col_labels['Categories1']} and categories2 {self.col_labels['Categories2']}"
         if len(self.col_labels) == 6:
-            return f'DataMatrix with shape {self.array.shape}, variables {self.col_labels["Variables"]}, categories1 {self.col_labels["Categories1"]}, categories2 {self.col_labels["Categories2"]} and categories3 {self.col_labels["Categories3"]}'
+            return f"DataMatrix with shape {self.array.shape}, variables {self.col_labels['Variables']}, categories1 {self.col_labels['Categories1']}, categories2 {self.col_labels['Categories2']} and categories3 {self.col_labels['Categories3']}"
 
     def read_data(self, df, num_cat):
         # Function called by the classmethod 'create_from_df' (see below)
         # It is used to transform a dataframe df (table) into a datamatrix by specifying the number of categories
         # ATT: to be run after extract_structure which initialises dim_labels, col_labels and units
         if df.empty:
-            ValueError(f"You cannot create a datamatrix from an empty dataframe.")
+            ValueError("You cannot create a datamatrix from an empty dataframe.")
 
         dims = []
         df.sort_values(by=["Country", "Years"], inplace=True)
@@ -145,7 +143,7 @@ class DataMatrix:
             return
 
         if df.empty:
-            ValueError(f"You cannot create a datamatrix from an empty dataframe.")
+            ValueError("You cannot create a datamatrix from an empty dataframe.")
 
         check_columns(df)
 
@@ -212,7 +210,7 @@ class DataMatrix:
         # Note that df needs to have columns 'Country' and 'Years'
         # it returns a datamatrix
         if df.empty:
-            ValueError(f'You cannot create a datamatrix from an empty dataframe.')
+            ValueError("You cannot create a datamatrix from an empty dataframe.")
         dm = cls(empty=True)
         dm.extract_structure(df, num_cat)
         dm.read_data(df, num_cat)
@@ -254,7 +252,7 @@ class DataMatrix:
                             new_units = units
                     else:
                         raise ValueError(
-                            f"The argument change can only be a list or None"
+                            "The argument change can only be a list or None"
                         )
             else:
                 num_cat = int(
@@ -311,8 +309,8 @@ class DataMatrix:
         a = self.dim_labels.index(dim)
         new_shape = list(self_shape)
         if not isinstance(col_label, (list, tuple, np.ndarray)):
-          col_label = [col_label]
-          unit = [unit]
+            col_label = [col_label]
+            unit = [unit]
         new_shape[a] = len(col_label)
         new_shape = tuple(new_shape)
         # If it is adding a new array of constant value (e.g. nan) to have a dummy dimension:
@@ -333,13 +331,15 @@ class DataMatrix:
             if col not in list(self.idx.keys()):
                 self.idx[col] = i_v[col]
             else:
-                raise ValueError(f"You are trying to append data under the label {col_label} which already exists")
-        if dim == 'Variables':
+                raise ValueError(
+                    f"You are trying to append data under the label {col_label} which already exists"
+                )
+        if dim == "Variables":
             if unit is not None:
                 for i, col in enumerate(col_label):
                     self.units[col] = unit[i]
             else:
-                raise ValueError(f"You need to input the units when adding a variables")
+                raise ValueError("You need to input the units when adding a variables")
         self.array = np.concatenate((self.array, new_array), axis=a)
 
     def drop(self, dim, col_label):
@@ -669,9 +669,9 @@ class DataMatrix:
             if col_in[i] != col_out[i]:
                 # Rename column labels
                 try:
-                  ci = self.idx[col_in[i]]
+                    ci = self.idx[col_in[i]]
                 except KeyError:
-                  continue
+                    continue
                 self.col_labels[dim][ci] = col_out[i]
                 # Rename key for units
                 if dim == "Variables":
@@ -735,13 +735,13 @@ class DataMatrix:
         return dm_keep
 
     def rename_col_regex(self, str1, str2, dim):
-      # Treat str1 as literal text (no regex needed by caller)
-      pattern = re.escape(str1)
+        # Treat str1 as literal text (no regex needed by caller)
+        pattern = re.escape(str1)
 
-      col_in = [col for col in self.col_labels[dim] if re.search(pattern, col)]
-      col_out = [re.sub(pattern, str2, col) for col in col_in]
+        col_in = [col for col in self.col_labels[dim] if re.search(pattern, col)]
+        col_out = [re.sub(pattern, str2, col) for col in col_in]
 
-      self.rename_col(col_in, col_out, dim=dim)
+        self.rename_col(col_in, col_out, dim=dim)
 
     def sort(self, dim):
         sort_index = np.argsort(np.array(self.col_labels[dim]))
@@ -771,7 +771,7 @@ class DataMatrix:
         # Check that units are the same
         if dim != "Variables":
             if self.units != data2.units:
-                raise ValueError(f"The units should be the same")
+                raise ValueError("The units should be the same")
         # Check that across the dimension where you want to append the labels are different
         cols1 = set(self.col_labels[dim])
         cols2 = set(data2.col_labels[dim])
@@ -1030,7 +1030,7 @@ class DataMatrix:
         # or dm_grouped = dm_to_group.group_all(dim='Categories1', inplace=False)
         # when inplace = False dm_to_group remains unchanged and the grouped dm is return as output
         if "Categories" not in dim:
-            raise ValueError(f"You can only use group_all() on Categories")
+            raise ValueError("You can only use group_all() on Categories")
         if inplace:
             dm = self
         else:
@@ -1069,7 +1069,7 @@ class DataMatrix:
         elif operator == "/":
             self.array[:, :, idx[var], ...] = self.array[:, :, idx[var], ...] / factor
         else:
-            raise ValueError(f"Only * and / operators are possible in change_unit")
+            raise ValueError("Only * and / operators are possible in change_unit")
         return
 
     def datamatrix_plot(self, selected_cols={}, title="title", stacked=None):
