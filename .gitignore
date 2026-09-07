@@ -216,19 +216,19 @@ __marimo__/
 .streamlit/secrets.toml
 
 
-transition_compass_model/_database/data/datamatrix/transport_wo_aviation.pickle
+tcaf_model/_database/data/datamatrix/transport_wo_aviation.pickle
 
 CLAUDE.md
 .claude/*
 
 # For Mac
 .DS_Store
-transition_compass_model/.vscode/launch.json
+tcaf_model/.vscode/launch.json
 
 # PDFs
 *.pdf
 
 # JSONs and ZIPs inside pre_processing
-transition_compass_model/_database/pre_processing/**/*.json
-transition_compass_model/_database/pre_processing/**/*.zip
+tcaf_model/_database/pre_processing/**/*.json
+tcaf_model/_database/pre_processing/**/*.zip
 .vscode/launch.json

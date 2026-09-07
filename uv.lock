@@ -1151,7 +1151,7 @@ wheels = [
 ]
 
 [[package]]
-name = "transition-compass-model"
+name = "tcaf-model"
 source = { editable = "." }
 dependencies = [
     { name = "deepl" },

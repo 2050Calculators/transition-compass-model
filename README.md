@@ -20,12 +20,16 @@ Deployed at <https://transition-compass-tcaf.epfl.ch/>.
 [2050Calculators/tcaf-calc][fork], branch `model`, replayed commit by commit
 with the original authors and dates. That fork was taken from the web app
 repository before the app and the model were split, so the model code sat in
-`backend/model/`. Here it sits in `transition_compass_model/model/`, the same
+`backend/model/`. Here it sits in `tcaf_model/model/`, the same
 place as in the main model repo, and nothing else changed.
 
 `tcaf` adds what the code needs to be a real python package: the `__init__.py`
 files, `pyproject.toml`, the lint setup and the release workflow. The science is
 untouched.
+
+The package is called `tcaf_model`, not `transition_compass_model`, on purpose.
+The web app installs both, and picks one with `MODEL_PROFILE`. Two packages with
+the same import name could not live in the same environment.
 
 See [issue #11][issue] for the background.
 
@@ -38,8 +42,8 @@ make install          # uv sync --all-groups + pre-commit
 ## Use it
 
 ```python
-from transition_compass_model.model.interactions import runner
-from transition_compass_model.model.common.auxiliary_functions import (
+from tcaf_model.model.interactions import runner
+from tcaf_model.model.common.auxiliary_functions import (
     filter_country_and_load_data_from_pickles,
 )
 
@@ -52,13 +56,12 @@ output, kpi = runner(lever_setting, years_setting, DM_input, ["agriculture"], lo
 Each module also runs on its own, on the pickles in `_database/`:
 
 ```bash
-python -m transition_compass_model.model.crop_module
+python -m tcaf_model.model.crop_module
 ```
 
 ## Release
 
-The web app installs the wheel from a GitHub release, there is no PyPI package
-(the name `transition-compass-model` on PyPI belongs to the main model).
+The web app installs the wheel from a GitHub release, there is no PyPI package.
 
 ```bash
 git tag tcaf-v1.0.0 && git push origin tcaf-v1.0.0
@@ -66,7 +69,7 @@ git tag tcaf-v1.0.0 && git push origin tcaf-v1.0.0
 
 The workflow lints, builds the wheel with the pickles inside, and attaches it to
 the release. Then point the app at the new URL in `backend/pyproject.toml` of
-[tcaf-calc][fork] and run `uv lock`.
+[leure-speed-to-zero][app] and run `uv lock`.
 
 ## Working here
 
@@ -77,4 +80,5 @@ the release. Then point the app at the new URL in `backend/pyproject.toml` of
 
 [model]: https://github.com/2050Calculators/transition-compass-model
 [fork]: https://github.com/2050Calculators/tcaf-calc
+[app]: https://github.com/EPFL-ENAC/leure-speed-to-zero
 [issue]: https://github.com/2050Calculators/transition-compass-model/issues/11

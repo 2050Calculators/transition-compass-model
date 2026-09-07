@@ -1,0 +1,116 @@
+# Import the Packages
+
+import os  # operating system (e.g., look for workspace)
+import pickle  # read/write the data in pickle
+
+# ImportFunctions
+from tcaf_model.model.common.auxiliary_functions import (
+    filter_country_and_load_data_from_pickles,
+    my_pickle_dump,
+    read_level_data,
+)
+from tcaf_model.model.common.config_loader import load_lever_config
+
+# Import Class
+from tcaf_model.model.common.interface_class import Interface
+
+
+# init years and lever
+def init_years_lever():
+    # function that can be used when running the module as standalone to initialise years and levers
+    years_setting = [1990, 2015, 2050, 5]
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    lever_setting = load_lever_config()
+    return years_setting, lever_setting
+
+
+#  Reading the Pickle
+def read_data(DM_lfs, lever_setting):
+
+    # Get ots fts based on lever_setting
+    DM_ots_fts = read_level_data(DM_lfs, lever_setting)
+
+    # return
+    return DM_ots_fts
+
+
+# CORE module
+def population(
+    lever_setting, years_setting, DM_input, interface=Interface(), write_pickle=False
+):
+
+    # get population data
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    DM_pop = read_data(DM_input, lever_setting)
+    dm_pop = DM_pop["pop"]["lfs_population_"]
+
+    # send population to Dietary Habits
+    if write_pickle is True:
+        if write_pickle is True:
+            current_file_directory = os.path.dirname(os.path.abspath(__file__))
+            f = os.path.join(
+                current_file_directory,
+                "../_database/data/interface/population_to_dietary-habits.pickle",
+            )
+            with open(f, "wb") as handle:
+                pickle.dump(DM_pop["pop"], handle, protocol=pickle.HIGHEST_PROTOCOL)
+            # f = os.path.join(current_file_directory, '../_database/data/interface/population_to_dietary-habits.pickle')
+            # my_pickle_dump(DM_new=DM_pop['pop'], local_pickle_file=f)
+    interface.add_link(
+        from_sector="population", to_sector="dietary-habits", dm=DM_pop["pop"]
+    )
+
+    # send population to transport
+    if write_pickle is True:
+        f = os.path.join(
+            current_file_directory,
+            "../_database/data/interface/population_to_transport.pickle",
+        )
+        my_pickle_dump(DM_new={"pop": dm_pop}, local_pickle_file=f)
+    interface.add_link(
+        from_sector="population", to_sector="transport", dm={"pop": dm_pop}
+    )
+
+    # send population to buildings
+    if write_pickle is True:
+        f = os.path.join(
+            current_file_directory,
+            "../_database/data/interface/population_to_buildings.pickle",
+        )
+        my_pickle_dump(DM_new={"pop": dm_pop}, local_pickle_file=f)
+    interface.add_link(
+        from_sector="population", to_sector="buildings", dm={"pop": dm_pop}
+    )
+
+    # send population to industry
+    if write_pickle is True:
+        f = os.path.join(
+            current_file_directory,
+            "../_database/data/interface/population_to_industry.pickle",
+        )
+        my_pickle_dump(DM_new={"pop": dm_pop}, local_pickle_file=f)
+    interface.add_link(
+        from_sector="population", to_sector="industry", dm={"pop": dm_pop}
+    )
+
+    return dm_pop
+
+
+# Local run of population
+def local_population_run(write_pickle=False):
+    # Initiate the year & lever setting
+    years_setting, lever_setting = init_years_lever()
+
+    country_list = ["EU27", "Switzerland", "Vaud"]
+    DM_input = filter_country_and_load_data_from_pickles(
+        country_list=country_list, modules_list="population"
+    )
+    population(
+        lever_setting, years_setting, DM_input["population"], write_pickle=write_pickle
+    )
+    return
+
+
+# Update/Create the Pickle
+if __name__ == "__main__":
+    local_population_run()

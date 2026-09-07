@@ -11,18 +11,18 @@ install:
 
 format:
 	@if uv --version >/dev/null 2>&1; then \
-		uv run ruff format transition_compass_model; \
-		uv run ruff check --fix transition_compass_model; \
+		uv run ruff format tcaf_model; \
+		uv run ruff check --fix tcaf_model; \
 	else \
-		ruff format transition_compass_model; \
-		ruff check --fix transition_compass_model; \
+		ruff format tcaf_model; \
+		ruff check --fix tcaf_model; \
 	fi
 
 lint:
 	@if uv --version >/dev/null 2>&1; then \
-		uv run ruff check transition_compass_model; \
+		uv run ruff check tcaf_model; \
 	else \
-		ruff check transition_compass_model; \
+		ruff check tcaf_model; \
 	fi
 
 test:

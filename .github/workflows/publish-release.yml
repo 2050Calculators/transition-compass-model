@@ -27,7 +27,7 @@ jobs:
             echo "ERROR: Expected at least 10 pickle files, got $pickle_count"
             exit 1
           fi
-          if head -c 40 transition_compass_model/_database/data/datamatrix/agriculture.pickle | grep -q "git-lfs"; then
+          if head -c 40 tcaf_model/_database/data/datamatrix/agriculture.pickle | grep -q "git-lfs"; then
             echo "ERROR: pickles are still LFS pointers, checkout did not fetch them"
             exit 1
           fi
