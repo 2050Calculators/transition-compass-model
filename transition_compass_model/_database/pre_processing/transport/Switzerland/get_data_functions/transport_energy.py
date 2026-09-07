@@ -7,9 +7,15 @@ import pandas as pd
 from transition_compass_model.model.common.auxiliary_functions import save_url_to_file
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
+scenario_table = {
+    "WWB": "Tabelle 04-05: Entwicklung des Energieverbrauchs im Szenario Weiter wie bisher",
+    "ZERO-B": "Tabelle 04-03: Entwicklung des Energieverbrauchs im Szenario ZERO B",
+}
 
-def extract_EP2050_transport_energy_demand(file_url, zip_name, file_pickle):
 
+def extract_EP2050_transport_energy_demand(
+    file_url, zip_name, file_pickle, scenario="WWB"
+):
     try:
         with open(file_pickle, "rb") as handle:
             dm = pickle.load(handle)
@@ -32,7 +38,7 @@ def extract_EP2050_transport_energy_demand(file_url, zip_name, file_pickle):
 
         df.drop(columns=[df.columns[0], df.columns[3]], inplace=True)
 
-        table_title = "Tabelle 04-05: Entwicklung des Energieverbrauchs im Szenario Weiter wie bisher"
+        table_title = scenario_table[scenario]
         start_table_row = df.index[df["Unnamed: 1"] == table_title].tolist()[1]
         df.columns = df.iloc[start_table_row + 2]
 
@@ -99,7 +105,6 @@ def extract_EP2050_transport_energy_demand(file_url, zip_name, file_pickle):
 
 
 def extract_EP2050_transport_energy_demand_rail(file_url, zip_name, file_pickle):
-
     try:
         with open(file_pickle, "rb") as handle:
             dm = pickle.load(handle)

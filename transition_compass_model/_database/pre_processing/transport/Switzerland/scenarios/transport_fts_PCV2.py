@@ -91,7 +91,6 @@ def run(DM_transport: DataMatrix, country_list, years_ots, years_fts):
     #### Modal share ####
     DM_transport = increase_freight_rail_by_45_percent(DM_transport)
 
-    ##### FREIGHT TRANSPORT #########
     this_dir = os.path.dirname(os.path.abspath(__file__))
     pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")
     my_pickle_dump(DM_new=DM_transport, local_pickle_file=pickle_file)

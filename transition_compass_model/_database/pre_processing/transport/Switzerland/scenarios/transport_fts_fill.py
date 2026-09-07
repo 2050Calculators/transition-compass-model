@@ -213,10 +213,21 @@ def occupancy_fts(DM_transport):
 def efficiency_fts(DM_transport):
     # Take the average of lever 2 and 4 to get lever 3
     dic_dm_eff_fts = {}
-    for lev_number in [2, 4]:
+    for lev_number in [1, 2, 4]:
         _, _, dic_dm_eff_fts[lev_number], _ = get_lev_data(
             DM_transport, "passenger_veh-efficiency_new", lev_number=lev_number
         )
+
+    # Lever 2 is defined only for vaud but not for switzerland so 25 % of 1 and 4 is taken.
+    idx_fts = DM_transport["fts"]["passenger_veh-efficiency_new"][2].idx
+    DM_transport["fts"]["passenger_veh-efficiency_new"][2].array[
+        idx_fts["Switzerland"], ...
+    ] = midpoint(
+        dic_dm_eff_fts[1].filter({"Country": ["Switzerland"]}),
+        dic_dm_eff_fts[4].filter({"Country": ["Switzerland"]}),
+        0.25,
+    ).array
+
     DM_transport["fts"]["passenger_veh-efficiency_new"][3] = midpoint(
         dic_dm_eff_fts[2], dic_dm_eff_fts[4], 0.5
     )

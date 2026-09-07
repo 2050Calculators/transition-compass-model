@@ -261,17 +261,22 @@ EP2050_tech_to_model = {
     "FFV": "ICE-gasoline",  # TODO check if acceptable
     "bifuel CNG/petrol": "ICE-gas",
     "CNG/petrol": "ICE-gas",
-    "LPG/petrol": "ICE-gas",
     "petrol 2S": "ICE-gasoline",
     "petrol 4S": "ICE-gasoline",
+    "petrol (2S)": "ICE-gasoline",
     "petrol (4S)": "ICE-gasoline",
     "petrol": "ICE-gasoline",
     "bifuel LPG/petrol": "ICE-gasoline",
+    "LPG/petrol": "ICE-gasoline",
+    "LPG": "ICE-gas",
     "flex-fuel E85": "ICE-gasoline",
+    "E85": "ICE-gasoline",
     "Plug-in Hybrid diesel/electric": "PHEV-diesel",
     "Plug-in Hybrid petrol/electric": "PHEV-gasoline",
     "FuelCell": "FCEV",
     "diesel": "ICE-diesel",
+    "hydrogen": "H2",
+    "Hybrid": "PHEV-diesel",
 }
 
 
