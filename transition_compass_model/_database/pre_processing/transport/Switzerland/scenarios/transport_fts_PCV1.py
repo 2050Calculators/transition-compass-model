@@ -275,9 +275,11 @@ def run(DM_transport, country_list, years_ots, years_fts):
     ].array = dm_new_tech_share_1.array
     #
 
-    dm_new_tech_share_2 = DM_transport["fts"]["passenger_technology-share_new"][2]
-    dm_new_tech_share_4 = DM_transport["fts"]["passenger_technology-share_new"][4]
-    dm_new_tech_share_ots = DM_transport["ots"]["passenger_technology-share_new"]
+    dm_new_tech_share_2 = dm_new_tech_share_1.copy()
+    dm_new_tech_share_4 = DM_transport["fts"]["passenger_technology-share_new"][
+        4
+    ].copy()
+    dm_new_tech_share_ots = DM_transport["ots"]["passenger_technology-share_new"].copy()
 
     # PCV: ci dessous les valeurs fixées par le PCV pour 2035.
     prop_EV_PHEV_2035_PCV = 0.65

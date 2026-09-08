@@ -234,9 +234,10 @@ def get_travel_demand_region_microrecencement(
 
 
 scenario_table = {
-    "WWB": "Tabelle 04-05: Entwicklung des Energieverbrauchs im Szenario Weiter wie bisher",
-    "ZERO-B": "Tabelle 04-03: Entwicklung des Energieverbrauchs im Szenario ZERO B",
+    "WWB": "Tabelle 03-05: Entwicklung der Fahrleistung von Strassenfahrzeugen im Szenario Weiter wie bisher",
+    "ZERO-B": "Tabelle 03-03: Entwicklung der Fahrleistung von Strassenfahrzeugen in ZERO-Variante B",
 }
+scenario_year = {"WWB": 18, "ZERO-B": 104}
 
 
 def extract_EP2050_transport_vkm_demand(
@@ -294,7 +295,7 @@ def extract_EP2050_transport_vkm_demand(
         df_T.columns = df_T.iloc[0]
         df_T = df_T.iloc[1:]
         df_T.reset_index(inplace=True)
-        df_T.rename(columns={18: "Years"}, inplace=True)
+        df_T.rename(columns={scenario_year[scenario]: "Years"}, inplace=True)
         df_T["Country"] = "Switzerland"
 
         dm = DataMatrix.create_from_df(df_T, num_cat=2)
@@ -325,8 +326,6 @@ def extract_EP2050_transport_vkm_demand(
             dim="Categories2",
             inplace=True,
         )
-
-        # ['BEV', 'CEV', 'FCEV', 'H2', 'ICE-diesel', 'ICE-gas', 'ICE-gasoline', 'PHEV-diesel', 'PHEV-gasoline', 'kerosene', 'mt']
 
         with open(file_pickle, "wb") as handle:
             pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)

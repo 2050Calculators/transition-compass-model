@@ -11,6 +11,7 @@ scenario_table = {
     "WWB": "Tabelle 04-05: Entwicklung des Energieverbrauchs im Szenario Weiter wie bisher",
     "ZERO-B": "Tabelle 04-03: Entwicklung des Energieverbrauchs im Szenario ZERO B",
 }
+scenario_year = {"WWB": 158, "ZERO-B": 88}
 
 
 def extract_EP2050_transport_energy_demand(
@@ -66,7 +67,7 @@ def extract_EP2050_transport_energy_demand(
         df_T.columns = df_T.iloc[0]
         df_T = df_T.iloc[1:]
         df_T.reset_index(inplace=True)
-        df_T.rename(columns={158: "Years"}, inplace=True)
+        df_T.rename(columns={scenario_year[scenario]: "Years"}, inplace=True)
         df_T["Country"] = "Switzerland"
 
         dm = DataMatrix.create_from_df(df_T, num_cat=2)

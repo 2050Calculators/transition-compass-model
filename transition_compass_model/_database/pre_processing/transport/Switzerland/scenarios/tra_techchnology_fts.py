@@ -237,7 +237,7 @@ def get_ep2050_energy_data_zero_b(this_dir):
     file_url = "https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA0NDE=.html"
     zip_name = os.path.join(this_dir, "../data/EP2050_sectors.zip")
     file_pickle = os.path.join(
-        this_dir, "../data/tra_EP2050_energy_demand_private_scen_zero-B.pickle"
+        this_dir, "../data/tra_EP2050_energy_demand_private.pickle"
     )
     dm_energy_ep2050 = get_data.extract_EP2050_transport_energy_demand(
         file_url, zip_name, file_pickle, scenario="ZERO-B"
