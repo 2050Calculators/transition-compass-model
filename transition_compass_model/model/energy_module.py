@@ -648,9 +648,10 @@ def energyscope_pyomo(
     with open(data_path, "rb") as handle:
         DM_energy = pickle.load(handle)
 
-    dm_capacity = DM_energy.pop("capacity")
-    dm_production = DM_energy.pop("production")
-    dm_fuels_supply = DM_energy.pop("fuels")
+    DM_fxa = DM_energy.pop("fxa")
+    dm_capacity = DM_fxa.pop("capacity")
+    dm_production = DM_fxa.pop("production")
+    dm_fuels_supply = DM_fxa.pop("fuels")
     DM_lever_fts = DM_energy.pop("fts")
     DM_energy.pop("ots", None)
 

@@ -80,9 +80,11 @@ DM_ots, DM_fts = power_levers_run(dm_capacity, reactor_list, years_ots, years_ft
 
 dm_capacity.rename_col("VD", "Vaud", dim="Country")
 DM_energy = {
-    "capacity": dm_capacity.filter({"Country": ["Switzerland", "Vaud"]}),
-    "production": dm_production.filter({"Country": ["Switzerland"]}),
-    "fuels": dm_fuels_supply,
+    "fxa": {
+        "capacity": dm_capacity.filter({"Country": ["Switzerland", "Vaud"]}),
+        "production": dm_production.filter({"Country": ["Switzerland"]}),
+        "fuels": dm_fuels_supply,
+    },
     "ots": DM_ots,
     "fts": DM_fts,
 }
