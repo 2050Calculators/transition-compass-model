@@ -547,7 +547,7 @@ def create_future_country_production_trend(DM_2050, DM_input, years_ots, years_f
 
 
 def downscale_country_to_canton(
-    dm_prod_cap_cntr, dm_cal_capacity, country_dem, share_of_pop
+    dm_prod_cap_cntr, dm_cal_capacity, country_dem, share_of_national_demand
 ):
     country_prod = dm_prod_cap_cntr.col_labels["Country"][0]
     dm_cal_capacity.add(0, col_label="Net-import", dim="Categories1", dummy=True)
@@ -561,7 +561,9 @@ def downscale_country_to_canton(
     dm_cal_capacity.add(
         canton_share[np.newaxis, ...], dim="Variables", col_label="share", unit="%"
     )
-    dm_cal_capacity.add(share_of_pop, col_label="CHP", dim="Categories1", dummy=True)
+    dm_cal_capacity.add(
+        share_of_national_demand, col_label="CHP", dim="Categories1", dummy=True
+    )
     dm_cal_capacity.filter(
         {"Categories1": dm_prod_cap_cntr.col_labels["Categories1"]}, inplace=True
     )
@@ -590,7 +592,11 @@ def downscale_country_to_canton(
 
 
 def balance_demand_prod_with_net_import(
-    dm_prod_cap_cntr, dm_losses, dm_net_import, dm_demand_trend, share_of_pop
+    dm_prod_cap_cntr,
+    dm_losses,
+    dm_net_import,
+    dm_demand_trend,
+    share_of_national_demand,
 ):
     dm_prod = dm_prod_cap_cntr.filter({"Variables": ["pow_production"]})
     # dm_prod.drop('Categories1', ['Net-import', 'Waste'])
@@ -598,7 +604,7 @@ def balance_demand_prod_with_net_import(
     # Compute demand by country
     dm_demand_trend.drop("Categories1", "district-heating")
     dm_demand_trend.group_all("Categories1", inplace=True)
-    dm_demand_trend.array = dm_demand_trend.array / share_of_pop
+    dm_demand_trend.array = dm_demand_trend.array / share_of_national_demand
     # demand = prod - losses + net_import
     # net_import = demand - (prod - losses) (NOTE: losses is already negative!)
 
@@ -694,7 +700,7 @@ def energyscope_pyomo(
         inter.impose_capacity_constraints_pyomo(
             m, endyr, dm_capacity, country=country_prod
         )
-        share_of_pop = 1
+        share_of_national_demand = 1
     else:  # Else you are running for a canton, a canton + Switzerland, or just Switzerland
         country_prod = "Switzerland"
         country_dem = "Switzerland"
@@ -702,7 +708,7 @@ def energyscope_pyomo(
             m, endyr, dm_capacity, country=country_prod
         )
         if country_prod in country_list:
-            share_of_pop = 1
+            share_of_national_demand = 1
         else:
             country_dem = country_list[0]
             # You should also check that you are not running with more than a canton at the time if Switzerland
@@ -734,16 +740,16 @@ def energyscope_pyomo(
                 ]
             )
 
-            share_of_pop = 0.07885490043172043  # canton_demand/country_demand #
+            share_of_national_demand = canton_demand / country_demand
 
     dm_tra_demand_trend = inter.impose_transport_demand_pyomo(
-        m, endyr, share_of_pop, DM_tra, country_dem
+        m, endyr, share_of_national_demand, DM_tra, country_dem
     )
     dm_bld_demand_trend = inter.impose_buildings_demand_pyomo(
-        m, endyr, share_of_pop, DM_bld, DM_ind, country_dem
+        m, endyr, share_of_national_demand, DM_bld, DM_ind, country_dem
     )
     dm_ind_demand_trend, dm_agr_demand_trend = inter.impose_industry_demand_pyomo(
-        m, endyr, share_of_pop, DM_ind, DM_agr, country_dem
+        m, endyr, share_of_national_demand, DM_ind, DM_agr, country_dem
     )
 
     # TODO: waste incineration link between buildings, industry, and energy is incomplete.
@@ -819,7 +825,7 @@ def energyscope_pyomo(
 
     set_constraints(m, objective="cost")
     # Put show_log to True to see the results of the optimisation
-    opt = make_highs(show_log=False)
+    opt = make_highs(show_log=True)
     attach(opt, m)
     res = solve(opt, m, warmstart=True)
 
@@ -869,7 +875,11 @@ def energyscope_pyomo(
 
     # Add demand - production balancing through net import & losses
     dm_prod_cap_cntr = balance_demand_prod_with_net_import(
-        dm_prod_cap_cntr, dm_losses, dm_net_import, dm_demand_trend, share_of_pop
+        dm_prod_cap_cntr,
+        dm_losses,
+        dm_net_import,
+        dm_demand_trend,
+        share_of_national_demand,
     )
 
     # --- Electricity generation emissions (scope 1, sent to emissions module) ---
@@ -1065,6 +1075,10 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
         )
         with open(agr_file, "rb") as handle:
             DM_agriculture = pickle.load(handle)
+        if ("Vaud" in country_list) and (
+            "Vaud" not in DM_agriculture["power"].col_labels["Country"]
+        ):
+            DM_agriculture["power"].add(0, dim="Country", dummy=True, col_label="Vaud")
         filter_DM(DM_agriculture, {"Country": country_list})
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
@@ -1097,7 +1111,7 @@ def local_energy_run():
     # Function to run only transport module without converter and tpe
 
     # get geoscale
-    country_list = ["Switzerland"]
+    country_list = ["Vaud"]
 
     results_run = energy(lever_setting, years_setting, country_list)
 
