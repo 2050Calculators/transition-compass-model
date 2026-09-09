@@ -6,14 +6,20 @@ import zipfile
 import numpy as np
 import pandas as pd
 import requests
-from _database.pre_processing.api_routines_CH import get_data_api_CH
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     linear_fitting,
     sort_pickle,
 )
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
+
+# module-level so every helper function below can see it (several reference it as a bare
+# global rather than taking it as a parameter)
+years_ots = create_years_list(1990, 2023, 1)
 
 
 def has_numbers(inputString):
@@ -41,7 +47,7 @@ def extract_national_energy_demand(table_id, file):
 
         filter = {
             "Économie et ménages": keep_sectors,
-            "Unité de mesure": ["Térajoules"],
+            "Unité de mesure": ["Terajoules"],
             "Année": structure["Année"],
             "Agent énergétique": structure["Agent énergétique"],
         }
@@ -63,7 +69,7 @@ def extract_national_energy_demand(table_id, file):
         )
 
         # dm_heating.rename_col('--- Chauffage des ménages', 'bld_heating-demand', dim='Variables')
-        dm_energy.rename_col("Térajoules", "Switzerland", dim="Country")
+        dm_energy.rename_col("Terajoules", "Switzerland", dim="Country")
 
         # We drop the fuels fro transport
         dict_rename = {
@@ -342,55 +348,6 @@ def extract_EP2050_industry_data(file_url, zip_name, keep_years):
 
         # Extract the file
         os.makedirs(extract_dir, exist_ok=True)
-        with zipfile.ZipFile(local_filename, "r") as zip_ref:  # noqa: F821
-            zip_ref.extractall(extract_dir)
-
-    file_industry = (
-        extract_dir
-        + "/EP2050+_Szenarienergebnisse_Details_Nachfragesektoren/EP2050+_Detailergebnisse 2020-2060_Industriessektor_alle Szenarien_2022-04-12.xlsx"
-    )
-    df = pd.read_excel(file_industry, sheet_name="02 Industrie WWB")
-
-    keep_list = [
-        "Raumwärme",
-        "Warmwasser",
-        "Prozesswärme",
-        "Beleuchtung",
-        "Klima, Lüftung und Haustechnik",
-        "Antriebe, Prozesse",
-        "Sonstige Verwendungszwecke",
-    ]
-
-    df_clean = clean_df_EP2050(df, keep_list)
-    mapping = {
-        "space-heating": ["Raumwärme"],
-        "hot-water": ["Warmwasser"],
-        "process-heat": ["Prozesswärme", "Sonstige Verwendungszwecke"],
-        "lighting": ["Beleuchtung"],
-        "elec": ["Klima, Lüftung und Haustechnik", "Antriebe, Prozesse"],
-    }
-
-    new_cols = []
-    for col in list(df_clean.columns):
-        new_cols.append("ind_energy-end-use_" + col + "[PJ]")
-    df_clean.columns = new_cols
-    df_clean.reset_index(inplace=True)
-    df_clean["Country"] = "Switzerland"
-    dm = DataMatrix.create_from_df(df_clean, num_cat=1)
-
-    dm.groupby(mapping, dim="Categories1", inplace=True)
-    dm.filter({"Years": keep_years}, inplace=True)
-
-    return dm
-
-
-def extract_EP2050_industry_data(file_url, zip_name, keep_years):  # noqa: F811
-    extract_dir = os.path.splitext(zip_name)[0]  # 'data/EP2050_sectors'
-    if not os.path.exists(extract_dir):
-        save_url_to_file(file_url, zip_name)
-
-        # Extract the file
-        os.makedirs(extract_dir, exist_ok=True)
         with zipfile.ZipFile(zip_name, "r") as zip_ref:
             zip_ref.extractall(extract_dir)
 
@@ -579,6 +536,9 @@ def extract_heating_technologies(table_id, file):
             pickle.dump(dm_heating, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     dm_heating.groupby({"other": ["Autre", "Aucune"]}, dim="Categories1", inplace=True)
+    # buildings_to_energy.pickle's households_heating uses "other-tech" for this category -
+    # rename to match, so adjust_based_on_efficiency's category lists line up
+    dm_heating.rename_col("other", "other-tech", dim="Categories1")
     dm_heating.rename_col(
         [
             "Mazout",
@@ -656,6 +616,9 @@ def extract_hotwater_technologies(table_id, file):
             pickle.dump(dm_hw, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     dm_hw.groupby({"other": ["Autre", "Aucune"]}, dim="Categories1", inplace=True)
+    # buildings_to_energy.pickle's households_heating uses "other-tech" for this category -
+    # rename to match, so adjust_based_on_efficiency's category lists line up
+    dm_hw.rename_col("other", "other-tech", dim="Categories1")
     dm_hw.rename_col(
         [
             "Mazout",
@@ -823,6 +786,9 @@ def add_process_heat_demand(dm_fuels_eud_cantons, dm_fuels_cantons, cantonal=Tru
 
 
 def adjust_based_on_efficiency(dm, dm_eff, years_ots):
+    # converts a raw count of buildings using each heating fuel into
+    # a share of energy demand by fuel, correcting for the fact that different
+    # fuels/technologies need different amounts of raw energy to deliver the same heat.
     dm_eff.filter(
         {"Categories1": dm.col_labels["Categories1"], "Years": years_ots}, inplace=True
     )
@@ -830,6 +796,11 @@ def adjust_based_on_efficiency(dm, dm_eff, years_ots):
     dm.sort("Categories1")
     var_name = dm.col_labels["Variables"][0]
     if dm_eff.col_labels["Categories1"] == dm.col_labels["Categories1"]:
+        # This is the key idea: a building with a low-efficiency heating
+        # system needs more raw energy input to deliver the same warmth
+        # than one with a high-efficiency system, so dividing by efficiency
+        # turns a plain "how many buildings" count into a rough proxy
+        # for "how much energy this fuel actually represents."
         arr = dm[:, :, 0, :] / dm_eff[:, :, "bld_efficiency", :]
         dm.add(arr, dim="Variables", col_label="bld_adj", unit="number")
         dm.filter({"Variables": ["bld_adj"]}, inplace=True)
@@ -1044,7 +1015,8 @@ def run():
     # Add efficiencies
     data_file = "../../../data/interface/buildings_to_energy.pickle"
     with open(data_file, "rb") as handle:
-        dm_eff = pickle.load(handle)
+        dic_building = pickle.load(handle)
+    dm_eff = dic_building["households_heating"].copy()
     dm_eff.filter({"Country": ["Switzerland"]}, inplace=True)
     dm_eff.operation(
         "bld_heating",
@@ -1324,10 +1296,16 @@ def run():
         dm_tmp[...] * dm_pop[:, :, 0, np.newaxis, np.newaxis, np.newaxis]
     )
 
+    dm_fuels_eud_cantons.rename_col("other-tech", "other", dim="Categories2")
     # dm_fuels_eud_cantons.flattest().datamatrix_plot({'Country': ['Switzerland']})
-    DM = {"ind-serv-energy-demand": dm_fuels_eud_cantons}
+    DM = {
+        "ind-energy-demand": dm_fuels_eud_cantons.filter(
+            {"Variables": ["ind_energy-end-use"]}
+        )
+    }
 
     file_industry = "../../../data/interface/industry_to_energy.pickle"
+
     with open(file_industry, "wb") as handle:
         pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
