@@ -6,6 +6,22 @@ from transition_compass_model.model.common.auxiliary_functions import (
 )
 
 
+def snap_to_ref_size(m, tech, value):
+    # ses_pyomo.py's number_of_units constraint ([Eq. 1.7]) requires F_Mult to be an
+    # exact integer multiple of ref_size for every non-infrastructure technology. When a
+    # technology's f_min/f_max are both pinned tightly around one value (+-eps), that
+    # window can be narrower than ref_size itself - especially for canton runs, where
+    # demand is grossed up by an arbitrary share_of_national_demand divisor and no
+    # longer lands anywhere near a grid point. Round the pin value to the nearest
+    # ref_size multiple first, so
+    # the +-eps window (applied by the caller afterwards) always straddles a feasible
+    # integer point instead of only sometimes containing one.
+    ref_size = pyo.value(m.ref_size[tech])
+    if ref_size <= 0 or value == 0:
+        return value
+    return float(np.round(value / ref_size) * ref_size)
+
+
 def extract_transport_demand(DM_tra):
     dm_demand_trend = DM_tra["freight"].filter({"Categories2": ["BEV", "CEV"]})
     dm_demand_trend.operation(
@@ -49,7 +65,7 @@ def extract_transport_demand(DM_tra):
     return dm_demand_trend
 
 
-def impose_transport_demand_pyomo(m, endyr, share_pop, DM_tra, cntr):
+def impose_transport_demand_pyomo(m, endyr, share_of_national_demand, DM_tra, cntr):
     eps = 1e-5
 
     dm_demand_trend = DM_tra["freight"].filter({"Categories2": ["BEV", "CEV"]})
@@ -127,7 +143,7 @@ def impose_transport_demand_pyomo(m, endyr, share_pop, DM_tra, cntr):
         np.nansum(
             dm_pass_demand[0, 0, "tra_passenger_transport-demand", :, :], axis=(-1, -2)
         )
-        / share_pop
+        / share_of_national_demand
     )
     m.end_uses_demand_year["MOBILITY_PASSENGER", "TRANSPORTATION"] = tot_Mpkm
 
@@ -140,7 +156,7 @@ def impose_transport_demand_pyomo(m, endyr, share_pop, DM_tra, cntr):
             DM_tra["freight"][0, 0, "tra_freight_transport-demand-tkm", :, :],
             axis=(-1, -2),
         )
-        / share_pop
+        / share_of_national_demand
     )
     m.end_uses_demand_year["MOBILITY_FREIGHT", "TRANSPORTATION"] = tot_Mtkm
 
@@ -157,7 +173,8 @@ def impose_transport_demand_pyomo(m, endyr, share_pop, DM_tra, cntr):
         if cat in dm_private.col_labels["Categories1"]:
             val_perc = dm_private[0, endyr, "tra_passenger_transport-demand_share", cat]
             val_abs = (
-                dm_private[0, endyr, "tra_passenger_transport-demand", cat] / share_pop
+                dm_private[0, endyr, "tra_passenger_transport-demand", cat]
+                / share_of_national_demand
             )
         else:  # If it is not electricity technology, set shares to 0
             val_perc = 0
@@ -183,7 +200,8 @@ def impose_transport_demand_pyomo(m, endyr, share_pop, DM_tra, cntr):
         if cat in ["TRAIN_PUB", "TRAMWAY_TROLLEY"]:
             val_perc = dm_public[0, endyr, "tra_passenger_transport-demand_share", cat]
             val_abs = (
-                dm_public[0, endyr, "tra_passenger_transport-demand", cat] / share_pop
+                dm_public[0, endyr, "tra_passenger_transport-demand", cat]
+                / share_of_national_demand
             )
         else:
             val_perc = 0
@@ -233,7 +251,7 @@ def impose_transport_demand_pyomo(m, endyr, share_pop, DM_tra, cntr):
     return dm_demand_trend
 
 
-def impose_space_heating_pyomo(m, endyr, share_of_pop, DM_bld, cntr, eps):
+def impose_space_heating_pyomo(m, endyr, share_of_national_demand, DM_bld, cntr, eps):
     # Useful energy demand
     dm_heating = DM_bld.filter(
         {"Variables": ["bld_heating_useful-energy"], "Years": [endyr]}
@@ -261,8 +279,10 @@ def impose_space_heating_pyomo(m, endyr, share_of_pop, DM_bld, cntr, eps):
         if cat in dm_heating.col_labels["Categories1"]:
             val_perc = dm_heating[cntr, endyr, "bld_heating_useful-energy_share", cat]
             val_abs = (
-                dm_heating[cntr, endyr, "bld_heating_useful-energy", cat] / share_of_pop
+                dm_heating[cntr, endyr, "bld_heating_useful-energy", cat]
+                / share_of_national_demand
             )
+            val_abs = snap_to_ref_size(m, cat, val_abs)
         else:
             val_perc = 0
             val_abs = 0
@@ -405,7 +425,9 @@ def reorganise_space_heat_hot_water(DM_bld, DM_ind):
     return dm_heat, dm_ind_heat
 
 
-def impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind, cntr):
+def impose_buildings_demand_pyomo(
+    m, endyr, share_of_national_demand, DM_bld, DM_ind, cntr
+):
     eps = 1e-5
 
     validation = False
@@ -476,7 +498,7 @@ def impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind, cntr):
     )
     tot_house_heat = (
         dm_house_tot[0, endyr, "bld_useful-energy", "households", "space-heating"]
-        / share_of_pop
+        / share_of_national_demand
     )
     m.end_uses_demand_year["HEAT_LOW_T_SH", "HOUSEHOLDS"] = tot_house_heat
 
@@ -485,7 +507,7 @@ def impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind, cntr):
     )
     tot_house_hw = (
         dm_house_hw_tot[0, endyr, "bld_useful-energy", "households", "hot-water"]
-        / share_of_pop
+        / share_of_national_demand
     )
     m.end_uses_demand_year["HEAT_LOW_T_HW", "HOUSEHOLDS"] = tot_house_hw
 
@@ -494,7 +516,7 @@ def impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind, cntr):
     )
     tot_service_heat = (
         dm_service_tot[0, endyr, "bld_useful-energy", "services", "space-heating"]
-        / share_of_pop
+        / share_of_national_demand
     )
     m.end_uses_demand_year["HEAT_LOW_T_SH", "SERVICES"] = tot_service_heat
 
@@ -503,7 +525,7 @@ def impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind, cntr):
     )
     tot_service_hw = (
         dm_service_hw_tot[0, endyr, "bld_useful-energy", "services", "hot-water"]
-        / share_of_pop
+        / share_of_national_demand
     )
     m.end_uses_demand_year["HEAT_LOW_T_HW", "SERVICES"] = tot_service_hw
 
@@ -512,7 +534,7 @@ def impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind, cntr):
     )
     tot_ind_heat = (
         dm_ind_space_tot[0, endyr, "ind_heat_energy-consumption", "space-heating"]
-        / share_of_pop
+        / share_of_national_demand
     )
     m.end_uses_demand_year["HEAT_LOW_T_SH", "INDUSTRY"] = tot_ind_heat
 
@@ -521,7 +543,7 @@ def impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind, cntr):
     )
     tot_ind_hw = (
         dm_ind_hw_tot[0, endyr, "ind_heat_energy-consumption", "hot-water"]
-        / share_of_pop
+        / share_of_national_demand
     )
     m.end_uses_demand_year["HEAT_LOW_T_HW", "INDUSTRY"] = tot_ind_hw
 
@@ -532,13 +554,13 @@ def impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind, cntr):
         ["bld_heating_energy-consumption", "bld_heating_useful-energy"],
         "Variables",
     )
-    impose_space_heating_pyomo(m, endyr, share_of_pop, dm_heat, cntr, eps)
+    impose_space_heating_pyomo(m, endyr, share_of_national_demand, dm_heat, cntr, eps)
 
     # Section: ELECTRICITY
     dm_house_elec_tot = DM_bld["households_electricity"].copy()
     tot_house_elec = (
         dm_house_elec_tot[0, endyr, "bld_appliances_tot-elec-demand"]
-        / share_of_pop
+        / share_of_national_demand
         * 1000
     )
     m.end_uses_demand_year["ELECTRICITY", "HOUSEHOLDS"] = tot_house_elec
@@ -554,7 +576,7 @@ def impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind, cntr):
         dm_service_elec_tot[
             0, endyr, "bld_services_energy-consumption", "elec", "electricity"
         ]
-        / share_of_pop
+        / share_of_national_demand
         * 1000
     )
     m.end_uses_demand_year["ELECTRICITY", "SERVICES"] = tot_service_elec
@@ -562,7 +584,9 @@ def impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind, cntr):
     # Section: LIGHTING
     dm_house_light_tot = DM_bld["households_lighting"].copy()
     tot_house_light = (
-        dm_house_light_tot[0, endyr, "bld_residential-lighting"] / share_of_pop * 1000
+        dm_house_light_tot[0, endyr, "bld_residential-lighting"]
+        / share_of_national_demand
+        * 1000
     )
     m.end_uses_demand_year["LIGHTING", "HOUSEHOLDS"] = tot_house_light
 
@@ -577,7 +601,7 @@ def impose_buildings_demand_pyomo(m, endyr, share_of_pop, DM_bld, DM_ind, cntr):
         dm_service_light_tot[
             0, endyr, "bld_services_energy-consumption", "lighting", "electricity"
         ]
-        / share_of_pop
+        / share_of_national_demand
         * 1000
     )
     m.end_uses_demand_year["LIGHTING", "SERVICES"] = tot_service_light
@@ -804,7 +828,9 @@ def extract_agriculture_demand(DM_agr):
     return dm_agr_demand_trend
 
 
-def impose_industry_demand_pyomo(m, endyr, share_of_pop, DM_ind, DM_agr, cntr):
+def impose_industry_demand_pyomo(
+    m, endyr, share_of_national_demand, DM_ind, DM_agr, cntr
+):
     eps = 1e-5
 
     # Prepare demand trend for post-processing energy-scope result
@@ -827,7 +853,7 @@ def impose_industry_demand_pyomo(m, endyr, share_of_pop, DM_ind, DM_agr, cntr):
 
     tot_agr_elec = (
         dm_agr_demand_trend[cntr, endyr, "agr_energy-consumption", "electricity"]
-        / share_of_pop
+        / share_of_national_demand
         * 1000
     )
 
@@ -837,7 +863,7 @@ def impose_industry_demand_pyomo(m, endyr, share_of_pop, DM_ind, DM_agr, cntr):
     )
     tot_ind_elec = (
         dm_ind_elec_tot[cntr, endyr, "ind_energy-end-use", "elec", "electricity"]
-        / share_of_pop
+        / share_of_national_demand
         * 1000
     )
     m.end_uses_demand_year["ELECTRICITY", "INDUSTRY"] = tot_ind_elec + tot_agr_elec
@@ -848,7 +874,7 @@ def impose_industry_demand_pyomo(m, endyr, share_of_pop, DM_ind, DM_agr, cntr):
     )
     tot_ind_light = (
         dm_ind_light_tot[cntr, endyr, "ind_energy-end-use", "lighting", "electricity"]
-        / share_of_pop
+        / share_of_national_demand
         * 1000
     )
     m.end_uses_demand_year["LIGHTING", "INDUSTRY"] = tot_ind_light
@@ -859,7 +885,7 @@ def impose_industry_demand_pyomo(m, endyr, share_of_pop, DM_ind, DM_agr, cntr):
     )
     tot_high_heat = (
         dm_high_heat[cntr, endyr, "ind_energy-end-use", "process-heat", "electricity"]
-        / share_of_pop
+        / share_of_national_demand
         * 1000
     )
     m.end_uses_demand_year["HEAT_HIGH_T", "INDUSTRY"] = tot_high_heat
@@ -872,8 +898,10 @@ def impose_industry_demand_pyomo(m, endyr, share_of_pop, DM_ind, DM_agr, cntr):
         if cat in dm_high_heat.col_labels["Categories1"]:
             val_perc = dm_high_heat[cntr, endyr, "ind_energy-end-use_share", cat]
             val_abs = (
-                dm_high_heat[cntr, endyr, "ind_energy-end-use", cat] / share_of_pop
+                dm_high_heat[cntr, endyr, "ind_energy-end-use", cat]
+                / share_of_national_demand
             )
+            val_abs = snap_to_ref_size(m, cat, val_abs)
         else:
             val_perc = 0
             val_abs = 0
