@@ -159,14 +159,34 @@ def _fetch_structure(agency, dataflow, headers):
 
 
 def get_data_api_swiss_stats(
-    agency,
-    dataflow,
+    agency: str,
+    dataflow: str,
     mode="example",
     filter=dict(),
     mapping_dims=dict(),
     units=[],
     language="en",
-):
+) -> DataMatrix:
+    """Call the swiss stats api to get recent data. The documnetation of the api is available here https://dam-api.bfs.admin.ch/hub/api/dam/assets/orderNr:do-i-00.02-sse-02/master.
+    the link of the api is formatted as follow https://disseminate.stats.swiss/rest/data/<agency identifier>,<dataflow
+    identifier>,<dataflow version>/<filter expression>[?<optional parameters>
+
+    Args:
+        agency (str): The Swiss Stats SDMX agency ID e.g CH1.MFZ_IVS
+        dataflow (str): The Swiss Stats dataflow e.g DF_IVS_0_GENERAL
+        mode (str): mode example to get the structure or mode extract to get the data of interest.
+                    Defaults to "example".
+        filter (dict): Dictionnary used to call only the features of interest (for example only some of the canton). Defaults to dict().
+        mapping_dims (_type_, optional): Associate the dimension of dm to dimension of the api. Defaults to dict().
+        units (list, optional): Units of the variables extracted. Defaults to [].
+        language (str, optional): Language of the request. Defaults to "en".
+
+    Raises:
+        ValueError: Error if data extraction failed
+
+    Returns:
+        DataMatrix: Data extracted from the api
+    """
     # Swiss Stats SDMX REST API: https://www.bfs.admin.ch (dissemination endpoint replacing STAT-TAB/PX-Web)
     base_url = "https://disseminate.stats.swiss/rest/data"
     headers = {"Accept-Language": language}

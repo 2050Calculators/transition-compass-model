@@ -40,10 +40,17 @@ def get_new_fleet_by_tech_raw(agency, dataflow, file):
             "UV_RV_VEHICLE_GROUP_AND_TYPE": [
                 "Passenger cars",
                 "Passenger vehicles",
+                # "Light motor vehicle",
+                # "Heavy motor vehicle",
                 "Motorcycles",
             ],
             "UV_RV_FUEL": fuel_types,
-            "UV_HGDE_KT": ["Total", "Vaud"],  # "Total" = all of Switzerland
+            "UV_HGDE_KT": [
+                "Total",
+                "Vaud",
+                "Fribourg",
+                "Schwyz",
+            ],  # "Total" = all of Switzerland
         }
 
         mapping_dim = {
@@ -91,7 +98,10 @@ def extract_passenger_new_fleet_by_tech(dm_new_fleet):
     # FIXME in get_new_fleet_by_tech_raw. Drop it from this list once migration parity
     # against the old pipeline's output is confirmed.
     dm_pass_new_fleet.groupby(
-        {"LDV": ["Passenger cars", "Passenger vehicles"], "2W": ["Motorcycles"]},
+        {
+            "LDV": ["Passenger cars", "Passenger vehicles"],
+            "2W": ["Motorcycles"],
+        },  # "Light motor vehicle", "Heavy motor vehicle"
         dim="Categories1",
         regex=False,
         inplace=True,
@@ -130,11 +140,15 @@ def extract_passenger_new_fleet_by_tech(dm_new_fleet):
     dm_tmp.filter({"Categories2": ["Other"]}, inplace=True)
     # If Other is more than 1% you should account for it
     if (dm_tmp.array > 0.01).any():
-        raise ValueError(
+        print(
             '"Other" category is greater than 1% of the fleet, it cannot be discarded'
         )
-
-    dm_pass_new_fleet.drop(col_label="Other", dim="Categories2")
+        # raise ValueError(
+        #     '"Other" category is greater than 1% of the fleet, it cannot be discarded'
+        # )
+    else:
+        #'"Other" category is greater than 1% of the fleet, it cannot be discarded'
+        dm_pass_new_fleet.drop(col_label="Other", dim="Categories2")
 
     return dm_pass_new_fleet, dm_new_tech
 

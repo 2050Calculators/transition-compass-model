@@ -9,6 +9,9 @@ import numpy as np
 from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
     passenger_fleet as get_data,
 )
+from transition_compass_model._database.pre_processing.transport.Switzerland.params import (
+    country_list,
+)
 from transition_compass_model._database.pre_processing.transport.Switzerland.processors.transport_demand_pipeline import (
     run as demand_pkm_vkm_run,
 )
@@ -114,6 +117,7 @@ def compute_passenger_new_fleet(
     dm_new_fleet_tech_ots1 = get_data.get_new_fleet_by_tech_raw(
         agency_new_veh, dataflow_new_veh, file_new_veh_ots1
     )
+    dm_new_fleet_tech_ots1.filter({"Country": country_list}, inplace=True)
     # Passenger new fleet Switzerland + Vaud: 2005 - new (by technology)
     dm_pass_new_fleet_tech_ots1, dm_new_tech = (
         get_data.extract_passenger_new_fleet_by_tech(dm_new_fleet_tech_ots1)

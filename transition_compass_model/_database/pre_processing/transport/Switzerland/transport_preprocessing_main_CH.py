@@ -1,3 +1,4 @@
+from params import country_list, years_fts, years_ots
 from processors.aviation_ots_pipeline_CH import run as aviation_ots_run
 from processors.aviation_part1_pipeline_CH import run as aviation_pt1_run
 from processors.electricity_emissions_pipeline import run as electricity_emission_run
@@ -32,14 +33,8 @@ from transition_compass_model._database.pre_processing.transport.Switzerland.sce
     run as fts_PCV2_pickle_run,
 )
 from transition_compass_model.model.common.auxiliary_functions import (
-    create_years_list,
     load_pop,
 )
-
-years_ots = create_years_list(1990, 2023, 1)
-years_fts = create_years_list(2025, 2050, 5)
-
-country_list = ["Switzerland", "Vaud"]
 
 dm_pop_ots = load_pop(country_list, years_list=years_ots)
 
