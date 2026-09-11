@@ -331,6 +331,7 @@ def extract_2050_output_pyomo(m, country_prod, endyr, years_fts):
     #    DM['power-production'].groupby({'CHP-CCS': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
     map_prod = {
         "Net-import": ["ELECTRICITY"],
+        "Nuclear": ["NUCLEAR"],
         "PV-roof": ["PV"],
         "WindOn": ["WIND"],
         "Dam": ["HYDRO_DAM"],
