@@ -23,6 +23,44 @@ years_ots = create_years_list(1990, 2023, 1)
 years_fts = create_years_list(2025, 2050, 5)
 baseyear = 2023
 
+# Canton SubRegion code (as used in the Nexus-e capacity data) -> English name.
+# Note: Fribourg's Nexus-e code is "FB", not the standard "FR".
+CANTON_NAMES = {
+    "AG": "Aargau",
+    "AR": "Appenzell Ausserrhoden",
+    "AI": "Appenzell Innerrhoden",
+    "BL": "Basel-Landschaft",
+    "BS": "Basel-Stadt",
+    "BE": "Bern",
+    "FR": "Fribourg",
+    "FB": "Fribourg",
+    "GE": "Geneva",
+    "GL": "Glarus",
+    "GR": "Graubunden",
+    "JU": "Jura",
+    "LU": "Lucerne",
+    "NE": "Neuchatel",
+    "NW": "Nidwalden",
+    "OW": "Obwalden",
+    "SH": "Schaffhausen",
+    "SZ": "Schwyz",
+    "SO": "Solothurn",
+    "SG": "St. Gallen",
+    "TI": "Ticino",
+    "TG": "Thurgau",
+    "UR": "Uri",
+    "VD": "Vaud",
+    "VS": "Valais",
+    "ZG": "Zug",
+    "ZH": "Zurich",
+}
+
+# Which cantons (besides Switzerland) to keep in energy.pickle, as English names.
+cantons_to_add = ["Vaud", "Schwyz", "Fribourg"]
+unknown_cantons = set(cantons_to_add) - set(CANTON_NAMES.values())
+if unknown_cantons:
+    raise ValueError(f"Unknown canton(s) in cantons_to_add: {sorted(unknown_cantons)}")
+
 print("Running energy statistics pipeline")
 dm_energy = energy_statistics_run(baseyear, years_ots)
 
@@ -78,10 +116,11 @@ dm_fuels_supply, dm_production = fuels_supply_run(
 print("Compiling power capacity levers (nuclear, onshore wind, PV)")
 DM_ots, DM_fts = power_levers_run(dm_capacity, reactor_list, years_ots, years_fts)
 
-dm_capacity.rename_col("VD", "Vaud", dim="Country")
+for code, name in CANTON_NAMES.items():
+    dm_capacity.rename_col(code, name, dim="Country")
 DM_energy = {
     "fxa": {
-        "capacity": dm_capacity.filter({"Country": ["Switzerland", "Vaud"]}),
+        "capacity": dm_capacity.filter({"Country": ["Switzerland"] + cantons_to_add}),
         "production": dm_production.filter({"Country": ["Switzerland"]}),
         "fuels": dm_fuels_supply,
     },
