@@ -273,16 +273,27 @@ def extract_sankey_energy_flow(DM):
     return DM
 
 
-def extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy):
+def extract_2050_output_pyomo(m, country_prod, endyr, years_fts):
     # DM.keys = {'installed_GW', 'installed_N', 'emissions', 'storage_in',
     # 'storage_out', 'monthly_operation_GW', 'Losses'}
     DM = utils.get_pyomo_output(m, country_prod, endyr)
 
     # From ses_eval.mod
-    # Hours in a month
-    DM["hours_month"] = DM_energy["index0"].filter(
-        {"Variables": ["t_op"], "Years": [endyr]}
+    # Hours in a month (t_op, from ses_main.json, as loaded onto the model)
+    periods = list(m.PERIODS)
+    dm_hours = DataMatrix(
+        col_labels={
+            "Country": ["Switzerland"],
+            "Years": [endyr],
+            "Variables": ["t_op"],
+            "Categories1": [str(p) for p in periods],
+        },
+        units={"t_op": "-"},
     )
+    dm_hours.array = np.array([pyo.value(m.t_op[p]) for p in periods]).reshape(
+        1, 1, 1, len(periods)
+    )
+    DM["hours_month"] = dm_hours
     # Efficiency (layers_in_out)
     resources = set(m.RESOURCES)
     technologies = set(m.TECHNOLOGIES)
@@ -320,6 +331,7 @@ def extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy):
     #    DM['power-production'].groupby({'CHP-CCS': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
     map_prod = {
         "Net-import": ["ELECTRICITY"],
+        "Nuclear": ["NUCLEAR"],
         "PV-roof": ["PV"],
         "WindOn": ["WIND"],
         "Dam": ["HYDRO_DAM"],
@@ -423,9 +435,14 @@ def create_future_country_production_trend(DM_2050, DM_input, years_ots, years_f
     cap_latest_ots = dm_cap.array[0, idx_ots[-1], idx["pow_capacity"], :]
     cap_final = dm_cap.array[0, -1, idx["pow_capacity"], :]
     cap_max = dm_cap.array[0, -1, idx["pow_capacity-Pmax"], :]
-    # Check that there is decommissioning happening
-    # And that it is hitting the maximal capacity limit
-    decommissioned_mask = (cap_final < cap_latest_ots) & (cap_max == cap_final)
+    # If the solved 2050 capacity exactly matches the calibrated Pmax ceiling, use the real
+    # year-by-year Pmax curve as the trend instead of interpolating a straight line between
+    # the last ots value and the 2050 point - this is what makes a category's fts trend a
+    # step function following its known real-world schedule (e.g. nuclear's lever-driven
+    # capacity, see energyscope_pyomo) rather than a smooth ramp. Not restricted to
+    # declining capacity: a category whose 2050 value grows to exactly hit its calibrated
+    # ceiling should use the real ceiling curve too, not a straight line.
+    decommissioned_mask = np.isclose(cap_max, cap_final)
     idx_fts = [idx[yr] for yr in years_fts]
     idx_fts = np.array(idx_fts)
     dm_cap.array[0, idx_fts[:, None], idx["pow_capacity"], decommissioned_mask] = (
@@ -531,7 +548,7 @@ def create_future_country_production_trend(DM_2050, DM_input, years_ots, years_f
 
 
 def downscale_country_to_canton(
-    dm_prod_cap_cntr, dm_cal_capacity, country_dem, share_of_pop
+    dm_prod_cap_cntr, dm_cal_capacity, country_dem, share_of_national_demand
 ):
     country_prod = dm_prod_cap_cntr.col_labels["Country"][0]
     dm_cal_capacity.add(0, col_label="Net-import", dim="Categories1", dummy=True)
@@ -545,7 +562,9 @@ def downscale_country_to_canton(
     dm_cal_capacity.add(
         canton_share[np.newaxis, ...], dim="Variables", col_label="share", unit="%"
     )
-    dm_cal_capacity.add(share_of_pop, col_label="CHP", dim="Categories1", dummy=True)
+    dm_cal_capacity.add(
+        share_of_national_demand, col_label="CHP", dim="Categories1", dummy=True
+    )
     dm_cal_capacity.filter(
         {"Categories1": dm_prod_cap_cntr.col_labels["Categories1"]}, inplace=True
     )
@@ -574,7 +593,11 @@ def downscale_country_to_canton(
 
 
 def balance_demand_prod_with_net_import(
-    dm_prod_cap_cntr, dm_losses, dm_net_import, dm_demand_trend, share_of_pop
+    dm_prod_cap_cntr,
+    dm_losses,
+    dm_net_import,
+    dm_demand_trend,
+    share_of_national_demand,
 ):
     dm_prod = dm_prod_cap_cntr.filter({"Variables": ["pow_production"]})
     # dm_prod.drop('Categories1', ['Net-import', 'Waste'])
@@ -582,7 +605,7 @@ def balance_demand_prod_with_net_import(
     # Compute demand by country
     dm_demand_trend.drop("Categories1", "district-heating")
     dm_demand_trend.group_all("Categories1", inplace=True)
-    dm_demand_trend.array = dm_demand_trend.array / share_of_pop
+    dm_demand_trend.array = dm_demand_trend.array / share_of_national_demand
     # demand = prod - losses + net_import
     # net_import = demand - (prod - losses) (NOTE: losses is already negative!)
 
@@ -607,15 +630,50 @@ def balance_demand_prod_with_net_import(
     return dm_prod_cap_cntr
 
 
+def get_power_capacity_lever(DM_fts, lever_name, lever_setting):
+    # Read the chosen level's f_max ceiling (MW) for a power capacity lever, built in
+    # power_preprocessing_CH.py. Returns (years, values_mw): a single-year array for
+    # wind/PV, a full years_fts step curve for nuclear.
+    level = lever_setting["lever_" + lever_name]
+    dm_level = DM_fts[lever_name][level]
+    years = dm_level.col_labels["Years"]
+    values_mw = dm_level.array.reshape(len(years))
+    return years, values_mw
+
+
 def energyscope_pyomo(
-    data_path, DM_tra, DM_bld, DM_ind, DM_agr, years_ots, years_fts, country_list
+    data_path,
+    DM_tra,
+    DM_bld,
+    DM_ind,
+    DM_agr,
+    years_ots,
+    years_fts,
+    country_list,
+    lever_setting,
 ):
     with open(data_path, "rb") as handle:
         DM_energy = pickle.load(handle)
 
-    dm_capacity = DM_energy.pop("capacity")
-    dm_production = DM_energy.pop("production")
-    dm_fuels_supply = DM_energy.pop("fuels")
+    DM_fxa = DM_energy.pop("fxa")
+    dm_capacity = DM_fxa.pop("capacity")
+    dm_production = DM_fxa.pop("production")
+    dm_fuels_supply = DM_fxa.pop("fuels")
+    DM_lever_fts = DM_energy.pop("fts")
+    DM_energy.pop("ots", None)
+
+    # Nuclear's capacity lever is a full years_fts step curve (see
+    # power_preprocessing_CH.py) - patch it into dm_capacity's Pmax now, before the
+    # capacity-constraint calibration and the trend-building step both read it, so the
+    # fts reporting trend also follows the chosen level's real step shape instead of
+    # interpolating a straight line (see the decommissioned_mask fix in
+    # create_future_country_production_trend).
+    nuclear_years, nuclear_curve_mw = get_power_capacity_lever(
+        DM_lever_fts, "nuclear-capacity", lever_setting
+    )
+    for yr, value_mw in zip(nuclear_years, nuclear_curve_mw):
+        dm_capacity["Switzerland", yr, "pow_capacity-Pmax", "Nuclear"] = value_mw
+
     DM_input = {
         "cal-capacity": dm_capacity,
         "cal-production": dm_production,
@@ -643,7 +701,7 @@ def energyscope_pyomo(
         inter.impose_capacity_constraints_pyomo(
             m, endyr, dm_capacity, country=country_prod
         )
-        share_of_pop = 1
+        share_of_national_demand = 1
     else:  # Else you are running for a canton, a canton + Switzerland, or just Switzerland
         country_prod = "Switzerland"
         country_dem = "Switzerland"
@@ -651,7 +709,7 @@ def energyscope_pyomo(
             m, endyr, dm_capacity, country=country_prod
         )
         if country_prod in country_list:
-            share_of_pop = 1
+            share_of_national_demand = 1
         else:
             country_dem = country_list[0]
             # You should also check that you are not running with more than a canton at the time if Switzerland
@@ -683,16 +741,16 @@ def energyscope_pyomo(
                 ]
             )
 
-            share_of_pop = 0.07885490043172043  # canton_demand/country_demand #
+            share_of_national_demand = canton_demand / country_demand
 
     dm_tra_demand_trend = inter.impose_transport_demand_pyomo(
-        m, endyr, share_of_pop, DM_tra, country_dem
+        m, endyr, share_of_national_demand, DM_tra, country_dem
     )
     dm_bld_demand_trend = inter.impose_buildings_demand_pyomo(
-        m, endyr, share_of_pop, DM_bld, DM_ind, country_dem
+        m, endyr, share_of_national_demand, DM_bld, DM_ind, country_dem
     )
     dm_ind_demand_trend, dm_agr_demand_trend = inter.impose_industry_demand_pyomo(
-        m, endyr, share_of_pop, DM_ind, DM_agr, country_dem
+        m, endyr, share_of_national_demand, DM_ind, DM_agr, country_dem
     )
 
     # TODO: waste incineration link between buildings, industry, and energy is incomplete.
@@ -713,29 +771,66 @@ def energyscope_pyomo(
     #     hardcoded at 0 that was intended to wire waste heat to district heating.
     # TODO: the following FTS model settings produce counterintuitive BAU results that
     # need review:
-    #   - Nuclear phased out by 2050 (22.6 TWh in 2025 → 0 TWh in 2050); gap filled by GasCC-CCS.
-    #     Is this intentional for BAU, or should nuclear have a longer lifetime?
     #   - PV production declines from 4.25 TWh (2025) to 2.37 TWh (2050) despite capacity
     #     fixed at 6.37 GW — EnergyScope LP reduces PV capacity factor. Needs investigation.
     #   - Waste (KVA) drops from 0.97 TWh (2025) to 0 TWh (2050). Intentional phase-out?
     # Avail is in GWh
-    # No nuclear
-    m.avail["URANIUM"] = 0
-    # ampl.getParameter('avail').setValues({'WOOD': 1.5*12279})
+
+    # Power capacity levers. Both f_max and the ref_size grid come from ses_pyomo.py's
+    # number_of_units constraint ([Eq. 1.7]): F_Mult must be an exact integer multiple of
+    # the technology's ref_size for every non-infrastructure technology, so any bound we set
+    # has to land on (or straddle) that grid or the model is infeasible.
+    def snap_to_ref_size(tech, value_gw, mode):
+        ref_size_gw = pyo.value(m.ref_size[tech])
+        if ref_size_gw <= 0:
+            return value_gw
+        n_units = value_gw / ref_size_gw
+        n_units = np.round(n_units) if mode == "round" else np.ceil(n_units)
+        return float(n_units * ref_size_gw)
+
+    # Nuclear is frozen (f_min = f_max): unlike wind/PV, it isn't a continuous technology -
+    # there's no such thing as "1.7 GW of nuclear", only 0/Leibstadt/both plants/both+new.
+    # Leaving f_min free would let the optimizer just always pick 0 if that's cheaper,
+    # silently making the lever a no-op at levels 2-4. The curve itself (built in
+    # power_preprocessing_CH.py) is already rounded to whole-GW ref_size multiples at every
+    # year, including endyr, so no further snapping is needed here - and dm_capacity's Pmax
+    # (patched from the same curve above) is already consistent with what we freeze the
+    # solve to, so decommissioned_mask picks it up automatically.
+    nuclear_frozen_gw = nuclear_curve_mw[-1] / 1000
+    m.f_min["NUCLEAR"] = nuclear_frozen_gw
+    m.f_max["NUCLEAR"] = nuclear_frozen_gw
+
+    # Wind/PV stay continuous: only f_max is lever-controlled, f_min is left free (today's
+    # installed capacity, from impose_capacity_constraints_pyomo), so the optimizer decides
+    # how much of the allowed range to actually build. f_max is snapped *up* to the nearest
+    # ref_size multiple so it's always reachable, even when it lands on the same value as
+    # f_min (e.g. wind's level 1, which targets today's capacity exactly).
+    _, wind_curve_mw = get_power_capacity_lever(
+        DM_lever_fts, "onshore-wind-capacity", lever_setting
+    )
+    m.f_max["WIND"] = snap_to_ref_size("WIND", wind_curve_mw[-1] / 1000, "ceil")
+
+    _, pv_curve_mw = get_power_capacity_lever(
+        DM_lever_fts, "pv-capacity", lever_setting
+    )
+    m.f_max["PV"] = snap_to_ref_size("PV", pv_curve_mw[-1] / 1000, "ceil")
+
+    # No new gas capacity (policy stance, not lever-adjustable for now)
     m.f_max["CCGT"] = 0
     m.f_min["CCGT"] = 0
-    # ampl.getParameter('avail').setValues({'NG_CCS': 0})
     m.avail["COAL_CCS"] = 0
-    m.avail["ELECTRICITY"] = 5000  # Import capped to 5 TWh
     m.avail["NG_CCS"] = 0
+    # Import is left unconstrained: once nuclear/wind/solar capacity is capped by the
+    # levers above, it's the only realistic buffer left to balance the system - there is no
+    # other flexible resource to plausibly absorb residual demand.
 
     set_constraints(m, objective="cost")
     # Put show_log to True to see the results of the optimisation
-    opt = make_highs(show_log=False)
+    opt = make_highs(show_log=True)
     attach(opt, m)
     res = solve(opt, m, warmstart=True)
 
-    DM_2050 = extract_2050_output_pyomo(m, country_prod, endyr, years_fts, DM_energy)
+    DM_2050 = extract_2050_output_pyomo(m, country_prod, endyr, years_fts)
 
     # I should map the losses based on the canton share of the country production
     dm_prod_cap_cntr, dm_losses, dm_net_import = create_future_country_production_trend(
@@ -781,7 +876,11 @@ def energyscope_pyomo(
 
     # Add demand - production balancing through net import & losses
     dm_prod_cap_cntr = balance_demand_prod_with_net_import(
-        dm_prod_cap_cntr, dm_losses, dm_net_import, dm_demand_trend, share_of_pop
+        dm_prod_cap_cntr,
+        dm_losses,
+        dm_net_import,
+        dm_demand_trend,
+        share_of_national_demand,
     )
 
     # --- Electricity generation emissions (scope 1, sent to emissions module) ---
@@ -977,6 +1076,10 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
         )
         with open(agr_file, "rb") as handle:
             DM_agriculture = pickle.load(handle)
+        if ("Vaud" in country_list) and (
+            "Vaud" not in DM_agriculture["power"].col_labels["Country"]
+        ):
+            DM_agriculture["power"].add(0, dim="Country", dummy=True, col_label="Vaud")
         filter_DM(DM_agriculture, {"Country": country_list})
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
@@ -992,6 +1095,7 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
         years_ots,
         years_fts,
         country_list,
+        lever_setting,
     )
 
     interface.add_link(from_sector="energy", to_sector="emissions", dm=dm_energy_emi)
