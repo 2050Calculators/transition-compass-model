@@ -26,7 +26,6 @@ def init_years_lever():
 
 # CalculationLeaf READ PICKLE
 def read_data(DM_TCAF, lever_setting, years_all):
-
     # Read fts based on lever_setting
     # DM_ots_fts = read_level_data(DM_TCAF, lever_setting)
 
@@ -1070,9 +1069,10 @@ def TCAF_biodiversity_workflow(DM_TCAF_biodiversity, DM_landuse_to_TCAF):
     )
     DM_TCAF_biodiversity["biodiversity-ch"].append(dm_temp, dim="Categories2")
     # Append cropland to biodiversity for relevant geoscale
-    DM_TCAF_biodiversity["biodiversity-ch"].append(
-        DM_landuse_to_TCAF["cropland-ch"], dim="Variables"
-    )
+    # land-use names the crops 'crop-cereal', the biodiversity data 'cereal'
+    dm_cropland_ch = DM_landuse_to_TCAF["cropland-ch"].copy()
+    dm_cropland_ch.rename_col_regex(str1="crop-", str2="", dim="Categories2")
+    DM_TCAF_biodiversity["biodiversity-ch"].append(dm_cropland_ch, dim="Variables")
 
     # Biodiversity costs [CHF/ha] = cropland [ha] * eco-costs [CHF/ha]
     DM_TCAF_biodiversity["biodiversity-ch"].operation(
@@ -1150,7 +1150,6 @@ def TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot):
 
 
 def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
-
     years_ots = create_years_list(
         years_setting[0], years_setting[1], 1
     )  # make list with years from 1990 to 2015
@@ -1223,7 +1222,9 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
         cdm_ghg_ef_perhead=cdm_ghg_ef_perhead,
         cdm_lsu_per_head=cdm_lsu_per_head,
     )
-    TCAF_ghg_calibration_weight_test()
+    # Debug test, only prints. It needs lcia_animal_production_recipe.csv, which
+    # is not in the repo, so it is not called in the model run.
+    # TCAF_ghg_calibration_weight_test()
     dm_health_diet_detailed, dm_health_diet_tot = TCAF_health_diet_workflow(
         DM_diet, DM_TCAF_health_diet, CDM_MF
     )
