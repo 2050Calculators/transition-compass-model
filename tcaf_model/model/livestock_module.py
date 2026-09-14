@@ -42,6 +42,9 @@ def read_data(DM_livestock, lever_setting):
         "cal_agr_imports-liv_countries"
     ]
     dm_fxa_cal_liv_imports_tot = DM_livestock["fxa"]["cal_agr_imports-liv_total"]
+    dm_fxa_bovine_young = DM_livestock["fxa"].get(
+        "bovine-young-share", None
+    )  # CH, may be absent in old pickles
     dm_fxa_cal_liv_pop = DM_livestock["fxa"]["cal_agr_liv-population"]
     dm_fxa_cal_liv_pop_org = DM_livestock["fxa"]["cal_agr_liv-population_organic"]
     dm_fxa_cal_liv_pop.append(dm_fxa_cal_liv_pop_org, dim="Variables")
@@ -97,6 +100,7 @@ def read_data(DM_livestock, lever_setting):
         "split-import-asf": dm_split_import,
         "share-export": dm_share_export,
         "share-organic": dm_share_organic,
+        "bovine-young-share": dm_fxa_bovine_young,
         "liv_slaughtered_rate": dm_livestock_slaughtered,
         "cal_liv_prod": dm_fxa_cal_liv_prod,
         "cal_imports-liv_countries": dm_fxa_cal_liv_imports_countries,
@@ -626,9 +630,11 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
     dm_meat_ch.add(
         0.0, dummy=True, col_label="liveweight-production", dim="Variables", unit="kg"
     )
+    # ratio-weight is kg boneless meat / kg liveweight (<1), so liveweight is
+    # meat produced DIVIDED by the ratio (multiplying understated it ~2.5x).
     dm_meat_ch[:, :, "liveweight-production", :, :] = (
         dm_meat_ch[:, :, "agr_domestic_production_liv_afw_kg", :, :]
-        * dm_temp[:, :, "ratio-weight", :, np.newaxis]
+        / dm_temp[:, :, "ratio-weight", :, np.newaxis]
     )
 
     # (World) Live weight [kg] = meat produced [kg] / weight-ratio [kg boneless meat/kg liveweight]
@@ -640,9 +646,11 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
     dm_meat_world.add(
         0.0, dummy=True, col_label="liveweight-production", dim="Variables", unit="kg"
     )
+    # ratio-weight is kg boneless meat / kg liveweight (<1), so liveweight is
+    # meat produced DIVIDED by the ratio (multiplying understated it ~2.5x).
     dm_meat_world[:, :, "liveweight-production", :] = (
         dm_meat_world[:, :, "agr_domestic_production_liv_afw_kg", :]
-        * dm_temp[:, :, "ratio-weight", :]
+        / dm_temp[:, :, "ratio-weight", :]
     )
 
     return (
@@ -1392,16 +1400,31 @@ def livestock(
         )
         with open(f, "wb") as handle:
             pickle.dump(dm_livestock_landuse, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    # NOTE: this link feeds the land-use pickle written just above; it was
+    # previously mislabeled to_sector='TCAF', which collided with (and was
+    # overwritten by) the real livestock->TCAF link below. Corrected to
+    # 'land-use' so the TCAF link carries DM_TCAF_livestock only.
     interface.add_link(
         from_sector="livestock", to_sector="land-use", dm=dm_livestock_landuse
     )
 
     # livestock to TCAF module
+    # 'population-ch': standing livestock population [lsu], split organic/intensive,
+    # per category (CH only). Consumed by TCAF for the population-based GHG path
+    # (per-head LCA method): head = population[lsu] / lsu-per-head.
+    dm_population_ch = DM_liv_prod["share-organic"].filter(
+        {"Variables": ["agr_liv_population_intensive", "agr_liv_population_organic"]},
+        inplace=False,
+    )
     DM_TCAF_livestock = {
         "meat-ch": dm_meat_ch,
         "meat-world": dm_meat_world,
         "asf-ch": dm_asf_ch.filter_w_regex({"Categories1": "abp-"}),
         "asf-world": DM_liv_prod["losses"].filter_w_regex({"Categories1": "abp-"}),
+        "population-ch": dm_population_ch,
+        # CH young-cattle share (Cat1=intensive/organic); lets TCAF
+        # split meat-bovine into calf vs adult for the per-head GHG.
+        "bovine-young-share-ch": DM_liv_prod.get("bovine-young-share", None),
     }
     if write_pickle is True:
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
@@ -1429,20 +1452,6 @@ def livestock(
             pickle.dump(DM_livestock_to_crop, handle, protocol=pickle.HIGHEST_PROTOCOL)
     interface.add_link(
         from_sector="livestock", to_sector="crop", dm=DM_livestock_to_crop
-    )
-
-    # livestock to land-use module
-    DM_livestock_to_crop = dm_liv_pop.filter({"Variables": ["agr_liv_population"]})
-    if write_pickle is True:
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(
-            current_file_directory,
-            "../_database/data/interface/livestock_to_land-use.pickle",
-        )
-        with open(f, "wb") as handle:
-            pickle.dump(DM_livestock_to_crop, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    interface.add_link(
-        from_sector="livestock", to_sector="land-use", dm=DM_livestock_to_crop
     )
 
     # TPE OUTPUT -------------------------------------------------------------------------------------------------------

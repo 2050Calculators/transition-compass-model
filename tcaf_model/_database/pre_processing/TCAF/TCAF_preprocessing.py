@@ -506,28 +506,29 @@ def _load_lca_monetization_factors_chf(current_file_directory):
     return mf_by_recipe
 
 
-def _monetize_lca_dm(dm, mf_by_recipe):
-    """In place: multiply physical ReCiPe impacts by their CHF factor.
+def _select_monetizable_impacts(dm, mf_by_recipe):
+    """In place: keep only impact categories that can be monetized, sorted.
 
-    The impact-category axis is NOT at a fixed position across the two LCA matrices
-    (and differs from their finished form), so it is detected by content: the
-    categorical dimension whose labels are ReCiPe impact categories (i.e. overlap
-    the crosswalk keys). Non-monetizable categories are dropped, the axis is
-    sorted, and the aligned factor vector is broadcast along that exact axis.
-    After this, 'lca-impacts' is a monetized value in CHF per kg of product.
+    The physical ReCiPe impacts are LEFT UNCHANGED (no multiplication): monetization
+    is deferred to the module. This step only harmonizes the impact-category axis so
+    it matches - one-to-one and in the same order - the monetization-factor constant
+    (see _build_lca_mf_cdm): impact categories with no factor are dropped and the
+    axis is sorted. The impact-category axis is detected by content (the categorical
+    dimension whose labels overlap the crosswalk keys), as it is not at a fixed
+    position across the two LCA matrices.
     """
-    # Identify which Categories* dimension holds the impact categories.
     cat_dims = [d for d in dm.col_labels if d.startswith("Categories")]
     impact_dim = None
     for d in cat_dims:
-        labels = set(dm.col_labels[d])
-        if labels & set(mf_by_recipe):  # this axis carries ReCiPe impacts
+        if set(dm.col_labels[d]) & set(
+            mf_by_recipe
+        ):  # this axis carries ReCiPe impacts
             impact_dim = d
             break
     if impact_dim is None:
         raise ValueError(
-            "_monetize_lca_dm: no axis matched the ReCiPe impact "
-            f"crosswalk. Axes seen: "
+            "_select_monetizable_impacts: no axis matched the ReCiPe "
+            f"impact crosswalk. Axes seen: "
             f"{ {d: dm.col_labels[d] for d in cat_dims} }"
         )
 
@@ -537,16 +538,71 @@ def _monetize_lca_dm(dm, mf_by_recipe):
         print(f"  ℹ️ Dropping non-monetizable impact categories: {sorted(dropped)}")
     dm.filter({impact_dim: keep}, inplace=True)
     dm.sort(impact_dim)
-
-    # Build the factor vector aligned to the (now sorted) impact axis and multiply
-    # along that axis explicitly, wherever it sits in the array.
-    mf_vec = np.array([mf_by_recipe[c] for c in dm.col_labels[impact_dim]], dtype=float)
-    axis = list(dm.col_labels).index(impact_dim)  # position in the array
-    shape = [1] * dm.array.ndim
-    shape[axis] = mf_vec.size
-    dm.array = dm.array * mf_vec.reshape(shape)  # broadcast on that axis
-    dm.units["lca-impacts"] = "CHF/kg"
+    dm.units["lca-impacts"] = "impact-unit/kg"  # still physical, not money
     return dm
+
+
+def _build_lca_mf_cdm(mf_by_recipe):
+    """Constant matrix of LCA monetization factors, one per impact category.
+
+    Variables = ['tcaf_mf_lca'], Categories1 = impact categories (sorted, so it
+    matches the impact axis produced by _select_monetizable_impacts). Values are in
+    CHF per impact-unit (EUR->CHF already applied in
+    _load_lca_monetization_factors_chf). The module multiplies the physical impacts
+    by this constant to obtain CHF, instead of monetization happening here.
+    """
+    impacts = sorted(mf_by_recipe)
+    cdm = ConstantDataMatrix(
+        col_labels={"Variables": ["tcaf_mf_lca"], "Categories1": impacts}
+    )
+    cdm.array = np.zeros((1, len(impacts)))
+    idx = cdm.idx
+    for c in impacts:
+        cdm.array[idx["tcaf_mf_lca"], idx[c]] = mf_by_recipe[c]
+    cdm.units["tcaf_mf_lca"] = "CHF/impact-unit"
+    return cdm
+
+
+def _keep_per_kg_rows(df, source_name):
+    """Drop LCIA rows whose functional unit is not per kg, before averaging.
+
+    The 'Functional Unit' column is formatted like '1 [kg]', '1 [p]' (per piece,
+    e.g. some egg processes) or '1 [m]' (per metre, some seafood) and is sometimes
+    missing. Impact values are only comparable, and only meaningful as CHF/kg once
+    monetized, when they are expressed per kg of product; averaging a per-piece
+    egg (~0.06 kg) together with a per-kg egg silently drags the mean down by
+    ~orders of magnitude.
+
+    Policy: keep rows with an explicit 'kg' unit AND rows with a MISSING unit
+    (AGRIBALYSE dairy / egg reference products are 'at farm gate' per kg but often
+    ship without the unit tag, so dropping them would wipe out milk entirely).
+    Rows carrying an explicit non-kg unit ('p', 'm', ...) are dropped. To switch
+    to a strict kg-only policy, drop the `| is_missing` term below.
+    """
+    unit = (
+        df["Functional Unit"]
+        .astype(str)
+        .str.extract(r"\[([^\]]+)\]", expand=False)
+        .str.strip()
+        .str.lower()
+    )
+    is_missing = df["Functional Unit"].isna() | unit.isna()
+    is_kg = unit.eq("kg")
+    keep = is_kg | is_missing
+
+    dropped = df[~keep]
+    if len(dropped):
+        print(
+            f"  ℹ️ [{source_name}] dropping {len(dropped)} non-kg LCIA rows before "
+            f"averaging: {dropped['Functional Unit'].value_counts().to_dict()}"
+        )
+    n_missing = int(is_missing.sum())
+    if n_missing:
+        print(
+            f"  ℹ️ [{source_name}] {n_missing} rows have no functional unit - kept "
+            f"and assumed per kg (verify if egg/dairy means look off)."
+        )
+    return df[keep].copy()
 
 
 # CalculationLeaf TCAF - LCA
@@ -571,19 +627,40 @@ def TCAF_lca_preprocessing():
         "|".join(exclude_keywords), case=False, na=False
     )
     df_lcia_animal_production_recipe = df_lcia_animal_production_recipe[~mask].copy()
-    # If process contains egg, Category => avian-egg
+    # Eggs vs the birds of the poultry system. The 'egg' substring matches BOTH the
+    # egg product AND the laying flock (laying hens, pullets, breeding birds). On top
+    # of that, the broiler/turkey/duck files carry parent 'reproductives' and spent
+    # 'cull hen' rows that are NOT the sellable meat either. All of these are a
+    # per-kg-liveweight bird whose rearing is already embedded in the egg / broiler
+    # meat LCA, so they must not be counted as eggs OR as poultry meat. Route:
+    #   - egg products              -> 'avian-egg'       (abp-hens-egg)
+    #   - laying flock / breeders /
+    #     cull (spent) hens          -> 'egg-system-bird' (excluded below)
+    #   - broiler / chicken / turkey /
+    #     duck MEAT                   -> stay 'avian'      (meat-poultry)
+    # Restricted to poultry rows so non-poultry 'egg' rows (e.g. fish roe) are left
+    # in their original category (and excluded via the existing 'fish' route).
+    proc_lower = df_lcia_animal_production_recipe["Process"].str.lower()
+    is_egg = proc_lower.str.contains("egg", na=False)
+    is_flock = proc_lower.str.contains(
+        "laying hen|young hen|pullet|reproductive|cull hen|hen,", na=False
+    )
+    is_poultry = df_lcia_animal_production_recipe["Category"].isin(
+        ["avian", "avian-eggs"]
+    )
+    # egg product = poultry, mentions 'egg', and is not one of the flock/breeder birds
     df_lcia_animal_production_recipe.loc[
-        df_lcia_animal_production_recipe["Process"].str.contains(
-            "egg", case=False, na=False
-        ),
-        "Category",
+        is_poultry & is_egg & ~is_flock, "Category"
     ] = "avian-egg"
+    # any poultry flock / breeding / cull-hen row -> excluded (not egg, not broiler)
+    df_lcia_animal_production_recipe.loc[is_poultry & is_flock, "Category"] = (
+        "egg-system-bird"
+    )
 
     # Milk: the AGRIBALYSE 'dairy' file tags every row Category='dairy', mixing
     # cow/goat/sheep milk AND a cull-goat (meat). Re-assign by reference product so
     # only cow milk feeds abp-dairy-milk; goat/sheep milk are excluded (no matching
     # production category) and the cull goat is routed to caprine meat.
-    proc_lower = df_lcia_animal_production_recipe["Process"].str.lower()
     df_lcia_animal_production_recipe.loc[
         proc_lower.str.contains("cow milk", na=False), "Category"
     ] = "dairy-milk"
@@ -597,6 +674,21 @@ def TCAF_lca_preprocessing():
         proc_lower.str.contains("cull goat", na=False), "Category"
     ] = "caprine"
 
+    # Disambiguate category labels shared by the animal and plant files before they
+    # are concatenated. Both files carry 'others' and 'vegetables', so without this
+    # the plant rows would be pooled into the wrong TCAF category (and vice versa):
+    #   - animal 'others'     = rabbit, snail        -> genuine meat-oth-animal
+    #   - animal 'vegetables' = carrot, leek, pea    -> stray crop rows; plant file
+    #                           already provides vegetables, so these are excluded
+    #                           to avoid mixing two different sampling frames
+    #   - plant  'others'     = agave, seaweed, sawdust -> not a modelled crop
+    #   - plant  'vegetables' = the canonical crop-veg source (kept)
+    # We tag the animal-side collisions with an '-animal' suffix and route each
+    # label explicitly in mapping_lca below.
+    df_lcia_animal_production_recipe["Category"] = df_lcia_animal_production_recipe[
+        "Category"
+    ].replace({"others": "others-animal", "vegetables": "vegetables-animal"})
+
     # Convert values to numeric
     df_lcia_animal_production_recipe["Value"] = pd.to_numeric(
         df_lcia_animal_production_recipe["Value"], errors="coerce"
@@ -605,10 +697,75 @@ def TCAF_lca_preprocessing():
         df_lcia_plant_production_recipe["Value"], errors="coerce"
     )
 
-    # Aggregate per product category (ex wheat + oat => cereals)
-    df_lcia_animal_production_recipe_agg = df_lcia_animal_production_recipe.groupby(
-        ["Impact category", "Category", "Country", "Production Method"], as_index=False
-    )["Value"].mean()
+    # Keep only per-kg rows so the mean below is not corrupted by per-piece /
+    # per-metre functional units (see _keep_per_kg_rows).
+    df_lcia_animal_production_recipe = _keep_per_kg_rows(
+        df_lcia_animal_production_recipe, "animal"
+    )
+    df_lcia_plant_production_recipe = _keep_per_kg_rows(
+        df_lcia_plant_production_recipe, "plant"
+    )
+
+    # Aggregate per product category (ex wheat + oat => cereals).
+    #
+    # Animal aggregation must NOT blindly average all kept rows. The AGRIBALYSE
+    # animal files mix two populations for ruminants/pigs:
+    #   - genuine per-kg liveweight rows, tagged Functional Unit '1 [kg]'
+    #     (ecoinvent 'live weight', FR 'at farm gate' per kg) -> ~10-75 kg CO2-eq/kg
+    #   - whole-animal life-stage inventories with NO functional-unit tag
+    #     ('1 year old bull, at farm', '13 days old calf', ...) that are PER HEAD
+    #     -> hundreds to ~12000 per animal.
+    # _keep_per_kg_rows keeps the no-unit rows (dairy/egg reference products need
+    # them), so a plain mean pulls bovine/pig/sheep up by ~100x. Fix: per group use
+    # ONLY the explicit-kg rows, and fall back to the no-unit rows solely when a
+    # group has no explicit-kg row at all (milk/eggs). This cleanly separates the
+    # two populations because every '1 [kg]' beef row here is ~10-75 while every
+    # per-head row is unit-less.
+    def _agg_prefer_explicit_kg(df, source_name):
+        grp = ["Impact category", "Category", "Country", "Production Method"]
+        fu = (
+            df["Functional Unit"]
+            .astype(str)
+            .str.extract(r"\[([^\]]+)\]", expand=False)
+            .str.strip()
+            .str.lower()
+        )
+        is_kg = fu.eq("kg")
+        is_missing = df["Functional Unit"].isna() | fu.isna()
+        kg_mean = (
+            df[is_kg]
+            .groupby(grp, as_index=False)["Value"]
+            .mean()
+            .rename(columns={"Value": "val_kg"})
+        )
+        miss_mean = (
+            df[is_missing]
+            .groupby(grp, as_index=False)["Value"]
+            .mean()
+            .rename(columns={"Value": "val_miss"})
+        )
+        agg = kg_mean.merge(miss_mean, on=grp, how="outer")
+        agg["Value"] = agg["val_kg"].where(agg["val_kg"].notna(), agg["val_miss"])
+        # Surface any group that had to fall back to no-unit rows: for MEAT this may
+        # signal per-head contamination with no clean per-kg source to replace it.
+        fell_back = agg[agg["val_kg"].isna() & agg["val_miss"].notna()]
+        if len(fell_back):
+            combos = (
+                fell_back[["Category", "Production Method"]]
+                .drop_duplicates()
+                .itertuples(index=False, name=None)
+            )
+            print(
+                f"  ⚠️ [{source_name}] no explicit-kg LCIA rows; fell back to "
+                f"no-unit rows (verify these are per-kg, not per-head): "
+                f"{sorted(set(combos))}"
+            )
+        return agg.drop(columns=["val_kg", "val_miss"])
+
+    df_lcia_animal_production_recipe_agg = _agg_prefer_explicit_kg(
+        df_lcia_animal_production_recipe, "animal"
+    )
+    # Plants are per-kg throughout, so a plain mean over the kept rows is fine.
     df_lcia_plant_production_recipe_agg = df_lcia_plant_production_recipe.groupby(
         ["Impact category", "Category", "Country", "Production Method"], as_index=False
     )["Value"].mean()
@@ -668,8 +825,12 @@ def TCAF_lca_preprocessing():
     dm_lcia_recipe_all_ch = DataMatrix.create_from_df(df_ots, num_cat=3)
 
     # Group production method 'intensive', 'conventional' and 'not-specified' in the same 'intensive' category
+    # Anchored (^...$) so it matches whole labels only: the previous unanchored
+    # 'conventional|intensive|not-specified' relied on 'extensive' not happening to
+    # contain the substring 'intensive'. With ^(...)$ the three intended methods are
+    # matched exactly, and 'extensive' / 'organic' are left untouched by construction.
     dm_lcia_recipe_all_ch.groupby(
-        {"intensive": "conventional|intensive|not-specified"},
+        {"intensive": r"^(conventional|intensive|not-specified)$"},
         dim="Categories2",
         aggregation="mean",
         regex=True,
@@ -704,7 +865,7 @@ def TCAF_lca_preprocessing():
         "meat-poultry": ["avian"],
         "meat-pig": ["porcine"],
         "meat-sheep": ["ovine", "caprine"],
-        "meat-oth-animal": ["others"],
+        "meat-oth-animal": ["others-animal"],
         "to-exclude": [
             "roughage",
             "intercrops",
@@ -715,7 +876,10 @@ def TCAF_lca_preprocessing():
             "fish-transformation",
             "milk-goat",
             "milk-sheep",
-        ],
+            "others",  # plant 'others' (agave, seaweed, sawdust)
+            "vegetables-animal",  # stray vegetables in the animal file
+            "egg-system-bird",
+        ],  # laying hens / pullets / breeding stock
     }
 
     dm_lcia_recipe_all_ch.groupby(
@@ -727,16 +891,17 @@ def TCAF_lca_preprocessing():
     )
     dm_lcia_recipe_all_world.drop("Categories1", "to-exclude")
 
-    # Step Monetization: convert physical ReCiPe impacts [impact-unit/kg] to money
-    # [CHF/kg] using the EUR monetization factors (EUR->CHF via _EUR_TO_CHF).
-    # Non-monetizable impact categories (see _LCA_MF_CROSSWALK) are dropped here,
-    # so 'lca-impacts' is already in CHF/kg by the time the module multiplies it by
-    # production [kg] to get costs [CHF]. Applied before linear_fitting: the factor
-    # is a constant scaling, so fitting monetized values is equivalent to fitting
-    # physical values then monetizing.
+    # Step Impact-axis harmonization (impacts stay PHYSICAL; monetization deferred).
+    # Monetization now happens in the module, so here we only align the impact axis
+    # to the monetization-factor set: drop impact categories that have no factor
+    # (see _LCA_MF_CROSSWALK) and sort the axis. The physical ReCiPe impacts
+    # [impact-unit/kg] are left untouched; the module multiplies them by the
+    # monetization-factor constant (cdm_mf_lca) and then by production [kg] to get
+    # costs [CHF].
     mf_by_recipe = _load_lca_monetization_factors_chf(current_file_directory)
-    _monetize_lca_dm(dm_lcia_recipe_all_ch, mf_by_recipe)
-    _monetize_lca_dm(dm_lcia_recipe_all_world, mf_by_recipe)
+    _select_monetizable_impacts(dm_lcia_recipe_all_ch, mf_by_recipe)
+    _select_monetizable_impacts(dm_lcia_recipe_all_world, mf_by_recipe)
+    cdm_mf_lca = _build_lca_mf_cdm(mf_by_recipe)
 
     # Debug
     dm = dm_lcia_recipe_all_ch
@@ -1046,7 +1211,271 @@ def TCAF_lca_preprocessing():
         "lca-world": dm_lcia_recipe_all_world,
     }
 
-    return DM_TCAF_lca
+    return DM_TCAF_lca, cdm_mf_lca
+
+
+# CalculationLeaf TCAF - GHG CALIBRATION DATA
+
+
+def TCAF_ghg_calibration_preprocessing():
+    """Observed Swiss agricultural GHG inventory, as a single total-CO2-eq series.
+
+    Source: 'Tabelle-Inventar-2026_EN.xlsx' (FOEN national GHG inventory,
+    submission April 2026), sheet 'Total', IPCC category 3 'Agriculture'. That row
+    is already an AR5-GWP100 CO2-eq total (CH4 x28, N2O x265) covering the
+    agricultural sub-sources 3A enteric fermentation, 3B manure management,
+    3D agricultural soils, 3G liming and 3H urea - so no gas-by-gas aggregation is
+    needed here. It intentionally EXCLUDES on-farm energy/fuel combustion (reported
+    under energy 1A4c) and cropland LULUCF (category 4B).
+
+    This is the calibration target for the LCA-derived Swiss domestic agricultural
+    GHG total computed in TCAF_module.TCAF_lca_workflow. Returned as:
+      Country = ['Switzerland'], Years = 1990..2024,
+      Variables = ['cal_tcaf_lca_ghg-emissions'], unit 't CO2-eq'
+    (one variable, no Categories - so it matches, dimension-for-dimension, the raw
+    total the module builds, as calibration_rates requires). Inventory values are in
+    million tonnes CO2-eq and converted to tonnes (x1e6).
+    """
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    f = os.path.join(
+        current_file_directory, "data/calibration/Tabelle-Inventar-2026_EN.xlsx"
+    )
+    df = pd.read_excel(f, sheet_name="Total", header=None)
+
+    # Locate the year-header row (the row whose 3rd cell is the year 1990) and
+    # the columns that carry integer years. pandas reads the year cells as floats
+    # (e.g. 1990.0), so accept any whole-number numeric and cast to int.
+    def _is_year(v):
+        return (
+            isinstance(v, (int, float, np.integer, np.floating))
+            and not pd.isna(v)
+            and float(v).is_integer()
+            and 1900 < int(v) < 2100
+        )
+
+    hdr_i = next(i for i in df.index if _is_year(df.iat[i, 2]))
+    year_cols = [
+        (j, int(df.iat[hdr_i, j]))
+        for j in range(df.shape[1])
+        if _is_year(df.iat[hdr_i, j])
+    ]
+    years = [y for _, y in year_cols]
+
+    # Locate the 'Agriculture' row: category code 3 in col A, label in col B.
+    def _norm(x):
+        if pd.isna(x):
+            return ""
+        if (
+            isinstance(x, (int, float, np.integer, np.floating))
+            and float(x).is_integer()
+        ):
+            return str(int(x))  # 3.0 -> '3'
+        return str(x).strip()
+
+    agri_i = next(
+        i
+        for i in df.index
+        if _norm(df.iat[i, 0]) == "3" and _norm(df.iat[i, 1]) == "Agriculture"
+    )
+    vals_mt = np.array([float(df.iat[agri_i, j]) for j, _ in year_cols], dtype=float)
+
+    # Livestock-only sub-total = 3A Enteric fermentation + 3B Manure management
+    # (the direct-animal inventory; the natural target for the stage-1 calibration
+    # of the ASF paths). 3D agricultural soils, 3G liming, 3H urea are left with the
+    # rest of agriculture and only enter the stage-2 total (cat-3).
+    def _row_by_code(code, label_contains):
+        return next(
+            i
+            for i in df.index
+            if _norm(df.iat[i, 0]) == code
+            and label_contains in str(df.iat[i, 1]).lower()
+        )
+
+    i_3A = _row_by_code("3A", "enteric")
+    i_3B = _row_by_code("3B", "manure")
+    vals_liv_mt = np.array([float(df.iat[i_3A, j]) for j, _ in year_cols]) + np.array(
+        [float(df.iat[i_3B, j]) for j, _ in year_cols]
+    )
+
+    # Build the calibration DataMatrix [t CO2-eq] for Switzerland, two variables:
+    #   cal_tcaf_lca_ghg-emissions            -> cat-3 total  (stage-2 target)
+    #   cal_tcaf_lca_ghg-emissions-livestock  -> 3A+3B        (stage-1 target)
+    dm = DataMatrix(
+        col_labels={
+            "Country": ["Switzerland"],
+            "Years": years,
+            "Variables": [
+                "cal_tcaf_lca_ghg-emissions",
+                "cal_tcaf_lca_ghg-emissions-livestock",
+            ],
+        },
+        units={
+            "cal_tcaf_lca_ghg-emissions": "Mt CO2-eq",
+            "cal_tcaf_lca_ghg-emissions-livestock": "Mt CO2-eq",
+        },
+    )
+    dm.array = np.stack([vals_mt, vals_liv_mt], axis=-1)[
+        np.newaxis, :, :
+    ]  # (1, nyear, 2)
+    dm.change_unit(
+        "cal_tcaf_lca_ghg-emissions", 1e6, old_unit="Mt CO2-eq", new_unit="t CO2-eq"
+    )
+    dm.change_unit(
+        "cal_tcaf_lca_ghg-emissions-livestock",
+        1e6,
+        old_unit="Mt CO2-eq",
+        new_unit="t CO2-eq",
+    )
+    return dm
+
+
+def TCAF_livestock_ghg_perhead_preprocessing():
+    """Population-based per-animal GHG factors, following Crosnier et al. (2025),
+    Front. Sustain. Food Syst. (Table 5 / Section 2.4.4.2).
+
+    For each livestock category and method, the annual per-head GHG is:
+        annual_per_head [kg CO2-eq/head/yr]
+          = per-kg ReCiPe 'global-warming' EF  x  Weight [kg/head]  /  max(lifetime, 1)
+    where the per-kg EF is the SPECIFIC Table-5 LCA row (not a category mean), the
+    Weight and lifetime are Table-5 values (the CSV 'Weight' column is unreliable -
+    e.g. it lists 49.5 kg for a cull cow), and the "/lifetime only if > 1 yr" rule
+    is applied (dairy /8, beef /2; all others <1 yr -> /1).
+
+    Method mapping mirrors the production path (TCAF_lca_preprocessing groups
+    conventional+intensive+not-specified -> 'intensive', organic -> 'organic'):
+    the Table-5 'conventional' row feeds 'intensive', the 'organic' row feeds
+    'organic'. Organic rows default to the plain 'at farm gate' process where one
+    exists (broiler, cull hen); lamb has no plain organic row so 'system number 1'
+    is used per Table 5; goat has no organic row ('Computed' in the paper) so it
+    falls back to the conventional value.
+
+    Returns two ConstantDataMatrix:
+      cdm_ef  : Variables ['liv_ghg-ef-perhead'], Cat1=food, Cat2=method [kg CO2-eq/head]
+      cdm_lsu : Variables ['liv_lsu-per-head'],   Cat1=food              [lsu/head]
+    """
+    # Table 5: weight [kg/head], lifetime [yr], and the exact process selectors.
+    TABLE5 = {
+        "abp-dairy-milk": {
+            "weight": 670.05,
+            "life": 8,
+            "lsu": 0.7,
+            "intensive": "cull cow, conventional, lowland milk system, silage maize 5 to 10%, at farm gate",
+            "organic": "cull cow, organic, lowland milk system, silage maize 5 to 10%, at farm gate",
+        },
+        "meat-bovine": {
+            "weight": 650.0,
+            "life": 2,
+            "lsu": 0.6,
+            "intensive": "beef cattle, conventional, national average, at farm gate",
+            "organic": "beef cattle, organic, national average, at farm gate",
+        },
+        # Young cattle (<1 yr) = calf factor (Table 5 'Young cattle (-1 year)').
+        # Same 0.6 lsu/head as adult cattle (CH convention). TCAF splits the bovine
+        # population into this class vs adult using the census young-share.
+        "meat-bovine-young": {
+            "weight": 79.56,
+            "life": 1,
+            "lsu": 0.6,
+            "intensive": "calf, 13 days old, conventional, lowland milk system, silage maize 5 to 10%, at farm gate",
+            "organic": "calf, 13 days old, organic, lowland milk system, silage maize 5 to 10%, at farm gate",
+        },
+        "meat-pig": {
+            "weight": 115.4,
+            "life": 1,
+            "lsu": 0.22,
+            "intensive": "pig, conventional, national average, at farm gate",
+            "organic": "pig, organic, national average, at farm gate",
+        },
+        "meat-sheep": {
+            "weight": 35.0,
+            "life": 1,
+            "lsu": 0.1,
+            "intensive": "lamb, conventional, indoor production system, at farm gate",
+            "organic": "lamb, organic, system number 1, at farm gate",
+        },
+        "meat-poultry": {
+            "weight": 2.04,
+            "life": 1,
+            "lsu": 0.007,
+            "intensive": "broiler, conventional, at farm gate",
+            "organic": "broiler, organic, at farm gate",
+        },
+        "abp-hens-egg": {
+            "weight": 1.9,
+            "life": 1,
+            "lsu": 0.014,
+            "intensive": "cull hen, conventional, national average, at farm gate",
+            "organic": "cull hen, organic, at farm gate",
+        },
+        # meat-oth-animal: goat-meat proxy (Table 5 'Goats (meat)'); no organic row.
+        "meat-oth-animal": {
+            "weight": 9.0,
+            "life": 1,
+            "lsu": 0.03,
+            "intensive": "kid goat, conventional, intensive forage area, at farm gate",
+            "organic": None,
+        },
+    }
+    methods = ["intensive", "organic"]
+    foods = list(TABLE5.keys())
+
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    f = os.path.join(
+        current_file_directory, "data/data_pool/lcia_animal_production_recipe.csv"
+    )
+    df = pd.read_csv(f)
+    df["Value"] = pd.to_numeric(df["Value"], errors="coerce")
+    # Per-kg rows for ALL impact categories (not just GHG). GHG is only the anchor
+    # used to validate/calibrate; every impact gets the same per-head treatment.
+    perkg = df[df["Functional Unit"] == "1 [kg]"].copy()
+    perkg["p"] = perkg["Process"].astype(str).str.lower().str.strip()
+    # Stem the impact name to match the LCA impact axis (text before '[', e.g.
+    # 'global-warming[kg CO2 eq]' -> 'global-warming').
+    perkg["impact"] = (
+        perkg["Impact category"].astype(str).str.split("[").str[0].str.strip()
+    )
+    impacts = sorted(perkg["impact"].dropna().unique())
+
+    def _ef_perkg(selector, sub):
+        if selector is None:
+            return np.nan
+        m = sub[sub["p"].str.match("^" + re.escape(selector), na=False)]
+        if len(m) == 0:
+            return np.nan
+        return float(m["Value"].mean())
+
+    # Per-head EF table: Variables = impact stems, Categories1 = food, Categories2 =
+    # method. (Impact is folded into Variables so this stays a 2-category CDM.)
+    # value = per-kg EF(impact) x Weight / max(lifetime, 1)  [impact-unit / head / yr]
+    cdm_ef = ConstantDataMatrix(
+        col_labels={"Variables": impacts, "Categories1": foods, "Categories2": methods}
+    )
+    cdm_ef.array = np.full((len(impacts), len(foods), len(methods)), np.nan)
+    for imp in impacts:
+        cdm_ef.units[imp] = "impact-unit/head"
+    ix = cdm_ef.idx
+    for imp in impacts:
+        sub = perkg[perkg["impact"] == imp]
+        for food in foods:
+            w = TABLE5[food]["weight"]
+            life = max(TABLE5[food]["life"], 1)
+            ef_int = _ef_perkg(TABLE5[food]["intensive"], sub)
+            ef_org = _ef_perkg(TABLE5[food]["organic"], sub)
+            if np.isnan(ef_org):  # organic missing (goat) -> fall back to intensive
+                ef_org = ef_int
+            cdm_ef.array[ix[imp], ix[food], ix["intensive"]] = ef_int * w / life
+            cdm_ef.array[ix[imp], ix[food], ix["organic"]] = ef_org * w / life
+
+    cdm_lsu = ConstantDataMatrix(
+        col_labels={"Variables": ["liv_lsu-per-head"], "Categories1": foods}
+    )
+    cdm_lsu.array = np.zeros((1, len(foods)))
+    cdm_lsu.units["liv_lsu-per-head"] = "lsu/head"
+    il = cdm_lsu.idx
+    for food in foods:
+        cdm_lsu.array[il["liv_lsu-per-head"], il[food]] = TABLE5[food]["lsu"]
+
+    return cdm_ef, cdm_lsu
 
 
 # CalculationLeaf CONSTANTS
@@ -1101,6 +1530,16 @@ def database_from_csv_to_datamatrix(years_ots, years_fts):
     dict_fxa["lca"] = DM_TCAF_lca
 
     # CalibrationDataToDatamatrix ------------------------------------------------
+    # LCA GHG calibration target (Switzerland domestic only).
+    # Observed Swiss agricultural GHG inventory (IPCC cat. 3 'Agriculture'), already
+    # an AR5-GWP100 total CO2-eq series in [t CO2-eq]; one variable, no Categories,
+    # so it matches the raw total that TCAF_module builds. TCAF_module.read_data
+    # reads this back and passes it into TCAF_lca_workflow(..., dm_cal_ghg_lca=...).
+    dict_fxa["cal_lca_ghg"] = dm_cal_lca_ghg
+    # Population-based per-animal GHG factors + lsu/head (Table 5), for the
+    # alternative livestock GHG path computed & calibrated in TCAF_module.
+    dict_fxa["liv_ghg_ef_perhead"] = cdm_liv_ghg_ef
+    dict_fxa["liv_lsu_per_head"] = cdm_liv_lsu
 
     # LeversToDatamatrix OTS -----------------------------------------------------
     dict_ots = {}
@@ -1154,7 +1593,11 @@ def database_from_csv_to_datamatrix(years_ots, years_fts):
 
     # ConstantsToDatamatrix ------------------------------------------------------
     dict_const = {}
-    dict_const = {"monetization-factors": CDM_MF, "cdm_kcal": cdm_kcal}
+    dict_const = {
+        "monetization-factors": CDM_MF,
+        "monetization-factors-lca": cdm_mf_lca,
+        "cdm_kcal": cdm_kcal,
+    }
 
     # Group all datamatrix in a single structure ---------------------------------
     DM_TCAF = {
@@ -1178,9 +1621,11 @@ years_fts = create_years_list(2025, 2050, 5)
 years_all = years_ots + years_fts
 DM_TCAF_health_diet, dm_health_dalys = TCAF_health_diet_preprocessing()
 DM_TCAF_biodiversity = TCAF_biodiversity_preprocessing()
-DM_TCAF_lca = TCAF_lca_preprocessing()
+DM_TCAF_lca, cdm_mf_lca = TCAF_lca_preprocessing()
 CDM_MF = TCAF_MF_preprocessing()
 cdm_kcal = constant()
+dm_cal_lca_ghg = TCAF_ghg_calibration_preprocessing()
+cdm_liv_ghg_ef, cdm_liv_lsu = TCAF_livestock_ghg_perhead_preprocessing()
 
 # CalculationTree RUNNING PICKLE CREATION --------------------------------------
 database_from_csv_to_datamatrix(years_ots, years_fts)

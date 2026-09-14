@@ -1689,6 +1689,48 @@ def production_share(dm_cal_liv_pop):
         )
     dm_cattle.change_unit("agr_livestock", old_unit="animals", new_unit="lsu", factor=1)
 
+    # --- Adult/young cattle split (CH, Switzerland priority) -------------------
+    # Before collapsing the meat-cattle classes, compute the share of young cattle
+    # (<1 yr, 'young-cattle') within meat-bovine = young / (young + other-cattle +
+    # other-bovins). The three classes share the same lsu factor (0.6), so this lsu
+    # ratio equals the head ratio. Computed per method: 'total' (-> intensive) and
+    # 'organic'. Used in TCAF to apply a calf vs adult per-head GHG factor.
+    # Organic share falls back to the total share where organic counts are absent.
+    _meat_classes = ["young-cattle", "other-cattle", "other-bovins"]
+    _dm_age = dm_cattle.filter({"Categories1": _meat_classes}, inplace=False)
+
+    def _share(method):
+        y = _dm_age[:, :, "agr_livestock", "young-cattle", method]
+        tot = sum(_dm_age[:, :, "agr_livestock", c, method] for c in _meat_classes)
+        return np.divide(y, tot, out=np.full_like(y, np.nan), where=tot > 0)
+
+    share_tot = _share("total")
+    share_org = (
+        _share("organic")
+        if "organic" in _dm_age.col_labels["Categories2"]
+        else np.full_like(share_tot, np.nan)
+    )
+    share_org = np.where(
+        np.isfinite(share_org), share_org, share_tot
+    )  # fallback -> total
+    dm_bovine_young = DataMatrix(
+        col_labels={
+            "Country": list(dm_cattle.col_labels["Country"]),
+            "Years": list(dm_cattle.col_labels["Years"]),
+            "Variables": ["bovine_young-share"],
+            "Categories1": ["intensive", "organic"],
+        },
+        units={"bovine_young-share": "-"},
+    )
+    dm_bovine_young.array = np.stack([share_tot, share_org], axis=-1)[
+        :, :, np.newaxis, :
+    ]
+    # keep only Switzerland (age detail is Swiss OFS, CH only)
+    if "Switzerland" in dm_bovine_young.col_labels["Country"]:
+        dm_bovine_young = dm_bovine_young.filter(
+            {"Country": ["Switzerland"]}, inplace=False
+        )
+
     # Sum cattle meat = young-cattle + other-cattle + other-bovins
     dm_cattle.groupby(
         {"meat-bovine": ["young-cattle", "other-cattle", "other-bovins"]},
@@ -1919,7 +1961,7 @@ def production_share(dm_cal_liv_pop):
     # Filter
     dm_prod_share.filter({"Variables": ["livestock_share-organic"]}, inplace=True)
 
-    return dm_prod_share, dm_cal_liv_pop_org
+    return dm_prod_share, dm_cal_liv_pop_org, dm_bovine_young
 
 
 # CalculationLeaf CALIBRATION FORMATTING
@@ -4939,6 +4981,9 @@ def datamatrix_to_pickle(dm_fts):
 
     # CalibrationDataToDatamatrix ------------------------------------------------
 
+    dict_fxa["bovine-young-share"] = (
+        dm_bovine_young  # CH young-cattle share (intensive/organic)
+    )
     dict_fxa["cal_agr_liv-population"] = dm_cal_liv_pop.filter(
         {"Country": ["Switzerland"]}, inplace=False
     )
@@ -5214,7 +5259,6 @@ list_partnerregions_trade = [
     "-- Western Europe > (List)",
 ]
 
-
 file_dict = {
     "ssr": "data/faostat/ssr.csv",
     "cake": "data/faostat/ssr_cake.csv",
@@ -5270,7 +5314,33 @@ dm_losses = livestock_losses()
 dm_cal_dom_prod, dm_cal_liv_pop, df_liv_pop = livestock_calibration(
     list_countries_calc, dm_losses
 )
-dm_prod_share, dm_cal_liv_pop_org = production_share(dm_cal_liv_pop)
+dm_prod_share, dm_cal_liv_pop_org, dm_bovine_young = production_share(dm_cal_liv_pop)
+# Extend the CH bovine young-share to years_all: FTS years = mean of the last 5
+# observed years (held constant), per the agreed convention.
+_ots_y = [y for y in dm_bovine_young.col_labels["Years"] if y in years_ots]
+_last5 = _ots_y[-5:]
+_mean5 = np.nanmean(
+    dm_bovine_young.filter({"Years": _last5}, inplace=False).array,
+    axis=1,
+    keepdims=True,
+)  # (country,1,var,cat1)
+_years_all_ls = years_ots + years_fts
+_arr = np.repeat(_mean5, len(_years_all_ls), axis=1)
+for _i, _y in enumerate(_years_all_ls):
+    if _y in dm_bovine_young.col_labels["Years"]:
+        _arr[:, _i, :, :] = dm_bovine_young.array[
+            :, dm_bovine_young.col_labels["Years"].index(_y), :, :
+        ]
+dm_bovine_young = DataMatrix(
+    col_labels={
+        "Country": list(dm_bovine_young.col_labels["Country"]),
+        "Years": list(_years_all_ls),
+        "Variables": ["bovine_young-share"],
+        "Categories1": ["intensive", "organic"],
+    },
+    units={"bovine_young-share": "-"},
+)
+dm_bovine_young.array = _arr
 dm_manure, dm_enteric, dm_fxa_manure_yield, df_manure_ch4_fxa, df_manure_n_fxa = (
     livestock_emissions(file_dict)
 )
