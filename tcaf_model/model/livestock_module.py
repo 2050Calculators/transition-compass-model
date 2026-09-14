@@ -22,7 +22,6 @@ def init_years_lever():
 
 # CalculationLeaf READ PICKLE
 def read_data(DM_livestock, lever_setting):
-
     # Read fts based on lever_setting
     DM_ots_fts = read_level_data(DM_livestock, lever_setting)
 
@@ -272,7 +271,6 @@ def trade_livestock_workflow(DM_liv_prod, dm_demand, years_setting):
 
 # CalculationLeaf DOMESTIC DEMAND TO LIVESTOCK POPULATION AND LIVESTOCK PRODUCTS ----------------------------
 def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_setting):
-
     # Drop offals & afats for production
     DM_liv_prod["losses"].drop(
         dim="Categories1", col_label=["abp-processed-offal", "abp-processed-afat"]
@@ -1260,7 +1258,6 @@ def feed_workflow(
 
 # CalculationLeaf INTERFACE TO TPE  --------------------------------------------------------------
 def livestock_TPE_interface():
-
     # DIET (CONSUMED, WITHOUT FOOD WASTES) -------------------------------------
 
     # Flatten for TPE
@@ -1332,7 +1329,6 @@ def livestock_TPE_interface():
 def livestock(
     lever_setting, years_setting, DM_input, write_pickle, interface=Interface()
 ):
-
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     DM_ots_fts, DM_liv_prod, DM_feed, CDM_const = read_data(DM_input, lever_setting)
     country_list = ["Switzerland"]
@@ -1457,7 +1453,9 @@ def livestock(
     # TPE OUTPUT -------------------------------------------------------------------------------------------------------
     # results_run = livestock_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_food)
 
-    results_run = DM_livestock_to_crop
+    # The app shows the livestock population, like before the second
+    # livestock -> land-use block was removed
+    results_run = dm_livestock_landuse
 
     return results_run
 
