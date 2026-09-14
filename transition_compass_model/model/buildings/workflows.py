@@ -590,8 +590,16 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
     )
     dm_emis_elec = DM_energy["electricity-emission"]
     dm_elec = multiply_energy_consumption_by_emission_factor_fxa(dm_elec, dm_emis_elec)
+    dm_elec.array[:] = 0.0  # electricity CO2 is scope 1, attributed to energy module
 
-    # compute district heating emissions
+    # District heating CO2: kept here as a blended-factor proxy (consumption-side).
+    # The correct home is district_heating_module.py, which has full fuel-by-fuel CO2
+    # accounting (gas, waste, wood, geothermal) and already wires directly to the
+    # emissions module via interface.add_link("district-heating", "emissions", ...).
+    # That module is currently disabled because it needs its data pickle at
+    # _database/data/datamatrix/geoscale/district-heating.pickle and several Excel
+    # interface files (power→DH, industry→DH, buildings→DH).
+    # When the DH module is reactivated: zero out DH emissions here and activate it.
     dm_district_heating = dm_energy.filter(
         {
             "Categories3": ["district-heating"],
@@ -1606,6 +1614,7 @@ def bld_hotwater_workflow(
         unit="TWh",
     )
 
+    # DH CO2 proxy — see comment in bld_energy_workflow; remove when DH module is activated.
     dm_emissions = compute_emissions_per_fuel_type_from_energy(
         cdm_const,
         dm_hw_tech,
@@ -1614,6 +1623,21 @@ def bld_hotwater_workflow(
         fuel_category="Categories1",
         output_label="bld_hotwater_CO2-emissions",
     )
+
+    # Electricity and heat-pump emissions: zeroed — scope 1 attributed to energy module
+    dm_elec_hw = dm_hw_tech.filter(
+        {
+            "Categories1": ["electricity", "heat-pump"],
+            "Variables": ["bld_hot-water_energy-demand"],
+        }
+    )
+    arr = np.zeros_like(dm_elec_hw[:, :, "bld_hot-water_energy-demand", :])
+    dm_elec_hw.add(
+        arr, dim="Variables", col_label="bld_hotwater_CO2-emissions", unit="kt"
+    )
+    dm_elec_hw.change_unit("bld_hotwater_CO2-emissions", 1e-3, "kt", "Mt")
+    dm_elec_hw.filter({"Variables": ["bld_hotwater_CO2-emissions"]}, inplace=True)
+    dm_emissions.append(dm_elec_hw, dim="Categories1")
 
     DM_hotwater_out = {"TPE": {"power": dm_hw_tech, "hotwater_emissions": dm_emissions}}
 
@@ -1751,12 +1775,30 @@ def bld_services_workflow(
             "Variables": ["bld_services_energy-consumption"],
         }
     )
+    # DH CO2 proxy — see comment in bld_energy_workflow; remove when DH module is activated.
     dm_district_emissions = multiply_energy_consumption_by_emission_factor_fxa(
         dm_district_consumption,
         DM_energy["district_heating-emission"],
         variable_name="bld_services_energy-consumption",
     )
     dm_srv_emissions.append(dm_district_emissions, dim="Categories2")
+
+    # Electricity and heat-pump emissions: zeroed — scope 1 attributed to energy module
+    dm_elec_srv = dm_srv_tech_mix.filter(
+        {
+            "Categories2": ["electricity", "heat-pump"],
+            "Categories1": ["hot-water"],
+            "Variables": ["bld_services_energy-consumption"],
+        }
+    )
+    arr = np.zeros_like(dm_elec_srv[:, :, "bld_services_energy-consumption", :, :])
+    dm_elec_srv.add(
+        arr, dim="Variables", col_label="services_CO2-emissions_heating", unit="kt"
+    )
+    dm_elec_srv.change_unit("services_CO2-emissions_heating", 1e-3, "kt", "Mt")
+    dm_elec_srv.filter({"Variables": ["services_CO2-emissions_heating"]}, inplace=True)
+    dm_srv_emissions.append(dm_elec_srv, dim="Categories2")
+
     dm_srv_emissions.group_all("Categories1")
 
     nonres_tpe = {

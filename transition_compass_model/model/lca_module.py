@@ -42,7 +42,9 @@ def lca(
     DM_buildings = inter.get_interface(
         current_file_directory, interface, "buildings", "lca", cntr_list
     )
-    # DM_industry = inter.get_interface(current_file_directory, interface, "industry", "lca", cntr_list)
+    DM_industry = inter.get_interface(
+        current_file_directory, interface, "industry", "lca", cntr_list
+    )
 
     # split footrpint by product group
     DM_footprint = wkf.get_footprint_by_group(DM_ots_fts["footprint"])
@@ -57,16 +59,21 @@ def lca(
     dm_domapp_new = DM_buildings["domapp"].filter(
         {
             "Variables": ["bld_domapp_new"],
-            "Categories1": ["dishwasher", "fridge", "wmachine"],
+            "Categories1": ["dishwasher", "dryer", "freezer", "fridge", "wmachine"],
         }
-    )  # TODO: add other ones when data will be available
+    )
+    # dryer and freezer have no dedicated LCA coefficients; use wmachine and fridge as proxies.
+    dm_domapp_new.groupby(
+        {"wmachine": ["wmachine", "dryer"], "fridge": ["fridge", "freezer"]},
+        "Categories1",
+        inplace=True,
+    )
     dm_elec_new = DM_buildings["electronics"].filter(
         {"Variables": ["bld_electronics_new"]}
     )
-    # FIXME : plane is doing weird things for now it is removed. It should be added back when the issue will be solved.
     DM_demand = {
         "vehicles": DM_transport["tra-veh"].filter(
-            {"Categories1": ["HDV", "LDV", "bus", "ships", "trains"]}
+            {"Categories1": ["HDV", "LDV", "bus", "planes", "ships", "trains"]}
         ),
         "tra-infra": dm_tra_infra_new,
         "domapp": dm_domapp_new,
@@ -85,7 +92,9 @@ def lca(
     del DM_footprint_agg["energy-demand-ff"]
 
     # pass to TPE
-    results_run = wkf.variables_for_tpe(DM_footprint_agg)
+    results_run = wkf.variables_for_tpe(
+        DM_footprint_agg, DM_transport, DM_buildings, DM_industry
+    )
 
     # return
     # TODO : add other results run outputs to website.

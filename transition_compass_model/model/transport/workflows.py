@@ -470,6 +470,11 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
         dm_mode.filter_w_regex(dict_dim_pattern={"Categories1": "HDV.*"}),
         dim="Variables",
     )
+    # tkm / load_factor / utilisation_rate = fleet_CH (Swiss-registered fleet).
+    # load_factor and utilisation_rate are calibrated from the same CH-only tkm source
+    # (BFS GTS IMMATRICULATION=="CH"), so tkm cancels and fleet_CH is always recovered
+    # regardless of the tkm accounting basis. The tkm value affects emissions and
+    # scenario projections, not the fleet sent to industry.
     dm_mode_road.operation(
         "tra_freight_transport-demand",
         "/",

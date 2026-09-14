@@ -340,30 +340,18 @@ def make_net_import_share(current_file_directory, dm_io, years_ots):
     # df_temp = pd.melt(df_temp, id_vars=["Country","Years"])
 
     # manually adjust net import share to move away from IO logic when needed
-    dm_netimp_goods[..., "planes_ICE"] = (
-        0.95  # almost all imported (little local production)
-    )
-    dm_netimp_goods[..., "ships_ICE-diesel"] = 1  # all imported (no local production)
-    dm_netimp_goods[..., "computer"] = 1  # all imported (no local production)
-    dm_netimp_goods[..., "phone"] = 1  # all imported (no local production)
-    dm_netimp_goods[..., "tv"] = 1  # all imported (no local production)
-    dm_netimp_goods[..., "dishwasher"] = (
-        0.99  # almost all imported (little local production)
-    )
-    dm_netimp_goods[..., "dryer"] = (
-        0.99  # almost all imported (little local production)
-    )
-    dm_netimp_goods[..., "freezer"] = (
-        0.99  # almost all imported (little local production)
-    )
-    dm_netimp_goods[..., "fridge"] = (
-        0.99  # almost all imported (little local production)
-    )
-    dm_netimp_goods[..., "wmachine"] = (
-        0.99  # almost all imported (little local production)
-    )
-    dm_netimp_goods[..., "trains_CEV"] = 0.95  # 0.3 is too low for trains
-    dm_netimp_goods[..., "trains_ICE-diesel"] = 0.95  # 0.3 is too low for trains
+    # ships: Switzerland is landlocked, no shipbuilding industry
+    dm_netimp_goods[..., "ships_ICE-diesel"] = 1
+    # consumer electronics: IO aggregate (CPA 26-27) captures watches (Swatch, Rolex)
+    # and medtech devices (Sonova, Straumann), not actual computers/phones/TVs —
+    # Switzerland has no consumer electronics manufacturing
+    dm_netimp_goods[..., "computer"] = 1
+    dm_netimp_goods[..., "phone"] = 1
+    dm_netimp_goods[..., "tv"] = 1
+    # trains, planes, appliances: IO-derived values are used directly.
+    # The "marine, rail, aviation, tra-equip" aggregate captures Stadler Rail and
+    # Pilatus Aircraft Swiss operations including exports. The appliance aggregate
+    # captures V-ZUG and ABB electrical equipment manufacturing and exports.
 
     # zeroes
     zeroes = [
@@ -440,7 +428,11 @@ def make_material_net_import_share(current_file_directory, dm_netimp, years_ots)
 
     dm_netimp_materials[..., "copper"] = 0.98  # Switzerland produces almost no copper
     dm_netimp_materials[..., "steel"] = (
-        0.50  # Swiss Steel Group produces ~1,000 kt; IO estimate ~0.5 was closer
+        0.50  # Swiss Steel Group produces ~1,000 kt specialty steel but the model
+        # cannot represent EAF (scrap-based) production as exogenous — scrap-EAF is
+        # endogenous (driven by Swiss EOL flows) and primary defaults to BF-BOF.
+        # Fixing production quantity alone would worsen emissions (BF-BOF emission
+        # factor on more production). Both tech mix and quantity are known limitations.
     )
     dm_netimp_materials[..., "aluminium"] = 0.90
     dm_netimp_materials[
@@ -604,12 +596,8 @@ def make_material_production(
         dm_out.drop("Categories1", [key])
     dm_out.sort("Categories1")
 
-    # make tra equip
-    # as in CH C30 is mostly rail + planes, I assume rail + aircraft 90%, and ships + other 10%
-    # so tra equp around 5%
-    dm_out[..., "marine, rail, aviation, tra-equip"] = (
-        dm_out[..., "marine, rail, aviation, tra-equip"] * 0.05
-    )
+    # C30 (marine, rail, aviation, tra-equip) IO output captures Stadler Rail and
+    # Pilatus Aircraft production including exports — use full value for tra-equip FXA.
     dm_out.rename_col("marine, rail, aviation, tra-equip", "tra-equip", "Categories1")
     dm_out.sort("Categories1")
 
@@ -625,6 +613,19 @@ def make_material_production(
     # scale down wpp as way too high (right now it's about 8 Mt per year)
     k_wwp = 0.073  # example: brings ~8.2 Mt down to ~0.6 Mt
     dm_out[..., "wwp"] = dm_out[..., "wwp"] * k_wwp
+
+    # MAE: IO uses "computer, phone, TV" import price (~50,000 CHF/t) as proxy, but
+    # the MAE aggregate is dominated by fabricated metal products (NOGA 25, tools,
+    # hardware, structural metal) at ~2,000 CHF/t. Price ratio: 50,000 / 2,000 ≈ 25;
+    # using 24 as a conservative estimate.
+    k_mae = 24.0
+    dm_out[..., "mae"] = dm_out[..., "mae"] * k_mae
+
+    # Textiles: Swiss specialty textiles (technical fabrics, high-end apparel) have
+    # higher CHF/kg than generic import prices imply; employment-based estimate
+    # (~140-170 kt) is ~2x the IO-derived ~85 kt.
+    k_textiles = 2.0
+    dm_out[..., "textiles"] = dm_out[..., "textiles"] * k_textiles
 
     # make calibration data
     # note: for calib data, we do not need to make missing ots and fts

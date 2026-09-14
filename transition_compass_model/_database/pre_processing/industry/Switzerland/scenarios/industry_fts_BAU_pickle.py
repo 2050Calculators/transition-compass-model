@@ -2,6 +2,7 @@ import os
 import pickle
 
 import plotly.io as pio
+from processors.industry_lever_technology_share import make_ch_technology_share_fts
 
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
@@ -14,7 +15,6 @@ pio.renderers.default = "browser"
 
 
 def make_fts(DM_industry, name, years_fts, based_on):
-
     dm = DM_industry["ots"][name].copy()
     dm = linear_fitting(dm, years_fts, based_on=based_on)
     # dm.datamatrix_plot()
@@ -26,7 +26,6 @@ def make_fts(DM_industry, name, years_fts, based_on):
 
 
 def run(DM_industry, DM_ammonia, country_list, years_ots, years_fts):
-
     # directory
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
 
@@ -67,9 +66,14 @@ def run(DM_industry, DM_ammonia, country_list, years_ots, years_fts):
     for l in other_levers:
         DM_industry["fts"][l] = {}
         for level in list(range(1, 4 + 1)):
-            dm_temp = DM_industry_current["fts"][l][1].filter({"Country": ["EU27"]})
-            dm_temp.rename_col("EU27", "Switzerland", "Country")
-            DM_industry["fts"][l][level] = dm_temp.copy()
+            if l == "technology-share":
+                DM_industry["fts"][l][level] = make_ch_technology_share_fts(
+                    DM_industry_current["fts"][l][1]
+                )
+            else:
+                dm_temp = DM_industry_current["fts"][l][1].filter({"Country": ["EU27"]})
+                dm_temp.rename_col("EU27", "Switzerland", "Country")
+                DM_industry["fts"][l][level] = dm_temp.copy()
 
     # save
     my_pickle_dump(DM_new=DM_industry, local_pickle_file=pickle_file)

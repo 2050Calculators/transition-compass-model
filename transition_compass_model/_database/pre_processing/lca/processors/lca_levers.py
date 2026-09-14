@@ -14,7 +14,6 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def get_material_footprint_df(current_file_directory, df_full):
-
     #############################################################
     ######################### MATERIALS #########################
     #############################################################
@@ -72,16 +71,34 @@ def get_material_footprint_df(current_file_directory, df_full):
 
     # save
     file_path = os.path.join(
-        current_file_directory, "../data/intermediate_databases/materials.xlsx"
+        current_file_directory, "../data/intermediate_databases/materials.csv"
     )
     if not os.path.exists(file_path):
-        df_mat.to_excel(file_path)
+        df_mat.to_csv(file_path)
 
     return df_mat
 
 
-def make_aggregates_footprint():
+_VEHICLE_UNIT_SCALE = {
+    # trains_CEV: ecoinvent "goods wagon production" is 1 wagon; model unit is 1 EU-config.
+    # Weighted avg carriages/wagons per EU-config: 0.557×6.2 (pass) + 0.443×63.2 (fre) = 31.45
+    "trains_CEV": 31.45,
+    # ships_ICE: ecoinvent "barge tanker production" is 1 river barge; model unit is 1 ocean ship.
+    # Scale = matdec total mass per ship (31 750 t) / LCA barge total mass (593 t) ≈ 53.5
+    "ships_ICE": 53.5,
+}
 
+
+def scale_vehicle_units(dm):
+    """Scale LCA coefficients for vehicles whose ecoinvent unit differs from the model unit."""
+    var_labels = list(dm.col_labels["Variables"])
+    for vname, scale in _VEHICLE_UNIT_SCALE.items():
+        if vname in var_labels:
+            vi = var_labels.index(vname)
+            dm.array[:, :, vi, :] *= scale
+
+
+def make_aggregates_footprint():
     agg_prod_dict = {
         "HDV_BEV": "HDV.*_BEV",
         "HDV_FCEV": "HDV.*_FCEV",
@@ -166,7 +183,6 @@ def make_footprint_dm(
     agg_mat_dict=None,
     deepen_n_cat=1,
 ):
-
     # make dm
     df["Country"] = "Switzerland"
     df["Years"] = first_year
@@ -230,7 +246,6 @@ def make_footprint_dm(
 
 
 def get_other_footprint_df(df_full):
-
     # select ELSE
     ncol = len(df_full.columns)
     df = df_full.iloc[:, [0, 1, 4] + list(range(ncol - 17, ncol))]
@@ -300,17 +315,16 @@ def make_other_dm(
     years_gap=1,
     deepen_n_cat=1,
 ):
-
     # subset
     index = [bool(re.search(pattern, s)) for s in df["product"]]
     df_sub = df.loc[index, :]
 
     # save
     file_path = os.path.join(
-        current_file_directory, f"../data/intermediate_databases/{pattern}.xlsx"
+        current_file_directory, f"../data/intermediate_databases/{pattern}.csv"
     )
     if not os.path.exists(file_path):
-        df_sub.to_excel(file_path)
+        df_sub.to_csv(file_path)
 
     # get ots data
     df_ots = df_sub.loc[df_sub["Scenario_year"].isin(["SSP5-Base_2025"])]
@@ -330,7 +344,6 @@ def make_other_dm(
 
 
 def run(years_ots):
-
     # directories
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
 
@@ -356,6 +369,7 @@ def run(years_ots):
         agg_prod_dict,
         agg_mat_dict,
     )
+    scale_vehicle_units(dm_mat)
 
     # get other footprint df
     df_other = get_other_footprint_df(df_full)
@@ -364,24 +378,31 @@ def run(years_ots):
     dm_ene_dem_elec = make_other_dm(
         current_file_directory, df_other, "energy-demand-elec", years_ots, agg_prod_dict
     )
+    scale_vehicle_units(dm_ene_dem_elec)
     dm_ene_dem_ff = make_other_dm(
         current_file_directory, df_other, "energy-demand-ff", years_ots, agg_prod_dict
     )
+    scale_vehicle_units(dm_ene_dem_ff)
     dm_eco = make_other_dm(
         current_file_directory, df_other, "ecological", years_ots, agg_prod_dict
     )
+    scale_vehicle_units(dm_eco)
     dm_gwp = make_other_dm(
         current_file_directory, df_other, "gwp", years_ots, agg_prod_dict
     )
+    scale_vehicle_units(dm_gwp)
     dm_water = make_other_dm(
         current_file_directory, df_other, "water", years_ots, agg_prod_dict
     )
+    scale_vehicle_units(dm_water)
     dm_air = make_other_dm(
         current_file_directory, df_other, "air-pollutant", years_ots, agg_prod_dict
     )
+    scale_vehicle_units(dm_air)
     dm_heavy_metals = make_other_dm(
         current_file_directory, df_other, "heavy-metals", years_ots, agg_prod_dict
     )
+    scale_vehicle_units(dm_heavy_metals)
 
     return (
         dm_mat,

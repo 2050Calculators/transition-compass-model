@@ -254,10 +254,22 @@ def industry_energy_interface(
     dm_energy_demand_by_carr_reshaped = dm_temp.copy()
 
     # get useful energy demand
+    # NOTE: ELECTRICITY and LIGHTING end-uses go to EnergyScope's ELECTRICITY/LIGHTING demand,
+    # served by generation technologies at 1:1. EnergyScope has no motor/lamp efficiency
+    # technology for these end-uses — it expects FEC (final energy from grid). Do NOT apply
+    # cdm_eneff to elec or lighting; they must remain at FEC.
+    # HEAT_HIGH_T (process-heat) has IND_DIRECT_ELEC and boiler efficiencies in EnergyScope,
+    # so UED (useful energy after motor/furnace losses) is correct there — cdm_eneff applied.
     dm_useful_energy_demand_by_carr = dm_energy_demand_by_carr_reshaped.copy()
     dm_useful_energy_demand_by_carr.array = (
         dm_useful_energy_demand_by_carr.array * cdm_eneff[np.newaxis, np.newaxis, ...]
     )
+    cats1 = dm_useful_energy_demand_by_carr.col_labels["Categories1"]
+    for _fec_end_use in ["elec", "lighting"]:
+        _idx = cats1.index(_fec_end_use)
+        dm_useful_energy_demand_by_carr.array[:, :, :, _idx, :] = (
+            dm_energy_demand_by_carr_reshaped.array[:, :, :, _idx, :]
+        )
 
     # rename energy carriers to match energy ones
     dm_useful_energy_demand_by_carr.rename_col(
@@ -894,7 +906,14 @@ def industry_forestry_interface(
     return dm_temp
 
 
-def industry_lca_interface(cdm_matdec_veh, veh_eol_to_recycling, write_pickle=False):
+def industry_lca_interface(
+    cdm_matdec_veh,
+    cdm_matdec_infra,
+    cdm_matdec_domapp,
+    cdm_matdec_electronics,
+    cdm_matdec_veh_batt,
+    write_pickle=False,
+):
     # DM_ind = {"prod-domestic-production_bld-floor" : DM_production["bld-floor"],
     #           "prod-domestic-production_bld-domapp" : DM_production["bld-domapp"],
     #           "prod-domestic-production_bld-electronics" : DM_production["bld-electronics"],
@@ -904,7 +923,13 @@ def industry_lca_interface(cdm_matdec_veh, veh_eol_to_recycling, write_pickle=Fa
     #           "mat-demand" : DM_material_demand["material-demand"],
     #           "veh-to-recycling" : veh_eol_to_recycling}
 
-    DM_ind = {"veh-matdec": cdm_matdec_veh, "veh-to-recycling": veh_eol_to_recycling}
+    DM_ind = {
+        "matdec-veh": cdm_matdec_veh,
+        "matdec-tra-infra": cdm_matdec_infra,
+        "matdec-domapp": cdm_matdec_domapp,
+        "matdec-electronics": cdm_matdec_electronics,
+        "matdec-veh-bat": cdm_matdec_veh_batt,
+    }
 
     # of write_pickle is True, write pickle
     if write_pickle is True:
@@ -914,3 +939,5 @@ def industry_lca_interface(cdm_matdec_veh, veh_eol_to_recycling, write_pickle=Fa
         )
         with open(f, "wb") as handle:
             pickle.dump(DM_ind, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    return DM_ind

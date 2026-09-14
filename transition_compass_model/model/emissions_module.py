@@ -23,12 +23,17 @@ def emissions(years_setting, interface=Interface(), cntr_list=None, calibration=
     dm_ammonia = inter.get_interface(
         current_file_directory, interface, "ammonia", "emissions", cntr_list
     )
+    if interface.has_link(from_sector="energy", to_sector="emissions"):
+        dm_energy = interface.get_link(from_sector="energy", to_sector="emissions")
+    else:
+        dm_energy = None
     DM_emi = {
         "transport": dm_transport,
         "buildings": dm_buildings,
         "industry": dm_industry,
         "agriculture": dm_agriculture,
         "ammonia": dm_ammonia,
+        "energy": dm_energy,
     }
 
     # put together

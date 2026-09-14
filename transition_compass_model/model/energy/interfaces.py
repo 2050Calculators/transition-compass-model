@@ -853,9 +853,6 @@ def impose_industry_demand_pyomo(m, endyr, share_of_pop, DM_ind, DM_agr, cntr):
     )
     m.end_uses_demand_year["LIGHTING", "INDUSTRY"] = tot_ind_light
 
-    m.end_uses_demand_year["ELECTRICITY", "INDUSTRY"] = tot_ind_elec
-    m.end_uses_demand_year["LIGHTING", "INDUSTRY"] = tot_ind_light
-
     # HIGH TEMPERATURE HEAT
     dm_high_heat = DM_ind["ind-energy-demand"].filter(
         {"Categories1": ["process-heat"], "Categories2": ["electricity"]}

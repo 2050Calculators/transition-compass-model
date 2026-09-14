@@ -129,6 +129,16 @@ def adjust_trend(dm, baseyear, expected_trend):
     return dm
 
 
+# ---------------------------------------------------------------------------
+# Midpoint helper
+# ---------------------------------------------------------------------------
+def midpoint(dm1, dm4, frac):
+    """Linear interpolation: dm1 + frac * (dm4 - dm1)."""
+    dm_out = dm1.copy()
+    dm_out.array = dm1.array + frac * (dm4.array - dm1.array)
+    return dm_out
+
+
 def flatten_curve_edges(dm, baseyear, length):
     idx = dm.idx
     for j in range(length):

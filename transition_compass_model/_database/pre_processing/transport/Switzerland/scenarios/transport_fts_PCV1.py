@@ -12,9 +12,15 @@ from transition_compass_model.model.common.auxiliary_functions import (
     sort_pickle,
 )
 
+cat_dict = {
+    "TIM": ["LDV", "2W"],
+    "TP": ["rail", "metrotram", "bus"],
+    "MA": ["walk", "bike"],
+}
+
 
 def define_variables_for_lever(DM_transport, lever: int):
-    dm_modal_share_lever = DM_transport["fts"]["passenger_modal-share"][lever]
+    dm_modal_share_lever = DM_transport["fts"]["passenger_modal-share"][lever].copy()
 
     idx = dm_modal_share_lever.idx
     dm_modal_share_lever.array[idx["Vaud"], idx[2025] + 1 :, :, :] = (
@@ -22,15 +28,13 @@ def define_variables_for_lever(DM_transport, lever: int):
     )  # clear level except for 2025
     dm_modal_share_lever_tmp = None
 
-    return dm_modal_share_lever, idx, dm_modal_share_lever, dm_modal_share_lever_tmp
+    return dm_modal_share_lever, idx, dm_modal_share_lever_tmp
 
 
 def update_lever_in_loop(
     key, cat, dm_modal_ots_cat, idx_ots, dict_ratio, array_lever, year=2050
 ):
-    dm_modal_share_lever, idx, dm_modal_share_lever, dm_modal_share_lever_tmp = (
-        array_lever
-    )
+    dm_modal_share_lever, idx, dm_modal_share_lever_tmp = array_lever
 
     dm_modal_fts_cat_lever = dm_modal_share_lever.filter({"Categories1": cat})
     dm_modal_fts_cat_lever.array[idx["Vaud"], idx[year], ...] = (
@@ -42,94 +46,53 @@ def update_lever_in_loop(
     else:
         dm_modal_share_lever_tmp.append(dm_modal_fts_cat_lever, dim="Categories1")
 
-    return dm_modal_share_lever, idx, dm_modal_share_lever, dm_modal_share_lever_tmp
+    return dm_modal_share_lever, idx, dm_modal_share_lever_tmp
 
 
 def run(DM_transport, country_list, years_ots, years_fts):
+    # TODO : reorganize to only have PCV1 things here and keep and move other things either to PCV2 or DLS py file.
+
     DM_fts = {"fts": dict()}
 
     # ======================  MODAL_SHARE  ========================================================
-    dm_modal_share_ots = DM_transport["ots"]["passenger_modal-share"]
-    cat_dict = {
-        "TIM": ["LDV", "2W"],
-        "TP": ["rail", "metrotram", "bus"],
-        "MA": ["walk", "bike"],
-    }
+    dm_modal_share_ots = DM_transport["ots"]["passenger_modal-share"].copy()
 
     # Scénario 2, 3 and 4 respectively: PCV1, PCV2,  DLS
 
     # Calcul coefficient 2050 selon OTS. On prend les parts modales de 2050,
     # mais on garde les proportions de 2023 entre les différents modes dans TP, MA et TIM
     # (Source: vision 2050)
-    CITEC_2050_val_dict = {"TIM": 0.55, "TP": 0.38, "MA": 0.07}
+
     # 3.3% velo et 5% marche
-    obj_PCV2_2050 = {"TIM": 0.524, "TP": 0.38, "MA": 0.096}
-    DLS_2050_val_dict = {
-        "TIM": 587 / 3241,
-        "TP": 1143 / 3241,
-        "MA": (3241 - 587 - 1143) / 3241,
-    }
+    obj_PCV2_2050 = {"TIM": 0.53, "TP": 0.38, "MA": 0.09}
 
     # Assing CITEC values to 2050 using the 2023 split within categories
     idx_ots = dm_modal_share_ots.idx
-    param_2 = define_variables_for_lever(DM_transport, 2)
     param_3 = define_variables_for_lever(DM_transport, 3)
-    param_4 = define_variables_for_lever(DM_transport, 4)
 
     for key, cat in cat_dict.items():
         dm_modal_ots_cat = dm_modal_share_ots.filter({"Categories1": cat})
         dm_modal_ots_cat.normalise(dim="Categories1", inplace=True, keep_original=False)
-
-        # level 2
-        param_2 = update_lever_in_loop(
-            key, cat, dm_modal_ots_cat, idx_ots, CITEC_2050_val_dict, param_2
-        )
         # level 3
 
         param_3 = update_lever_in_loop(
             key, cat, dm_modal_ots_cat, idx_ots, obj_PCV2_2050, param_3
         )
-        # level 4
-        param_4 = update_lever_in_loop(
-            key, cat, dm_modal_ots_cat, idx_ots, DLS_2050_val_dict, param_4
-        )
 
-    dm_modal_share_2, idx_fts, dm_modal_share_2, dm_modal_share_2_tmp = param_2
-    dm_modal_share_3, idx_fts, dm_modal_share_3, dm_modal_share_3_tmp = param_3
-    dm_modal_share_4, idx_fts, dm_modal_share_4, dm_modal_share_4_tmp = param_4
+    dm_modal_share_3, idx_fts, dm_modal_share_3_tmp = param_3
 
-    dm_modal_share_2 = dm_modal_share_2_tmp.copy()
-    dm_modal_share_2.sort("Categories1")
     dm_modal_share_3_tmp.sort("Categories1")
     dm_modal_share_3 = dm_modal_share_3_tmp.copy()
-    dm_modal_share_3.sort("Categories1")
-    dm_modal_share_4 = dm_modal_share_4_tmp.copy()
-    dm_modal_share_4.sort("Categories1")
 
-    # On a les valeurs du PCV pour 2030, on les introduit pour 2030.
-    values_2030 = {
-        "rail": 0.25,
-        "metrotram": 0.02,
-        "bus": 0.03,
-        "walk": 0.05,
-        "bike": 0.03,
-        "LDV": 0.6,
-        "2W": 0.03,
-    }  # Source: PCV
-    for key, values in values_2030.items():
-        dm_modal_share_2.array[
-            idx_fts["Vaud"],
-            idx_fts[2030],
-            idx_fts["tra_passenger_modal-share"],
-            idx_fts[key],
-        ] = values
-
+    # Get respective share of public transport and TIM in 2023 to keep the same proportion in 2030 and 2050
     share_TP = dm_modal_share_ots.filter({"Categories1": ["rail", "metrotram", "bus"]})
     share_TP.normalise(dim="Categories1", inplace=True, keep_original=False)
     idx_TP = share_TP.idx
     share_TIM = dm_modal_share_ots.filter({"Categories1": ["LDV", "2W"]})
     share_TIM.normalise(dim="Categories1", inplace=True, keep_original=False)
     idx_TIM = share_TIM.idx
+
+    # Calculate the values for PCV2 in 2030 based on the 2023 proportions
     values_pcv2_2030 = {
         "rail": 0.3 * share_TP.array[idx_TP["Vaud"], idx_TP[2023], :, idx_TP["rail"]],
         "metrotram": 0.3
@@ -163,8 +126,6 @@ def run(DM_transport, country_list, years_ots, years_fts):
             idx_fts[key],
         ] = values
 
-    linear_fitting(dm_modal_share_2, dm_modal_share_2.col_labels["Years"])
-    dm_modal_share_2.normalise(dim="Categories1", inplace=True)
     linear_fitting(dm_modal_share_3, dm_modal_share_3.col_labels["Years"])
 
     for key, values in values_pcv2_2030.items():
@@ -178,8 +139,6 @@ def run(DM_transport, country_list, years_ots, years_fts):
     fixed_cat = cat_dict["TP"]
     dm_modal_share_3.normalise_non_fixed_values(fixed_cat, idx_fts[2030])
     dm_modal_share_3.normalise(dim="Categories1", inplace=True)
-    linear_fitting(dm_modal_share_4, dm_modal_share_4.col_labels["Years"])
-    dm_modal_share_4.normalise(dim="Categories1", inplace=True)
 
     for key, values in values_pcv2_2035.items():
         dm_modal_share_3.array[
@@ -189,27 +148,8 @@ def run(DM_transport, country_list, years_ots, years_fts):
             idx_fts[key],
         ] = values
 
-    fixed_cat = "bike"
-    years_start = idx_fts[2035]  # first year to enforce
+    dm_modal_share_3.normalise_non_fixed_values(["bike"], idx_fts[2035])
 
-    cat_labels = dm_modal_share_3.col_labels["Categories1"]
-    other_cats = [c for c in cat_labels if c != fixed_cat]
-    other_idxs = [idx_fts[c] for c in other_cats]
-    fixed_idx = idx_fts[fixed_cat]
-    country_i = idx_fts["Vaud"]
-    mode_i = idx_fts["tra_passenger_modal-share"]
-
-    fixed_val = values_pcv2_2035["bike"]
-
-    # compute sum of other categories (ignore NaNs)
-    others = dm_modal_share_3.array[country_i, years_start, mode_i, other_idxs].astype(
-        float
-    )
-    sum_others = np.nansum(others)
-    remaining = 1.0 - fixed_val
-
-    scale = remaining / sum_others
-    dm_modal_share_3.array[country_i, years_start, mode_i, other_idxs] = others * scale
     # dm_modal_share_3.normalise(dim="Categories1", inplace=True)
     dm_modal_share_3.array[
         idx_fts["Vaud"],
@@ -243,12 +183,11 @@ def run(DM_transport, country_list, years_ots, years_fts):
     dm_modal_share_3.normalise(dim="Categories1", inplace=True)
 
     DM_fts["fts"]["passenger_modal-share"] = {
-        2: dm_modal_share_2,
+        1: DM_transport["fts"]["passenger_modal-share"][1],
+        2: dm_modal_share_3,
         3: dm_modal_share_3,
-        4: dm_modal_share_4,
+        4: dm_modal_share_3,
     }
-
-    #  FIXME ! Level 4 is missing the LDV reduction in 2025 (should it be there?)
 
     # ======================  OCCUPANCY  ========================================================
     dm_occupancy_2 = DM_transport["fts"]["passenger_occupancy"][2]
@@ -266,15 +205,16 @@ def run(DM_transport, country_list, years_ots, years_fts):
     ] = 1.9
     dm_occupancy_2.fill_nans(dim_to_interp="Years")
 
-    DM_fts["fts"]["passenger_occupancy"] = {2: dm_occupancy_2, 4: dm_occupancy_2.copy()}
-
+    DM_fts["fts"]["passenger_occupancy"] = {2: dm_occupancy_2}
+    for i in [1, 3, 4]:
+        DM_fts["fts"]["passenger_occupancy"][i] = DM_transport["fts"][
+            "passenger_occupancy"
+        ][i].copy()
     # ======================  NEW FUEL EFF  ========================================================
 
-    dm_new_eff_2 = DM_transport["fts"]["passenger_veh-efficiency_new"][2]
+    dm_new_eff_2 = DM_transport["fts"]["passenger_veh-efficiency_new"][2].copy()
 
-    dm_new_eff_ots = DM_transport["ots"]["passenger_veh-efficiency_new"]
-
-    dm_new_eff_4 = DM_transport["fts"]["passenger_veh-efficiency_new"][4]
+    dm_new_eff_ots = DM_transport["ots"]["passenger_veh-efficiency_new"].copy()
 
     # PCV: on prend les hypothèses d'amélioration ci dessous (source: canton de Vaud).
     reduction_2050_thermique = 1 - 0.39
@@ -319,97 +259,10 @@ def run(DM_transport, country_list, years_ots, years_fts):
 
     linear_fitting(dm_new_eff_2, dm_new_eff_2.col_labels["Years"])
 
-    DM_fts["fts"]["passenger_veh-efficiency_new"] = {2: dm_new_eff_2}
-
-    # Scénario 4:
-    # on applique la réduction de 2/3 pour 2025 et 2050 due à la réduction de la taille des véhicules.
-    reduction_map_4 = {cle: valeur * 2 / 3 for cle, valeur in reduction_map.items()}
-    idx = dm_new_eff_4.idx
-    idx0 = dm_new_eff_ots.idx
-    for cat, reduction_2050 in reduction_map_4.items():
-        dm_new_eff_4.array[
-            idx["Vaud"],
-            idx[2050],
-            idx["tra_passenger_veh-efficiency_new"],
-            idx["LDV"],
-            idx[cat],
-        ] = (
-            dm_new_eff_ots.array[
-                idx0["Vaud"],
-                idx0[2023],
-                idx0["tra_passenger_veh-efficiency_new"],
-                idx0["LDV"],
-                idx0[cat],
-            ]
-            * reduction_2050
-        )
-        dm_new_eff_4.array[
-            idx["Vaud"],
-            1 : idx[2050],
-            idx["tra_passenger_veh-efficiency_new"],
-            idx["LDV"],
-            idx[cat],
-        ] = np.nan
-        dm_new_eff_4.array[
-            idx["Vaud"],
-            idx[2025],
-            idx["tra_passenger_veh-efficiency_new"],
-            idx["LDV"],
-            idx[cat],
-        ] = (
-            2
-            / 3
-            * dm_new_eff_ots.array[
-                idx0["Vaud"],
-                idx0[2023],
-                idx0["tra_passenger_veh-efficiency_new"],
-                idx0["LDV"],
-                idx0[cat],
-            ]
-        )
-
-    # on réduit l'intensité énergétique des BEV car on vend 50% de véhicules intermédiaires dès 2025
-    prop_VUS = 0.5
-    efficiency_VUS = 0.11
-
-    efficiency_2025_bev = dm_new_eff_4.array[
-        idx["Vaud"],
-        idx[2025],
-        idx["tra_passenger_veh-efficiency_new"],
-        idx["LDV"],
-        idx["BEV"],
+    DM_fts["fts"]["passenger_veh-efficiency_new"] = DM_transport["fts"][
+        "passenger_veh-efficiency_new"
     ]
-    efficiency_2025_bev_vus = (
-        efficiency_2025_bev * (1 - prop_VUS) + efficiency_VUS * prop_VUS
-    )
-    dm_new_eff_4.array[
-        idx["Vaud"],
-        idx[2025],
-        idx["tra_passenger_veh-efficiency_new"],
-        idx["LDV"],
-        idx["BEV"],
-    ] = efficiency_2025_bev_vus
-
-    efficiency_2050_bev = dm_new_eff_4.array[
-        idx["Vaud"],
-        idx[2050],
-        idx["tra_passenger_veh-efficiency_new"],
-        idx["LDV"],
-        idx["BEV"],
-    ]
-    efficiency_2050_bev_vus = (
-        efficiency_2050_bev * 2 / 3 * (1 - prop_VUS) + efficiency_VUS * prop_VUS
-    )
-    dm_new_eff_4.array[
-        idx["Vaud"],
-        idx[2050],
-        idx["tra_passenger_veh-efficiency_new"],
-        idx["LDV"],
-        idx["BEV"],
-    ] = efficiency_2050_bev_vus
-
-    linear_fitting(dm_new_eff_4, dm_new_eff_4.col_labels["Years"])
-    DM_fts["fts"]["passenger_veh-efficiency_new"][4] = dm_new_eff_4
+    DM_transport["fts"]["passenger_veh-efficiency_new"][2] = dm_new_eff_2
 
     # ======================  NEW SALES VEHICLES  ========================================================
 
@@ -422,9 +275,11 @@ def run(DM_transport, country_list, years_ots, years_fts):
     ].array = dm_new_tech_share_1.array
     #
 
-    dm_new_tech_share_2 = DM_transport["fts"]["passenger_technology-share_new"][2]
-    dm_new_tech_share_4 = DM_transport["fts"]["passenger_technology-share_new"][4]
-    dm_new_tech_share_ots = DM_transport["ots"]["passenger_technology-share_new"]
+    dm_new_tech_share_2 = dm_new_tech_share_1.copy()
+    dm_new_tech_share_4 = DM_transport["fts"]["passenger_technology-share_new"][
+        4
+    ].copy()
+    dm_new_tech_share_ots = DM_transport["ots"]["passenger_technology-share_new"].copy()
 
     # PCV: ci dessous les valeurs fixées par le PCV pour 2035.
     prop_EV_PHEV_2035_PCV = 0.65
@@ -532,8 +387,9 @@ def run(DM_transport, country_list, years_ots, years_fts):
         {"Years": dm_new_tech_share_4.col_labels["Years"]}
     )
     DM_fts["fts"]["passenger_technology-share_new"] = {
-        1: dm_new_tech_share_1,
-        2: dm_new_tech_share_2_PVC,
+        1: dm_new_tech_share_2_PVC,
+        2: dm_new_tech_share_1,  # Extropolation sur les années récentes donne une pente plus grande que ce que simon a calculé pour le PCV juste échange pour l'instant.
+        3: dm_new_tech_share_1,
         4: dm_new_tech_share_trend_4_fts,
     }
 
@@ -542,7 +398,6 @@ def run(DM_transport, country_list, years_ots, years_fts):
     dm_pkm_1 = DM_transport["fts"]["pkm"][1]
 
     dm_pkm_2 = DM_transport["fts"]["pkm"][2]
-    dm_pkm_4 = DM_transport["fts"]["pkm"][4]
     dm_pkm_ots = DM_transport["ots"]["pkm"]
 
     idx = dm_pkm_ots.idx
@@ -550,25 +405,25 @@ def run(DM_transport, country_list, years_ots, years_fts):
     demande_transport_2023 = dm_pkm_ots.array[idx["Vaud"], idx[2023], 0]
     croissance_demande_annuelle = 0.0091
 
-    idx_fts = dm_pkm_1.idx
-    dm_pkm_1.array[idx_fts["Vaud"], :, 0] = np.nan
-    dm_pkm_1.array[idx_fts["Vaud"], idx_fts[2025] :, 0] = (
+    idx_fts = dm_pkm_2.idx
+    dm_pkm_2.array[idx_fts["Vaud"], :, 0] = np.nan
+    dm_pkm_2.array[idx_fts["Vaud"], idx_fts[2025] :, 0] = (
         demande_transport_2023 * 1.01 * 1.01
     )
-    dm_pkm_1.fill_nans("Years")
+    dm_pkm_2.fill_nans("Years")
 
     # dm_pkm_2.array[idx["Vaud"], idx[2025] : idx[2050] + 1, 0] = np.nan
     # dm_pkm_2.array[idx["Vaud"], idx[2030], 0] = (
     #     demande_transport_2019 * (1 + croissance_demande_annuelle) ** 5
     # )
-    dm_pkm_2 = dm_pkm_ots.copy()
-    dm_pkm_2.add(np.nan, dim="Years", dummy=True, col_label=years_fts)
-    idx = dm_pkm_2.idx
-    dm_pkm_2.array[idx["Vaud"], idx[2025] :, 0] = np.nan
-    dm_pkm_2.array[idx["Vaud"], idx[2030], 0] = demande_transport_2019
-    dm_pkm_2.array[idx["Vaud"], idx[2050], 0] = demande_transport_2019
-    dm_pkm_2.fill_nans("Years")
-    dm_pkm_2 = dm_pkm_2.filter({"Years": years_fts})
+    dm_pkm_1 = dm_pkm_ots.copy()
+    dm_pkm_1.add(np.nan, dim="Years", dummy=True, col_label=years_fts)
+    idx = dm_pkm_1.idx
+    dm_pkm_1.array[idx["Vaud"], idx[2025] :, 0] = np.nan
+    dm_pkm_1.array[idx["Vaud"], idx[2030], 0] = demande_transport_2019
+    dm_pkm_1.array[idx["Vaud"], idx[2050], 0] = demande_transport_2019
+    dm_pkm_1.fill_nans("Years")
+    dm_pkm_1 = dm_pkm_1.filter({"Years": years_fts})
 
     # SCENARIO STAT VAUD
     dm_pkm_3 = DM_transport["fts"]["pkm"][3]
@@ -591,16 +446,8 @@ def run(DM_transport, country_list, years_ots, years_fts):
         10.4 * 10**9 / dm_pop.array[idx_pop["Vaud"], idx_pop[2050], 0]
     )
     dm_pkm_3.fill_nans("Years")
-    # SCENARIO DLS:
-    idx = dm_pkm_4.idx
-    dm_pkm_4.array[idx["Vaud"], 0 : idx[2050] + 1, 0] = np.nan
-    dm_pkm_4.array[idx["Vaud"], idx[2025], 0] = demande_transport_2023
-    dm_pkm_4.array[idx["Vaud"], idx[2050], 0] = 3241
-    linear_fitting(dm_pkm_4, dm_pkm_4.col_labels["Years"])
-    dm_pkm_4.array[idx["Vaud"], idx[2025], 0] *= 0.95
-    linear_fitting(dm_pkm_4, dm_pkm_4.col_labels["Years"])
 
-    DM_fts["fts"]["pkm"] = {1: dm_pkm_1, 2: dm_pkm_2, 3: dm_pkm_3, 4: dm_pkm_4}
+    DM_fts["fts"]["pkm"] = {1: dm_pkm_1, 2: dm_pkm_2, 3: dm_pkm_3, 4: dm_pkm_3}
 
     # ======================  MESURE 5  ==================================== (CALCULER LES EMISSIONS MOYENNES DU NOUVEAU PARC EN 2021)
 
@@ -699,24 +546,10 @@ def run(DM_transport, country_list, years_ots, years_fts):
     df_mesure_5.loc["Total", "facteurs_CO2_2035"] = emissions_moyennes_2035
     # df_mesure_5.to_excel('mesure_5_nv.xlsx', index=True)
 
-    ratio_2018_2035 = emissions_moyennes_2035 / emissions_moyennes_2018
-
-    idx = dm_new_eff_4.idx
-    efficiency_bev_2035_DLS = dm_new_eff_4.array[
-        idx["Vaud"],
-        idx[2035],
-        idx["tra_passenger_veh-efficiency_new"],
-        idx["LDV"],
-        idx["BEV"],
-    ]
-    emissions_moyennes_2035_DLS = electricite_2035_intensity * efficiency_bev_2035_DLS
-
     # ======================  EXPORTS FINAUX   ===========================
     # Load existing DM_transport
     this_dir = os.path.dirname(os.path.abspath(__file__))
     pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")
-    # with open(pickle_file, "rb") as handle:
-    #     DM_transport_old = pickle.load(handle)
 
     my_pickle_dump(DM_new=DM_fts, local_pickle_file=pickle_file)
     sort_pickle(pickle_file)

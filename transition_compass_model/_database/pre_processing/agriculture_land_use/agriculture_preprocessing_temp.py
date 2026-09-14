@@ -3,12 +3,14 @@ import pickle
 import numpy as np
 import pandas as pd
 
-from ....model.common.auxiliary_functions import (
+from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     filter_DM,
     linear_fitting,
 )
-from ....model.common.constant_data_matrix_class import ConstantDataMatrix
+from transition_compass_model.model.common.constant_data_matrix_class import (
+    ConstantDataMatrix,
+)
 
 years_ots = create_years_list(1990, 2023, 1)  # make list with years from 1990 to 2015
 years_fts = create_years_list(2025, 2050, 5)
@@ -333,7 +335,7 @@ DM_agriculture["ots"]["ruminant-feed"]["ruminant-feed"][
 # KCAL TO T ----------------------------------------------------------------------------------------
 
 # Read excel
-df_kcal_t = pd.read_excel("dictionaries/kcal_to_t.xlsx", sheet_name="cp_kcal_t")
+df_kcal_t = pd.read_excel("data/dictionaries/kcal_to_t.xlsx", sheet_name="cp_kcal_t")
 
 # Filter columns
 df_kcal_t = df_kcal_t[["variables", "kcal per t"]].copy()
