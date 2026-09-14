@@ -24,6 +24,7 @@ dependencies = [
     "numpy>=2.0",
     "openpyxl>=3.1.5",
     "pandas==2.2.3",
+    "pdfplumber",
     "plotly==5.18.0",
     "pycountry>=26.2.16",
     "rapidfuzz>=3.9.0",
