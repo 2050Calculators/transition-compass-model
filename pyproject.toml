@@ -87,4 +87,4 @@ exclude = ["tests", "old", ".venv"]
 
 [tool.codespell]
 skip = "*/_database/*"
-ignore-words-list = "exemple,overwite,mantain,substitue,constains,swiched,caracters,colums,classe,ans,vie,variante,habitant,habitants,ot,ois,ore,tre,fo,caf,reste,mesure,calculs,categorie,formating,dowload,comute,lenght,blanck,syntetic,catpure,crate,arrray,moteur,correspondance,temporarely,substracting,fallow,exlcuded,mangement"
+ignore-words-list = "exemple,overwite,mantain,substitue,constains,swiched,caracters,colums,classe,ans,vie,variante,habitant,habitants,ot,ois,ore,tre,fo,caf,reste,mesure,calculs,categorie,formating,dowload,comute,lenght,blanck,syntetic,catpure,crate,arrray,moteur,correspondance,temporarely,substracting,fallow,exlcuded,mangement,converion"
