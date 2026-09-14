@@ -18,8 +18,9 @@ import os
 
 import numpy as np
 import pandas as pd
-from model.common.data_matrix_class import DataMatrix
-from model.TCAF_module import TCAF_health_diet_workflow  # adjust path
+
+from tcaf_model.model.common.data_matrix_class import DataMatrix
+from tcaf_model.model.tcaf_module import TCAF_health_diet_workflow
 
 DATA_DIR = "data/health-diet-v2"
 R_PAR_TOTAL = "par_total_R.csv"
