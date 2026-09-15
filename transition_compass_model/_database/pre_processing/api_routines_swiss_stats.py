@@ -50,6 +50,11 @@ def sdmx_json_to_dm(data_json, mapping_dims, units, filter=None):
         col_labels[dim_dm] = id_to_labels[dim_id]
         dim_axis[dim_dm] = id_to_axis[dim_id]
 
+        # Avoid indexing issues by avoiding giving the smae name to diff dimensions
+        col_labels[dim_dm] = [
+            f"Total_{dim_dm}" if x == "Total" else x for x in col_labels[dim_dm]
+        ]
+
     if "Years" in col_labels:
         col_labels["Years"] = [int(y) for y in col_labels["Years"]]
 

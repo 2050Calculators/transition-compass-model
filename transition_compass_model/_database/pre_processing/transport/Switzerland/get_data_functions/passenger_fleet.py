@@ -185,8 +185,19 @@ def get_new_fleet(file, first_year):
 
 
 def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str):
-    """Get data of the swiss stat api database : stock of road vehicles by vehicle group and type
-
+    """Get data of the swiss stat api database : stock of road vehicles by vehicle group and type.
+    Comment on data:
+    - From the reference year 2018 onwards, the stock of road vehicles includes all civilian vehicles registered in Switzerland as of 30 September,
+    including those with a holder's address abroad (around 0.2% of all vehicles in 2018).
+    Up to and including 2017, only vehicles with a  holder's address in Switzerland are reported.
+    Due to an revision of the vehicle register (IVZ), the comparability of data from 2022 onwards with that
+    of previous years is subject to some minor limitations: A total of around 34,000 vehicles with export licence plates that
+    are no longer in Switzerland were removed from the vehicle stock statistics in 2022.
+    The vehicle types are defined in the Ordinance on the Technical Requirements for Road Vehicles (RVTRO).
+    All 2005–2024 data were revised when the 2025 results were published on 4.2.2026.
+    - From the reference year 2018 (introduction of IVZ vehicle register) onwards, the canton has been determined according to the information on the number plate.
+    In the years up to and including 2017 the canton was determined based on the holder's address.
+    Comparability of cantonal data from 2018 onwards with previous years is therefore limited.
     Args:
         agency (str): Agency of the swiss stats database
         dataflow (str): dataflow of the swiss stats database
@@ -200,7 +211,6 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
             - Categories1 : vehicle type (LDV, 2W)
             - Categories2 : fuel type (ICE-Diesel, ICE-Petrol...)
     """
-    "Stock of road vehicles by vehicle group and type"
     try:
         with open(file, "rb") as handle:
             dm_fleet = pickle.load(handle)
@@ -208,12 +218,16 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
         structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
 
         passenger_cat = [
+            "Passenger vehicles",
             "Motorcycles",
             "Passenger cars",
-            "Passenger vehicles",
         ]
         # We want all ages categories except total whic is just the sum of the categories
-        fuel_list = [fuel for fuel in structure["UV_RV_FUEL"] if fuel != "Total"]
+        fuel_list = [
+            fuel
+            for fuel in structure["UV_RV_FUEL"]
+            if fuel not in ["Total", "No motor"]
+        ]
         car_age_list = [
             car_age for car_age in structure["UV_RV_VEHICLE_AGE"] if car_age != "Total"
         ]
@@ -226,19 +240,11 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
                 "Schwyz",
             ],
             "TIME_PERIOD": structure["TIME_PERIOD"],
-            "UV_RV_VEHICLE_AGE": car_age_list,
+            "UV_RV_VEHICLE_AGE": ["Total"],
             "UV_RV_VEHICLE_GROUP_AND_TYPE": passenger_cat,
             "UV_RV_FUEL": fuel_list,
+            "UV_RV_OWNER_TYPE": ["Total"],
         }
-
-        filtering_beta = {
-            "UV_HGDE_KT": ["Total"],
-            "TIME_PERIOD": structure["TIME_PERIOD"],
-            "UV_RV_VEHICLE_AGE": ["10–14 years", "15–19 years"],
-            "UV_RV_VEHICLE_GROUP_AND_TYPE": ["Passenger vehicles"],
-            "UV_RV_FUEL": ["Petrol: conventional"],
-        }
-
         mapping_dim = {
             "Country": "UV_HGDE_KT",
             "Years": "TIME_PERIOD",
@@ -260,8 +266,7 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
         if dm_fleet is None:
             raise ValueError(f"API returned None for {agency},{dataflow}")
 
-        dm_fleet.sort("Country")
-        dm_fleet.rename_col("Total", "Switzerland", dim="Country")
+        dm_fleet.rename_col("Total_Country", "Switzerland", dim="Country")
         dm_fleet.sort("Years")
 
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
@@ -270,8 +275,8 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
             pickle.dump(dm_fleet, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     # Group all vehicles independently of immatriculation data
-    dm_fleet.groupby(
-        {"tra_passenger_vehicle-fleet": ".*"}, dim="Variables", regex=True, inplace=True
+    dm_fleet.rename_col(
+        "Total_Variables", "tra_passenger_vehicle-fleet", dim="Variables"
     )
     # Group passenger vehicles as LDV and motorcycles as 2W
     dm_fleet.groupby(
