@@ -265,17 +265,44 @@ def run(dm_pkm, years_ots):
     dm_new_tech.filter({"Years": years_ots}, inplace=True)
 
     # SECTION Vehicle fleet and technology share LDV, 2W ots
-    #### Passenger fleet by technology (stock) LDV, 2W
+    #### Passenger fleet by technology (stock) LDV, 2W 1990 -2024
     # https://www.bfs.admin.ch/asset/fr/px-x-1103020100_101
+    # TODO : replace with swissstats api
     table_id_tot_veh = "px-x-1103020100_101"
     file_tot_veh = os.path.join(this_dir, "../data/tra_tot_fleet.pickle")
-    dm_pass_fleet_raw = get_data.get_passenger_stock_fleet_by_tech_raw(
+    dm_pass_fleet_raw_old = get_data.get_passenger_stock_fleet_by_tech_raw_ofs_api(
         table_id_tot_veh, file_tot_veh
     )
-    dm_pass_fleet_raw.filter({"Years": years_ots}, inplace=True)
 
+    #### Passenger fleet by technology (stock) LDV, 2W 2005-2025
+    # https://stats.swiss/vis?lc=fr&df[ds]=disseminate&df[id]=DF_MFZ_0_GENERAL&df[ag]=CH1.MFZ_IVS&dq=_T._T.100%2B200%2B300%2B400%2B500%2B600%2B700%2B_T%2B000._T._T.A&lom=LASTNPERIODS&lo=6&to[TIME_PERIOD]=false
+    file_tot_veh = os.path.join(this_dir, "../data/tra_tot_fleet_swiss_stat.pickle")
+    agency = "CH1.MFZ_IVS"
+    dataflow = "DF_MFZ_0_GENERAL"
+    dm_pass_fleet_raw = get_data.get_passenger_stock_fleet_by_tech_raw(
+        agency, dataflow, file_tot_veh
+    )
+
+    dm_pass_fleet_raw.filter(
+        {"Years": years_ots, "Country": country_list}, inplace=True
+    )
+    dm_pass_fleet_raw.sort("Years")
+    dm_pass_fleet = dm_pass_fleet_raw.copy()
+
+    dm_pass_fleet_raw_old.filter(
+        {"Years": years_ots, "Country": country_list}, inplace=True
+    )
+    dm_pass_fleet_raw_old.sort("Years")
+
+    # FIXME : add values before 2005  and check the allocation of others with Paola
     # Allocate "Other" category to new technologies
-    dm_pass_fleet = allocate_other_to_new_technologies(dm_pass_fleet_raw, dm_new_tech)
+    dm_pass_fleet_old = allocate_other_to_new_technologies(
+        dm_pass_fleet_raw_old, dm_new_tech
+    )
+    # Remove years after 2005
+    dm_pass_fleet_old.drop(dim="Years", col_label=dm_pass_fleet_raw.col_labels["Years"])
+
+    dm_pass_fleet.append(dm_pass_fleet_old, dim="Years")
 
     # SECTION Vehicle fleet bus, rail, metrotram ots
     #### Passenger fleet by technology (stock) bus, rail, metrotram - Switzerland only

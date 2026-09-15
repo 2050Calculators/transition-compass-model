@@ -141,7 +141,7 @@ def extract_passenger_new_fleet_by_tech(dm_new_fleet):
     # If Other is more than 1% you should account for it
     if (dm_tmp.array > 0.01).any():
         print(
-            '"Other" category is greater than 1% of the fleet, it cannot be discarded'
+            f'"Other" category is greater than 1% of the fleet, it cannot be discarded for {dm_pass_new_fleet.col_labels["Variables"]}'
         )
         # raise ValueError(
         #     '"Other" category is greater than 1% of the fleet, it cannot be discarded'
@@ -184,7 +184,143 @@ def get_new_fleet(file, first_year):
     return dm_pass_new_fleet_CH
 
 
-def get_passenger_stock_fleet_by_tech_raw(table_id, file):
+def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str):
+    """Get data of the swiss stat api database : stock of road vehicles by vehicle group and type
+
+    Args:
+        agency (str): Agency of the swiss stats database
+        dataflow (str): dataflow of the swiss stats database
+        file (str): File path for local data
+
+    Raises:
+        ValueError: Error when call to the database fails
+
+    Returns:
+        DataMatrix: data from the api formatted as a datamatrix:
+            - Categories1 : vehicle type (LDV, 2W)
+            - Categories2 : fuel type (ICE-Diesel, ICE-Petrol...)
+    """
+    "Stock of road vehicles by vehicle group and type"
+    try:
+        with open(file, "rb") as handle:
+            dm_fleet = pickle.load(handle)
+    except OSError:
+        structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
+
+        passenger_cat = [
+            "Motorcycles",
+            "Passenger cars",
+            "Passenger vehicles",
+        ]
+        # We want all ages categories except total whic is just the sum of the categories
+        fuel_list = [fuel for fuel in structure["UV_RV_FUEL"] if fuel != "Total"]
+        car_age_list = [
+            car_age for car_age in structure["UV_RV_VEHICLE_AGE"] if car_age != "Total"
+        ]
+
+        filtering = {
+            "UV_HGDE_KT": [
+                "Total",
+                "Vaud",
+                "Fribourg",
+                "Schwyz",
+            ],
+            "TIME_PERIOD": structure["TIME_PERIOD"],
+            "UV_RV_VEHICLE_AGE": car_age_list,
+            "UV_RV_VEHICLE_GROUP_AND_TYPE": passenger_cat,
+            "UV_RV_FUEL": fuel_list,
+        }
+
+        filtering_beta = {
+            "UV_HGDE_KT": ["Total"],
+            "TIME_PERIOD": structure["TIME_PERIOD"],
+            "UV_RV_VEHICLE_AGE": ["10–14 years", "15–19 years"],
+            "UV_RV_VEHICLE_GROUP_AND_TYPE": ["Passenger vehicles"],
+            "UV_RV_FUEL": ["Petrol: conventional"],
+        }
+
+        mapping_dim = {
+            "Country": "UV_HGDE_KT",
+            "Years": "TIME_PERIOD",
+            "Variables": "UV_RV_VEHICLE_AGE",
+            "Categories1": "UV_RV_VEHICLE_GROUP_AND_TYPE",
+            "Categories2": "UV_RV_FUEL",
+        }
+
+        # Extract new fleet (already annual, unlike the old STAT-TAB source which was
+        # monthly-only and had to be summed across all 12 months to get yearly totals)
+        dm_fleet = get_data_api_swiss_stats(
+            agency,
+            dataflow,
+            mode="extract",
+            filter=filtering,
+            mapping_dims=mapping_dim,
+            units=["number"] * len(car_age_list),
+        )
+        if dm_fleet is None:
+            raise ValueError(f"API returned None for {agency},{dataflow}")
+
+        dm_fleet.sort("Country")
+        dm_fleet.rename_col("Total", "Switzerland", dim="Country")
+        dm_fleet.sort("Years")
+
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(current_file_directory, file)
+        with open(f, "wb") as handle:
+            pickle.dump(dm_fleet, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # Group all vehicles independently of immatriculation data
+    dm_fleet.groupby(
+        {"tra_passenger_vehicle-fleet": ".*"}, dim="Variables", regex=True, inplace=True
+    )
+    # Group passenger vehicles as LDV and motorcycles as 2W
+    dm_fleet.groupby(
+        {"LDV": ".*Passenger.*", "2W": ".*Motorcycles"},
+        dim="Categories1",
+        regex=True,
+        inplace=True,
+    )
+    # Map fuel technology to transport module category. Other category cannot be removed as it is above 1%
+    # Map fuel technology to transport module category
+    dict_tech = {
+        "FCEV": ["Fuel cell electric vehicle (FCEV)"],
+        "BEV": ["Battery electric vehicle (BEV)"],
+        "ICE-diesel": ["Diesel: conventional", "Diesel: hybrid electric vehicle (HEV)"],
+        "ICE-gasoline": [
+            "Petrol: conventional",
+            "Petrol: hybrid electric vehicle (HEV)",
+        ],
+        "PHEV-diesel": ["Plug-in hybrid electric vehicle (PHEV): diesel"],
+        "PHEV-gasoline": ["Plug-in hybrid electric vehicle (PHEV): petrol"],
+        "ICE-gas": ["Gas (mono- and bi-fuel)"],
+    }
+    dm_fleet.groupby(dict_tech, dim="Categories2", regex=False, inplace=True)
+
+    dm_ratio = dm_fleet.normalise(dim="Categories2", inplace=False)
+
+    dm_missing = dm_ratio.filter({"Categories2": ["Other"]}).copy()
+    if (dm_missing.array > 0.01).any():
+        print(
+            f'"Other" category is greater than 1% of the fleet, it cannot be discarded {dm_missing.col_labels["Variables"]}'
+        )
+        dm_without_other = dm_fleet.copy()
+        dm_without_other.drop(col_label="Other", dim="Categories2")
+        dm_without_other_normalised = dm_without_other.normalise(
+            dim="Categories2", inplace=False
+        )
+
+        dm_without_other.array = (
+            dm_fleet.filter({"Categories2": ["Other"]}).array
+            * dm_without_other_normalised.array
+        )
+        dm_fleet = dm_without_other.copy()
+    else:
+        dm_fleet.drop(col_label="Other", dim="Categories2")
+
+    return dm_fleet
+
+
+def get_passenger_stock_fleet_by_tech_raw_ofs_api(table_id, file):
     # New fleet data are heavy, download them only once
     try:
         with open(file, "rb") as handle:
