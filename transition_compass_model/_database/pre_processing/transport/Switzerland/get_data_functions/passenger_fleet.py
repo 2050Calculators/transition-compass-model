@@ -315,7 +315,8 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
         )
 
         dm_without_other.array = (
-            dm_fleet.filter({"Categories2": ["Other"]}).array
+            dm_without_other.array
+            + dm_fleet.filter({"Categories2": ["Other"]}).array
             * dm_without_other_normalised.array
         )
         dm_fleet = dm_without_other.copy()
