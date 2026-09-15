@@ -323,6 +323,9 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
     else:
         dm_fleet.drop(col_label="Other", dim="Categories2")
 
+    dm_fleet.sort("Country")
+    dm_fleet.sort("Categories2")
+
     return dm_fleet
 
 
@@ -387,6 +390,7 @@ def get_passenger_stock_fleet_by_tech_raw_ofs_api(table_id, file):
     }
     dm_fleet.groupby(dict_tech, dim="Categories2", regex=False, inplace=True)
     dm_fleet.drop(dim="Categories2", col_label="Without motor")
+    dm_fleet.sort("Country")
 
     return dm_fleet
 

@@ -201,7 +201,8 @@ def allocate_other_to_new_technologies(dm_fleet, dm_new_tech):
         dim="Categories2",
         col_label=dm_fleet_other.col_labels["Categories2"],
     )
-    dm_fleet.append(dm_fleet_new, dim="Years")
+    dm_fleet.append(dm_fleet_new.copy(), dim="Years")
+    dm_fleet.sort("Categories2")
 
     return dm_fleet
 
@@ -287,6 +288,7 @@ def run(dm_pkm, years_ots):
         {"Years": years_ots, "Country": country_list}, inplace=True
     )
     dm_pass_fleet_raw.sort("Years")
+
     dm_pass_fleet = dm_pass_fleet_raw.copy()
 
     dm_pass_fleet_raw_old.filter(
@@ -302,7 +304,10 @@ def run(dm_pkm, years_ots):
     # Remove years after 2005
     dm_pass_fleet_old.drop(dim="Years", col_label=dm_pass_fleet_raw.col_labels["Years"])
 
-    dm_pass_fleet.append(dm_pass_fleet_old, dim="Years")
+    # append 2005 data
+    # FIXME : for cantons other than vaud one must find a solution for data before 2005 that is not available anymore on the api.
+    dm_pass_fleet_old.append(dm_pass_fleet.copy(), dim="Years")
+    dm_pass_fleet = dm_pass_fleet_old.copy()
 
     # SECTION Vehicle fleet bus, rail, metrotram ots
     #### Passenger fleet by technology (stock) bus, rail, metrotram - Switzerland only
