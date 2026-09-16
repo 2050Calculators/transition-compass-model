@@ -1618,7 +1618,13 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
 
     # Lever - ssr-bev
     lever = "ssr-bev"
-    for level in range(1, 5):
+
+    # Level 1 - business as usual scenario: linear fitting based on past data (1990-2023)
+    dm_bau = dict_ots[lever].copy()
+    linear_fitting(dm_bau, years_fts)
+    dm_fts[lever][1] = dm_bau.filter({"Years": years_fts}, inplace=False)
+
+    for level in range(2, 5):
         # Compute the reduction objective in 2050 compared to the last ots value,
         # for each food category
         dm_ots = dict_ots[lever].copy()

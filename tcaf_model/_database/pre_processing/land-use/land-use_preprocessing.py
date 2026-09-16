@@ -1587,7 +1587,9 @@ def datamatrix_to_pickle(dm_fts):
 
     # Lever - crop-share-intensive
     lever = "crop-share-intensive"
-    for level in range(1, 5):
+    # Keep level 1 as the business as usual scenario (linear fitting on past data)
+    dm_bau_1 = dict_fts[lever][1]
+    for level in range(2, 5):
         # Propagate the overall lever value across all categories
         dm_ots = dict_ots[lever].copy()
         dm_fts_temp = dm_fts[lever][level]
@@ -1607,10 +1609,13 @@ def datamatrix_to_pickle(dm_fts):
         linear_fitting(dm_ots, years_fts)
         dm_fts[lever][level] = dm_ots.filter({"Years": years_fts}, inplace=False)
     dict_fts[lever] = dm_fts[lever]
+    dict_fts[lever][1] = dm_bau_1
 
     # Lever - crop-share-extensive
     lever = "crop-share-extensive"
-    for level in range(1, 5):
+    # Keep level 1 as the business as usual scenario (linear fitting on past data)
+    dm_bau_1 = dict_fts[lever][1]
+    for level in range(2, 5):
         # Propagate the overall lever value across all categories
         dm_ots = dict_ots[lever].copy()
         dm_fts_temp = dm_fts[lever][level]
@@ -1630,10 +1635,13 @@ def datamatrix_to_pickle(dm_fts):
         linear_fitting(dm_ots, years_fts)
         dm_fts[lever][level] = dm_ots.filter({"Years": years_fts}, inplace=False)
     dict_fts[lever] = dm_fts[lever]
+    dict_fts[lever][1] = dm_bau_1
 
     # Lever - crop-share-organic
     lever = "crop-share-organic"
-    for level in range(1, 5):
+    # Keep level 1 as the business as usual scenario (linear fitting on past data)
+    dm_bau_1 = dict_fts[lever][1]
+    for level in range(2, 5):
         # Propagate the overall lever value across all categories
         dm_ots = dict_ots[lever].copy()
         dm_fts_temp = dm_fts[lever][level]
@@ -1653,6 +1661,7 @@ def datamatrix_to_pickle(dm_fts):
         linear_fitting(dm_ots, years_fts)
         dm_fts[lever][level] = dm_ots.filter({"Years": years_fts}, inplace=False)
     dict_fts[lever] = dm_fts[lever]
+    dict_fts[lever][1] = dm_bau_1
 
     # ConstantsToDatamatrix ------------------------------------------------------
     dict_const = {}

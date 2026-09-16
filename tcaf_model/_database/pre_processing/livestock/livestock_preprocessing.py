@@ -5099,7 +5099,11 @@ def datamatrix_to_pickle(dm_fts):
         "ssr-liv-meat-oth-animal",
     ]
     for lever in dict_lever_ssr_liv:
-        for level in range(1, 5):
+        # Compute BAU scenario level 1
+        dm_bau = dict_ots[lever].copy()
+        linear_fitting(dm_bau, years_fts)
+        dm_fts[lever][1] = dm_bau.filter({"Years": years_fts}, inplace=False)
+        for level in range(2, 5):
             dm_fts[lever][level].deepen()
             dm_fts[lever][level].append(dict_ots[lever], dim="Years")
             linear_fitting(dm_fts[lever][level], years_fts)
@@ -5123,7 +5127,11 @@ def datamatrix_to_pickle(dm_fts):
 
     # Lever - ssr-feed-pro
     lever = "ssr-feed-pro"
-    for level in range(1, 5):
+    # Compute BAU scenario level 1
+    dm_bau = dict_ots[lever].copy()
+    linear_fitting(dm_bau, years_fts)
+    dm_fts[lever][1] = dm_bau.filter({"Years": years_fts}, inplace=False)
+    for level in range(2, 5):
         # Propagate the overall lever value across all feed categories
         dm_ots = dict_ots[lever].copy()
         dm_fts_temp = dm_fts[lever][level]
@@ -5146,7 +5154,11 @@ def datamatrix_to_pickle(dm_fts):
 
     # Lever - share-organic
     lever = "share-organic"
-    for level in range(1, 5):
+    # Compute BAU scenario level 1
+    dm_bau = dict_ots[lever].copy()
+    linear_fitting(dm_bau, years_fts)
+    dm_fts[lever][1] = dm_bau.filter({"Years": years_fts}, inplace=False)
+    for level in range(2, 5):
         # Propagate the overall lever value across all feed categories
         dm_ots = dict_ots[lever].copy()
         dm_fts_temp = dm_fts[lever][level]
@@ -5171,16 +5183,26 @@ def datamatrix_to_pickle(dm_fts):
 
     # Lever - ruminant-feed
     lever = "ruminant-feed"
-    for level in range(1, 5):
+    for level in range(2, 5):
         # Propagate the overall lever value across all feed categories
         dm_fts[lever][level].append(dict_ots[lever], dim="Years")
         linear_fitting(dm_fts[lever][level], years_fts)
         dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever] = dm_fts[lever]
+    # Compute BAU scenario level 1
+    level = 1
+    dm_fts[lever][level] = dict_ots[lever].copy()
+    linear_fitting(dm_fts[lever][level], years_fts)
+    dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
+    dict_fts[lever][level] = dm_fts[lever][level]
 
     # Lever - livestock-losses
     lever = "livestock-losses"
-    for level in range(1, 5):
+    # Compute BAU scenario level 1
+    dm_bau = dict_ots[lever].copy()
+    linear_fitting(dm_bau, years_fts)
+    dm_fts[lever][1] = dm_bau.filter({"Years": years_fts}, inplace=False)
+    for level in range(2, 5):
         # Compute the reduction objective in 2050 compared to the last ots value,
         # for each food category
         dm_ots = dict_ots[lever].copy()

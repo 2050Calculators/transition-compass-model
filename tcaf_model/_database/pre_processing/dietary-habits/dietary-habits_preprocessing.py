@@ -2973,15 +2973,26 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
 
     # Lever - diet-adherence
     lever = "diet-adherence"
-    for level in range(1, 5):
+    for level in range(2, 5):
         dm_fts[lever][level].append(dict_ots[lever], dim="Years")
         linear_fitting(dm_fts[lever][level], years_fts)
         dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever] = dm_fts[lever]
+    # Compute BAU scenario level 1
+    level = 1
+    dm_fts[lever][level] = dict_ots[lever].copy()
+    linear_fitting(dm_fts[lever][level], years_fts)
+    dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
+    dict_fts[lever][level] = dm_fts[lever][level]
 
     # Lever - fwaste
     lever = "fwaste"
-    for level in range(1, 5):
+    # Compute BAU scenario level 1
+    level = 1
+    dm_fts[lever][level] = dict_ots[lever].copy()
+    linear_fitting(dm_fts[lever][level], years_fts)
+    dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
+    for level in range(2, 5):
         # Compute the reduction objective in 2050 compared to the last ots value,
         # for each food category
         dm_ots = dict_ots[lever].copy()
@@ -3006,7 +3017,12 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
 
     # Lever - kcal-req
     lever = "kcal-req"
-    for level in range(1, 5):
+    # Compute BAU scenario level 1
+    level = 1
+    dm_fts[lever][level] = dict_ots[lever].copy()
+    linear_fitting(dm_fts[lever][level], years_fts)
+    dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
+    for level in range(2, 5):
         # Compute the reduction objective in 2050 compared to the last ots value,
         # for each food category
         dm_ots = dict_ots[lever].copy()
@@ -3042,11 +3058,17 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
 
     # Lever - diet-split-kcal_.*
     for lever in dm_diet_kcal.keys():
-        for level in range(1, 5):
+        for level in range(2, 5):
             dm_fts[lever][level].append(dict_ots[lever], dim="Years")
             linear_fitting(dm_fts[lever][level], years_fts)
             dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
         dict_fts[lever] = dm_fts[lever]
+        # Compute BAU scenario level 1
+        level = 1
+        dm_fts[lever][level] = dict_ots[lever].copy()
+        linear_fitting(dm_fts[lever][level], years_fts)
+        dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
+        dict_fts[lever][level] = dm_fts[lever][level]
 
     # Lever - share-processed-food_crop-cereal-whole
     lever = "share-processed-food_crop-cereal-whole"
@@ -3078,21 +3100,39 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
 
     # Lever - share-kcal-processed-food_.*
     lever = "share-kcal-processed-food_unprocessed-meat"
-    for level in range(1, 5):
+    for level in range(2, 5):
         dm_fts[lever][level].append(dict_ots[lever], dim="Years")
         linear_fitting(dm_fts[lever][level], years_fts)
         dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever] = dm_fts[lever]
+    # Compute BAU scenario level 1
+    level = 1
+    dm_fts[lever][level] = dict_ots[lever].copy()
+    linear_fitting(dm_fts[lever][level], years_fts)
+    dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
+    dict_fts[lever][level] = dm_fts[lever][level]
+
     lever = "share-kcal-processed-food_crop-cereal-whole"
-    for level in range(1, 5):
+    for level in range(2, 5):
         dm_fts[lever][level].append(dict_ots[lever], dim="Years")
         linear_fitting(dm_fts[lever][level], years_fts)
         dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever] = dm_fts[lever]
+    # Compute BAU scenario level 1
+    level = 1
+    dm_fts[lever][level] = dict_ots[lever].copy()
+    linear_fitting(dm_fts[lever][level], years_fts)
+    dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
+    dict_fts[lever][level] = dm_fts[lever][level]
 
     # Lever - ssr-bev fixme dummy values
     lever = "ssr-bev"
-    for level in range(1, 5):
+    # Compute BAU scenario level 1
+    level = 1
+    dm_fts[lever][level] = dict_ots[lever].copy()
+    linear_fitting(dm_fts[lever][level], years_fts)
+    dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
+    for level in range(2, 5):
         # Compute the reduction objective in 2050 compared to the last ots value,
         # for each food category
         dm_ots = dict_ots[lever].copy()
