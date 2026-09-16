@@ -1127,7 +1127,7 @@ def TCAF_biodiversity_workflow(DM_TCAF_biodiversity, DM_landuse_to_TCAF):
 
 
 # CalculationLeaf TPE INTERFACE
-def TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot):
+def TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot, DM_TCAF_lca):
     # attributable / avoided / residual DALYs, and their monetized costs [CHF]
     vars_out = [
         "tcaf_health-diet_dalys",
@@ -1145,6 +1145,38 @@ def TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot):
     # health-diet total (summed over diseases)
     dm_health_diet_tot.filter({"Variables": vars_out}, inplace=True)
     dm_tpe.append(dm_health_diet_tot.flattest(), dim="Variables")
+
+    # LCA monetized results (Switzerland) [CHF], summed over method (intensive/organic)
+    # FIXME add lca world
+    dm_lca_ch = DM_TCAF_lca["lca-switzerland"].filter({"Variables": ["agr_production-tcaf"]})
+    dm_lca_ch.rename_col("agr_production-tcaf", "tcaf_lca_cost", dim="Variables")
+    dm_lca_ch.group_all("Categories2", inplace=True)  # sum over method -> Categories1 food, Categories2 impact
+
+    # lca per food category (summed over impact categories)
+    dm_lca_ch_food = dm_lca_ch.copy()
+    dm_lca_ch_food.group_all("Categories2", inplace=True)  # sum over impact -> Categories1 food
+    dm_tpe.append(dm_lca_ch_food.flattest(), dim="Variables")
+
+    # lca per impact category (summed over food categories)
+    dm_lca_ch_imp = dm_lca_ch.copy()
+    dm_lca_ch_imp.group_all("Categories1", inplace=True)  # sum over food -> Categories1 impact
+    dm_tpe.append(dm_lca_ch_imp.flattest(), dim="Variables")
+
+    # lca total (summed over food and impact categories)
+    dm_lca_ch_tot = dm_lca_ch_imp.copy()
+    dm_lca_ch_tot.group_all("Categories1", inplace=True)  # sum over impact -> no categories left
+    dm_lca_ch_tot.rename_col("tcaf_lca_cost", "tcaf_lca_cost_total", dim="Variables")
+    dm_tpe.append(dm_lca_ch_tot, dim="Variables")
+
+    # total true cost (LCA + health, at the moment: biodiversity is currently disabled) [CHF]
+    dm_tpe.operation(
+        "tcaf_lca_cost_total",
+        "+",
+        "tcaf_health-diet_cost_total",
+        dim="Variables",
+        out_col="tcaf_true-cost_total",
+        unit="CHF",
+    )
 
     return dm_tpe
 
@@ -1225,14 +1257,15 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
     # Debug test, only prints. It needs lcia_animal_production_recipe.csv, which
     # is not in the repo, so it is not called in the model run.
     # TCAF_ghg_calibration_weight_test()
+
     dm_health_diet_detailed, dm_health_diet_tot = TCAF_health_diet_workflow(
         DM_diet, DM_TCAF_health_diet, CDM_MF
     )
-    DM_TCAF_biodiversity = TCAF_biodiversity_workflow(
+    """DM_TCAF_biodiversity = TCAF_biodiversity_workflow(
         DM_TCAF_biodiversity, DM_landuse_to_TCAF
-    )
+    )"""
     # CalculationTree TPE OUTPUT -------------------------------------------------------------------------------------------------------
-    results_run = TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot)
+    results_run = TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot, DM_TCAF_lca)
 
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 
