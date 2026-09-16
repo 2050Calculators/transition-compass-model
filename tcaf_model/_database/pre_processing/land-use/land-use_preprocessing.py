@@ -1559,7 +1559,10 @@ def datamatrix_to_pickle(dm_fts):
         if isinstance(DM_ots[key], dict):
             for subkey in dict_fts[key].keys():
                 dm = DM_ots[key][subkey].copy()
-                linear_fitting(dm, years_fts)
+                linear_fitting(dm, years_fts, min_t0=0, min_tb=0)
+                # Floor at 0: linear_fitting only clips the extrapolated endpoints,
+                # interpolated years can still dip negative if the underlying ots data is noisy
+                dm.array = np.clip(dm.array, 0, None)
 
                 for lev in range(1, 5):  # 1 to 4
                     if subkey in list_norm:  # ✅ check subkey, not key
@@ -1579,7 +1582,10 @@ def datamatrix_to_pickle(dm_fts):
                         )
         else:
             dm = DM_ots[key].copy()
-            linear_fitting(dm, years_fts)
+            linear_fitting(dm, years_fts, min_t0=0, min_tb=0)
+            # Floor at 0: linear_fitting only clips the extrapolated endpoints,
+            # interpolated years can still dip negative if the underlying ots data is noisy
+            dm.array = np.clip(dm.array, 0, None)
             for lev in range(1, 5):
                 dict_fts[key][lev] = dm.filter({"Years": years_fts}, inplace=False)
 
@@ -1587,8 +1593,10 @@ def datamatrix_to_pickle(dm_fts):
 
     # Lever - crop-share-intensive
     lever = "crop-share-intensive"
-    # Keep level 1 as the business as usual scenario (linear fitting on past data)
-    dm_bau_1 = dict_fts[lever][1]
+    # Level 1 - business as usual scenario: linear fitting on past data (share, bounded 0-1)
+    dm_bau_1 = dict_ots[lever].copy()
+    linear_fitting(dm_bau_1, years_fts, min_t0=0, max_t0=1, min_tb=0, max_tb=1)
+    dm_bau_1.filter({"Years": years_fts}, inplace=True)
     for level in range(2, 5):
         # Propagate the overall lever value across all categories
         dm_ots = dict_ots[lever].copy()
@@ -1613,8 +1621,10 @@ def datamatrix_to_pickle(dm_fts):
 
     # Lever - crop-share-extensive
     lever = "crop-share-extensive"
-    # Keep level 1 as the business as usual scenario (linear fitting on past data)
-    dm_bau_1 = dict_fts[lever][1]
+    # Level 1 - business as usual scenario: linear fitting on past data (share, bounded 0-1)
+    dm_bau_1 = dict_ots[lever].copy()
+    linear_fitting(dm_bau_1, years_fts, min_t0=0, max_t0=1, min_tb=0, max_tb=1)
+    dm_bau_1.filter({"Years": years_fts}, inplace=True)
     for level in range(2, 5):
         # Propagate the overall lever value across all categories
         dm_ots = dict_ots[lever].copy()
@@ -1639,8 +1649,10 @@ def datamatrix_to_pickle(dm_fts):
 
     # Lever - crop-share-organic
     lever = "crop-share-organic"
-    # Keep level 1 as the business as usual scenario (linear fitting on past data)
-    dm_bau_1 = dict_fts[lever][1]
+    # Level 1 - business as usual scenario: linear fitting on past data (share, bounded 0-1)
+    dm_bau_1 = dict_ots[lever].copy()
+    linear_fitting(dm_bau_1, years_fts, min_t0=0, max_t0=1, min_tb=0, max_tb=1)
+    dm_bau_1.filter({"Years": years_fts}, inplace=True)
     for level in range(2, 5):
         # Propagate the overall lever value across all categories
         dm_ots = dict_ots[lever].copy()

@@ -1620,8 +1620,9 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
     lever = "ssr-bev"
 
     # Level 1 - business as usual scenario: linear fitting based on past data (1990-2023)
+    # (a self-sufficiency ratio, so only floor at 0, it can exceed 1 for net exporters)
     dm_bau = dict_ots[lever].copy()
-    linear_fitting(dm_bau, years_fts)
+    linear_fitting(dm_bau, years_fts, min_t0=0, min_tb=0)
     dm_fts[lever][1] = dm_bau.filter({"Years": years_fts}, inplace=False)
 
     for level in range(2, 5):

@@ -2978,19 +2978,23 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
         linear_fitting(dm_fts[lever][level], years_fts)
         dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever] = dm_fts[lever]
-    # Compute BAU scenario level 1
+    # Compute BAU scenario level 1 (share, bounded 0-1)
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
-    linear_fitting(dm_fts[lever][level], years_fts)
+    linear_fitting(
+        dm_fts[lever][level], years_fts, min_t0=0, max_t0=1, min_tb=0, max_tb=1
+    )
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever][level] = dm_fts[lever][level]
 
     # Lever - fwaste
     lever = "fwaste"
-    # Compute BAU scenario level 1
+    # Compute BAU scenario level 1 (share, bounded 0-1)
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
-    linear_fitting(dm_fts[lever][level], years_fts)
+    linear_fitting(
+        dm_fts[lever][level], years_fts, min_t0=0, max_t0=1, min_tb=0, max_tb=1
+    )
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     for level in range(2, 5):
         # Compute the reduction objective in 2050 compared to the last ots value,
@@ -3017,10 +3021,10 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
 
     # Lever - kcal-req
     lever = "kcal-req"
-    # Compute BAU scenario level 1
+    # Compute BAU scenario level 1 (absolute quantity in kcal/cap/day, only floor at 0)
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
-    linear_fitting(dm_fts[lever][level], years_fts)
+    linear_fitting(dm_fts[lever][level], years_fts, min_t0=0, min_tb=0)
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     for level in range(2, 5):
         # Compute the reduction objective in 2050 compared to the last ots value,
@@ -3049,10 +3053,12 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
         linear_fitting(dm_fts[lever][level], years_fts)
         dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever] = dm_fts[lever]
-    # Compute BAU scenario level 1
+    # Compute BAU scenario level 1 (share, bounded 0-1)
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
-    linear_fitting(dm_fts[lever][level], years_fts)
+    linear_fitting(
+        dm_fts[lever][level], years_fts, min_t0=0, max_t0=1, min_tb=0, max_tb=1
+    )
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever][level] = dm_fts[lever][level]
 
@@ -3063,10 +3069,10 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
             linear_fitting(dm_fts[lever][level], years_fts)
             dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
         dict_fts[lever] = dm_fts[lever]
-        # Compute BAU scenario level 1
+        # Compute BAU scenario level 1 (absolute quantity in kcal/cap/day, only floor at 0)
         level = 1
         dm_fts[lever][level] = dict_ots[lever].copy()
-        linear_fitting(dm_fts[lever][level], years_fts)
+        linear_fitting(dm_fts[lever][level], years_fts, min_t0=0, min_tb=0)
         dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
         dict_fts[lever][level] = dm_fts[lever][level]
 
@@ -3077,10 +3083,12 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
         linear_fitting(dm_fts[lever][level], years_fts)
         dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever] = dm_fts[lever]
-    # Compute BAU scenario level 1
+    # Compute BAU scenario level 1 (share, bounded 0-1)
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
-    linear_fitting(dm_fts[lever][level], years_fts)
+    linear_fitting(
+        dm_fts[lever][level], years_fts, min_t0=0, max_t0=1, min_tb=0, max_tb=1
+    )
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever][level] = dm_fts[lever][level]
 
@@ -3091,10 +3099,12 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
         linear_fitting(dm_fts[lever][level], years_fts)
         dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever] = dm_fts[lever]
-    # Compute BAU scenario level 1
+    # Compute BAU scenario level 1 (share, bounded 0-1)
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
-    linear_fitting(dm_fts[lever][level], years_fts)
+    linear_fitting(
+        dm_fts[lever][level], years_fts, min_t0=0, max_t0=1, min_tb=0, max_tb=1
+    )
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever][level] = dm_fts[lever][level]
 
@@ -3105,10 +3115,12 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
         linear_fitting(dm_fts[lever][level], years_fts)
         dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever] = dm_fts[lever]
-    # Compute BAU scenario level 1
+    # Compute BAU scenario level 1 (share, bounded 0-1)
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
-    linear_fitting(dm_fts[lever][level], years_fts)
+    linear_fitting(
+        dm_fts[lever][level], years_fts, min_t0=0, max_t0=1, min_tb=0, max_tb=1
+    )
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever][level] = dm_fts[lever][level]
 
@@ -3118,19 +3130,21 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
         linear_fitting(dm_fts[lever][level], years_fts)
         dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever] = dm_fts[lever]
-    # Compute BAU scenario level 1
+    # Compute BAU scenario level 1 (share, bounded 0-1)
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
-    linear_fitting(dm_fts[lever][level], years_fts)
+    linear_fitting(
+        dm_fts[lever][level], years_fts, min_t0=0, max_t0=1, min_tb=0, max_tb=1
+    )
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever][level] = dm_fts[lever][level]
 
     # Lever - ssr-bev fixme dummy values
     lever = "ssr-bev"
-    # Compute BAU scenario level 1
+    # Compute BAU scenario level 1 (self-sufficiency ratio, only floor at 0)
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
-    linear_fitting(dm_fts[lever][level], years_fts)
+    linear_fitting(dm_fts[lever][level], years_fts, min_t0=0, min_tb=0)
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     for level in range(2, 5):
         # Compute the reduction objective in 2050 compared to the last ots value,

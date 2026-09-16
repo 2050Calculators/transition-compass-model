@@ -5062,7 +5062,10 @@ def datamatrix_to_pickle(dm_fts):
         if isinstance(DM_ots[key], dict):
             for subkey in dict_fts[key].keys():
                 dm = DM_ots[key][subkey].copy()
-                linear_fitting(dm, years_fts)
+                linear_fitting(dm, years_fts, min_t0=0, min_tb=0)
+                # Floor at 0: linear_fitting only clips the extrapolated endpoints,
+                # interpolated years can still dip negative if the underlying ots data is noisy
+                dm.array = np.clip(dm.array, 0, None)
 
                 for lev in range(1, 5):  # 1 to 4
                     if subkey in list_norm:  # ✅ check subkey, not key
@@ -5082,7 +5085,10 @@ def datamatrix_to_pickle(dm_fts):
                         )
         else:
             dm = DM_ots[key].copy()
-            linear_fitting(dm, years_fts)
+            linear_fitting(dm, years_fts, min_t0=0, min_tb=0)
+            # Floor at 0: linear_fitting only clips the extrapolated endpoints,
+            # interpolated years can still dip negative if the underlying ots data is noisy
+            dm.array = np.clip(dm.array, 0, None)
             for lev in range(1, 5):
                 dict_fts[key][lev] = dm.filter({"Years": years_fts}, inplace=False)
 
@@ -5099,9 +5105,9 @@ def datamatrix_to_pickle(dm_fts):
         "ssr-liv-meat-oth-animal",
     ]
     for lever in dict_lever_ssr_liv:
-        # Compute BAU scenario level 1
+        # Compute BAU scenario level 1 (self-sufficiency ratio, only floor at 0)
         dm_bau = dict_ots[lever].copy()
-        linear_fitting(dm_bau, years_fts)
+        linear_fitting(dm_bau, years_fts, min_t0=0, min_tb=0)
         dm_fts[lever][1] = dm_bau.filter({"Years": years_fts}, inplace=False)
         for level in range(2, 5):
             dm_fts[lever][level].deepen()
@@ -5127,9 +5133,9 @@ def datamatrix_to_pickle(dm_fts):
 
     # Lever - ssr-feed-pro
     lever = "ssr-feed-pro"
-    # Compute BAU scenario level 1
+    # Compute BAU scenario level 1 (self-sufficiency ratio, only floor at 0)
     dm_bau = dict_ots[lever].copy()
-    linear_fitting(dm_bau, years_fts)
+    linear_fitting(dm_bau, years_fts, min_t0=0, min_tb=0)
     dm_fts[lever][1] = dm_bau.filter({"Years": years_fts}, inplace=False)
     for level in range(2, 5):
         # Propagate the overall lever value across all feed categories
@@ -5154,9 +5160,9 @@ def datamatrix_to_pickle(dm_fts):
 
     # Lever - share-organic
     lever = "share-organic"
-    # Compute BAU scenario level 1
+    # Compute BAU scenario level 1 (share, bounded 0-1)
     dm_bau = dict_ots[lever].copy()
-    linear_fitting(dm_bau, years_fts)
+    linear_fitting(dm_bau, years_fts, min_t0=0, max_t0=1, min_tb=0, max_tb=1)
     dm_fts[lever][1] = dm_bau.filter({"Years": years_fts}, inplace=False)
     for level in range(2, 5):
         # Propagate the overall lever value across all feed categories
@@ -5189,18 +5195,20 @@ def datamatrix_to_pickle(dm_fts):
         linear_fitting(dm_fts[lever][level], years_fts)
         dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever] = dm_fts[lever]
-    # Compute BAU scenario level 1
+    # Compute BAU scenario level 1 (share of grass feed, bounded 0-1)
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
-    linear_fitting(dm_fts[lever][level], years_fts)
+    linear_fitting(
+        dm_fts[lever][level], years_fts, min_t0=0, max_t0=1, min_tb=0, max_tb=1
+    )
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever][level] = dm_fts[lever][level]
 
     # Lever - livestock-losses
     lever = "livestock-losses"
-    # Compute BAU scenario level 1
+    # Compute BAU scenario level 1 (losses index, only floor at 0)
     dm_bau = dict_ots[lever].copy()
-    linear_fitting(dm_bau, years_fts)
+    linear_fitting(dm_bau, years_fts, min_t0=0, min_tb=0)
     dm_fts[lever][1] = dm_bau.filter({"Years": years_fts}, inplace=False)
     for level in range(2, 5):
         # Compute the reduction objective in 2050 compared to the last ots value,
