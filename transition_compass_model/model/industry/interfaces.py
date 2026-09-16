@@ -377,7 +377,8 @@ def industry_energy_interface(
 
     DM_ene = {
         "ind-energy-demand": dm_useful_energy_demand_by_carr,
-        "ind-energy-efficiency-const": cmd_temp,
+        # "ind-energy-efficiency-const": cmd_temp,  # unused - nothing reads this key back out of
+        # industry_to_energy.pickle; cmd_temp is still computed above, so re-add if ever needed
     }
 
     # of write_pickle is True, write pickle
