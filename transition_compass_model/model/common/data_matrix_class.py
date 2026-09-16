@@ -1221,7 +1221,7 @@ class DataMatrix:
 
     def normalise_non_fixed_values(
         self,
-        fixed_cat,
+        fixed_cat: list,
         years_start,
         variable_name="tra_passenger_modal-share",
         country_name="Vaud",

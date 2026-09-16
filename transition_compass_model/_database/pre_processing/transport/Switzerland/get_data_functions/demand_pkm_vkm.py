@@ -233,7 +233,16 @@ def get_travel_demand_region_microrecencement(
     return dm
 
 
-def extract_EP2050_transport_vkm_demand(file_url, zip_name, file_pickle):
+scenario_table = {
+    "WWB": "Tabelle 03-05: Entwicklung der Fahrleistung von Strassenfahrzeugen im Szenario Weiter wie bisher",
+    "ZERO-B": "Tabelle 03-03: Entwicklung der Fahrleistung von Strassenfahrzeugen in ZERO-Variante B",
+}
+scenario_year = {"WWB": 18, "ZERO-B": 104}
+
+
+def extract_EP2050_transport_vkm_demand(
+    file_url, zip_name, file_pickle, scenario="WWB"
+):
     try:
         with open(file_pickle, "rb") as handle:
             dm = pickle.load(handle)
@@ -256,7 +265,7 @@ def extract_EP2050_transport_vkm_demand(file_url, zip_name, file_pickle):
 
         df.drop(columns=[df.columns[0], df.columns[3]], inplace=True)
 
-        table_title = "Tabelle 03-01: Entwicklung der Fahrleistung von Strassenfahrzeugen im Szenario ZERO Basis"
+        table_title = scenario_table[scenario]
         start_table_row = df.index[df["Unnamed: 1"] == table_title].tolist()[1]
         df.columns = df.iloc[start_table_row + 2]
 
@@ -286,7 +295,7 @@ def extract_EP2050_transport_vkm_demand(file_url, zip_name, file_pickle):
         df_T.columns = df_T.iloc[0]
         df_T = df_T.iloc[1:]
         df_T.reset_index(inplace=True)
-        df_T.rename(columns={18: "Years"}, inplace=True)
+        df_T.rename(columns={scenario_year[scenario]: "Years"}, inplace=True)
         df_T["Country"] = "Switzerland"
 
         dm = DataMatrix.create_from_df(df_T, num_cat=2)
@@ -317,8 +326,6 @@ def extract_EP2050_transport_vkm_demand(file_url, zip_name, file_pickle):
             dim="Categories2",
             inplace=True,
         )
-
-        # ['BEV', 'CEV', 'FCEV', 'H2', 'ICE-diesel', 'ICE-gas', 'ICE-gasoline', 'PHEV-diesel', 'PHEV-gasoline', 'kerosene', 'mt']
 
         with open(file_pickle, "wb") as handle:
             pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)

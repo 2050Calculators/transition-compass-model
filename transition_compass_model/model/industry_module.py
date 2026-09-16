@@ -320,7 +320,7 @@ def industry(
 def local_industry_run():
     # Configures initial input for model run
     years_setting, lever_setting = init_years_lever()
-    country_list = ["Switzerland"]
+    country_list = ["Vaud"]
 
     sectors = ["industry"]
     # Filter geoscale

@@ -1,3 +1,4 @@
+from params import country_list, years_fts, years_ots
 from processors.aviation_ots_pipeline_CH import run as aviation_ots_run
 from processors.aviation_part1_pipeline_CH import run as aviation_pt1_run
 from processors.electricity_emissions_pipeline import run as electricity_emission_run
@@ -20,23 +21,18 @@ from processors.transport_calib_energy_demand import run as data_check_energy_ru
 from processors.transport_calib_vkm import run as data_check_vkm_run
 from processors.transport_demand_pipeline import run as demand_pkm_vkm_run
 from processors.transport_ots_pickle import run as ots_pickle_run
+from scenarios.tra_techchnology_fts import run as tra_techchnology_fts_run
 from scenarios.transport_fts_BAU_pickle import run as fts_bau_pickle_run
 from scenarios.transport_fts_DLS import run as DLS_pickle_run
 from scenarios.transport_fts_PCV1 import run as fts_PCV1_pickle_run
 from scenarios.transport_fts_PCV2 import run as fts_PCV2_pickle_run
 
-from transition_compass_model._database.pre_processing.transport.Switzerland.scenarios.transport_fts_vaud_fill import (
-    run as fts_vaud_fill_pickle_run,
+from transition_compass_model._database.pre_processing.transport.Switzerland.scenarios.transport_fts_fill import (
+    run as fts_fill_pickle_run,
 )
 from transition_compass_model.model.common.auxiliary_functions import (
-    create_years_list,
     load_pop,
 )
-
-years_ots = create_years_list(1990, 2023, 1)
-years_fts = create_years_list(2025, 2050, 5)
-
-country_list = ["Switzerland", "Vaud"]
 
 dm_pop_ots = load_pop(country_list, years_list=years_ots)
 
@@ -202,12 +198,15 @@ DM_transport["fts"] = fts_bau_pickle_run(
     DM_transport_wo_aviation, country_list, years_ots, years_fts, DM_aviation_ots
 )
 
-print("Compile pickle fts - all BAU")
+print("Compile pickle fts PCV1 scenario - all BAU")
 DM_transport = fts_PCV1_pickle_run(DM_transport, country_list, years_ots, years_fts)
+
 DM_transport = fts_PCV2_pickle_run(DM_transport, country_list, years_ots, years_fts)
-DM_transport = DLS_pickle_run(DM_transport, country_list, years_ots, years_fts)
-DM_transport = fts_vaud_fill_pickle_run(
-    DM_transport, country_list, years_ots, years_fts
-)
+print("Compile pickle  DLS scenario - Lever 4")
+DM_transport = DLS_pickle_run(DM_transport, lev=4)
+
+DM_transport = tra_techchnology_fts_run(DM_transport, lev=4)
+
+DM_transport = fts_fill_pickle_run(DM_transport, country_list, years_ots, years_fts)
 
 print("Hello")
