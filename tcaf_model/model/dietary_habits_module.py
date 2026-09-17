@@ -377,6 +377,13 @@ def lifestyle_share_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scen
     dm_bau_fts = linear_forecast_BAU(
         dm_ots_temp, years_setting[0] - 1, years_ots, years_fts, min_tb=0, max_tb=None
     )
+    # Each category is fit independently, so nothing ties their sum to 1 the
+    # way the preprocessed target levels are (normalise() there, see
+    # dietary-habits_preprocessing.py). Without renormalising, the BAU shares
+    # drift away from 100% of the diet by 2050, unlike the target diet's
+    # shares - so even at 100% adherence to a diet-split-share level equal to
+    # BAU, the two wouldn't consume the same total.
+    dm_bau_fts.normalise(dim="Categories1", inplace=True)
     for i in years_fts:
         DM_diet["diet-split-share"][:, i, "lfs_consumers-diet_bau", :] = dm_bau_fts[
             :, i, "lfs_consumers-diet_bau", :
