@@ -365,9 +365,11 @@ def lifestyle_share_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scen
     # Extrapolate BAU fts - diet-split-share
     years_ots = create_years_list(years_setting[0], years_setting[1], 1)
     years_fts = create_years_list(years_setting[2], years_setting[3], 5)
+    # A declining category's straight-line trend can cross zero well before
+    # 2050 with no floor, giving a negative BAU share/demand for it.
     dm_ots_temp = DM_diet["diet-split-share"].filter({"Years": years_ots})
     dm_bau_fts = linear_forecast_BAU(
-        dm_ots_temp, years_setting[0], years_ots, years_fts, min_tb=None, max_tb=None
+        dm_ots_temp, years_setting[0], years_ots, years_fts, min_tb=0, max_tb=None
     )
     for i in years_fts:
         DM_diet["diet-split-share"][:, i, "lfs_consumers-diet_bau", :] = dm_bau_fts[
@@ -387,7 +389,7 @@ def lifestyle_share_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scen
     # Extrapolate BAU fts - energy-requirement
     dm_ots_temp = DM_diet["energy-requirement"].filter({"Years": years_ots})
     dm_bau_fts = linear_forecast_BAU(
-        dm_ots_temp, years_setting[0], years_ots, years_fts, min_tb=None, max_tb=None
+        dm_ots_temp, years_setting[0], years_ots, years_fts, min_tb=0, max_tb=None
     )
     for i in years_fts:
         DM_diet["energy-requirement"][:, i, "agr_kcal-req_bau", :] = dm_bau_fts[
@@ -538,9 +540,11 @@ def lifestyle_kcal_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scena
     # Extrapolate BAU fts - diet-split-share
     years_ots = create_years_list(years_setting[0], years_setting[1], 1)
     years_fts = create_years_list(years_setting[2], years_setting[3], 5)
+    # A declining category's straight-line trend can cross zero well before
+    # 2050 with no floor, giving a negative BAU share/demand for it.
     dm_ots_temp = DM_diet["diet-split-kcal"].filter({"Years": years_ots})
     dm_bau_fts = linear_forecast_BAU(
-        dm_ots_temp, years_setting[0], years_ots, years_fts, min_tb=None, max_tb=None
+        dm_ots_temp, years_setting[0], years_ots, years_fts, min_tb=0, max_tb=None
     )
     for i in years_fts:
         DM_diet["diet-split-kcal"][:, i, "lfs_consumers-diet_bau", :] = dm_bau_fts[
