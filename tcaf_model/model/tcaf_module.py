@@ -1169,10 +1169,15 @@ def TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot, DM_TCAF_lca)
     dm_tpe.append(dm_lca_ch_tot, dim="Variables")
 
     # total true cost (LCA + health, at the moment: biodiversity is currently disabled) [CHF]
+    # Uses cost-residual (attributable minus avoided), the net health burden that
+    # actually remains under this scenario's adherence and target diet.
+    # tcaf_health-diet_cost_total is the constant attributable baseline (computed
+    # from the BAU reference diet alone) and does not vary with adherence or diet
+    # choice, so it would make true-cost identical across every scenario.
     dm_tpe.operation(
         "tcaf_lca_cost_total",
         "+",
-        "tcaf_health-diet_cost_total",
+        "tcaf_health-diet_cost-residual_total",
         dim="Variables",
         out_col="tcaf_true-cost_total",
         unit="CHF",
