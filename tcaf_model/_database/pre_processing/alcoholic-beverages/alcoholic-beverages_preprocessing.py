@@ -9,6 +9,7 @@ import pandas as pd
 from tcaf_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_match_countries,
+    flat_fts_level,
     linear_fitting,
     linear_fitting_ots_db,
 )
@@ -1623,28 +1624,12 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
     # (a self-sufficiency ratio, so only floor at 0, it can exceed 1 for net exporters)
     dm_bau = dict_ots[lever].copy()
     linear_fitting(dm_bau, years_fts, min_t0=1e-6, min_tb=1e-6)
-    dm_fts[lever][1] = dm_bau.filter({"Years": years_fts}, inplace=False)
-
-    for level in range(2, 5):
-        # Compute the reduction objective in 2050 compared to the last ots value,
-        # for each food category
-        dm_ots = dict_ots[lever].copy()
-        array_temp = (
-            1
-            - (1 - dm_ots[:, years_ots[-1], "agr_ssr", :])
-            * dm_fts[lever][level][:, years_fts[-1], "ssr-bev", np.newaxis]
-        )
-        # Append with ots
-        dm_ots.add(
-            array_temp[:, np.newaxis, np.newaxis, :],
-            dim="Years",
-            dummy=True,
-            col_label=years_fts[-1],
-        )
-        # Linear fit
-        linear_fitting(dm_ots, years_fts)
-        dm_fts[lever][level] = dm_ots.filter({"Years": years_fts}, inplace=False)
-    dict_fts[lever] = dm_fts[lever]
+    dict_fts[lever] = {1: dm_bau.filter({"Years": years_fts}, inplace=False)}
+    # Level 2 - hold the last historical value (2023) constant
+    dict_fts[lever][2] = flat_fts_level(dict_ots[lever], years_ots, years_fts)
+    # Levels 3 and 4 - placeholders, to be revisited
+    dict_fts[lever][3] = flat_fts_level(dict_ots[lever], years_ots, years_fts, value=0)
+    dict_fts[lever][4] = flat_fts_level(dict_ots[lever], years_ots, years_fts, value=1)
 
     # ConstantsToDatamatrix ------------------------------------------------------
     dict_const = {}

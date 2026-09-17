@@ -1092,6 +1092,17 @@ def linear_fitting_ots_db(df_db, years_ots, countries="all"):
     return df_merged
 
 
+def flat_fts_level(dm_ots_lever, years_ots, years_fts, value=None):
+    # Build an fts-years DataMatrix with a flat value repeated over all years_fts.
+    # value=None repeats the last historical (ots) value, otherwise it repeats the given constant.
+    dm_last = dm_ots_lever.filter({"Years": [years_ots[-1]]}, inplace=False)
+    years_axis = dm_last.dim_labels.index("Years")
+    array = np.repeat(dm_last.array, len(years_fts), axis=years_axis)
+    if value is not None:
+        array = value * np.ones_like(array)
+    return DataMatrix.based_on(array, dm_last, change={"Years": years_fts})
+
+
 def linear_forecast_BAU(
     dm_ots, start_t, years_ots, years_fts, min_tb=None, max_tb=None
 ):

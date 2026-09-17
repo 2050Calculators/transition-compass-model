@@ -11,6 +11,7 @@ from _database.pre_processing.livestock.dressing_ratio import dressing_ratio
 from tcaf_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_match_countries,
+    flat_fts_level,
     linear_fitting,
     linear_fitting_ots_db,
 )
@@ -5111,16 +5112,19 @@ def datamatrix_to_pickle(dm_fts):
         "ssr-liv-meat-oth-animal",
     ]
     for lever in dict_lever_ssr_liv:
-        # Compute BAU scenario level 1 (self-sufficiency ratio, only floor at 0)
+        # Level 1 - business as usual scenario (self-sufficiency ratio, only floor at 0)
         dm_bau = dict_ots[lever].copy()
         linear_fitting(dm_bau, years_fts, min_t0=1e-6, min_tb=1e-6)
-        dm_fts[lever][1] = dm_bau.filter({"Years": years_fts}, inplace=False)
-        for level in range(2, 5):
-            dm_fts[lever][level].deepen()
-            dm_fts[lever][level].append(dict_ots[lever], dim="Years")
-            linear_fitting(dm_fts[lever][level], years_fts)
-            dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
-        dict_fts[lever] = dm_fts[lever]
+        dict_fts[lever] = {1: dm_bau.filter({"Years": years_fts}, inplace=False)}
+        # Level 2 - hold the last historical value (2023) constant
+        dict_fts[lever][2] = flat_fts_level(dict_ots[lever], years_ots, years_fts)
+        # Levels 3 and 4 - placeholders, to be revisited
+        dict_fts[lever][3] = flat_fts_level(
+            dict_ots[lever], years_ots, years_fts, value=0
+        )
+        dict_fts[lever][4] = flat_fts_level(
+            dict_ots[lever], years_ots, years_fts, value=1
+        )
 
     """lever = 'ssr-liv'
   for level in range(1,5):
@@ -5139,30 +5143,15 @@ def datamatrix_to_pickle(dm_fts):
 
     # Lever - ssr-feed-pro
     lever = "ssr-feed-pro"
-    # Compute BAU scenario level 1 (self-sufficiency ratio, only floor at 0)
+    # Level 1 - business as usual scenario (self-sufficiency ratio, only floor at 0)
     dm_bau = dict_ots[lever].copy()
     linear_fitting(dm_bau, years_fts, min_t0=1e-6, min_tb=1e-6)
-    dm_fts[lever][1] = dm_bau.filter({"Years": years_fts}, inplace=False)
-    for level in range(2, 5):
-        # Propagate the overall lever value across all feed categories
-        dm_ots = dict_ots[lever].copy()
-        dm_fts_temp = dm_fts[lever][level]
-        array_temp = (
-            dm_fts[lever][level][:, years_fts[-1], "agr_ssr", np.newaxis]
-            + dm_ots[:, years_ots[-1], "agr_ssr", :]
-            - dm_ots[:, years_ots[-1], "agr_ssr", :]
-        )  # +x-x To get the correct structure
-        # Append with ots
-        dm_ots.add(
-            array_temp[:, np.newaxis, np.newaxis, :],
-            dim="Years",
-            dummy=True,
-            col_label=years_fts[-1],
-        )
-        # Linear fit
-        linear_fitting(dm_ots, years_fts)
-        dm_fts[lever][level] = dm_ots.filter({"Years": years_fts}, inplace=False)
-    dict_fts[lever] = dm_fts[lever]
+    dict_fts[lever] = {1: dm_bau.filter({"Years": years_fts}, inplace=False)}
+    # Level 2 - hold the last historical value (2023) constant
+    dict_fts[lever][2] = flat_fts_level(dict_ots[lever], years_ots, years_fts)
+    # Levels 3 and 4 - placeholders, to be revisited
+    dict_fts[lever][3] = flat_fts_level(dict_ots[lever], years_ots, years_fts, value=0)
+    dict_fts[lever][4] = flat_fts_level(dict_ots[lever], years_ots, years_fts, value=1)
 
     # Lever - share-organic
     lever = "share-organic"

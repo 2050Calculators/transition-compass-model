@@ -1,4 +1,3 @@
-import copy
 import os
 import pickle
 
@@ -11,6 +10,7 @@ from _database.pre_processing.api_routines_CH import get_data_api_CH
 from tcaf_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_match_countries,
+    flat_fts_level,
     linear_fitting,
     linear_fitting_ots_db,
 )
@@ -2824,60 +2824,54 @@ def datamatrix_to_pickle(dm_fts):
         lever: value for lever, value in dict_ots.items() if "ssr-crop" in lever
     }
     for lever in dict_lever_ssr_crop:
-        # Keep level 1 as the business as usual scenario (linear fitting on past data)
+        # Level 1 - business as usual scenario (linear fitting on past data)
         dm_bau_1 = dict_fts[lever][1]
-        # Create a copy across all dimensions to not have issues
-        dm_fts[lever] = copy.deepcopy(dm_fts["ssr-crop"])
-        # Create new variable name
-        var = "agr_ssr_" + lever.replace("ssr-", "", 1)
-        for level in range(2, 5):
-            dm_fts[lever][level].rename_col("agr_ssr", var, "Variables")
-            dm_fts[lever][level].deepen()
-            dm_fts[lever][level].append(dict_ots[lever], dim="Years")
-            linear_fitting(dm_fts[lever][level], years_fts)
-            dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
-        dict_fts[lever] = dm_fts[lever]
-        dict_fts[lever][1] = dm_bau_1
+        dict_fts[lever] = {1: dm_bau_1}
+        # Level 2 - hold the last historical value (2023) constant
+        dict_fts[lever][2] = flat_fts_level(dict_ots[lever], years_ots, years_fts)
+        # Levels 3 and 4 - placeholders, to be revisited
+        dict_fts[lever][3] = flat_fts_level(
+            dict_ots[lever], years_ots, years_fts, value=0
+        )
+        dict_fts[lever][4] = flat_fts_level(
+            dict_ots[lever], years_ots, years_fts, value=1
+        )
 
     # Lever - ssr-bev-.*
     dict_lever_ssr_bev = {
         lever: value for lever, value in dict_ots.items() if "ssr-bev" in lever
     }
     for lever in dict_lever_ssr_bev:
-        # Keep level 1 as the business as usual scenario (linear fitting on past data)
+        # Level 1 - business as usual scenario (linear fitting on past data)
         dm_bau_1 = dict_fts[lever][1]
-        # Create a copy across all dimensions to not have issues
-        dm_fts[lever] = copy.deepcopy(dm_fts["ssr-bev"])
-        # Create new variable name
-        var = "agr_ssr_pro-" + lever.replace("ssr-", "", 1)
-        for level in range(2, 5):
-            dm_fts[lever][level].rename_col("agr_ssr", var, "Variables")
-            dm_fts[lever][level].deepen()
-            dm_fts[lever][level].append(dict_ots[lever], dim="Years")
-            linear_fitting(dm_fts[lever][level], years_fts)
-            dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
-        dict_fts[lever] = dm_fts[lever]
-        dict_fts[lever][1] = dm_bau_1
+        dict_fts[lever] = {1: dm_bau_1}
+        # Level 2 - hold the last historical value (2023) constant
+        dict_fts[lever][2] = flat_fts_level(dict_ots[lever], years_ots, years_fts)
+        # Levels 3 and 4 - placeholders, to be revisited
+        dict_fts[lever][3] = flat_fts_level(
+            dict_ots[lever], years_ots, years_fts, value=0
+        )
+        dict_fts[lever][4] = flat_fts_level(
+            dict_ots[lever], years_ots, years_fts, value=1
+        )
 
     # Lever - ssr-pro-.*
     dict_lever_ssr_pro = {
         lever: value for lever, value in dict_ots.items() if "ssr-pro" in lever
     }
     for lever in dict_lever_ssr_pro:
-        # Keep level 1 as the business as usual scenario (linear fitting on past data)
+        # Level 1 - business as usual scenario (linear fitting on past data)
         dm_bau_1 = dict_fts[lever][1]
-        # Create a copy across all dimensions to not have issues
-        dm_fts[lever] = copy.deepcopy(dm_fts["ssr-pro"])
-        # Create new variable name
-        var = "agr_ssr_pro-crop-processed-" + lever.replace("ssr-pro-", "", 1)
-        for level in range(2, 5):
-            dm_fts[lever][level].rename_col("agr_ssr", var, "Variables")
-            dm_fts[lever][level].deepen()
-            dm_fts[lever][level].append(dict_ots[lever], dim="Years")
-            linear_fitting(dm_fts[lever][level], years_fts)
-            dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
-        dict_fts[lever] = dm_fts[lever]
-        dict_fts[lever][1] = dm_bau_1
+        dict_fts[lever] = {1: dm_bau_1}
+        # Level 2 - hold the last historical value (2023) constant
+        dict_fts[lever][2] = flat_fts_level(dict_ots[lever], years_ots, years_fts)
+        # Levels 3 and 4 - placeholders, to be revisited
+        dict_fts[lever][3] = flat_fts_level(
+            dict_ots[lever], years_ots, years_fts, value=0
+        )
+        dict_fts[lever][4] = flat_fts_level(
+            dict_ots[lever], years_ots, years_fts, value=1
+        )
 
     # Lever - crop-share-intensive
     lever = "crop-share-intensive"
