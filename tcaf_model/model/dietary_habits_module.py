@@ -367,9 +367,15 @@ def lifestyle_share_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scen
     years_fts = create_years_list(years_setting[2], years_setting[3], 5)
     # A declining category's straight-line trend can cross zero well before
     # 2050 with no floor, giving a negative BAU share/demand for it.
+    # start_t - 1: linear_forecast_BAU excludes years <= start_t from the
+    # regression, but the preprocessed level-1 (BAU) FTS values this is meant
+    # to reproduce - see dietary-habits_preprocessing.py's "Lever - kcal-req"
+    # and "Lever - diet-split-share" sections - are fit over the full OTS
+    # range. Excluding the first OTS year here shifts the fitted trend just
+    # enough that lever level 1 (nominally BAU) no longer matches BAU exactly.
     dm_ots_temp = DM_diet["diet-split-share"].filter({"Years": years_ots})
     dm_bau_fts = linear_forecast_BAU(
-        dm_ots_temp, years_setting[0], years_ots, years_fts, min_tb=0, max_tb=None
+        dm_ots_temp, years_setting[0] - 1, years_ots, years_fts, min_tb=0, max_tb=None
     )
     for i in years_fts:
         DM_diet["diet-split-share"][:, i, "lfs_consumers-diet_bau", :] = dm_bau_fts[
@@ -386,10 +392,11 @@ def lifestyle_share_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scen
         unit="kcal/cap/day",
     )
 
-    # Extrapolate BAU fts - energy-requirement
+    # Extrapolate BAU fts - energy-requirement (see the diet-split-share
+    # comment above on start_t - 1)
     dm_ots_temp = DM_diet["energy-requirement"].filter({"Years": years_ots})
     dm_bau_fts = linear_forecast_BAU(
-        dm_ots_temp, years_setting[0], years_ots, years_fts, min_tb=0, max_tb=None
+        dm_ots_temp, years_setting[0] - 1, years_ots, years_fts, min_tb=0, max_tb=None
     )
     for i in years_fts:
         DM_diet["energy-requirement"][:, i, "agr_kcal-req_bau", :] = dm_bau_fts[
@@ -542,9 +549,10 @@ def lifestyle_kcal_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scena
     years_fts = create_years_list(years_setting[2], years_setting[3], 5)
     # A declining category's straight-line trend can cross zero well before
     # 2050 with no floor, giving a negative BAU share/demand for it.
+    # start_t - 1: see the matching comment in lifestyle_share_workflow.
     dm_ots_temp = DM_diet["diet-split-kcal"].filter({"Years": years_ots})
     dm_bau_fts = linear_forecast_BAU(
-        dm_ots_temp, years_setting[0], years_ots, years_fts, min_tb=0, max_tb=None
+        dm_ots_temp, years_setting[0] - 1, years_ots, years_fts, min_tb=0, max_tb=None
     )
     for i in years_fts:
         DM_diet["diet-split-kcal"][:, i, "lfs_consumers-diet_bau", :] = dm_bau_fts[
