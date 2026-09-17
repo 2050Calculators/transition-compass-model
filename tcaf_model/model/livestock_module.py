@@ -395,6 +395,29 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
         unit="lsu",
     )
 
+    # Guard against a near-zero slaughter rate: dividing by it blows up the
+    # population estimate to physically implausible values (e.g. a category
+    # whose slaughter rate trends toward 0 in a BAU projection). When the rate
+    # drops below a reliability threshold, hold the population at the last
+    # year where the rate was still reliable instead of dividing by it.
+    RATE_RELIABILITY_THRESHOLD = 0.01
+    idx_rate = DM_liv_prod["liv_slaughtered_rate"].idx
+    rate_arr = DM_liv_prod["liv_slaughtered_rate"].array[
+        :, :, idx_rate["agr_livestock_slaughtered"], :
+    ]
+    unreliable = rate_arr < RATE_RELIABILITY_THRESHOLD
+    if unreliable.any():
+        pop_arr = DM_liv_prod["liv_slaughtered_rate"].array[
+            :, :, idx_rate["agr_liv_population_raw"], :
+        ]
+        for yi in range(1, len(DM_liv_prod["liv_slaughtered_rate"].col_labels["Years"])):
+            mask = unreliable[:, yi, :]
+            if mask.any():
+                pop_arr[:, yi, :][mask] = pop_arr[:, yi - 1, :][mask]
+        DM_liv_prod["liv_slaughtered_rate"].array[
+            :, :, idx_rate["agr_liv_population_raw"], :
+        ] = pop_arr
+
     # (CH only) Calibration Total Livestock population
     dm_cal_liv_pop = DM_liv_prod["cal_liv_population"].filter(
         {"Variables": ["cal_agr_liv-population"]}
