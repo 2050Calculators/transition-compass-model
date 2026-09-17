@@ -1,0 +1,1100 @@
+import os
+import pickle
+import re
+
+import numpy as np
+import pyomo.environ as pyo
+
+import transition_compass_model.model.energy.interfaces as inter
+import transition_compass_model.model.energy.utils as utils
+from transition_compass_model.model.common.auxiliary_functions import (
+    dm_add_missing_variables,
+)
+from transition_compass_model.model.common.data_matrix_class import DataMatrix
+from transition_compass_model.model.energy.energyscopepyomo.ses_pyomo import (
+    attach,
+    build_model_structure,
+    load_data,
+    make_highs,
+    set_constraints,
+    solve,
+)
+
+# Friendly power-sector category name -> underlying EnergyScope TECHNOLOGIES
+# code(s). Used both to group Pyomo's installed_GW/installed_N output (see
+# extract_2050_output_pyomo) and to look up each category's ref_size for the
+# cantonal redistribution below (compute_cantonal_new_capacity). A grouped
+# category (e.g. "Dam", "Coal") has no single well-defined ref_size; the first
+# listed code is used as an approximation.
+POWER_TECH_REVERSED_MAPPING = {
+    "GasCC": ["CCGT"],
+    "GasCC-CCS": ["CCGT_CCS"],
+    "Nuclear": ["NUCLEAR"],
+    "PV-roof": ["PV"],
+    "WindOn": ["WIND"],
+    "Dam": ["NEW_HYDRO_DAM", "HYDRO_DAM"],
+    "RoR": ["NEW_HYDRO_RIVER", "HYDRO_RIVER"],
+    "Coal": ["COAL_US", "COAL_IGCC", "COAL_US_CCS", "COAL_IGCC_CCS"],
+    "Geothermal": ["GEOTHERMAL"],
+}
+
+
+def extract_sankey_energy_flow(DM):
+    # Sankey structure
+    # 	printf "%s,%s,%.2f,%s,%s,%s\n", "NG" , "Mob priv", sum{t in PERIODS}(-layers_in_out["CAR_NG","NG"] * F_Mult_t ["CAR_NG", t] * t_op [t]) / 1000 , "NG", "#FFD700", "TWh" >> "energyscope-MILP/output/sankey/input2sankey.csv";
+    dm_eff = DM["efficiency"]
+    dm_hours = DM["hours_month"]
+    dm_operation = DM["monthly_operation_GW"]
+    dm_operation.sort("Categories1")
+    dm_eff.sort("Categories1")
+    common_cat = set(dm_operation.col_labels["Categories1"]).intersection(
+        dm_eff.col_labels["Categories1"]
+    )
+    dm_operation.filter({"Categories1": common_cat}, inplace=True)
+    dm_eff.filter({"Categories1": common_cat}, inplace=True)
+
+    # Production capacity = Sum monthly operation capacity in GW x hours in a month h
+    arr_prod_cap_yr = np.nansum(
+        dm_operation.array * dm_hours.array[:, :, :, np.newaxis, :],
+        axis=-1,
+        keepdims=True,
+    )
+    # Energy = yearly operation by effieciency
+    arr_energy = dm_eff.array * arr_prod_cap_yr / 1000
+    dm_eff.add(arr_energy, dim="Variables", col_label="pow_production", unit="TWh")
+    dm_energy_full = DataMatrix.based_on(
+        arr_energy,
+        dm_eff,
+        change={"Variables": ["pow_production"]},
+        units={"pow_production": "TWh"},
+    )
+    # Energy production
+    # Use the fact that the values are positive or negative to split
+    cat1, cat2 = np.where(dm_energy_full.array[0, 0, 0, :, :] > 0.01)
+    new_arr = np.zeros((1, 1, 1, len(cat1)))
+    new_arr[0, 0, 0, :] = dm_energy_full.array[0, 0, 0, cat1, cat2]
+    new_categories = [
+        dm_energy_full.col_labels["Categories1"][c1]
+        + "-"
+        + dm_energy_full.col_labels["Categories2"][c2]
+        for c1, c2 in zip(cat1, cat2)
+    ]
+    dm_energy_prod = DataMatrix(
+        col_labels={
+            "Country": dm_eff.col_labels["Country"],
+            "Years": dm_eff.col_labels["Years"],
+            "Variables": ["pow_production"],
+            "Categories1": new_categories,
+        },
+        units={"pow_production": "TWh"},
+    )
+    dm_energy_prod.array = new_arr
+
+    # Power production
+    #! FIXME: check this natural gas situation
+    dm_power_prod = dm_energy_prod.filter_w_regex({"Categories1": ".*ELECTRICITYv2"})
+    # if 'NG_CCS-NG_CCSv2' in dm_energy_prod.col_labels['Categories1']:
+    #  dm_natural_gas_elec = dm_energy_prod.filter({'Categories1': ['NG_CCS-NG_CCSv2']})
+    #  dm_power_prod.append(dm_natural_gas_elec, dim='Categories1')
+    # if 'CCGT_CCS-ELECTRICITYv2' in dm_power_prod.col_labels['Categories1']:
+    #  dm_power_prod.drop('Categories1', 'CCGT_CCS-ELECTRICITYv2')
+
+    # cat_elec = dm_power_prod.col_labels['Categories1']
+    dm_power_prod.deepen(sep="-")
+    dm_power_prod.group_all("Categories2")
+
+    # Energy production other than electricity
+    # dm_energy_prod.drop(col_label=cat_elec, dim='Categories1')
+    # dm_energy_prod.groupby({'oil-oiltmp': '.*OIL.*'}, inplace=True, regex=True, dim='Categories1')
+    # col_to_drop = [col for col in dm_energy_prod.col_labels['Categories1'] if 'MOB_' in col or 'HEAT_' in col]
+    # dm_energy_prod.drop('Categories1', col_to_drop)
+    # dm_energy_prod.deepen(sep='-')
+    # dm_energy_prod.group_all(dim='Categories2', inplace=True)
+
+    # Energy consumption
+    cat1, cat2 = np.where(dm_energy_full.array[0, 0, 0, :, :] < 0)
+    new_arr = np.zeros((1, 1, 1, len(cat1)))
+    new_arr[0, 0, 0, :] = -dm_energy_full.array[0, 0, 0, cat1, cat2]
+    new_categories = [
+        dm_energy_full.col_labels["Categories1"][c1]
+        + "-"
+        + dm_energy_full.col_labels["Categories2"][c2]
+        for c1, c2 in zip(cat1, cat2)
+    ]
+    dm_energy_use = DataMatrix(
+        col_labels={
+            "Country": dm_eff.col_labels["Country"],
+            "Years": dm_eff.col_labels["Years"],
+            "Variables": ["pow_production"],
+            "Categories1": new_categories,
+        },
+        units={"pow_production": "TWh"},
+    )
+    dm_energy_use.drop("Categories1", "DIESEL-DIESELv2")
+    dm_energy_use.array = new_arr
+    col_to_drop = [col for col in new_categories if "MOB_" in col or "HEAT_" in col]
+    dm_energy_use.drop("Categories1", col_to_drop)
+    dm_energy_use.rename_col_regex("v2", "", dim="Categories1")
+
+    dm_energy_use.deepen(sep="-")
+    group_dict = {
+        "passenger_LDV": "CAR.*",
+        "passenger_bus": "BUS.*",
+        "passenger_metrotram": "TRAMWAY.*",
+        "passenger_rail": "TRAIN_PUB.*",
+        "freight_rail": "TRAIN_FREIGHT.*",
+        "freight_HDV": "TRUCK.*",
+        "decentralised-heating": "DEC_.*",
+        "district-heating": "DHN_.*",
+        "industrial-heat": "IND_.*",
+    }
+    # Remove groups that are not in output
+    to_remove = []
+    for group, expr in group_dict.items():
+        pattern = re.compile(expr)
+        keep = [
+            col
+            for col in dm_energy_use.col_labels["Categories1"]
+            if re.match(pattern, str(col))
+        ]
+        if not keep:
+            to_remove.append(group)
+
+    for group in to_remove:
+        group_dict.pop(group)
+
+    dm_energy_use.groupby(group_dict, dim="Categories1", regex=True, inplace=True)
+
+    for col in ["H2_ELECTROLYSIS", "H2_NG"]:
+        if col in dm_energy_use.col_labels["Categories1"]:
+            dm_energy_use.drop("Categories1", col)
+
+    rename_dict = {
+        "DIESEL": "diesel",
+        "GASOLINE": "gasoline",
+        "H2_ELECTROLYSIS": "green-hydrogen",
+        "H2_NG": "grey-hydrogen",
+        "LFO": "heating-oil",
+        "NG": "gas",
+    }
+    # dm_energy_use.rename_col([])
+
+    DM["power-production"] = dm_power_prod
+    DM["energy-demand-final-use"] = dm_energy_use
+    # DM['oil-gas-supply'] = dm_energy_prod
+
+    return DM
+
+
+def extract_2050_output_pyomo(m, country_prod, endyr, years_fts):
+    # DM.keys = {'installed_GW', 'installed_N', 'emissions', 'storage_in',
+    # 'storage_out', 'monthly_operation_GW', 'Losses'}
+    DM = utils.get_pyomo_output(m, country_prod, endyr)
+
+    # From ses_eval.mod
+    # Hours in a month (t_op, from ses_main.json, as loaded onto the model)
+    periods = list(m.PERIODS)
+    dm_hours = DataMatrix(
+        col_labels={
+            "Country": ["Switzerland"],
+            "Years": [endyr],
+            "Variables": ["t_op"],
+            "Categories1": [str(p) for p in periods],
+        },
+        units={"t_op": "-"},
+    )
+    dm_hours.array = np.array([pyo.value(m.t_op[p]) for p in periods]).reshape(
+        1, 1, 1, len(periods)
+    )
+    DM["hours_month"] = dm_hours
+    # Efficiency (layers_in_out)
+    resources = set(m.RESOURCES)
+    technologies = set(m.TECHNOLOGIES)
+    storage = set(m.STORAGE_TECH)
+    index_list = list((resources | technologies) - storage)
+    DM["efficiency"] = utils.pyomo_param_to_dm(
+        m,
+        pyomo_var_name="layers_in_out",
+        cntr_name=country_prod,
+        end_yr=endyr,
+        indexes=["explicit", "LAYERS"],
+        unit_dict={"efficiency": "%"},
+        explicit=index_list,
+    )
+    # Sankey / Energy flows
+    DM_tmp = extract_sankey_energy_flow(DM)
+    DM = DM | DM_tmp
+
+    # Losses:
+    # Sum-product over hours
+    arr_losses = np.nansum(
+        DM["Losses"].array * DM["hours_month"].array[:, :, :, np.newaxis, :],
+        axis=-1,
+        keepdims=False,
+    )
+    DM["Losses"].group_all("Categories2")
+    DM["Losses"].array = -arr_losses / 1000
+    DM["Losses"].units = {"Losses": "TWh"}
+    # Rename power-production DM
+
+    # If I'm using natural gas, then it's GasCC, else if I'm using NG_CCS it's GasCC-CCS
+    # if 'NG' in DM['energy-demand-final-use'].col_labels['Categories2']:
+    # DM['power-production'].groupby({'CHP': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
+    # elif 'NG_CCS' in DM['energy-demand-final-use'].col_labels['Categories2']:
+    #    DM['power-production'].groupby({'CHP-CCS': '.*COGEN.*'}, regex=True, dim='Categories1', inplace=True)
+    map_prod = {
+        "Net-import": ["ELECTRICITY"],
+        "Nuclear": ["NUCLEAR"],
+        "PV-roof": ["PV"],
+        "WindOn": ["WIND"],
+        "Dam": ["HYDRO_DAM"],
+        "Dam_new": ["NEW_HYDRO_DAM"],
+        "RoR": ["HYDRO_RIVER"],
+        "RoR_new": ["NEW_HYDRO_RIVER"],
+        "GasCC-CCS": ["CCGT_CCS"],
+        "GasCC": ["CCGT"],
+    }
+    for key, value in list(map_prod.items()):
+        if value[0] not in DM["power-production"].col_labels["Categories1"]:
+            map_prod.pop(key)
+    DM["power-production"].groupby(map_prod, dim="Categories1", inplace=True)
+    # Work-around for when new_hydro_river or new_hydro_dam are not available
+    DM["power-production"].groupby(
+        {"RoR": "RoR.*", "Dam": "Dam.*"}, regex=True, inplace=True, dim="Categories1"
+    )
+    # Append Losses to power production
+    dm_losses = DM["Losses"].copy()
+    dm_losses.rename_col("Losses", "pow_production", "Variables")
+    dm_losses.rename_col("ELECTRICITY", "Losses", "Categories1")
+    DM["power-production"].append(dm_losses, dim="Categories1")
+
+    # Drop from installed GW
+    power_categories = list(m.TECHNOLOGIES_OF_END_USES_TYPE["ELECTRICITY"])
+    cogen_categories = list(m.COGEN)
+    DM["installed_GW"].filter(
+        {"Categories1": power_categories + cogen_categories}, inplace=True
+    )
+
+    reversed_mapping = POWER_TECH_REVERSED_MAPPING
+
+    # !FIXME: This is probably not all in the same units. Why is GasCC zero here?
+    DM["installed_GW"].groupby(
+        {"CHP": ".*COGEN.*"}, regex=True, dim="Categories1", inplace=True
+    )
+    DM["installed_GW"].groupby(reversed_mapping, dim="Categories1", inplace=True)
+
+    # Rename installed N
+    DM["installed_N"].filter(
+        {"Categories1": power_categories + cogen_categories}, inplace=True
+    )
+    DM["installed_N"].groupby(
+        {"CHP": ".*COGEN.*"}, regex=True, dim="Categories1", inplace=True
+    )
+    DM["installed_N"] = DM["installed_N"].groupby(
+        reversed_mapping, dim="Categories1", inplace=False
+    )
+
+    # Rename fuel-supply
+    # mapping = {'diesel': ['DIESEL'], 'H2': ['H2_NG', 'H2_ELECTROLYSIS'], 'gasoline': ['GASOLINE'],
+    #           'gas': ['NG', 'NG_CCS'], 'heating-oil': ['LFO', 'oil'], 'waste': ['WASTE'], 'wood': ['WOOD']}
+    # DM['oil-gas-supply'].groupby(mapping, inplace=True, dim='Categories1')
+
+    return DM
+
+
+def create_future_country_production_trend(DM_2050, DM_input, years_ots, years_fts):
+    # Capacity trend - Country level
+    dm_cap_2050 = DM_2050["installed_GW"].copy()
+    dm_cap = DM_input["cal-capacity"].copy()
+    # Fill Nans with 0
+    np.nan_to_num(x=dm_cap.array, copy=False, nan=0)
+    dm_cap_sto = dm_cap.filter({"Categories1": ["Battery-TSO", "DAC", "Pump-Open"]})
+    dm_cap.drop("Categories1", ["Battery-TSO", "DAC", "Pump-Open"])
+    missing_cat = list(
+        set(dm_cap.col_labels["Categories1"])
+        - set(dm_cap_2050.col_labels["Categories1"])
+    )
+    dm_cap_2050.add(0, dim="Categories1", col_label=missing_cat, dummy=True)
+    missing_cat = list(
+        set(dm_cap_2050.col_labels["Categories1"])
+        - set(dm_cap.col_labels["Categories1"])
+    )
+    dm_cap.add(0, dim="Categories1", col_label=missing_cat, dummy=True)
+    dm_cap_2050.add(
+        np.nan, dummy=True, dim="Years", col_label=dm_cap.col_labels["Years"][:-1]
+    )
+    dm_cap_2050.sort("Years")
+    dm_cap_2050.rename_col("F_Mult", "pow_capacity", dim="Variables")
+    dm_cap_2050.change_unit("pow_capacity", old_unit="GW", new_unit="MW", factor=1000)
+    dm_cap.filter({"Country": dm_cap_2050.col_labels["Country"]}, inplace=True)
+    dm_cap.append(dm_cap_2050, dim="Variables")
+    idx = dm_cap.idx
+    idx_ots = [idx[yr] for yr in years_ots]
+    dm_cap.array[0, idx_ots, idx["pow_capacity"], :] = dm_cap.array[
+        0, idx_ots, idx["pow_existing-capacity"], :
+    ]
+
+    # Decommissioning
+    cap_latest_ots = dm_cap.array[0, idx_ots[-1], idx["pow_capacity"], :]
+    cap_final = dm_cap.array[0, -1, idx["pow_capacity"], :]
+    cap_max = dm_cap.array[0, -1, idx["pow_capacity-Pmax"], :]
+    # If the solved 2050 capacity exactly matches the calibrated Pmax ceiling, use the real
+    # year-by-year Pmax curve as the trend instead of interpolating a straight line between
+    # the last ots value and the 2050 point - this is what makes a category's fts trend a
+    # step function following its known real-world schedule (e.g. nuclear's lever-driven
+    # capacity, see energyscope_pyomo) rather than a smooth ramp. Not restricted to
+    # declining capacity: a category whose 2050 value grows to exactly hit its calibrated
+    # ceiling should use the real ceiling curve too, not a straight line.
+    decommissioned_mask = np.isclose(cap_max, cap_final)
+    idx_fts = [idx[yr] for yr in years_fts]
+    idx_fts = np.array(idx_fts)
+    dm_cap.array[0, idx_fts[:, None], idx["pow_capacity"], decommissioned_mask] = (
+        dm_cap.array[0, idx_fts[:, None], idx["pow_capacity-Pmax"], decommissioned_mask]
+    )
+
+    dm_cap.fill_nans("Years")
+    # The capacity installed cannot be higher than Pmax
+    # The capacity in 2050 should already be below the max
+    dm_cap.array[0, :, idx["pow_capacity"], 0:-1] = np.minimum(
+        dm_cap.array[0, :, idx["pow_capacity"], 0:-1],
+        dm_cap.array[0, :, idx["pow_capacity-Pmax"], 0:-1],
+    )
+    # dm_cap_hist.append(, dim='Years')
+
+    # Production trend - Country level
+    dm_prod_2050 = DM_2050["power-production"]
+    dm_prod_hist = DM_input["cal-production"].copy()
+
+    # Append prod EnergyScope 2050 to historical production at Country level
+    dm_prod_hist.drop(dim="Categories1", col_label="Pump-Open")
+    missing_cat = list(
+        set(dm_prod_hist.col_labels["Categories1"])
+        - set(dm_prod_2050.col_labels["Categories1"])
+    )
+    dm_prod_2050.add(0, dummy=True, dim="Categories1", col_label=missing_cat)
+    missing_cat = list(
+        set(dm_prod_2050.col_labels["Categories1"])
+        - set(dm_prod_hist.col_labels["Categories1"])
+    )
+    dm_prod_hist.add(0, dummy=True, dim="Categories1", col_label=missing_cat)
+    dm_prod_hist.append(dm_prod_2050, dim="Years")
+    dm_add_missing_variables(dm_prod_hist, {"Years": years_fts}, fill_nans=False)
+    dm_prod_trend = dm_prod_hist
+
+    ## Use Capacity to create a Pathway at Country level
+    dm_cap_tmp = dm_cap.filter({"Variables": ["pow_capacity"]})
+    missing_cat = list(
+        set(dm_prod_trend.col_labels["Categories1"])
+        - set(dm_cap_tmp.col_labels["Categories1"])
+    )
+    dm_cap_tmp.add(0, dim="Categories1", col_label=missing_cat, dummy=True)
+    # Create fts trend by using the pow_cap-fact = production / capacity
+    # fake_net_import_cap = dm_prod_hist[:, :, 'pow_production', 'Net-import', np.newaxis]
+    # dm_cap_tmp.add(fake_net_import_cap, dummy=True, dim='Categories1', col_label='Net-import')
+    # Remove losses
+    dm_losses = dm_prod_trend.filter({"Categories1": ["Losses"]})
+    dm_net_import = dm_prod_trend.filter({"Categories1": ["Net-import"]})
+    dm_prod_trend.drop("Categories1", ["Losses", "Net-import"])
+    # Compute capacity factor
+    dm_prod_trend.append(
+        dm_cap_tmp.filter({"Categories1": dm_prod_trend.col_labels["Categories1"]}),
+        dim="Variables",
+    )
+    dm_prod_trend.operation(
+        "pow_production",
+        "/",
+        "pow_capacity",
+        out_col="pow_cap-fact",
+        unit="TWh/MW",
+        div0="interpolate",
+    )
+    dm_prod_trend.fill_nans("Years")
+    idx = dm_prod_trend.idx
+    idx_fts = [idx[yr] for yr in years_fts]
+    dm_prod_trend.array[0, idx_fts, idx["pow_production"], :] = (
+        dm_prod_trend.array[0, idx_fts, idx["pow_capacity"], :]
+        * dm_prod_trend.array[0, idx_fts, idx["pow_cap-fact"], :]
+    )
+
+    dm_prod_trend.change_unit(
+        "pow_cap-fact",
+        old_unit="TWh/MW",
+        new_unit="%",
+        factor=8.760 * 1e-3,
+        operator="/",
+    )
+    dm_prod_trend.change_unit(
+        "pow_capacity", old_unit="MW", new_unit="GW", factor=1e-3, operator="*"
+    )
+
+    ## Compute Losses trend
+    # Compute total production
+    dm_tot_prod = dm_prod_trend.groupby(
+        {"Total": ".*"}, dim="Categories1", regex=True, inplace=False
+    )
+    dm_tot_prod.filter({"Variables": ["pow_production"]}, inplace=True)
+    # Losses / Prod = Loss-rate
+    dm_losses.append(dm_tot_prod, dim="Categories1")
+    dm_losses.operation(
+        "Losses", "/", "Total", out_col="Loss-rate", unit="%", dim="Categories1"
+    )
+    # fill-nan loss rate
+    dm_losses.fill_nans("Years")
+    # Losses = Prod * Loss-rate
+    dm_losses.drop("Categories1", "Losses")
+    dm_losses.operation(
+        "Loss-rate", "*", "Total", out_col="Losses", unit="TWh", dim="Categories1"
+    )
+    dm_losses.filter({"Categories1": ["Losses"]}, inplace=True)
+
+    return dm_prod_hist, dm_losses, dm_net_import
+
+
+def compute_cantonal_new_capacity(
+    dm_prod_cap_cntr,
+    dm_cal_capacity,
+    country_dem,
+    years_ots,
+    years_fts,
+    ref_size_by_category,
+):
+    """Disaggregate the national *new* capacity added between years_fts[0]
+    and years_fts[-1] to a canton, weighted by the canton's time-varying
+    share of national pow_capacity-Pmax potential (added on top of the
+    canton's own real years_fts[0] baseline, not a flat share of the whole
+    trajectory), snapped to ref_size, and capped at the canton's own Pmax.
+
+    Nuclear is handled separately: a canton's own decommissioning already
+    flows through the general share above (once that canton's Pmax data is
+    time-varying), but new-build capacity (lever level 4) has no calibrated
+    Pmax to rank against in any canton, so the generic share can't place it.
+    Instead it is sited entirely at whichever canton's own nuclear Pmax
+    decommissions within years_fts - the site of a plant that's actually
+    closing. This branch is gated purely on that canton's own historical
+    nuclear Pmax (no hardcoded canton names): it's a no-op for any canton
+    without nuclear capacity history (true for all cantons currently shipped)
+    and activates automatically once one is added.
+
+    Returns a DataMatrix with a single new Variable, "pow_capacity-cantonal-new"
+    (GW), Categories1=tech, Country=[country_dem], Years=years_fts.
+    """
+    country_prod = dm_prod_cap_cntr.col_labels["Country"][0]
+
+    dm_cap_nat = dm_prod_cap_cntr.filter({"Variables": ["pow_capacity"]})
+    # Losses/Net-import were appended as extra (NaN pow_capacity) Categories1
+    # entries by balance_demand_prod_with_net_import - not real techs to
+    # redistribute.
+    non_tech_cat = [
+        c for c in ["Losses", "Net-import"] if c in dm_cap_nat.col_labels["Categories1"]
+    ]
+    if non_tech_cat:
+        dm_cap_nat.drop("Categories1", non_tech_cat)
+    dm_cap_nat.sort("Categories1")
+    categories = dm_cap_nat.col_labels["Categories1"]
+
+    dm_cal = dm_cal_capacity.filter(
+        {"Variables": ["pow_capacity-Pmax", "pow_existing-capacity"]}
+    )
+    # dm_cal_capacity ships these in MW; dm_prod_cap_cntr's pow_capacity (and
+    # ref_size) are in GW - convert here or every value below is 1000x off.
+    dm_cal.change_unit("pow_capacity-Pmax", old_unit="MW", new_unit="GW", factor=1e-3)
+    dm_cal.change_unit(
+        "pow_existing-capacity", old_unit="MW", new_unit="GW", factor=1e-3
+    )
+    missing_cat = list(set(categories) - set(dm_cal.col_labels["Categories1"]))
+    dm_cal.add(0, dim="Categories1", col_label=missing_cat, dummy=True)
+    dm_cal.filter({"Categories1": categories}, inplace=True)
+    dm_cal.sort("Categories1")
+
+    idx = dm_cal.idx
+    p_idx = dm_cap_nat.idx
+    idx_fts = np.array([idx[yr] for yr in years_fts])
+    p_idx_fts = np.array([p_idx[yr] for yr in years_fts])
+
+    pmax_national = dm_cal.array[idx[country_prod], :, idx["pow_capacity-Pmax"], :]
+    pmax_canton = dm_cal.array[idx[country_dem], :, idx["pow_capacity-Pmax"], :]
+    canton_share = np.where(pmax_national > 0, pmax_canton / pmax_national, 0)
+
+    baseline = dm_cal.array[
+        idx[country_dem], idx[years_fts[0]], idx["pow_existing-capacity"], :
+    ]
+    cap_national = dm_cap_nat.array[p_idx[country_prod], :, p_idx["pow_capacity"], :]
+    cap_national_start = cap_national[p_idx[years_fts[0]], :]
+
+    canton_capacity = baseline[np.newaxis, :] + canton_share[idx_fts, :] * (
+        cap_national[p_idx_fts, :] - cap_national_start[np.newaxis, :]
+    )
+
+    for j, cat in enumerate(categories):
+        ref_size = ref_size_by_category.get(cat, 0)
+        if ref_size > 0:
+            canton_capacity[:, j] = (
+                np.round(canton_capacity[:, j] / ref_size) * ref_size
+            )
+    canton_capacity = np.clip(
+        canton_capacity, 0, np.maximum(pmax_canton[idx_fts, :], 0)
+    )
+
+    if "Nuclear" in categories:
+        j = categories.index("Nuclear")
+        idx_ots = np.array([idx[yr] for yr in years_ots])
+        has_nuclear = np.any(
+            dm_cal.array[idx[country_dem], idx_ots, idx["pow_capacity-Pmax"], j] > 0
+        )
+        if has_nuclear:
+            pmax_start = pmax_canton[idx_fts[0], j]
+            pmax_end = pmax_canton[idx_fts[-1], j]
+            is_decommissioning_site = pmax_end < pmax_start
+            national_new_nuclear = (
+                cap_national[p_idx_fts[-1], j] - cap_national_start[j]
+            )
+            if is_decommissioning_site and national_new_nuclear > 0:
+                ref_size = ref_size_by_category.get("Nuclear", 0)
+                new_build = (
+                    np.round(national_new_nuclear / ref_size) * ref_size
+                    if ref_size > 0
+                    else national_new_nuclear
+                )
+                canton_capacity[:, j] = canton_capacity[:, j] + new_build
+
+    dm_out = DataMatrix(
+        col_labels={
+            "Country": [country_dem],
+            "Years": list(years_fts),
+            "Variables": ["pow_capacity-cantonal-new"],
+            "Categories1": categories,
+        },
+        units={"pow_capacity-cantonal-new": "GW"},
+    )
+    dm_out.array = canton_capacity[np.newaxis, :, np.newaxis, :]
+
+    return dm_out
+
+
+def balance_demand_prod_with_net_import(
+    dm_prod_cap_cntr,
+    dm_losses,
+    dm_net_import,
+    dm_demand_trend,
+    share_of_national_demand,
+):
+    dm_prod = dm_prod_cap_cntr.filter({"Variables": ["pow_production"]})
+    # dm_prod.drop('Categories1', ['Net-import', 'Waste'])
+    dm_prod.group_all("Categories1", inplace=True)
+    # Compute demand by country
+    dm_demand_trend.drop("Categories1", "district-heating")
+    dm_demand_trend.group_all("Categories1", inplace=True)
+    dm_demand_trend.array = dm_demand_trend.array / share_of_national_demand
+    # demand = prod - losses + net_import
+    # net_import = demand - (prod - losses) (NOTE: losses is already negative!)
+
+    arr_net_import = dm_demand_trend.array - (
+        dm_prod.array + dm_losses[:, :, :, "Losses"]
+    )
+    # dm_net_import.add(arr_net_import, dim='Categories1', col_label='Net-import-computed')
+    idx = dm_net_import.idx
+    dm_net_import[:, idx[2023] :, "pow_production", "Net-import"] = arr_net_import[
+        :, idx[2023] :, 0
+    ]
+    dm_losses.append(dm_net_import, dim="Categories1")
+    dm_losses.add(
+        np.nan,
+        dim="Variables",
+        col_label=["pow_capacity", "pow_cap-fact"],
+        dummy=True,
+        unit=["GW", "%"],
+    )
+    dm_prod_cap_cntr.append(dm_losses, dim="Categories1")
+
+    return dm_prod_cap_cntr
+
+
+def get_power_capacity_lever(DM_fts, lever_name, lever_setting):
+    # Read the chosen level's f_max ceiling (MW) for a power capacity lever, built in
+    # power_preprocessing_CH.py. Returns (years, values_mw): a single-year array for
+    # wind/PV, a full years_fts step curve for nuclear.
+    level = lever_setting["lever_" + lever_name]
+    dm_level = DM_fts[lever_name][level]
+    years = dm_level.col_labels["Years"]
+    values_mw = dm_level.array.reshape(len(years))
+    return years, values_mw
+
+
+def prepare_energy_input_data(data_path, DM_tra, DM_bld, DM_ind, DM_agr, lever_setting):
+    with open(data_path, "rb") as handle:
+        DM_energy = pickle.load(handle)
+
+    DM_fxa = DM_energy.pop("fxa")
+    dm_capacity = DM_fxa.pop("capacity")
+    dm_production = DM_fxa.pop("production")
+    dm_fuels_supply = DM_fxa.pop("fuels")
+    DM_lever_fts = DM_energy.pop("fts")
+    DM_energy.pop("ots", None)
+
+    # Nuclear's capacity lever is a full years_fts step curve (see
+    # power_preprocessing_CH.py) - patch it into dm_capacity's Pmax now, before the
+    # capacity-constraint calibration and the trend-building step both read it, so the
+    # fts reporting trend also follows the chosen level's real step shape instead of
+    # interpolating a straight line (see the decommissioned_mask fix in
+    # create_future_country_production_trend).
+    nuclear_years, nuclear_curve_mw = get_power_capacity_lever(
+        DM_lever_fts, "nuclear-capacity", lever_setting
+    )
+    for yr, value_mw in zip(nuclear_years, nuclear_curve_mw):
+        dm_capacity["Switzerland", yr, "pow_capacity-Pmax", "Nuclear"] = value_mw
+
+    DM_input = {
+        "cal-capacity": dm_capacity,
+        "cal-production": dm_production,
+        "hist-fuels-supply": dm_fuels_supply,
+        "demand-bld": DM_bld,
+        "demand-tra": DM_tra,
+        "demand-ind": DM_ind,
+        "demand-agr": DM_agr,
+    }
+
+    return (
+        dm_capacity,
+        dm_production,
+        dm_fuels_supply,
+        DM_lever_fts,
+        DM_input,
+        nuclear_curve_mw,
+    )
+
+
+def resolve_country_scope(
+    m,
+    country_list,
+    endyr,
+    dm_capacity,
+    dm_production,
+    years_ots,
+    dm_tra_demand_trend,
+    dm_bld_demand_trend,
+    dm_ind_demand_trend,
+    dm_agr_demand_trend,
+):
+    if ["EU27"] == country_list:  # If you are running for EU27
+        country_prod = "EU27"
+        country_dem = "EU27"
+        inter.impose_capacity_constraints_pyomo(
+            m, endyr, dm_capacity, country=country_prod
+        )
+        share_of_national_demand = 1
+    else:  # Else you are running for a canton, a canton + Switzerland, or just Switzerland
+        country_prod = "Switzerland"
+        country_dem = "Switzerland"
+        inter.impose_capacity_constraints_pyomo(
+            m, endyr, dm_capacity, country=country_prod
+        )
+        if country_prod in country_list:
+            share_of_national_demand = 1
+        else:
+            country_dem = country_list[0]
+            # You should also check that you are not running with more than a canton at the time if Switzerland
+            # is not in the mix
+            dm_tmp = dm_production.copy()
+            dm_tmp.drop("Categories1", "Pump-Open")
+            country_demand = dm_tmp[0, years_ots[-1], "pow_production", :].sum(axis=-1)
+            canton_demand = (
+                dm_tra_demand_trend[
+                    country_dem, years_ots[-1], "tra_energy-consumption", "electricity"
+                ]
+                + dm_bld_demand_trend[
+                    country_dem, years_ots[-1], "bld_energy-consumption", "electricity"
+                ]
+                + dm_bld_demand_trend[
+                    country_dem, years_ots[-1], "bld_energy-consumption", "heat-pump"
+                ]
+                + dm_ind_demand_trend[
+                    country_dem, years_ots[-1], "ind_energy-end-use", "electricity"
+                ]
+                + dm_ind_demand_trend[
+                    country_dem, years_ots[-1], "ind_energy-end-use", "heat-pump"
+                ]
+                + dm_agr_demand_trend[
+                    country_dem, years_ots[-1], "agr_energy-consumption", "electricity"
+                ]
+                + dm_agr_demand_trend[
+                    country_dem, years_ots[-1], "agr_energy-consumption", "heat-pump"
+                ]
+            )
+
+            share_of_national_demand = canton_demand / country_demand
+
+    return country_prod, country_dem, share_of_national_demand
+
+
+def apply_power_capacity_levers(m, DM_lever_fts, lever_setting, nuclear_curve_mw):
+    # Power capacity levers. Both f_max and the ref_size grid come from ses_pyomo.py's
+    # number_of_units constraint ([Eq. 1.7]): F_Mult must be an exact integer multiple of
+    # the technology's ref_size for every non-infrastructure technology, so any bound we set
+    # has to land on (or straddle) that grid or the model is infeasible.
+    def snap_to_ref_size(tech, value_gw, mode):
+        ref_size_gw = pyo.value(m.ref_size[tech])
+        if ref_size_gw <= 0:
+            return value_gw
+        n_units = value_gw / ref_size_gw
+        n_units = np.round(n_units) if mode == "round" else np.ceil(n_units)
+        return float(n_units * ref_size_gw)
+
+    # Nuclear is frozen (f_min = f_max): unlike wind/PV, it isn't a continuous technology -
+    # there's no such thing as "1.7 GW of nuclear", only 0/Leibstadt/both plants/both+new.
+    # Leaving f_min free would let the optimizer just always pick 0 if that's cheaper,
+    # silently making the lever a no-op at levels 2-4. The curve itself (built in
+    # power_preprocessing_CH.py) is already rounded to whole-GW ref_size multiples at every
+    # year, including endyr, so no further snapping is needed here - and dm_capacity's Pmax
+    # (patched from the same curve above) is already consistent with what we freeze the
+    # solve to, so decommissioned_mask picks it up automatically.
+    nuclear_frozen_gw = nuclear_curve_mw[-1] / 1000
+    m.f_min["NUCLEAR"] = nuclear_frozen_gw
+    m.f_max["NUCLEAR"] = nuclear_frozen_gw
+
+    # Wind/PV stay continuous: only f_max is lever-controlled, f_min is left free (today's
+    # installed capacity, from impose_capacity_constraints_pyomo), so the optimizer decides
+    # how much of the allowed range to actually build. f_max is snapped *up* to the nearest
+    # ref_size multiple so it's always reachable, even when it lands on the same value as
+    # f_min (e.g. wind's level 1, which targets today's capacity exactly).
+    _, wind_curve_mw = get_power_capacity_lever(
+        DM_lever_fts, "onshore-wind-capacity", lever_setting
+    )
+    m.f_max["WIND"] = snap_to_ref_size("WIND", wind_curve_mw[-1] / 1000, "ceil")
+
+    _, pv_curve_mw = get_power_capacity_lever(
+        DM_lever_fts, "pv-capacity", lever_setting
+    )
+    m.f_max["PV"] = snap_to_ref_size("PV", pv_curve_mw[-1] / 1000, "ceil")
+
+    # No new gas capacity (policy stance, not lever-adjustable for now)
+    m.f_max["CCGT"] = 0
+    m.f_min["CCGT"] = 0
+    m.avail["COAL_CCS"] = 0
+    m.avail["NG_CCS"] = 0
+    # Import is left unconstrained: once nuclear/wind/solar capacity is capped by the
+    # levers above, it's the only realistic buffer left to balance the system - there is no
+    # other flexible resource to plausibly absorb residual demand.
+
+
+def build_demand_trend_by_sector(
+    dm_bld_demand_trend, dm_ind_demand_trend, dm_tra_demand_trend, dm_agr_demand_trend
+):
+    # Group all the demand fts trends
+    dm_demand_trend = dm_bld_demand_trend
+    dm_demand_trend.append(dm_ind_demand_trend, dim="Variables")
+    dm_add_missing_variables(
+        dm_tra_demand_trend,
+        {"Categories1": dm_demand_trend.col_labels["Categories1"]},
+        fill_nans=False,
+    )
+    dm_demand_trend.append(dm_tra_demand_trend, dim="Variables")
+    dm_demand_trend.append(dm_agr_demand_trend, dim="Variables")
+    dm_demand_trend_by_sector = dm_demand_trend.group_all("Categories1", inplace=False)
+    dm_demand_trend_by_sector.rename_col(
+        "ind_energy-end-use", "ind_energy-consumption", dim="Variables"
+    )
+    dm_demand_trend.groupby(
+        {"total-energy-consumption": ".*"}, dim="Variables", regex=True, inplace=True
+    )
+    return dm_demand_trend, dm_demand_trend_by_sector
+
+
+def compute_electricity_generation_emissions(
+    DM_2050, dm_prod_cap_cntr, country_prod, country_list, years_ots, years_fts, endyr
+):
+    # --- Electricity generation emissions (scope 1, sent to emissions module) ---
+    # Swiss scope 1 electricity CO2 comes from two sources:
+    #   FTS LP result: WASTE (KVA incineration) + NG_CCS (GasCC-CCS) via EnergyScope GWP_op.
+    #     GWP_op[NG] is excluded — it covers all NG uses (power + heating) and buildings/industry
+    #     already carry their own direct gas combustion scope 1.
+    #   Direct per-tech EF (OTS all years; FTS GasCC supplement):
+    #     OTS: GasCC, GasSC, Waste, Oil from historical production × EF.
+    #     FTS: GasCC × CCGT EF (not in LP GWP_op; isolated from heating NG).
+    #   Imported electricity CO2 is excluded (territorial principle: attributed to exporting country).
+    dm_gwp_gen = DM_2050["emissions"].copy()
+    gen_resources = [
+        r
+        for r in ["WASTE", "NG_CCS"]
+        if r in dm_gwp_gen.col_labels.get("Categories1", [])
+    ]
+    if gen_resources:
+        dm_gwp_gen.filter({"Categories1": gen_resources}, inplace=True)
+        dm_gwp_gen.group_all("Categories1", inplace=True)
+        gwp_endyr_mt = float(np.nansum(dm_gwp_gen.array)) / 1000.0  # kt → Mt CO2-eq
+    else:
+        gwp_endyr_mt = 0.0
+
+    all_years = years_ots + years_fts
+    n_years = len(all_years)
+    emi_ts = np.zeros(n_years)
+
+    fossil_cats = [
+        c
+        for c in ["GasCC", "GasCC-CCS"]
+        if c in dm_prod_cap_cntr.col_labels.get("Categories1", [])
+    ]
+    p_idx = dm_prod_cap_cntr.idx
+
+    if fossil_cats and country_prod in dm_prod_cap_cntr.col_labels.get("Country", []):
+        fossil_endyr = sum(
+            float(
+                dm_prod_cap_cntr.array[
+                    p_idx[country_prod], p_idx[endyr], p_idx["pow_production"], p_idx[c]
+                ]
+            )
+            for c in fossil_cats
+        )
+        for j, yr in enumerate(all_years):
+            if yr in years_fts and yr in p_idx:
+                if fossil_endyr > 1e-6:
+                    fossil_yr = sum(
+                        float(
+                            dm_prod_cap_cntr.array[
+                                p_idx[country_prod],
+                                p_idx[yr],
+                                p_idx["pow_production"],
+                                p_idx[c],
+                            ]
+                        )
+                        for c in fossil_cats
+                    )
+                    emi_ts[j] = gwp_endyr_mt * fossil_yr / fossil_endyr
+                else:
+                    emi_ts[j] = gwp_endyr_mt if yr == endyr else 0.0
+    else:
+        if endyr in [all_years[j] for j in range(n_years)]:
+            emi_ts[all_years.index(endyr)] = gwp_endyr_mt
+
+    # Direct per-tech emission factors (ktCO2/GWh_elec) derived from EnergyScope
+    # layers_in_out × gwp_op parameters.  Units: TWh_elec × ktCO2/GWh_elec = MtCO2.
+    # OTS: all fossil techs (LP not run, no GWP_op available).
+    # FTS: GasCC only — WASTE and GasCC-CCS already captured via gwp_endyr_mt above.
+    #      GasSC absent from FTS (phased out before 2025).
+    _direct_ef_ots = {
+        "GasCC": 0.4232,  # CCGT (NG, no CCS)
+        "GasSC": 0.8070,  # open-cycle gas turbine (~33 % efficiency)
+        "Waste": 0.7506,  # KVA waste incinerators (non-biogenic fraction)
+        "Oil": 0.8900,  # oil-fired backup plants
+    }
+    _direct_ef_fts = {
+        "GasCC": 0.4232,  # not in LP GWP_op (NG excluded); phased out by 2050
+        "Waste": 0.7506,  # LP GWP_op[WASTE]=0 at endyr 2050; captures 2025-2045 KVA CO2
+    }
+    if country_prod in dm_prod_cap_cntr.col_labels.get("Country", []):
+        for j, yr in enumerate(all_years):
+            if yr not in p_idx:
+                continue
+            ef_map = _direct_ef_ots if yr in years_ots else _direct_ef_fts
+            for tech, ef in ef_map.items():
+                if tech in p_idx:
+                    prod = float(
+                        dm_prod_cap_cntr.array[
+                            p_idx[country_prod],
+                            p_idx[yr],
+                            p_idx["pow_production"],
+                            p_idx[tech],
+                        ]
+                    )
+                    emi_ts[j] += max(0.0, prod) * ef
+
+    # Build DataMatrix: Variable "electricity-generation", Categories1 gas types.
+    # GWP_op is already CO2-equivalent → put in CO2; CH4 and N2O remain 0
+    # so make_co2_equivalent in emissions/workflows.py applies no additional factor.
+    all_countries = [country_prod] + [c for c in country_list if c != country_prod]
+    dm_energy_emi = DataMatrix(
+        col_labels={
+            "Country": all_countries,
+            "Years": all_years,
+            "Variables": ["electricity-generation"],
+            "Categories1": ["CH4", "CO2", "N2O"],
+        },
+        units={"electricity-generation": "Mt"},
+    )
+    e_idx = dm_energy_emi.idx
+    for country in all_countries:
+        dm_energy_emi.array[
+            e_idx[country], :, e_idx["electricity-generation"], e_idx["CO2"]
+        ] = emi_ts
+
+    return dm_energy_emi
+
+
+def append_cantonal_new_capacity(
+    results_run, m, dm_prod_cap_cntr, dm_capacity, country_dem, years_ots, years_fts
+):
+    ref_size_by_category = {
+        cat: pyo.value(m.ref_size[raw_techs[0]])
+        for cat, raw_techs in POWER_TECH_REVERSED_MAPPING.items()
+    }
+    dm_cantonal_new_capacity = compute_cantonal_new_capacity(
+        dm_prod_cap_cntr,
+        dm_capacity,
+        country_dem,
+        years_ots,
+        years_fts,
+        ref_size_by_category,
+    )
+    missing_years = list(set(results_run.col_labels["Years"]) - set(years_fts))
+    dm_cantonal_new_capacity.add(
+        np.nan, dummy=True, dim="Years", col_label=missing_years
+    )
+    dm_cantonal_new_capacity.sort("Years")
+    results_run.append(dm_cantonal_new_capacity.flattest(), dim="Variables")
+    return results_run
+
+
+def energyscope_pyomo(
+    data_path,
+    DM_tra,
+    DM_bld,
+    DM_ind,
+    DM_agr,
+    years_ots,
+    years_fts,
+    country_list,
+    lever_setting,
+):
+    (
+        dm_capacity,
+        dm_production,
+        dm_fuels_supply,
+        DM_lever_fts,
+        DM_input,
+        nuclear_curve_mw,
+    ) = prepare_energy_input_data(
+        data_path, DM_tra, DM_bld, DM_ind, DM_agr, lever_setting
+    )
+
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    data_file_path = os.path.join(this_dir, "energyscopepyomo/ses_main.json")
+    data = load_data(data_file_path)
+    m = build_model_structure(data)
+
+    dm_tra_demand_trend = inter.extract_transport_demand(DM_tra)
+    dm_bld_demand_trend = inter.extract_buildings_demand(DM_bld, DM_ind)
+    dm_ind_demand_trend = inter.extract_industry_demand(DM_ind)
+    dm_agr_demand_trend = inter.extract_agriculture_demand(DM_agr)
+
+    endyr = years_fts[-1]
+    country_prod, country_dem, share_of_national_demand = resolve_country_scope(
+        m,
+        country_list,
+        endyr,
+        dm_capacity,
+        dm_production,
+        years_ots,
+        dm_tra_demand_trend,
+        dm_bld_demand_trend,
+        dm_ind_demand_trend,
+        dm_agr_demand_trend,
+    )
+
+    dm_tra_demand_trend = inter.impose_transport_demand_pyomo(
+        m, endyr, share_of_national_demand, DM_tra, country_dem
+    )
+    dm_bld_demand_trend = inter.impose_buildings_demand_pyomo(
+        m, endyr, share_of_national_demand, DM_bld, DM_ind, country_dem
+    )
+    dm_ind_demand_trend, dm_agr_demand_trend = inter.impose_industry_demand_pyomo(
+        m, endyr, share_of_national_demand, DM_ind, DM_agr, country_dem
+    )
+
+    # TODO: waste incineration link between buildings, industry, and energy is incomplete.
+    # Current state:
+    #   (i)  Industry accounts for emissions from burning solid-waste as an industrial
+    #        energy carrier (process heat). These appear in the industry → emissions interface.
+    #   (ii) Waste incineration for district heating (buildings DH demand) is handled
+    #        entirely by EnergyScope via the WASTE resource (avail, gwp_op). Related
+    #        emissions appear in GWP_op and are forwarded to the emissions module.
+    # Missing links:
+    #   - Energy recovered (electricity + heat) from industry EOL waste (packaging,
+    #     vehicles, electronics) is not fed back as a supply constraint to EnergyScope's
+    #     WASTE avail. The industry module computes waste tonnage by EOL route (energy-
+    #     recovery, incineration, landfill) but the resulting energy yield is a dead-end.
+    #   - The district heating module (district_heating_module.py) is dormant (commented
+    #     out in interactions.py). Industry has a placeholder interface function
+    #     (industry_district_heating_interface, dhg_energy-demand_contribution_heat-waste)
+    #     hardcoded at 0 that was intended to wire waste heat to district heating.
+    # TODO: the following FTS model settings produce counterintuitive BAU results that
+    # need review:
+    #   - PV production declines from 4.25 TWh (2025) to 2.37 TWh (2050) despite capacity
+    #     fixed at 6.37 GW — EnergyScope LP reduces PV capacity factor. Needs investigation.
+    #   - Waste (KVA) drops from 0.97 TWh (2025) to 0 TWh (2050). Intentional phase-out?
+    # Avail is in GWh
+
+    apply_power_capacity_levers(m, DM_lever_fts, lever_setting, nuclear_curve_mw)
+
+    set_constraints(m, objective="cost")
+    # Put show_log to True to see the results of the optimisation
+    opt = make_highs(show_log=True)
+    attach(opt, m)
+    res = solve(opt, m, warmstart=True)
+
+    DM_2050 = extract_2050_output_pyomo(m, country_prod, endyr, years_fts)
+
+    # I should map the losses based on the canton share of the country production
+    dm_prod_cap_cntr, dm_losses, dm_net_import = create_future_country_production_trend(
+        DM_2050, DM_input, years_ots, years_fts
+    )
+
+    # Compare Demand = prod - losses + net_import  with the Calculator demand
+    # dm_balance = dm_prod_cap_cntr.filter({'Variables': ['pow_production']})
+
+    # dm_tmp = dm_production.copy()
+    # dm_tmp.drop('Categories1', ['Losses', 'Net-import'])
+    # dm_tmp.rename_col('pow_production', 'pow_production_original', dim='Variables')
+    # dm_add_missing_variables(dm_tmp, {'Categories1': dm_balance.col_labels['Categories1']})
+    # dm_add_missing_variables(dm_balance, {'Categories1': dm_tmp.col_labels['Categories1']})
+
+    # dm_tmp.append(dm_balance.filter({'Years': years_ots}), dim='Variables')
+
+    # dm_balance.append(dm_losses, dim='Categories1')
+    # dm_balance.append(dm_net_import, dim='Categories1')
+    # dm_balance.group_all('Categories1')
+    # Group Calculator demand
+    # dm_demand_trend.drop('Categories1', 'district-heating')
+    # dm_demand_trend.group_all('Categories1')
+    # dm_balance.append(dm_demand_trend, dim='Variables')
+
+    dm_demand_trend, dm_demand_trend_by_sector = build_demand_trend_by_sector(
+        dm_bld_demand_trend,
+        dm_ind_demand_trend,
+        dm_tra_demand_trend,
+        dm_agr_demand_trend,
+    )
+
+    # Add demand - production balancing through net import & losses
+    dm_prod_cap_cntr = balance_demand_prod_with_net_import(
+        dm_prod_cap_cntr,
+        dm_losses,
+        dm_net_import,
+        dm_demand_trend,
+        share_of_national_demand,
+    )
+
+    dm_energy_emi = compute_electricity_generation_emissions(
+        DM_2050,
+        dm_prod_cap_cntr,
+        country_prod,
+        country_list,
+        years_ots,
+        years_fts,
+        endyr,
+    )
+
+    results_run = inter.prepare_TPE_output(
+        dm_prod_cap_cntr, dm_demand_trend_by_sector, country_dem
+    )
+
+    if country_dem != country_prod:
+        results_run = append_cantonal_new_capacity(
+            results_run,
+            m,
+            dm_prod_cap_cntr,
+            dm_capacity,
+            country_dem,
+            years_ots,
+            years_fts,
+        )
+
+    return results_run, dm_energy_emi
