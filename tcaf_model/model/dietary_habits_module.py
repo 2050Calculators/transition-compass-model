@@ -403,11 +403,16 @@ def lifestyle_share_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scen
     )
 
     # Overall diet = diet bau [kcal/country share/year] + diet scenario [kcal/country share/year]
+    # NB: agr_demand_raw and lfs_food-wastes are combined the same way as
+    # lfs_diet_raw - all three are linear in it (agr_demand_raw = lfs_diet_raw /
+    # food-waste share). Leaving them at their dm_diet_food_bau-only value here
+    # would feed crop/livestock/land-use (and so LCA cost) only the BAU-weighted
+    # (1 - adherence) share of demand, dropping the scenario diet entirely.
     dm_diet_food = dm_diet_food_bau.copy()
-    dm_diet_food[:, :, "lfs_diet_raw", :] = (
-        dm_diet_food_bau[:, :, "lfs_diet_raw", :]
-        + dm_diet_food_scenario[:, :, "lfs_diet_raw", :]
-    )
+    for var in ["lfs_diet_raw", "agr_demand_raw", "lfs_food-wastes"]:
+        dm_diet_food[:, :, var, :] = (
+            dm_diet_food_bau[:, :, var, :] + dm_diet_food_scenario[:, :, var, :]
+        )
 
     # Overall diet consumed = diet cons bau [kcal/country share/year] + diet cons scenario [kcal/country share/year]
     # (without food wastes)
@@ -551,11 +556,13 @@ def lifestyle_kcal_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scena
     )
 
     # Overall diet = diet bau [kcal/country share/year] + diet scenario [kcal/country share/year]
+    # NB: agr_demand_raw and lfs_food-wastes are combined the same way as
+    # lfs_diet_raw - see the matching comment in lifestyle_share_workflow.
     dm_diet_food = dm_diet_food_bau.copy()
-    dm_diet_food[:, :, "lfs_diet_raw", :] = (
-        dm_diet_food_bau[:, :, "lfs_diet_raw", :]
-        + dm_diet_food_scenario[:, :, "lfs_diet_raw", :]
-    )
+    for var in ["lfs_diet_raw", "agr_demand_raw", "lfs_food-wastes"]:
+        dm_diet_food[:, :, var, :] = (
+            dm_diet_food_bau[:, :, var, :] + dm_diet_food_scenario[:, :, var, :]
+        )
 
     # Overall diet consumed = diet cons bau [kcal/country share/year] + diet cons scenario [kcal/country share/year]
     # (without food wastes)
