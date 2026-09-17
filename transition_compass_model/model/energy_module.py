@@ -24,6 +24,24 @@ from transition_compass_model.model.energy.energyscopepyomo.ses_pyomo import (
     solve,
 )
 
+# Friendly power-sector category name -> underlying EnergyScope TECHNOLOGIES
+# code(s). Used both to group Pyomo's installed_GW/installed_N output (see
+# extract_2050_output_pyomo) and to look up each category's ref_size for the
+# cantonal redistribution below (compute_cantonal_new_capacity). A grouped
+# category (e.g. "Dam", "Coal") has no single well-defined ref_size; the first
+# listed code is used as an approximation.
+POWER_TECH_REVERSED_MAPPING = {
+    "GasCC": ["CCGT"],
+    "GasCC-CCS": ["CCGT_CCS"],
+    "Nuclear": ["NUCLEAR"],
+    "PV-roof": ["PV"],
+    "WindOn": ["WIND"],
+    "Dam": ["NEW_HYDRO_DAM", "HYDRO_DAM"],
+    "RoR": ["NEW_HYDRO_RIVER", "HYDRO_RIVER"],
+    "Coal": ["COAL_US", "COAL_IGCC", "COAL_US_CCS", "COAL_IGCC_CCS"],
+    "Geothermal": ["GEOTHERMAL"],
+}
+
 
 def capture_model_state(model, filename):
     """Capture all model parameters and their values"""
@@ -362,17 +380,7 @@ def extract_2050_output_pyomo(m, country_prod, endyr, years_fts):
         {"Categories1": power_categories + cogen_categories}, inplace=True
     )
 
-    reversed_mapping = {
-        "GasCC": ["CCGT"],
-        "GasCC-CCS": ["CCGT_CCS"],
-        "Nuclear": ["NUCLEAR"],
-        "PV-roof": ["PV"],
-        "WindOn": ["WIND"],
-        "Dam": ["NEW_HYDRO_DAM", "HYDRO_DAM"],
-        "RoR": ["NEW_HYDRO_RIVER", "HYDRO_RIVER"],
-        "Coal": ["COAL_US", "COAL_IGCC", "COAL_US_CCS", "COAL_IGCC_CCS"],
-        "Geothermal": ["GEOTHERMAL"],
-    }
+    reversed_mapping = POWER_TECH_REVERSED_MAPPING
 
     # !FIXME: This is probably not all in the same units. Why is GasCC zero here?
     DM["installed_GW"].groupby(
@@ -547,49 +555,125 @@ def create_future_country_production_trend(DM_2050, DM_input, years_ots, years_f
     return dm_prod_hist, dm_losses, dm_net_import
 
 
-def downscale_country_to_canton(
-    dm_prod_cap_cntr, dm_cal_capacity, country_dem, share_of_national_demand
+def compute_cantonal_new_capacity(
+    dm_prod_cap_cntr,
+    dm_cal_capacity,
+    country_dem,
+    years_ots,
+    years_fts,
+    ref_size_by_category,
 ):
-    country_prod = dm_prod_cap_cntr.col_labels["Country"][0]
-    dm_cal_capacity.add(0, col_label="Net-import", dim="Categories1", dummy=True)
-    dm_cal_capacity.filter({"Variables": ["pow_capacity-Pmax"]}, inplace=True)
-    canton_share = np.where(
-        dm_cal_capacity[country_prod, ...] > 0,
-        dm_cal_capacity[country_dem, ...] / dm_cal_capacity[country_prod, ...],
-        0,
-    )
-    dm_cal_capacity.drop(dim="Country", col_label=country_prod)
-    dm_cal_capacity.add(
-        canton_share[np.newaxis, ...], dim="Variables", col_label="share", unit="%"
-    )
-    dm_cal_capacity.add(
-        share_of_national_demand, col_label="CHP", dim="Categories1", dummy=True
-    )
-    dm_cal_capacity.filter(
-        {"Categories1": dm_prod_cap_cntr.col_labels["Categories1"]}, inplace=True
-    )
-    dm_cal_capacity.sort("Categories1")
-    dm_prod_cap_cntr.sort("Categories1")
-    arr_canton_prod = (
-        dm_prod_cap_cntr[country_prod, :, "pow_production", :]
-        * dm_cal_capacity[country_dem, :, "share", :]
-    )
-    arr_canton_cap = (
-        dm_prod_cap_cntr[country_prod, :, "pow_capacity", :]
-        * dm_cal_capacity[country_dem, :, "share", :]
-    )
-    arr_canton_cap_fact = dm_prod_cap_cntr[country_prod, :, "pow_cap-fact", :]
-    arr_canton = np.concatenate(
-        [
-            arr_canton_prod[np.newaxis, :, np.newaxis, :],
-            arr_canton_cap[np.newaxis, :, np.newaxis, :],
-            arr_canton_cap_fact[np.newaxis, :, np.newaxis, :],
-        ],
-        axis=2,
-    )
-    dm_prod_cap_cntr.add(arr_canton, dim="Country", col_label=country_dem)
+    """Disaggregate the national *new* capacity added between years_fts[0]
+    and years_fts[-1] to a canton, weighted by the canton's time-varying
+    share of national pow_capacity-Pmax potential (added on top of the
+    canton's own real years_fts[0] baseline, not a flat share of the whole
+    trajectory), snapped to ref_size, and capped at the canton's own Pmax.
 
-    return dm_prod_cap_cntr
+    Nuclear is handled separately: a canton's own decommissioning already
+    flows through the general share above (once that canton's Pmax data is
+    time-varying), but new-build capacity (lever level 4) has no calibrated
+    Pmax to rank against in any canton, so the generic share can't place it.
+    Instead it is sited entirely at whichever canton's own nuclear Pmax
+    decommissions within years_fts - the site of a plant that's actually
+    closing. This branch is gated purely on that canton's own historical
+    nuclear Pmax (no hardcoded canton names): it's a no-op for any canton
+    without nuclear capacity history (true for all cantons currently shipped)
+    and activates automatically once one is added.
+
+    Returns a DataMatrix with a single new Variable, "pow_capacity-cantonal-new"
+    (GW), Categories1=tech, Country=[country_dem], Years=years_fts.
+    """
+    country_prod = dm_prod_cap_cntr.col_labels["Country"][0]
+
+    dm_cap_nat = dm_prod_cap_cntr.filter({"Variables": ["pow_capacity"]})
+    # Losses/Net-import were appended as extra (NaN pow_capacity) Categories1
+    # entries by balance_demand_prod_with_net_import - not real techs to
+    # redistribute.
+    non_tech_cat = [
+        c for c in ["Losses", "Net-import"] if c in dm_cap_nat.col_labels["Categories1"]
+    ]
+    if non_tech_cat:
+        dm_cap_nat.drop("Categories1", non_tech_cat)
+    dm_cap_nat.sort("Categories1")
+    categories = dm_cap_nat.col_labels["Categories1"]
+
+    dm_cal = dm_cal_capacity.filter(
+        {"Variables": ["pow_capacity-Pmax", "pow_existing-capacity"]}
+    )
+    # dm_cal_capacity ships these in MW; dm_prod_cap_cntr's pow_capacity (and
+    # ref_size) are in GW - convert here or every value below is 1000x off.
+    dm_cal.change_unit("pow_capacity-Pmax", old_unit="MW", new_unit="GW", factor=1e-3)
+    dm_cal.change_unit(
+        "pow_existing-capacity", old_unit="MW", new_unit="GW", factor=1e-3
+    )
+    missing_cat = list(set(categories) - set(dm_cal.col_labels["Categories1"]))
+    dm_cal.add(0, dim="Categories1", col_label=missing_cat, dummy=True)
+    dm_cal.filter({"Categories1": categories}, inplace=True)
+    dm_cal.sort("Categories1")
+
+    idx = dm_cal.idx
+    p_idx = dm_cap_nat.idx
+    idx_fts = np.array([idx[yr] for yr in years_fts])
+    p_idx_fts = np.array([p_idx[yr] for yr in years_fts])
+
+    pmax_national = dm_cal.array[idx[country_prod], :, idx["pow_capacity-Pmax"], :]
+    pmax_canton = dm_cal.array[idx[country_dem], :, idx["pow_capacity-Pmax"], :]
+    canton_share = np.where(pmax_national > 0, pmax_canton / pmax_national, 0)
+
+    baseline = dm_cal.array[
+        idx[country_dem], idx[years_fts[0]], idx["pow_existing-capacity"], :
+    ]
+    cap_national = dm_cap_nat.array[p_idx[country_prod], :, p_idx["pow_capacity"], :]
+    cap_national_start = cap_national[p_idx[years_fts[0]], :]
+
+    canton_capacity = baseline[np.newaxis, :] + canton_share[idx_fts, :] * (
+        cap_national[p_idx_fts, :] - cap_national_start[np.newaxis, :]
+    )
+
+    for j, cat in enumerate(categories):
+        ref_size = ref_size_by_category.get(cat, 0)
+        if ref_size > 0:
+            canton_capacity[:, j] = (
+                np.round(canton_capacity[:, j] / ref_size) * ref_size
+            )
+    canton_capacity = np.clip(
+        canton_capacity, 0, np.maximum(pmax_canton[idx_fts, :], 0)
+    )
+
+    if "Nuclear" in categories:
+        j = categories.index("Nuclear")
+        idx_ots = np.array([idx[yr] for yr in years_ots])
+        has_nuclear = np.any(
+            dm_cal.array[idx[country_dem], idx_ots, idx["pow_capacity-Pmax"], j] > 0
+        )
+        if has_nuclear:
+            pmax_start = pmax_canton[idx_fts[0], j]
+            pmax_end = pmax_canton[idx_fts[-1], j]
+            is_decommissioning_site = pmax_end < pmax_start
+            national_new_nuclear = (
+                cap_national[p_idx_fts[-1], j] - cap_national_start[j]
+            )
+            if is_decommissioning_site and national_new_nuclear > 0:
+                ref_size = ref_size_by_category.get("Nuclear", 0)
+                new_build = (
+                    np.round(national_new_nuclear / ref_size) * ref_size
+                    if ref_size > 0
+                    else national_new_nuclear
+                )
+                canton_capacity[:, j] = canton_capacity[:, j] + new_build
+
+    dm_out = DataMatrix(
+        col_labels={
+            "Country": [country_dem],
+            "Years": list(years_fts),
+            "Variables": ["pow_capacity-cantonal-new"],
+            "Categories1": categories,
+        },
+        units={"pow_capacity-cantonal-new": "GW"},
+    )
+    dm_out.array = canton_capacity[np.newaxis, :, np.newaxis, :]
+
+    return dm_out
 
 
 def balance_demand_prod_with_net_import(
@@ -997,7 +1081,29 @@ def energyscope_pyomo(
             e_idx[country], :, e_idx["electricity-generation"], e_idx["CO2"]
         ] = emi_ts
 
-    results_run = inter.prepare_TPE_output(dm_prod_cap_cntr, dm_demand_trend_by_sector)
+    results_run = inter.prepare_TPE_output(
+        dm_prod_cap_cntr, dm_demand_trend_by_sector, country_dem
+    )
+
+    if country_dem != country_prod:
+        ref_size_by_category = {
+            cat: pyo.value(m.ref_size[raw_techs[0]])
+            for cat, raw_techs in POWER_TECH_REVERSED_MAPPING.items()
+        }
+        dm_cantonal_new_capacity = compute_cantonal_new_capacity(
+            dm_prod_cap_cntr,
+            dm_capacity,
+            country_dem,
+            years_ots,
+            years_fts,
+            ref_size_by_category,
+        )
+        missing_years = list(set(results_run.col_labels["Years"]) - set(years_fts))
+        dm_cantonal_new_capacity.add(
+            np.nan, dummy=True, dim="Years", col_label=missing_years
+        )
+        dm_cantonal_new_capacity.sort("Years")
+        results_run.append(dm_cantonal_new_capacity.flattest(), dim="Variables")
 
     return results_run, dm_energy_emi
 
