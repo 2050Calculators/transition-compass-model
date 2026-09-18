@@ -2998,14 +2998,18 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     for level in range(2, 5):
         # Compute the reduction objective in 2050 compared to the last ots value,
-        # for each food category
+        # for each food category. The fts value is the fraction of the ots waste/loss
+        # that is removed (level 2 = 25%, level 3 = 50%, level 4 = 75% reduction).
         dm_ots = dict_ots[lever].copy()
         array_temp = (
             1
             - (1 - dm_ots[:, years_ots[-1], "lfs_consumers-food-wastes", :])
-            * dm_fts[lever][level][
-                :, years_fts[-1], "lfs_consumers-food-wastes", np.newaxis
-            ]
+            * (
+                1
+                - dm_fts[lever][level][
+                    :, years_fts[-1], "lfs_consumers-food-wastes", np.newaxis
+                ]
+            )
         )
         # Append with ots
         dm_ots.add(
