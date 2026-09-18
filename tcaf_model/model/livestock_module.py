@@ -1476,9 +1476,30 @@ def livestock(
     # TPE OUTPUT -------------------------------------------------------------------------------------------------------
     # results_run = livestock_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_food)
 
+    # (Switzerland) Domestic production per animal category [kcal], summed
+    # across the organic/intensive split. Meat categories come from
+    # dm_meat_ch, dairy/eggs from the abp-* categories of dm_asf_ch - both
+    # already computed above for the TCAF interface, just not previously
+    # surfaced to the app. Named "agr_domestic-production_afw" to match the
+    # naming the crop module already exposes for plant categories.
+    dm_animal_prod_ch = dm_meat_ch.filter(
+        {"Variables": ["agr_domestic_production_liv_afw"]}, inplace=False
+    )
+    dm_animal_prod_ch.group_all(dim="Categories2", inplace=True)
+    dm_abp_prod_ch = dm_asf_ch.filter_w_regex({"Categories1": "abp-"}, inplace=False)
+    dm_abp_prod_ch = dm_abp_prod_ch.filter(
+        {"Variables": ["agr_domestic_production_liv_afw"]}, inplace=False
+    )
+    dm_abp_prod_ch.group_all(dim="Categories2", inplace=True)
+    dm_animal_prod_ch.append(dm_abp_prod_ch, dim="Categories1")
+    dm_animal_prod_ch.rename_col(
+        "agr_domestic_production_liv_afw", "agr_domestic-production_afw", "Variables"
+    )
+
     # The app shows the livestock population, like before the second
-    # livestock -> land-use block was removed
-    results_run = dm_livestock_landuse
+    # livestock -> land-use block was removed, plus the per-category
+    # domestic production computed just above.
+    results_run = {"population": dm_livestock_landuse, "production": dm_animal_prod_ch}
 
     return results_run
 
