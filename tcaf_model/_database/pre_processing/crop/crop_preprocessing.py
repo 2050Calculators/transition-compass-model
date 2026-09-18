@@ -2829,9 +2829,9 @@ def datamatrix_to_pickle(dm_fts):
         dict_fts[lever] = {1: dm_bau_1}
         # Level 2 - hold the last historical value (2023) constant
         dict_fts[lever][2] = flat_fts_level(dict_ots[lever], years_ots, years_fts)
-        # Levels 3 and 4 - placeholders, to be revisited
+        # Level 3 - SSR of 50%, level 4 - SSR of 100% (flat over fts years)
         dict_fts[lever][3] = flat_fts_level(
-            dict_ots[lever], years_ots, years_fts, value=0
+            dict_ots[lever], years_ots, years_fts, value=0.5
         )
         dict_fts[lever][4] = flat_fts_level(
             dict_ots[lever], years_ots, years_fts, value=1
@@ -2847,9 +2847,9 @@ def datamatrix_to_pickle(dm_fts):
         dict_fts[lever] = {1: dm_bau_1}
         # Level 2 - hold the last historical value (2023) constant
         dict_fts[lever][2] = flat_fts_level(dict_ots[lever], years_ots, years_fts)
-        # Levels 3 and 4 - placeholders, to be revisited
+        # Level 3 - SSR of 50%, level 4 - SSR of 100% (flat over fts years)
         dict_fts[lever][3] = flat_fts_level(
-            dict_ots[lever], years_ots, years_fts, value=0
+            dict_ots[lever], years_ots, years_fts, value=0.5
         )
         dict_fts[lever][4] = flat_fts_level(
             dict_ots[lever], years_ots, years_fts, value=1
@@ -2865,9 +2865,9 @@ def datamatrix_to_pickle(dm_fts):
         dict_fts[lever] = {1: dm_bau_1}
         # Level 2 - hold the last historical value (2023) constant
         dict_fts[lever][2] = flat_fts_level(dict_ots[lever], years_ots, years_fts)
-        # Levels 3 and 4 - placeholders, to be revisited
+        # Level 3 - SSR of 50%, level 4 - SSR of 100% (flat over fts years)
         dict_fts[lever][3] = flat_fts_level(
-            dict_ots[lever], years_ots, years_fts, value=0
+            dict_ots[lever], years_ots, years_fts, value=0.5
         )
         dict_fts[lever][4] = flat_fts_level(
             dict_ots[lever], years_ots, years_fts, value=1
