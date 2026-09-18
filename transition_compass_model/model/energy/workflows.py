@@ -450,7 +450,7 @@ def create_future_country_production_trend(DM_2050, DM_input, years_ots, years_f
     return dm_prod_hist, dm_losses, dm_net_import
 
 
-def compute_cantonal_new_capacity(
+def compute_cantonal_capacity(
     dm_prod_cap_cntr,
     dm_cal_capacity,
     country_dem,
@@ -484,11 +484,9 @@ def compute_cantonal_new_capacity(
     # Losses/Net-import were appended as extra (NaN pow_capacity) Categories1
     # entries by balance_demand_prod_with_net_import - not real techs to
     # redistribute.
-    non_tech_cat = [
-        c for c in ["Losses", "Net-import"] if c in dm_cap_nat.col_labels["Categories1"]
-    ]
-    if non_tech_cat:
-        dm_cap_nat.drop("Categories1", non_tech_cat)
+    non_tech_cat = ["Losses", "Net-import"]
+    dm_cap_nat.drop("Categories1", non_tech_cat)
+
     dm_cap_nat.sort("Categories1")
     categories = dm_cap_nat.col_labels["Categories1"]
 
@@ -496,7 +494,7 @@ def compute_cantonal_new_capacity(
         {"Variables": ["pow_capacity-Pmax", "pow_existing-capacity"]}
     )
     # dm_cal_capacity ships these in MW; dm_prod_cap_cntr's pow_capacity (and
-    # ref_size) are in GW - convert here or every value below is 1000x off.
+    # ref_size) are in GW - convert here.
     dm_cal.change_unit("pow_capacity-Pmax", old_unit="MW", new_unit="GW", factor=1e-3)
     dm_cal.change_unit(
         "pow_existing-capacity", old_unit="MW", new_unit="GW", factor=1e-3
@@ -506,23 +504,19 @@ def compute_cantonal_new_capacity(
     dm_cal.filter({"Categories1": categories}, inplace=True)
     dm_cal.sort("Categories1")
 
-    idx = dm_cal.idx
-    p_idx = dm_cap_nat.idx
-    idx_fts = np.array([idx[yr] for yr in years_fts])
-    p_idx_fts = np.array([p_idx[yr] for yr in years_fts])
+    dm_cal_fts = dm_cal.filter({"Years": years_fts})
+    dm_cap_nat_fts = dm_cap_nat.filter({"Years": years_fts})
 
-    pmax_national = dm_cal.array[idx[country_prod], :, idx["pow_capacity-Pmax"], :]
-    pmax_canton = dm_cal.array[idx[country_dem], :, idx["pow_capacity-Pmax"], :]
+    pmax_national = dm_cal_fts[country_prod, :, "pow_capacity-Pmax", :]
+    pmax_canton = dm_cal_fts[country_dem, :, "pow_capacity-Pmax", :]
     canton_share = np.where(pmax_national > 0, pmax_canton / pmax_national, 0)
 
-    baseline = dm_cal.array[
-        idx[country_dem], idx[years_fts[0]], idx["pow_existing-capacity"], :
-    ]
-    cap_national = dm_cap_nat.array[p_idx[country_prod], :, p_idx["pow_capacity"], :]
-    cap_national_start = cap_national[p_idx[years_fts[0]], :]
+    baseline = dm_cal[country_dem, years_fts[0], "pow_existing-capacity", :]
+    cap_national = dm_cap_nat_fts[country_prod, :, "pow_capacity", :]
+    cap_national_start = dm_cap_nat[country_prod, years_fts[0], "pow_capacity", :]
 
-    canton_capacity = baseline[np.newaxis, :] + canton_share[idx_fts, :] * (
-        cap_national[p_idx_fts, :] - cap_national_start[np.newaxis, :]
+    canton_capacity = baseline[np.newaxis, :] + canton_share * (
+        cap_national - cap_national_start[np.newaxis, :]
     )
 
     for j, cat in enumerate(categories):
@@ -531,23 +525,17 @@ def compute_cantonal_new_capacity(
             canton_capacity[:, j] = (
                 np.round(canton_capacity[:, j] / ref_size) * ref_size
             )
-    canton_capacity = np.clip(
-        canton_capacity, 0, np.maximum(pmax_canton[idx_fts, :], 0)
-    )
+    canton_capacity = np.clip(canton_capacity, 0, np.maximum(pmax_canton, 0))
 
     if "Nuclear" in categories:
         j = categories.index("Nuclear")
-        idx_ots = np.array([idx[yr] for yr in years_ots])
-        has_nuclear = np.any(
-            dm_cal.array[idx[country_dem], idx_ots, idx["pow_capacity-Pmax"], j] > 0
-        )
+        dm_cal_ots = dm_cal.filter({"Years": years_ots})
+        has_nuclear = np.any(dm_cal_ots[country_dem, :, "pow_capacity-Pmax", j] > 0)
         if has_nuclear:
-            pmax_start = pmax_canton[idx_fts[0], j]
-            pmax_end = pmax_canton[idx_fts[-1], j]
+            pmax_start = pmax_canton[0, j]
+            pmax_end = pmax_canton[-1, j]
             is_decommissioning_site = pmax_end < pmax_start
-            national_new_nuclear = (
-                cap_national[p_idx_fts[-1], j] - cap_national_start[j]
-            )
+            national_new_nuclear = cap_national[-1, j] - cap_national_start[j]
             if is_decommissioning_site and national_new_nuclear > 0:
                 ref_size = ref_size_by_category.get("Nuclear", 0)
                 new_build = (
@@ -561,10 +549,10 @@ def compute_cantonal_new_capacity(
         col_labels={
             "Country": [country_dem],
             "Years": list(years_fts),
-            "Variables": ["pow_capacity-cantonal-new"],
+            "Variables": ["pow_capacity-cantonal"],
             "Categories1": categories,
         },
-        units={"pow_capacity-cantonal-new": "GW"},
+        units={"pow_capacity-cantonal": "GW"},
     )
     dm_out.array = canton_capacity[np.newaxis, :, np.newaxis, :]
 
@@ -919,14 +907,14 @@ def compute_electricity_generation_emissions(
     return dm_energy_emi
 
 
-def append_cantonal_new_capacity(
+def append_cantonal_capacity(
     results_run, m, dm_prod_cap_cntr, dm_capacity, country_dem, years_ots, years_fts
 ):
     ref_size_by_category = {
         cat: pyo.value(m.ref_size[raw_techs[0]])
         for cat, raw_techs in POWER_TECH_REVERSED_MAPPING.items()
     }
-    dm_cantonal_new_capacity = compute_cantonal_new_capacity(
+    dm_cantonal_new_capacity = compute_cantonal_capacity(
         dm_prod_cap_cntr,
         dm_capacity,
         country_dem,
@@ -1087,7 +1075,7 @@ def energyscope_pyomo(
     )
 
     if country_dem != country_prod:
-        results_run = append_cantonal_new_capacity(
+        results_run = append_cantonal_capacity(
             results_run,
             m,
             dm_prod_cap_cntr,
