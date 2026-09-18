@@ -5,6 +5,7 @@
 import os
 
 import numpy as np
+from params import country_list
 
 import transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions.efficiency as get_data
 from transition_compass_model.model.common.auxiliary_functions import (
@@ -212,7 +213,7 @@ def run(
     local_filename_veh = os.path.join(
         this_dir, "../data/tra_veh_efficiency.pickle"
     )  # The file is created if it doesn't exist
-    dm_veh_eff_LDV = get_data.get_vehicle_efficiency_ofs(
+    dm_veh_eff_LDV_ofs = get_data.get_vehicle_efficiency_ofs(
         table_id_veh_eff,
         local_filename_veh,
         var_name="tra_passenger_veh-efficiency_fleet",
@@ -226,12 +227,13 @@ def run(
     local_filename_eff = os.path.join(
         this_dir, "../data/tra_veh_efficiency_swiss_stat.pickle"
     )
-    # dm_veh_eff_LDV =get_data.get_vehicle_efficiency(
-    #     local_filename_eff,
-    #     agency_eff,
-    #     dataflow_eff,
-    #     var_name="tra_passenger_veh-efficiency_fleet"
-    # )
+    dm_veh_eff_LDV = get_data.get_vehicle_efficiency(
+        local_filename_eff,
+        agency_eff,
+        dataflow_eff,
+        var_name="tra_passenger_veh-efficiency_fleet",
+    )
+    dm_veh_eff_LDV.filter({"Country": country_list}, inplace=True)
 
     #### Vehicle efficiency new - LDV - CO2/km
     # FCEV data are off, BEV = 25 gCO2/km independently of car power

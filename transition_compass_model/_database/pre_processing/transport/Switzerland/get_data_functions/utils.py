@@ -22,6 +22,31 @@ def fill_var_nans_based_on_var_curve(dm, var_nan, var_ref, keep_all_vars=False):
     return dm
 
 
+def drop_if_smaller_than_0_01(dm, cat_to_drop="Categories2", col_to_drop="Other"):
+    dm_ratio = dm.normalise(dim=cat_to_drop, inplace=False)
+
+    dm_missing = dm_ratio.filter({cat_to_drop: [col_to_drop]}).copy()
+    if (dm_missing.array > 0.01).any():
+        print(
+            f'"{col_to_drop}" category is greater than 1% of the fleet, it cannot be discarded {dm_missing.col_labels["Variables"]}'
+        )
+        dm_without_other = dm.copy()
+        dm_without_other.drop(col_label=col_to_drop, dim=cat_to_drop)
+        dm_without_other_normalised = dm_without_other.normalise(
+            dim=cat_to_drop, inplace=False
+        )
+
+        dm_without_other.array = (
+            dm_without_other.array
+            + dm.filter({cat_to_drop: [col_to_drop]}).array
+            * dm_without_other_normalised.array
+        )
+        dm = dm_without_other.copy()
+    else:
+        dm.drop(col_label=col_to_drop, dim=cat_to_drop)
+    return dm
+
+
 def df_fso_excel_to_dm(
     df,
     header_row,
