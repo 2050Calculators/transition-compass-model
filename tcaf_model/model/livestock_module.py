@@ -1498,8 +1498,13 @@ def livestock(
 
     # The app shows the livestock population, like before the second
     # livestock -> land-use block was removed, plus the per-category
-    # domestic production computed just above.
-    results_run = {"population": dm_livestock_landuse, "production": dm_animal_prod_ch}
+    # domestic production computed just above, and the self-sufficiency ratio
+    # lever values (same naming as the crop module's "agr_ssr").
+    results_run = {
+        "population": dm_livestock_landuse,
+        "production": dm_animal_prod_ch,
+        "ssr": DM_liv_prod["ssr-liv"],
+    }
 
     return results_run
 
