@@ -325,18 +325,7 @@ def bld_TPE_interface(
     dm_emission_global.group_all("Categories1", inplace=True)
     value = dm_emission_global[0, yr, "bld_CO2-emissions"]
 
-    KPI.append({"title": "CO2 emissions", "value": value, "unit": "Mt"})
-
-    # Energy demand in TWh
-    dm_tot_enr = DM_energy["energy-demand-heating"].filter(
-        {"Variables": ["bld_energy-demand_heating"]}
-    )
-    dm_tot_enr.drop("Categories1", ["solar", "ambient-heat"])
-    dm_tot_enr.group_all("Categories1", inplace=True)
-    value = dm_tot_enr[0, yr, "bld_energy-demand_heating"]
-    KPI.append(
-        {"title": "Energy Demand for Space Heating", "value": value, "unit": "TWh"}
-    )
+    KPI.append({"title": "Total emissions", "value": value, "unit": "Mt"})
 
     # Energy demand total heating  (hotwater + space heating residential + services)
     # TODO : add a plot for the total energy demand for heating (hot water + space heating for residential + services) and the share of ambient heat and other tech in it.
@@ -399,23 +388,39 @@ def bld_TPE_interface(
     #     )
     # dm_energy_heating.change_unit("energy_consumption", factor=1e6, old_unit="TWh", new_unit="MWh")
 
-    # A-C buildings buildings %
-    dm_area = DM_area["floor-area-cat"].normalise("Categories1", inplace=False)
-    value = (
-        dm_area[0, yr, "bld_floor-area_stock_share", "B"]
-        + dm_area[0, yr, "bld_floor-area_stock_share", "C"]
-    ) * 100
-    KPI.append({"title": "A-C class", "value": value, "unit": "%"})
+    # Total energy demand (residential + non-residential, all end-uses):
+    # heating (both), hot water (res + non-res), appliances (res) already in dm_energy_comsumption_tot;
+    # add residential lighting and non-residential electricity + lighting (excl. space-heating, already counted above)
+    dm_energy_tot_scalar = dm_energy_comsumption_tot.group_all(
+        "Categories1", inplace=False
+    )
+    value_energy_core = dm_energy_tot_scalar[0, yr, "energy_consumption"]
 
-    # Unrenovated buildings
+    value_light_res = DM_light[0, yr, "bld_residential-lighting"]
+
+    dm_nonres_other = DM_services["services_energy-consumption"].filter(
+        {"Categories1": ["elec", "lighting"]}
+    )
+    dm_nonres_other = dm_nonres_other.group_all("Categories2", inplace=False)
+    dm_nonres_other.group_all("Categories1", inplace=True)
+    value_nonres_other = dm_nonres_other[0, yr, "bld_services_energy-consumption"]
+
+    value = value_energy_core + value_light_res + value_nonres_other
+    KPI.append({"title": "Total energy demand", "value": value, "unit": "TWh"})
+
+    # Floor area stock (residential + non-residential)
     dm_tot_area = DM_area["floor-area-cumulated"].groupby(
         {"bld_tot-area": ".*"}, dim="Variables", regex=True, inplace=False
     )
-    value = (
-        DM_area["floor-area-cumulated"][0, yr, "bld_floor-area_unrenovated-cumulated"]
-        / dm_tot_area[0, yr, "bld_tot-area"]
-        * 100
-    )
-    KPI.append({"title": "Unrenovated Envelope Share", "value": value, "unit": "%"})
+    value_stock_res = dm_tot_area[0, yr, "bld_tot-area"]
+
+    value_stock_nonres = 0.0
+    if "services_floor-area" in DM_services:
+        dm_srv_floor_stock = dm_srv_floor_tpe.group_all("Categories2", inplace=False)
+        dm_srv_floor_stock.group_all("Categories1", inplace=True)
+        value_stock_nonres = dm_srv_floor_stock[0, yr, "bld_floor-area_services"]
+
+    value = value_stock_res + value_stock_nonres
+    KPI.append({"title": "Floor Area Stock", "value": value, "unit": "Mm2"})
 
     return dm_tpe, KPI
