@@ -365,10 +365,25 @@ def lifestyle_share_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scen
     # Extrapolate BAU fts - diet-split-share
     years_ots = create_years_list(years_setting[0], years_setting[1], 1)
     years_fts = create_years_list(years_setting[2], years_setting[3], 5)
+    # A declining category's straight-line trend can cross zero well before
+    # 2050 with no floor, giving a negative BAU share/demand for it.
+    # start_t - 1: linear_forecast_BAU excludes years <= start_t from the
+    # regression, but the preprocessed level-1 (BAU) FTS values this is meant
+    # to reproduce - see dietary-habits_preprocessing.py's "Lever - kcal-req"
+    # and "Lever - diet-split-share" sections - are fit over the full OTS
+    # range. Excluding the first OTS year here shifts the fitted trend just
+    # enough that lever level 1 (nominally BAU) no longer matches BAU exactly.
     dm_ots_temp = DM_diet["diet-split-share"].filter({"Years": years_ots})
     dm_bau_fts = linear_forecast_BAU(
-        dm_ots_temp, years_setting[0], years_ots, years_fts, min_tb=None, max_tb=None
+        dm_ots_temp, years_setting[0] - 1, years_ots, years_fts, min_tb=0, max_tb=None
     )
+    # Each category is fit independently, so nothing ties their sum to 1 the
+    # way the preprocessed target levels are (normalise() there, see
+    # dietary-habits_preprocessing.py). Without renormalising, the BAU shares
+    # drift away from 100% of the diet by 2050, unlike the target diet's
+    # shares - so even at 100% adherence to a diet-split-share level equal to
+    # BAU, the two wouldn't consume the same total.
+    dm_bau_fts.normalise(dim="Categories1", inplace=True)
     for i in years_fts:
         DM_diet["diet-split-share"][:, i, "lfs_consumers-diet_bau", :] = dm_bau_fts[
             :, i, "lfs_consumers-diet_bau", :
@@ -384,10 +399,11 @@ def lifestyle_share_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scen
         unit="kcal/cap/day",
     )
 
-    # Extrapolate BAU fts - energy-requirement
+    # Extrapolate BAU fts - energy-requirement (see the diet-split-share
+    # comment above on start_t - 1)
     dm_ots_temp = DM_diet["energy-requirement"].filter({"Years": years_ots})
     dm_bau_fts = linear_forecast_BAU(
-        dm_ots_temp, years_setting[0], years_ots, years_fts, min_tb=None, max_tb=None
+        dm_ots_temp, years_setting[0] - 1, years_ots, years_fts, min_tb=0, max_tb=None
     )
     for i in years_fts:
         DM_diet["energy-requirement"][:, i, "agr_kcal-req_bau", :] = dm_bau_fts[
@@ -403,11 +419,16 @@ def lifestyle_share_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scen
     )
 
     # Overall diet = diet bau [kcal/country share/year] + diet scenario [kcal/country share/year]
+    # NB: agr_demand_raw and lfs_food-wastes are combined the same way as
+    # lfs_diet_raw - all three are linear in it (agr_demand_raw = lfs_diet_raw /
+    # food-waste share). Leaving them at their dm_diet_food_bau-only value here
+    # would feed crop/livestock/land-use (and so LCA cost) only the BAU-weighted
+    # (1 - adherence) share of demand, dropping the scenario diet entirely.
     dm_diet_food = dm_diet_food_bau.copy()
-    dm_diet_food[:, :, "lfs_diet_raw", :] = (
-        dm_diet_food_bau[:, :, "lfs_diet_raw", :]
-        + dm_diet_food_scenario[:, :, "lfs_diet_raw", :]
-    )
+    for var in ["lfs_diet_raw", "agr_demand_raw", "lfs_food-wastes"]:
+        dm_diet_food[:, :, var, :] = (
+            dm_diet_food_bau[:, :, var, :] + dm_diet_food_scenario[:, :, var, :]
+        )
 
     # Overall diet consumed = diet cons bau [kcal/country share/year] + diet cons scenario [kcal/country share/year]
     # (without food wastes)
@@ -533,9 +554,12 @@ def lifestyle_kcal_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scena
     # Extrapolate BAU fts - diet-split-share
     years_ots = create_years_list(years_setting[0], years_setting[1], 1)
     years_fts = create_years_list(years_setting[2], years_setting[3], 5)
+    # A declining category's straight-line trend can cross zero well before
+    # 2050 with no floor, giving a negative BAU share/demand for it.
+    # start_t - 1: see the matching comment in lifestyle_share_workflow.
     dm_ots_temp = DM_diet["diet-split-kcal"].filter({"Years": years_ots})
     dm_bau_fts = linear_forecast_BAU(
-        dm_ots_temp, years_setting[0], years_ots, years_fts, min_tb=None, max_tb=None
+        dm_ots_temp, years_setting[0] - 1, years_ots, years_fts, min_tb=0, max_tb=None
     )
     for i in years_fts:
         DM_diet["diet-split-kcal"][:, i, "lfs_consumers-diet_bau", :] = dm_bau_fts[
@@ -551,11 +575,13 @@ def lifestyle_kcal_workflow(DM_diet, DM_pop, CDM_const, years_setting, tpe_scena
     )
 
     # Overall diet = diet bau [kcal/country share/year] + diet scenario [kcal/country share/year]
+    # NB: agr_demand_raw and lfs_food-wastes are combined the same way as
+    # lfs_diet_raw - see the matching comment in lifestyle_share_workflow.
     dm_diet_food = dm_diet_food_bau.copy()
-    dm_diet_food[:, :, "lfs_diet_raw", :] = (
-        dm_diet_food_bau[:, :, "lfs_diet_raw", :]
-        + dm_diet_food_scenario[:, :, "lfs_diet_raw", :]
-    )
+    for var in ["lfs_diet_raw", "agr_demand_raw", "lfs_food-wastes"]:
+        dm_diet_food[:, :, var, :] = (
+            dm_diet_food_bau[:, :, var, :] + dm_diet_food_scenario[:, :, var, :]
+        )
 
     # Overall diet consumed = diet cons bau [kcal/country share/year] + diet cons scenario [kcal/country share/year]
     # (without food wastes)

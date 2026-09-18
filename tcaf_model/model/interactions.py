@@ -68,7 +68,7 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
     run(
         "dietary-habits",
         dietaryhabits,
-        tpe_scenario="diet-split-kcal",
+        tpe_scenario="diet-split-share",
         write_pickle=False,
         interface=interface,
     )
