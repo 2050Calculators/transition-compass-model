@@ -766,9 +766,10 @@ def apply_power_capacity_levers(m, DM_lever_fts, lever_setting, nuclear_curve_mw
     m.f_min["CCGT"] = 0
     m.avail["COAL_CCS"] = 0
     m.avail["NG_CCS"] = 0
-    # Import is left unconstrained: once nuclear/wind/solar capacity is capped by the
-    # levers above, it's the only realistic buffer left to balance the system - there is no
-    # other flexible resource to plausibly absorb residual demand.
+    # Import is capped, not left fully unconstrained: Switzerland's own target is a 5 TWh/yr
+    # guideline, but that's treated as a soft goal rather than a hard limit in practice, so
+    # we use 10 TWh/yr as the hard limit here (avail is in GWh).
+    m.avail["ELECTRICITY"] = 10000
 
 
 def build_demand_trend_by_sector(
