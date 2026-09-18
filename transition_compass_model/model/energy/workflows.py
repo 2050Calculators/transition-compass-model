@@ -475,8 +475,10 @@ def compute_cantonal_capacity(
     without nuclear capacity history (true for all cantons currently shipped)
     and activates automatically once one is added.
 
-    Returns a DataMatrix with a single new Variable, "pow_capacity-cantonal-new"
-    (GW), Categories1=tech, Country=[country_dem], Years=years_fts.
+    Returns a DataMatrix with a single new Variable, "pow_capacity-cantonal"
+    (GW), Categories1=tech, Country=[country_dem], Years=years_ots + years_fts.
+    OTS years carry the canton's real historical pow_existing-capacity trend;
+    FTS years carry the disaggregated national-to-canton projection.
     """
     country_prod = dm_prod_cap_cntr.col_labels["Country"][0]
 
@@ -507,6 +509,9 @@ def compute_cantonal_capacity(
     dm_cal_fts = dm_cal.filter({"Years": years_fts})
     dm_cap_nat_fts = dm_cap_nat.filter({"Years": years_fts})
 
+    dm_cal_ots = dm_cal.filter({"Years": years_ots})
+    hist_canton = dm_cal_ots[country_dem, :, "pow_existing-capacity", :]
+
     pmax_national = dm_cal_fts[country_prod, :, "pow_capacity-Pmax", :]
     pmax_canton = dm_cal_fts[country_dem, :, "pow_capacity-Pmax", :]
     canton_share = np.where(pmax_national > 0, pmax_canton / pmax_national, 0)
@@ -529,7 +534,6 @@ def compute_cantonal_capacity(
 
     if "Nuclear" in categories:
         j = categories.index("Nuclear")
-        dm_cal_ots = dm_cal.filter({"Years": years_ots})
         has_nuclear = np.any(dm_cal_ots[country_dem, :, "pow_capacity-Pmax", j] > 0)
         if has_nuclear:
             pmax_start = pmax_canton[0, j]
@@ -545,16 +549,19 @@ def compute_cantonal_capacity(
                 )
                 canton_capacity[:, j] = canton_capacity[:, j] + new_build
 
+    all_years = list(years_ots) + list(years_fts)
+    combined_capacity = np.concatenate([hist_canton, canton_capacity], axis=0)
+
     dm_out = DataMatrix(
         col_labels={
             "Country": [country_dem],
-            "Years": list(years_fts),
+            "Years": all_years,
             "Variables": ["pow_capacity-cantonal"],
             "Categories1": categories,
         },
         units={"pow_capacity-cantonal": "GW"},
     )
-    dm_out.array = canton_capacity[np.newaxis, :, np.newaxis, :]
+    dm_out.array = combined_capacity[np.newaxis, :, np.newaxis, :]
 
     return dm_out
 
@@ -922,7 +929,9 @@ def append_cantonal_capacity(
         years_fts,
         ref_size_by_category,
     )
-    missing_years = list(set(results_run.col_labels["Years"]) - set(years_fts))
+    missing_years = list(
+        set(results_run.col_labels["Years"]) - set(years_ots) - set(years_fts)
+    )
     dm_cantonal_new_capacity.add(
         np.nan, dummy=True, dim="Years", col_label=missing_years
     )
