@@ -4962,6 +4962,23 @@ def fts_processing():
 # CalculationLeaf PICKLE CREATION ------------------------------
 
 
+def flat_fts_last_valid(dm_ots, years_ots, years_fts):
+    # Flat fts: every series repeats its last historical (2023) value. A series
+    # with no 2023 value (NaN) repeats its latest available earlier value instead,
+    # so that holding the value constant never turns a series into NaN.
+    dm_flat = flat_fts_level(dm_ots, years_ots, years_fts)
+    arr = np.moveaxis(dm_ots.array, dm_ots.dim_labels.index("Years"), -1)
+    pos = np.where(np.isnan(arr), -1, np.arange(arr.shape[-1]))
+    last = pos.max(axis=-1)  # index of the last non-NaN year, -1 if there is none
+    value = np.take_along_axis(arr, np.clip(last, 0, None)[..., None], axis=-1)[..., 0]
+    value = np.where(last >= 0, value, np.nan)
+    years_axis = dm_flat.dim_labels.index("Years")
+    dm_flat.array = np.repeat(
+        np.expand_dims(value, years_axis), len(years_fts), axis=years_axis
+    )
+    return dm_flat
+
+
 def datamatrix_to_pickle(dm_fts):
 
     # Make list with all years
@@ -5089,7 +5106,14 @@ def datamatrix_to_pickle(dm_fts):
                         )
         else:
             dm = DM_ots[key].copy()
-            linear_fitting(dm, years_fts, min_t0=1e-6, min_tb=1e-6)
+            if key == "slaughter-rates":
+                # Fixed assumption: the slaughter rate stays at its last historical
+                # (2023) value over the fts years, at every lever level. A linear
+                # trend would drive it to 0, and the livestock population is
+                # production / slaughter rate, so it would blow up.
+                dm = flat_fts_last_valid(dm, years_ots, years_fts)
+            else:
+                linear_fitting(dm, years_fts, min_t0=1e-6, min_tb=1e-6)
             # Floor above 0 (not at 0): linear_fitting only clips the extrapolated
             # endpoints, interpolated years can still dip negative if the underlying
             # ots data is noisy. A hard 0 is avoided because some of these levers
