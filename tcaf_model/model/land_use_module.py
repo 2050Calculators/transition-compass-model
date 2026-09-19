@@ -254,7 +254,7 @@ def cropland_workflow(dm_crop_prod, DM_cropland, years_setting):
     )
     dm_cal_cropland_total_swiss.append(dm_cal_cropland, dim="Variables")
 
-    return dm_crop_imports, DM_cropland
+    return dm_crop_imports, dm_crop_ch, DM_cropland
 
 
 # CalculationLeaf GRASSLAND
@@ -412,7 +412,7 @@ def crop(lever_setting, years_setting, DM_input, write_pickle, interface=Interfa
 
     # CalculationTree LANDUSE MODULE
 
-    dm_crop_imports, DM_cropland = cropland_workflow(
+    dm_crop_imports, dm_crop_ch, DM_cropland = cropland_workflow(
         dm_crop_prod, DM_cropland, years_setting
     )
     grassland_workflow(DM_grassland, dm_liv_pop)
@@ -441,7 +441,21 @@ def crop(lever_setting, years_setting, DM_input, write_pickle, interface=Interfa
 
     # TPE OUTPUT -------------------------------------------------------------------------------------------------------
     # results_run = livestock_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_food)
-    results_run = dm_crop_imports
+    # The app shows the world (imports) yield and cropland, like before, plus
+    # the Swiss total yield [kcal/ha] (weighted by the organic/extensive/
+    # intensive shares) and the calibrated Swiss cropland [ha] per crop, which
+    # cropland_workflow computes for the TCAF interface. Named "_ch" so that
+    # they do not clash with the world "agr_cropland_total" once flattened.
+    dm_cropland_ch = dm_crop_ch.filter(
+        {"Variables": ["agr_crop_yield_total", "agr_cropland_total"]}
+    )
+    dm_cropland_ch.rename_col("agr_crop_yield_total", "agr_crop_yield_ch", "Variables")
+    dm_cropland_ch.rename_col("agr_cropland_total", "agr_cropland_ch", "Variables")
+
+    results_run = {
+        "cropland-world": dm_crop_imports,
+        "cropland-ch": dm_cropland_ch,
+    }
 
     return results_run
 
