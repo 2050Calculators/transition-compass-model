@@ -2796,6 +2796,9 @@ def fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal):
         # Compute share of unprocessed meat
         dm_meat = dm[level].filter_w_regex({"Categories1": "pro-liv-meat.*"})
         dm_meat_tot = dm_meat.copy()
+        # The unprocessed row is a part of the meat of the animal rows, not an
+        # extra one: leave it out of the total
+        dm_meat_tot.drop(dim="Categories1", col_label=["pro-liv-meat-unprocessed"])
         dm_meat_tot.groupby(
             {"pro-liv-meat-total": "pro-liv-meat.*"},
             regex=True,
@@ -2923,6 +2926,44 @@ def explicit_processed_share_processing():
     )
     dm.array = array
     return dm
+
+
+def share_processed_food_fts(dm_fts, dict_ots, dm_explicit):
+    """Levels 1 to 4 of the share-processed-food levers (diet-split-share).
+
+    Levels 2 to 4 go from the last ots value to the share of the target diet in
+    2050 (see fts_processing), level 1 is the BAU trend, bounded to 0-1. A diet
+    that does not give a share must not send its level to 0%, which is what its
+    blank cell filled with 0.0 gives: that level takes the BAU trend instead, so
+    that no information means BAU, whichever way the diet or the lever is
+    selected.
+    """
+    dict_fts = {}
+    for share in ["crop-cereal-whole", "unprocessed-meat"]:
+        lever = f"share-processed-food_{share}"
+        for level in range(2, 5):
+            dm_fts[lever][level].append(dict_ots[lever], dim="Years")
+            linear_fitting(dm_fts[lever][level], years_fts)
+            dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
+        # Compute BAU scenario level 1 (share, bounded 0-1)
+        level = 1
+        dm_fts[lever][level] = dict_ots[lever].copy()
+        linear_fitting(
+            dm_fts[lever][level],
+            years_fts,
+            min_t0=1e-6,
+            max_t0=1 - 1e-6,
+            min_tb=1e-6,
+            max_tb=1 - 1e-6,
+        )
+        dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
+        # Diets that do not give the share: BAU
+        for level in range(2, 5):
+            flag = dm_explicit[:, :, f"lfs_share-explicit_{share}", f"level-{level}"]
+            if not np.all(flag == 1.0):
+                dm_fts[lever][level] = dm_fts[lever][1].copy()
+        dict_fts[lever] = dm_fts[lever]
+    return dict_fts
 
 
 # CalculationLeaf PICKLE CREATION ------------------------------
@@ -3139,37 +3180,10 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
         dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
         dict_fts[lever][level] = dm_fts[lever][level]
 
-    # Lever - share-processed-food_crop-cereal-whole
-    lever = "share-processed-food_crop-cereal-whole"
-    for level in range(2, 5):
-        dm_fts[lever][level].append(dict_ots[lever], dim="Years")
-        linear_fitting(dm_fts[lever][level], years_fts)
-        dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
-    dict_fts[lever] = dm_fts[lever]
-    # Compute BAU scenario level 1 (share, bounded 0-1)
-    level = 1
-    dm_fts[lever][level] = dict_ots[lever].copy()
-    linear_fitting(
-        dm_fts[lever][level], years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
+    # Lever - share-processed-food_crop-cereal-whole and _unprocessed-meat
+    dict_fts.update(
+        share_processed_food_fts(dm_fts, dict_ots, dm_explicit_processed_share)
     )
-    dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
-    dict_fts[lever][level] = dm_fts[lever][level]
-
-    # Lever - share-processed-food_unprocessed-meat
-    lever = "share-processed-food_unprocessed-meat"
-    for level in range(2, 5):
-        dm_fts[lever][level].append(dict_ots[lever], dim="Years")
-        linear_fitting(dm_fts[lever][level], years_fts)
-        dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
-    dict_fts[lever] = dm_fts[lever]
-    # Compute BAU scenario level 1 (share, bounded 0-1)
-    level = 1
-    dm_fts[lever][level] = dict_ots[lever].copy()
-    linear_fitting(
-        dm_fts[lever][level], years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
-    )
-    dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
-    dict_fts[lever][level] = dm_fts[lever][level]
 
     # Lever - share-kcal-processed-food_.*
     lever = "share-kcal-processed-food_unprocessed-meat"
