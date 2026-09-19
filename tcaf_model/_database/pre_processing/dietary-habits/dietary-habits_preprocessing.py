@@ -2870,6 +2870,61 @@ def fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal):
     return dm_fts
 
 
+# CalculationLeaf EXPLICIT PROCESSED-FOOD SHARES ---------------------------
+
+
+def explicit_processed_share_processing():
+    """Flags which target diets give the processed-food shares explicitly.
+
+    A target diet of the diet-split-share sheet gives the share of whole cereals
+    when its crop-cereal-whole or crop-cereal-refined row is filled in, and the
+    share of unprocessed meat when its pro-liv-meat-unprocessed row is. The model
+    takes the share from the diet split in that case (the share-processed-food
+    levers are then ignored) and from the levers otherwise. A blank cell is not
+    the same as a zero, so this reads the sheet before the NaN are filled with
+    0.0 in fts_processing. Level 1 (BAU) never gives a share.
+
+    Returns a DataMatrix with Variables lfs_share-explicit_<share> and
+    Categories1 level-1 ... level-4, holding 1.0 (explicit) or 0.0.
+    """
+    df = pd.read_excel("data/dietary-habits_fts.xlsx", sheet_name="diet-split-share")
+    df = df.set_index("variables")
+
+    # The columns are the diets, which fts_processing maps to the levers
+    level_map = {
+        "diet_eat-lancet-phd-2025": 2,
+        "diet_eat-lancet-phd-2019": 3,
+        "diet_sfp-2024": 4,
+    }
+    # The diet-split rows that carry each share
+    share_rows = {
+        "crop-cereal-whole": [
+            "lfs_consumers-diet_crop-cereal-whole[g/cap/day]",
+            "lfs_consumers-diet_crop-cereal-refined[g/cap/day]",
+        ],
+        "unprocessed-meat": ["lfs_consumers-diet_pro-liv-meat-unprocessed[g/cap/day]"],
+    }
+
+    levels = [1, 2, 3, 4]
+    variables = [f"lfs_share-explicit_{share}" for share in share_rows]
+    array = np.zeros((1, 1, len(variables), len(levels)))
+    for i, rows in enumerate(share_rows.values()):
+        for diet, level in level_map.items():
+            array[0, 0, i, levels.index(level)] = float(df.loc[rows, diet].notna().any())
+
+    dm = DataMatrix(
+        col_labels={
+            "Country": ["Switzerland"],
+            "Years": [years_fts[-1]],
+            "Variables": variables,
+            "Categories1": [f"level-{level}" for level in levels],
+        },
+        units={variable: "-" for variable in variables},
+    )
+    dm.array = array
+    return dm
+
+
 # CalculationLeaf PICKLE CREATION ------------------------------
 
 
@@ -2889,6 +2944,10 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
     # Diet
     dict_fxa["cal_agr_diet"] = dm_cal_diet
     dict_fxa["cal_agr_domestic-production_bev"] = dm_cal_dom_prod_bev
+
+    # Which target diets give the processed-food shares explicitly (see
+    # explicit_processed_share_processing)
+    dict_fxa["explicit-processed-share"] = dm_explicit_processed_share
 
     # LeversToDatamatrix OTS -----------------------------------------------------
     dict_ots = {}
@@ -3237,6 +3296,7 @@ dm_diet_share, dm_waste, dm_kcal_req, dm_diet_kcal = diet_processing(
 dm_adherence = diet_adherence_processing(list_countries_calc, years_ots)
 dm_fts = fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal)
 dm_food_health = health_processing()
+dm_explicit_processed_share = explicit_processed_share_processing()
 dm_fxa_pro_yield = fxa_processing_yield(cdm_kcal)
 dm_ssr_bev = ssr_beverages_processing()
 dm_cal_dom_prod_crop, dm_cal_dom_prod_bev = crop_calibration(

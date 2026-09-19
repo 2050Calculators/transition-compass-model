@@ -22,6 +22,66 @@ def init_years_lever():
     return years_setting, lever_setting
 
 
+# The levers giving the share of processed food (whole cereals, unprocessed meat)
+SHARE_PROCESSED_FOOD_LEVERS = {
+    "diet-split-share": [
+        "share-processed-food_crop-cereal-whole",
+        "share-processed-food_unprocessed-meat",
+    ],
+    "diet-split-kcal": [
+        "share-kcal-processed-food_crop-cereal-whole",
+        "share-kcal-processed-food_unprocessed-meat",
+    ],
+}
+
+
+def share_processed_food_at_level(DM_diet_input, levers, level):
+    # Series (ots + fts) of the processed-food share levers at the given level,
+    # whatever level they are set to. read_level_data has already appended the
+    # selected fts to the ots in place (and the second share to the first), so the
+    # ots are cut back to their own years and variables.
+    dm_shares = None
+    for lever in levers:
+        dm_fts = DM_diet_input["fts"][lever][level]
+        dm = DM_diet_input["ots"][lever]
+        years_ots = [
+            y for y in dm.col_labels["Years"] if y not in dm_fts.col_labels["Years"]
+        ]
+        dm = dm.filter(
+            {"Years": years_ots, "Variables": dm_fts.col_labels["Variables"]}
+        )
+        dm.append(dm_fts, dim="Years")
+        if dm_shares is None:
+            dm_shares = dm
+        else:
+            dm_shares.append(dm, dim="Variables")
+    return dm_shares
+
+
+def explicit_shares_from_diet_split(dm_share_pro_food, DM_diet_input, lever_setting):
+    # When the selected diet of the diet split gives a share explicitly (a filled-in
+    # crop-cereal-whole / crop-cereal-refined or pro-liv-meat-unprocessed row of the
+    # target diets), that share is used and the share-processed-food lever does not
+    # change the results. When the diet gives nothing (BAU, or a blank row), the
+    # lever is used. The explicit shares are the series of the lever at the level of
+    # the diet, and the flags telling which are explicit come from the preprocessing.
+    dm_explicit = DM_diet_input["fxa"].get("explicit-processed-share")
+    if dm_explicit is None:
+        return dm_share_pro_food
+
+    diet_level = lever_setting["lever_diet-split-share"]
+    dm_diet_shares = share_processed_food_at_level(
+        DM_diet_input, SHARE_PROCESSED_FOOD_LEVERS["diet-split-share"], diet_level
+    )
+    for share in ["crop-cereal-whole", "unprocessed-meat"]:
+        flag = dm_explicit[:, :, f"lfs_share-explicit_{share}", f"level-{diet_level}"]
+        if np.all(flag == 1.0):
+            dm_share_pro_food[:, :, f"lfs_share_{share}"] = dm_diet_shares[
+                :, :, f"lfs_share_{share}"
+            ]
+    return dm_share_pro_food
+
+
 # CalculationLeaf READ PICKLE
 def read_data(DM_diet_input, lever_setting, tpe_scenario):
 
@@ -36,16 +96,21 @@ def read_data(DM_diet_input, lever_setting, tpe_scenario):
     dm_diet_fwaste = DM_ots_fts["fwaste"]
     dm_fxa_cal_diet = DM_diet_input["fxa"]["cal_agr_diet"]
     dm_diet_adherence = DM_ots_fts["diet-adherence"]
+    # Share of processed food (whole cereals, unprocessed meat). The target diet
+    # takes it from the diet split when the diet gives it explicitly, from the
+    # levers otherwise. The BAU diet always has the BAU share (level 1), so the
+    # share of the target diet shows up as a change against it in the health
+    # assessment.
+    share_levers = SHARE_PROCESSED_FOOD_LEVERS[tpe_scenario]
+    dm_share_pro_food = DM_ots_fts[share_levers[0]]
+    dm_share_pro_food.append(DM_ots_fts[share_levers[1]], dim="Variables")
     if tpe_scenario == "diet-split-share":
-        dm_share_pro_food = DM_ots_fts["share-processed-food_crop-cereal-whole"]
-        dm_share_pro_food_meat = DM_ots_fts["share-processed-food_unprocessed-meat"]
-        dm_share_pro_food.append(dm_share_pro_food_meat, dim="Variables")
-    elif tpe_scenario == "diet-split-kcal":
-        dm_share_pro_food = DM_ots_fts["share-kcal-processed-food_crop-cereal-whole"]
-        dm_share_pro_food_meat = DM_ots_fts[
-            "share-kcal-processed-food_unprocessed-meat"
-        ]
-        dm_share_pro_food.append(dm_share_pro_food_meat, dim="Variables")
+        dm_share_pro_food = explicit_shares_from_diet_split(
+            dm_share_pro_food, DM_diet_input, lever_setting
+        )
+    dm_share_pro_food_bau = share_processed_food_at_level(
+        DM_diet_input, share_levers, level=1
+    )
 
     # list of lever names
     levers = [
@@ -113,6 +178,7 @@ def read_data(DM_diet_input, lever_setting, tpe_scenario):
         "cal_diet": dm_fxa_cal_diet,
         "diet-adherence": dm_diet_adherence,
         "share-processed-food": dm_share_pro_food,
+        "share-processed-food_bau": dm_share_pro_food_bau,
     }
 
     # Aggregated Data Matrix - ALCOHOLIC BEVERAGES
@@ -299,7 +365,9 @@ def diet_adherence_scenarios(
     )
 
     # Compute share of processed meat
-    dm_share_pro = DM_diet["share-processed-food"]
+    dm_share_pro = DM_diet[
+        "share-processed-food_bau" if bau else "share-processed-food"
+    ]
     dm_meat_tot = dm_diet_consumed.groupby(
         {"meat-total": ".*meat.*"}, regex=True, inplace=False, dim="Categories1"
     )
