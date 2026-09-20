@@ -51,6 +51,9 @@ def read_data(DM_TCAF, lever_setting, years_all):
     # alternative livestock GHG path.
     DM_TCAF_lca["ghg-ef-perhead"] = DM_TCAF["fxa"].get("liv_ghg_ef_perhead", None)
     DM_TCAF_lca["lsu-per-head"] = DM_TCAF["fxa"].get("liv_lsu_per_head", None)
+    # Swiss domestic fish (LCA per method, self-sufficiency, wild-catch reference);
+    # absent in a pickle built before TCAF_fish_preprocessing.py was run.
+    DM_TCAF_lca["fish"] = DM_TCAF["fxa"].get("fish", None)
 
     # Aggregate Data Matrix - BIODIVERSITY
     DM_TCAF_biodiversity = {
@@ -776,6 +779,158 @@ def TCAF_lca_workflow(
     return DM_TCAF_lca, dm_ghg_lca_ch
 
 
+# CalculationLeaf TCAF LCA - FISH (Swiss domestic production)
+# Fish has no crop/livestock-style module, so its Swiss production is built here
+# from the diet demand. Kept out of TCAF_lca_workflow on purpose: that function
+# calibrates the GHG of crops and livestock against the IPCC agriculture inventory
+# (cat. 3), which does not include aquaculture or fishing.
+FISH_DEMAND_CATEGORY = "seafood-ffish"  # label in the diet food-demand and in cdm_kcal
+
+
+def TCAF_fish_lca_workflow(DM_fish, dm_food_demand, CDM_const, CDM_MF):
+    """Monetized LCA of Swiss domestic freshwater-fish production [CHF].
+
+    domestic production [t] = demand [kcal] / kcal-per-t x SSR
+      demand : dietary-habits agr_demand, calibrated to the FBS food supply, so the
+               tonnes are on the FBS (live weight equivalent) basis, the same basis
+               as the SSR (FBS production / food) and as the LCA processes (per kg
+               live weight at landing or farm gate). No edible-fraction step.
+      split  : wild capture is held at its FishStatJ tonnage (lake catch does not
+               follow the diet), aquaculture is the rest of the domestic production.
+    impacts [impact-unit] = production [kg] x LCA [impact-unit/kg], then monetized
+    per impact category with the same factors as crops and livestock.
+
+    Returns a dict of DataMatrices:
+      cost       agr_production-tcaf [CHF], food x method x impact
+      production agr_production-lca-t [t], food x method
+      ghg        agr_ghg-lca-t [t CO2-eq], food x method
+      demand     tcaf_fish_demand [t], no categories
+    """
+    dm_lca = DM_fish["lca-ch"]
+    dm_ssr = DM_fish["ssr"]
+    dm_cap = DM_fish["capture-ref"]
+    food = dm_lca.col_labels["Categories1"][0]
+    methods = list(dm_lca.col_labels["Categories2"])
+    impacts = list(dm_lca.col_labels["Categories3"])
+
+    years = sorted(
+        set(dm_food_demand.col_labels["Years"])
+        & set(dm_lca.col_labels["Years"])
+        & set(dm_ssr.col_labels["Years"])
+    )
+    dm_dem = dm_food_demand.filter(
+        {
+            "Variables": ["agr_demand"],
+            "Categories1": [FISH_DEMAND_CATEGORY],
+            "Years": years,
+        },
+        inplace=False,
+    )
+    dm_lca = dm_lca.filter({"Years": years}, inplace=False)
+    dm_ssr = dm_ssr.filter({"Years": years}, inplace=False)
+    dm_cap = dm_cap.filter({"Years": years}, inplace=False)
+
+    cdm_kcal = CDM_const["cdm_kcal"]
+    kcal_per_t = float(cdm_kcal["cp_kcal-per-t", FISH_DEMAND_CATEGORY])
+
+    demand_t = dm_dem[:, :, "agr_demand", FISH_DEMAND_CATEGORY] / kcal_per_t
+    total_t = demand_t * dm_ssr[:, :, "fish_ssr", food]
+    capture_t = np.minimum(dm_cap[:, :, "fish_capture-ref", food], total_t)
+    t_by_method = {"aquaculture": total_t - capture_t, "capture": capture_t}
+
+    prod_t = np.stack([t_by_method[m] for m in methods], axis=-1)  # (c, y, method)
+    dm_production = DataMatrix.based_on(
+        prod_t[:, :, np.newaxis, np.newaxis, :],
+        format=dm_lca,
+        change={"Variables": ["agr_production-lca-t"], "Categories3": None},
+        units={"agr_production-lca-t": "t"},
+    )
+
+    # [ISLAND] physical impact = production [kg] (x) impact [/kg] over the impact axis
+    phys = (1e3 * prod_t)[:, :, :, np.newaxis] * dm_lca[:, :, "lca-impacts", food, :, :]
+    cost = _monetize_by_impact(phys, impacts, CDM_MF["env-lca"])
+    dm_cost = DataMatrix.based_on(
+        cost[:, :, np.newaxis, np.newaxis, :, :],
+        format=dm_lca,
+        change={"Variables": ["agr_production-tcaf"]},
+        units={"agr_production-tcaf": "CHF"},
+    )
+    ghg_t = phys[:, :, :, impacts.index("global-warming")] / 1e3  # kg -> t CO2-eq
+    dm_ghg = DataMatrix.based_on(
+        ghg_t[:, :, np.newaxis, np.newaxis, :],
+        format=dm_lca,
+        change={"Variables": ["agr_ghg-lca-t"], "Categories3": None},
+        units={"agr_ghg-lca-t": "t"},
+    )
+    dm_demand = DataMatrix.based_on(
+        demand_t[:, :, np.newaxis],
+        format=dm_lca,
+        change={
+            "Variables": ["tcaf_fish_demand"],
+            "Categories1": None,
+            "Categories2": None,
+            "Categories3": None,
+        },
+        units={"tcaf_fish_demand": "t"},
+    )
+    return {
+        "cost": dm_cost,
+        "production": dm_production,
+        "ghg": dm_ghg,
+        "demand": dm_demand,
+    }
+
+
+def TCAF_fish_TPE_interface(fish):
+    """Swiss domestic fish outputs for the app (Production tab, Blue food).
+
+    Variables, all Switzerland x years:
+      tcaf_fish_production_<method> [t]   domestic production, aquaculture / capture
+      tcaf_fish_import [t]                demand not met by domestic production
+      tcaf_fish_ssr [%]                   domestic production / demand
+      tcaf_fish_cost_<method> [CHF]       LCA cost by method
+      tcaf_fish_cost_<impact> [CHF]       LCA cost by impact category
+      tcaf_fish_ghg_<method> [t]          GHG emissions (t CO2-eq) by method
+    """
+    dm_prod = fish["production"].group_all("Categories1", inplace=False)  # -> method
+    dm_prod.rename_col("agr_production-lca-t", "tcaf_fish_production", dim="Variables")
+    dm_tpe = dm_prod.flattest()
+
+    total_t = fish["production"].array.sum(axis=(3, 4))[:, :, 0]  # (c, y)
+    demand_t = fish["demand"].array[:, :, 0]
+    imports = DataMatrix.based_on(
+        (demand_t - total_t)[:, :, np.newaxis],
+        format=fish["demand"],
+        change={"Variables": ["tcaf_fish_import"]},
+        units={"tcaf_fish_import": "t"},
+    )
+    dm_tpe.append(imports, dim="Variables")
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ssr = np.where(demand_t > 0, 100.0 * total_t / demand_t, 0.0)
+    dm_tpe.append(
+        DataMatrix.based_on(
+            ssr[:, :, np.newaxis],
+            format=fish["demand"],
+            change={"Variables": ["tcaf_fish_ssr"]},
+            units={"tcaf_fish_ssr": "%"},
+        ),
+        dim="Variables",
+    )
+
+    dm_cost = fish["cost"].copy()
+    dm_cost.rename_col("agr_production-tcaf", "tcaf_fish_cost", dim="Variables")
+    dm_cost.group_all("Categories1", inplace=True)  # sum over food -> method x impact
+    dm_by_method = dm_cost.group_all("Categories2", inplace=False)  # sum over impact
+    dm_by_impact = dm_cost.group_all("Categories1", inplace=False)  # sum over method
+    dm_tpe.append(dm_by_method.flattest(), dim="Variables")
+    dm_tpe.append(dm_by_impact.flattest(), dim="Variables")
+
+    dm_ghg = fish["ghg"].group_all("Categories1", inplace=False)  # -> method
+    dm_ghg.rename_col("agr_ghg-lca-t", "tcaf_fish_ghg", dim="Variables")
+    dm_tpe.append(dm_ghg.flattest(), dim="Variables")
+    return dm_tpe
+
+
 # CalculationLeaf TCAF HEALTH DIET
 def _project_dalys(dm_gbd, dm_demography, base_year=2025):
     """
@@ -1127,7 +1282,9 @@ def TCAF_biodiversity_workflow(DM_TCAF_biodiversity, DM_landuse_to_TCAF):
 
 
 # CalculationLeaf TPE INTERFACE
-def TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot, DM_TCAF_lca):
+def TCAF_TPE_interface(
+    dm_health_diet_detailed, dm_health_diet_tot, DM_TCAF_lca, fish=None
+):
     # attributable / avoided / residual DALYs, and their monetized costs [CHF]
     vars_out = [
         "tcaf_health-diet_dalys",
@@ -1152,6 +1309,19 @@ def TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot, DM_TCAF_lca)
     dm_lca_ch.rename_col("agr_production-tcaf", "tcaf_lca_cost", dim="Variables")
     dm_lca_ch.group_all("Categories2", inplace=True)  # sum over method -> Categories1 food, Categories2 impact
 
+    # Swiss domestic fish, same structure: sum over method, then add as a food
+    if fish is not None:
+        dm_fish = fish["cost"].filter({"Variables": ["agr_production-tcaf"]})
+        dm_fish.rename_col("agr_production-tcaf", "tcaf_lca_cost", dim="Variables")
+        dm_fish.group_all("Categories2", inplace=True)  # sum over method
+        years = sorted(
+            set(dm_fish.col_labels["Years"]) & set(dm_lca_ch.col_labels["Years"])
+        )
+        dm_fish.filter({"Years": years}, inplace=True)
+        dm_lca_ch.filter({"Years": years}, inplace=True)
+        dm_lca_ch.append(dm_fish, dim="Categories1")
+        dm_lca_ch.sort("Categories1")
+
     # lca per food category (summed over impact categories)
     dm_lca_ch_food = dm_lca_ch.copy()
     dm_lca_ch_food.group_all("Categories2", inplace=True)  # sum over impact -> Categories1 food
@@ -1167,6 +1337,10 @@ def TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot, DM_TCAF_lca)
     dm_lca_ch_tot.group_all("Categories1", inplace=True)  # sum over impact -> no categories left
     dm_lca_ch_tot.rename_col("tcaf_lca_cost", "tcaf_lca_cost_total", dim="Variables")
     dm_tpe.append(dm_lca_ch_tot, dim="Variables")
+
+    # Swiss domestic fish detail (production, imports, SSR, cost, GHG)
+    if fish is not None:
+        dm_tpe.append(TCAF_fish_TPE_interface(fish), dim="Variables")
 
     # total true cost (LCA + health, at the moment: biodiversity is currently disabled) [CHF]
     # Uses cost-residual (attributable minus avoided), the net health burden that
@@ -1247,6 +1421,7 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
     dm_cal_ghg_lca = DM_TCAF_lca.pop("cal-ghg", None)
     cdm_ghg_ef_perhead = DM_TCAF_lca.pop("ghg-ef-perhead", None)
     cdm_lsu_per_head = DM_TCAF_lca.pop("lsu-per-head", None)
+    DM_fish = DM_TCAF_lca.pop("fish", None)
     DM_TCAF_lca, dm_ghg_lca_ch = TCAF_lca_workflow(
         DM_TCAF_lca,
         DM_crop_to_TCAF,
@@ -1263,6 +1438,14 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
     # is not in the repo, so it is not called in the model run.
     # TCAF_ghg_calibration_weight_test()
 
+    # Swiss domestic fish. Needs the fish inputs in the pickle and the food demand
+    # from dietary-habits; without either, fish is left out and this says so.
+    fish = None
+    if DM_fish is not None and "food-demand" in DM_diet:
+        fish = TCAF_fish_lca_workflow(DM_fish, DM_diet["food-demand"], CDM_const, CDM_MF)
+    else:
+        print("TCAF: fish LCA skipped (fish inputs or diet food-demand missing)")
+
     dm_health_diet_detailed, dm_health_diet_tot = TCAF_health_diet_workflow(
         DM_diet, DM_TCAF_health_diet, CDM_MF
     )
@@ -1270,7 +1453,9 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
         DM_TCAF_biodiversity, DM_landuse_to_TCAF
     )"""
     # CalculationTree TPE OUTPUT -------------------------------------------------------------------------------------------------------
-    results_run = TCAF_TPE_interface(dm_health_diet_detailed, dm_health_diet_tot, DM_TCAF_lca)
+    results_run = TCAF_TPE_interface(
+        dm_health_diet_detailed, dm_health_diet_tot, DM_TCAF_lca, fish
+    )
 
     # INTERFACES OUT ---------------------------------------------------------------------------------------------------
 

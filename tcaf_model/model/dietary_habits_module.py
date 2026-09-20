@@ -830,7 +830,11 @@ def dietaryhabits_TPE_interface(CDM_const, dm_lfs, dm_diet_consumed, dm_diet_foo
 
 # CalculationLeaf INTERFACE OUT TCAF  --------------------------------------------------------------
 def dietaryhabits_TCAF_interface(
-    dm_diet_consumed_B, dm_diet_consumed_T, dm_diet_adherence, dm_demography
+    dm_diet_consumed_B,
+    dm_diet_consumed_T,
+    dm_diet_adherence,
+    dm_demography,
+    dm_food_demand,
 ):
     # Filter to the consumed-diet variable
     dm_diet_consumed_B.filter({"Variables": ["lfs_consumers-diet"]}, inplace=True)
@@ -844,11 +848,17 @@ def dietaryhabits_TCAF_interface(
     # T           = full target diet (a full adherent)   [g/cap/day]
     # alpha       = population share adopting the target diet   [-]
     # demography  = population by sex x age group [inhabitants], used to project DALYs
+    # food-demand = food supply demand by category [kcal], i.e. the same calibrated,
+    #               adherence-weighted agr_demand that crop and livestock receive.
+    #               TCAF turns it into Swiss domestic fish production (no fish module).
     DM_TCAF_health_diet = {
         "diet-consumed_bau": dm_diet_consumed_B,
         "diet-consumed_target": dm_diet_consumed_T,
         "diet-adherence": dm_diet_adherence,
         "demography": dm_demography,
+        "food-demand": dm_food_demand.filter(
+            {"Variables": ["agr_demand"]}, inplace=False
+        ),
     }
 
     return DM_TCAF_health_diet
@@ -938,6 +948,7 @@ def dietaryhabits(
         dm_diet_consumed_T,
         DM_diet["diet-adherence"],
         DM_pop["lfs_demography_"],
+        dm_lfs,
     )
     if write_pickle is True:
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
