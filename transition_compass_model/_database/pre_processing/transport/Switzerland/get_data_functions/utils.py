@@ -22,7 +22,8 @@ def fill_var_nans_based_on_var_curve(dm, var_nan, var_ref, keep_all_vars=False):
     return dm
 
 
-def drop_if_smaller_than_0_01(dm, cat_to_drop="Categories2", col_to_drop="Other"):
+def drop_if_smaller_than_0_01(dm_og, cat_to_drop="Categories2", col_to_drop="Other"):
+    dm = dm_og.copy()
     dm_ratio = dm.normalise(dim=cat_to_drop, inplace=False)
 
     dm_missing = dm_ratio.filter({cat_to_drop: [col_to_drop]}).copy()

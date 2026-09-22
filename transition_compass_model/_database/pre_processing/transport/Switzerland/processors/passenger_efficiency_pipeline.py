@@ -17,7 +17,8 @@ from transition_compass_model.model.common.auxiliary_functions import (
 def convert_eff_from_gCO2_km_to_MJ_km(
     dm_veh_eff_LDV, cdm_emissions_factors, new_var_name
 ):
-    dm_veh_eff_LDV.drop("Categories2", ["BEV", "FCEV"])
+    if "BEV" in dm_veh_eff_LDV.col_labels["Categories2"]:
+        dm_veh_eff_LDV.drop("Categories2", ["BEV", "FCEV"])
     var_name = dm_veh_eff_LDV.col_labels["Variables"][0]
     dm_veh_eff_LDV.rename_col(var_name, "tmp_name", dim="Variables")
     cdm_emissions_CO2_LDV = cdm_emissions_factors.filter(
@@ -225,15 +226,27 @@ def run(
     agency_eff = "CH1.MFZ_IVS"
     dataflow_eff = "DF_MFZ_1_EMISSION"
     local_filename_eff = os.path.join(
-        this_dir, "../data/tra_veh_efficiency_swiss_stat.pickle"
+        this_dir, "../data/tra_veh_efficiency_swiss_stat_co2.pickle"
     )
-    dm_veh_eff_LDV = get_data.get_vehicle_efficiency(
+    dm_veh_eff_LDV_co2 = get_data.get_vehicle_efficiency_co2(
         local_filename_eff,
         agency_eff,
         dataflow_eff,
         var_name="tra_passenger_veh-efficiency_fleet",
     )
-    dm_veh_eff_LDV.filter({"Country": country_list}, inplace=True)
+
+    dm_veh_eff_LDV_co2.filter({"Country": country_list}, inplace=True)
+
+    local_filename_eff = os.path.join(
+        this_dir, "../data/tra_veh_efficiency_swiss_stat_elec.pickle"
+    )
+    dm_veh_eff_LDV_elec = get_data.get_vehicle_electric_efficiency(
+        local_filename_eff,
+        agency_eff,
+        dataflow_eff,
+        var_name="tra_passenger_veh-efficiency_fleet",
+    )
+    dm_veh_eff_LDV_elec.filter({"Country": country_list}, inplace=True)
 
     #### Vehicle efficiency new - LDV - CO2/km
     # FCEV data are off, BEV = 25 gCO2/km independently of car power
@@ -241,7 +254,7 @@ def run(
     local_filename_new = os.path.join(
         this_dir, "../data/tra_new-veh_efficiency.pickle"
     )  # The file is created if it doesn't exist3#
-    dm_veh_new_eff_LDV = get_data.get_new_vehicle_efficiency(
+    dm_veh_new_eff_LDV = get_data.get_new_vehicle_efficiency_ofs(
         table_id_new_eff,
         local_filename_new,
         var_name="tra_passenger_veh-efficiency_new",
@@ -251,7 +264,7 @@ def run(
 
     # The Swiss efficiency for the fleet is given in gCO2/km. We convert it to MJ/km
     dm_veh_eff_LDV = convert_eff_from_gCO2_km_to_MJ_km(
-        dm_veh_eff_LDV,
+        dm_veh_eff_LDV_co2,
         cdm_emissions_factors,
         new_var_name="tra_passenger_veh-efficiency_fleet",
     )
