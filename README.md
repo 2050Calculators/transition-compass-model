@@ -61,15 +61,16 @@ python -m tcaf_model.model.crop_module
 
 ## Release
 
-The web app installs the wheel from a GitHub release, there is no PyPI package.
+The package is on PyPI as `tcaf-model`. A `tcaf-v*` tag on branch `tcaf`
+publishes it (tags are a human decision):
 
 ```bash
 git tag tcaf-v1.0.0 && git push origin tcaf-v1.0.0
 ```
 
-The workflow lints, builds the wheel with the pickles inside, and attaches it to
-the release. Then point the app at the new URL in `backend/pyproject.toml` of
-[leure-speed-to-zero][app] and run `uv lock`.
+The workflow (`.github/workflows/publish-tcaf-pypi.yml`) lints, builds the wheel
+with the pickles inside and publishes it to PyPI. Then it opens a bump PR in
+[leure-speed-to-zero][app] that pins the new `tcaf-model` version.
 
 ## Working here
 

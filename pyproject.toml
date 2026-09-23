@@ -36,8 +36,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/2050Calculators/tcaf-model"
-Repository = "https://github.com/2050Calculators/tcaf-model"
+Homepage = "https://github.com/2050Calculators/transition-compass-model/tree/tcaf"
+Repository = "https://github.com/2050Calculators/transition-compass-model"
 
 [dependency-groups]
 dev = [
