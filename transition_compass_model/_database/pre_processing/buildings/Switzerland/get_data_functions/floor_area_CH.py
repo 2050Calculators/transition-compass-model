@@ -8,6 +8,9 @@ import pandas as pd
 from transition_compass_model._database.pre_processing.api_routines_CH import (
     get_data_api_CH,
 )
+from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
+    get_data_api_swiss_stats,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
@@ -62,7 +65,136 @@ def compute_avg_floor_area(dm_floor_area, years_ots):
     return dm
 
 
-def extract_stock_floor_area(table_id, file):
+def get_all_elements_except_total(structure, var_name) -> list:
+    return [x for x in structure[var_name] if x not in ["Total"]]
+
+
+def extract_stock_floor_area(file, agency, dataflow):
+    try:
+        with open(file, "rb") as handle:
+            dm_floor_area = pickle.load(handle)
+    except OSError:
+        dm_floor_area = None
+        structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
+        cantons_list = [
+            "Switzerland",
+            "Vaud",
+            "Fribourg",
+            "Schwyz",
+        ]
+
+        construction_period_list = get_all_elements_except_total(structure, "GBAUPS")
+        superficy_list = get_all_elements_except_total(structure, "FLAECHKL")
+        category_list = get_all_elements_except_total(structure, "GKATS")
+
+        for cntr in cantons_list:
+            # Extract buildings floor area
+
+            filtering = {
+                "TIME_PERIOD": structure["TIME_PERIOD"],
+                "GEMEINDENAME": [cntr],
+                "GBAUPS": construction_period_list,  # époque de construction
+                "FLAECHKL": superficy_list,
+                "GKATS": category_list,
+                "FREQ": ["Annual"],
+            }
+            mapping_dim = {
+                "Country": "GEMEINDENAME",
+                "Years": "TIME_PERIOD",
+                "Variables": "FLAECHKL",
+                "Categories1": "GKATS",
+                "Categories2": "GBAUPS",
+            }
+            unit_all = ["number"] * len(superficy_list)
+            # Get api data
+            dm_floor_area_cntr = get_data_api_swiss_stats(
+                agency,
+                dataflow,
+                mode="extract",
+                filter=filtering,
+                mapping_dims=mapping_dim,
+                units=unit_all,
+                language="en",
+            )
+
+            dm_floor_area_cntr.col_labels["Years"]
+            if dm_floor_area is None:
+                dm_floor_area = dm_floor_area_cntr.copy()
+            else:
+                # Remove cities when cantons have homonyms as cities
+                dm_floor_area.append(dm_floor_area_cntr.copy(), dim="Country")
+
+        dm_floor_area.rename_col_regex("- ", "", dim="Country")
+
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        # f = os.path.join(current_file_directory, file)
+        # with open(f, "wb") as handle:
+        #     pickle.dump(dm_floor_area, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    if "......5892 Blonay Saint-Légier" in dm_floor_area.col_labels["Country"]:
+        dm_floor_area.drop(dim="Country", col_label="......5892 Blonay Saint-Légier")
+    rename_cantons(dm_floor_area)
+    dm_floor_area.rename_col("Suisse", "Switzerland", "Country")
+    dm_floor_area.sort("Country")
+
+    dm_floor_area.groupby(
+        {
+            "single-family-households": ["Maisons individuelles"],
+            "multi-family-households": [
+                "Maisons à plusieurs logements",
+                "Bâtiments d'habitation avec usage annexe",
+                "Bâtiments partiellement à usage d'habitation",
+            ],
+        },
+        dim="Categories1",
+        inplace=True,
+    )
+
+    # There is something weird happening where the number of buildings with less than 30m2 built before
+    # 1919 increases over time. Maybe they are re-arranging the internal space?
+    # Save number of bld (to compute avg size)
+    dm_num_bld = dm_floor_area.groupby(
+        {"bld_stock-number-bld": ".*"}, dim="Variables", regex=True, inplace=False
+    )
+
+    ## Compute total floor space
+    # Drop split by size
+    dm_floor_area.rename_col_regex(" m2", "", "Variables")
+    # The average size for less than 30 is a guess, as is the average size for 150+,
+    # we will use the data from bfs to calibrate
+    avg_size = {
+        "<30": 25,
+        "30-49": 39.5,
+        "50-69": 59.5,
+        "70-99": 84.5,
+        "100-149": 124.5,
+        "150+": 375,
+    }
+    for size in dm_floor_area.col_labels["Variables"]:
+        dm_floor_area[:, :, size, "single-family-households", :] = (
+            avg_size[size] * dm_floor_area[:, :, size, "single-family-households", :]
+        )
+    avg_size = {
+        "<30": 25,
+        "30-49": 39.5,
+        "50-69": 59.5,
+        "70-99": 84.5,
+        "100-149": 124.5,
+        "150+": 160,
+    }
+    for size in dm_floor_area.col_labels["Variables"]:
+        dm_floor_area[:, :, size, "multi-family-households", :] = (
+            avg_size[size] * dm_floor_area[:, :, size, "multi-family-households", :]
+        )
+    dm_floor_area.groupby(
+        {"bld_floor-area_stock": ".*"}, dim="Variables", regex=True, inplace=True
+    )
+    dm_floor_area.change_unit("bld_floor-area_stock", 1, "number", "m2")
+
+    return dm_floor_area, dm_num_bld
+
+
+def extract_stock_floor_area_ofs(table_id, file):
     try:
         with open(file, "rb") as handle:
             dm_floor_area = pickle.load(handle)
@@ -182,7 +314,18 @@ def compute_floor_area_stock_v2(
     # Computes:
     #   floor-area stock in m2 by sfh and mfh,
     #   2023 split also by envelope category
-    dm_stock_area, dm_num_bld = extract_stock_floor_area(table_id, file)
+    dm_stock_area, dm_num_bld = extract_stock_floor_area_ofs(table_id, file)
+
+    # https://stats.swiss/vis?lc=fr&df[ds]=disseminate&df[id]=DF_GWS_REG7&df[ag]=CH1.GWS&dq=A....8100&lom=LASTNPERIODS&lo=1&to[TIME_PERIOD]=false
+    agency = "CH1.GWS"
+    dataflow = "DF_GWS_REG7"
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    file_swiss_stat = file = os.path.join(
+        this_dir, "../data/bld_floor-area_stock_all_cantons_swiss_stat.pickle"
+    )
+    dm_stock_area, dm_num_bld = extract_stock_floor_area(
+        file_swiss_stat, agency, dataflow
+    )
 
     # Remove 2010 data because they are odd
     dm_stock_area.drop(dim="Years", col_label=2010)

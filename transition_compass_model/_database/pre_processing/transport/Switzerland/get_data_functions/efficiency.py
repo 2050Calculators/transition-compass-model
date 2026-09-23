@@ -656,7 +656,6 @@ def get_new_vehicle_efficiency_co2(file: str, agency: str, dataflow: str, var_na
     except OSError:
         structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
         i = 0
-        ibis = 0
         fuel_list = [
             fuel
             for fuel in structure["UV_RV_FUEL"]

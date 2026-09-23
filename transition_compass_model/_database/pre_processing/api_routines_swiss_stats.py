@@ -133,7 +133,24 @@ def _fetch_structure(agency, dataflow, headers):
             allowed = actual_codes.get(dim["id"])
             if allowed is not None:
                 codes = [c for c in codes if c["id"] in allowed]
-            return [{"id": c["id"], "name": c["name"]} for c in codes]
+            check_duplicates = [c["name"] for c in codes]
+            if len(set(check_duplicates)) == len(check_duplicates):
+                return [{"id": c["id"], "name": c["name"]} for c in codes]
+            else:
+                # Only keep canton and remove communes
+                if dim["id"] == "GEMEINDENAME":
+                    code_list = []
+                    for c in codes:
+                        if "parent" in c.keys():
+                            if c["parent"] == "8100":
+                                code_list.append({"id": c["id"], "name": c["name"]})
+                        else:
+                            code_list.append({"id": c["id"], "name": c["name"]})
+                    return code_list
+                else:
+                    raise Exception(
+                        "There are multiple time the same name for the same dimension. It can for example happen for same name between country and city"
+                    )
 
         # Makes sure that the dimension are extracted in the correct order based on the
         # position argument
