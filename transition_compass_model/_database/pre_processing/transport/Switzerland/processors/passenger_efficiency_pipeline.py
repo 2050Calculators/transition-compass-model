@@ -248,12 +248,12 @@ def run(
     )
     dm_veh_eff_LDV_elec.filter({"Country": country_list}, inplace=True)
 
-    #### Vehicle efficiency new - LDV - CO2/km
+    #### Vehicle efficiency new - LDV - CO2/km _ old version
     # FCEV data are off, BEV = 25 gCO2/km independently of car power
     table_id_new_eff = "px-x-1103020200_201"
     local_filename_new = os.path.join(
         this_dir, "../data/tra_new-veh_efficiency.pickle"
-    )  # The file is created if it doesn't exist3#
+    )  # The file is created if it doesn't exist
     dm_veh_new_eff_LDV = get_data.get_new_vehicle_efficiency_ofs(
         table_id_new_eff,
         local_filename_new,
@@ -261,6 +261,37 @@ def run(
         years_ots=years_ots,
     )
     del table_id_new_eff, local_filename_new
+
+    #### Vehicle efficiency new - LDV - CO2/km -swiss stats version
+    # swiss stats url : https://stats.swiss/vis?lc=fr&df%5bds%5d=disseminate&df%5bid%5d=DF_IVS_1_EMISSION&df%5bag%5d=CH1.MFZ_IVS
+    agency_new_eff = "CH1.MFZ_IVS"
+    dataflow_new_eff = "DF_IVS_1_EMISSION"
+    local_filename_new = os.path.join(
+        this_dir, "../data/tra_new-veh_efficiency_co2.pickle"
+    )  # The file is created if it doesn't exist
+    dm_veh_new_eff_LDV_co2 = get_data.get_new_vehicle_efficiency_co2(
+        local_filename_new,
+        agency_new_eff,
+        dataflow_new_eff,
+        var_name="tra_passenger_veh-efficiency_new",
+    )
+    dm_veh_new_eff_LDV_co2.filter({"Country": country_list}, inplace=True)
+
+    # Efficiency for BEV
+    local_filename_new = os.path.join(
+        this_dir, "../data/tra_new-veh_efficiency_elec.pickle"
+    )  # The file is created if it doesn't exist
+
+    dm_veh_new_eff_LDV_elec = get_data.get_new_vehicle_efficiency_elec(
+        local_filename_new,
+        agency_new_eff,
+        dataflow_new_eff,
+        var_name="tra_passenger_veh-efficiency_new",
+    )
+
+    dm_veh_new_eff_LDV_elec.filter({"Country": country_list}, inplace=True)
+
+    del agency_new_eff, dataflow_new_eff
 
     # The Swiss efficiency for the fleet is given in gCO2/km. We convert it to MJ/km
     dm_veh_eff_LDV = convert_eff_from_gCO2_km_to_MJ_km(
