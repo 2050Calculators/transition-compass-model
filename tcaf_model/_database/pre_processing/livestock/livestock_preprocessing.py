@@ -1590,7 +1590,6 @@ def trade_origin_feed_processing(years_ots, list_countries_calc, file_dict):
 
 # CalculationLeaf SHARE PRODUCTION METHOD
 def production_share(dm_cal_liv_pop):
-
     # Step CATTLE (DAIRY & MEAT)
     # Source: STAT-TAB Exploitations agricoles et animaux de rente selon le niveau de classification 3 par canton
     # https://www.pxweb.bfs.admin.ch/pxweb/fr/px-x-0702000000_108/-/px-x-0702000000_108.px/
@@ -1967,7 +1966,6 @@ def production_share(dm_cal_liv_pop):
 
 # CalculationLeaf CALIBRATION FORMATTING
 def calibration_formatting(df_diet_calibration):
-
     # Concatenate dfs
     df_calibration = df_diet_calibration
 
@@ -2881,7 +2879,6 @@ def feed_ration(df_feed_ration, cdm_efficiency, cdm_kcal):
 
 # CalculationLeaf YIELD & SLAUGHTER RATE ------------------------------------------------------------------------------
 def yield_slaughter_rate(df_liv_pop, dm_prod_share):
-
     # ----------------------------------------------------------------------------------------------------------------------
     # YIELD (DAIRY & EGGS) -------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -3415,7 +3412,6 @@ def yield_slaughter_rate(df_liv_pop, dm_prod_share):
 
 # CalculationLeaf LIVESTOCK ALT PROTEIN MEALS ------------------------------------------------------------------------------------
 def livestock_protein_meals_processing(df_csl_feed):
-
     # Using and formatting df_csl_feed as a structural basis for constant ots values across all countries
     df_protein_meals_all = df_csl_feed.copy()
     df_protein_meals_all = df_protein_meals_all.drop(columns=["Item", "Feed"])
@@ -3935,7 +3931,6 @@ def livestock_calibration(list_countries_calc, dm_losses):
 
 
 def manure_calibration(list_countries_calc, file_dict):
-
     try:
         df_liv_emissions = pd.read_csv(file_dict["GLE_emissions_most"])
         df_liv_emissions_poultry = pd.read_csv(file_dict["GLE_emissions_poultry"])
@@ -4164,7 +4159,6 @@ def manure_calibration(list_countries_calc, file_dict):
 
 # CalculationLeaf FXA - MILK FEED FOOD RATIO---------------------------------------------------------------------------------------------
 def fxa_ffr_milk(df_ffr_milk):
-
     # ffr ratio [-] = (Feed + Food + Processing) / Food
     df_ffr_milk["value"] = (
         df_ffr_milk["Feed"] + df_ffr_milk["Food"] + df_ffr_milk["Processing"]
@@ -4220,7 +4214,6 @@ def fxa_ffr_milk(df_ffr_milk):
 def manure_fxa(
     list_countries_calc, df_liv_emissions, df_manure_n_fxa, df_manure_ch4_fxa
 ):
-
     # N2O EMISSIONS -------------------------------------------------------------
     # Filter & Rename
     df_manure_n_fxa = df_manure_n_fxa[
@@ -4783,7 +4776,6 @@ def feed_calibration(list_countries_calc):
 
 
 def constant():
-
     # FEED PROCESSING YIELD -------------------------------------------------------
     # Read excel
     df = pd.read_excel(
@@ -4936,7 +4928,6 @@ def constant():
 
 # CalculationLeaf FTS  ------------------------------
 def fts_processing():
-
     # ssr-feed-pro, ssr-liv_.*, livestock-losses, share-organic, ruminand-feed ----------
     # Read Excel
     df_fts_data = pd.read_excel("data/livestock_fts.xlsx", sheet_name="fts")
@@ -4980,7 +4971,6 @@ def flat_fts_last_valid(dm_ots, years_ots, years_fts):
 
 
 def datamatrix_to_pickle(dm_fts):
-
     # Make list with all years
     years_all = years_ots + years_fts
 
@@ -5183,7 +5173,9 @@ def datamatrix_to_pickle(dm_fts):
     lever = "share-organic"
     # Compute BAU scenario level 1 (share, bounded 0-1)
     dm_bau = dict_ots[lever].copy()
-    linear_fitting(dm_bau, years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6)
+    linear_fitting(
+        dm_bau, years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
+    )
     dm_fts[lever][1] = dm_bau.filter({"Years": years_fts}, inplace=False)
     for level in range(2, 5):
         # Propagate the overall lever value across all feed categories
@@ -5220,7 +5212,12 @@ def datamatrix_to_pickle(dm_fts):
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
     linear_fitting(
-        dm_fts[lever][level], years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
+        dm_fts[lever][level],
+        years_fts,
+        min_t0=1e-6,
+        max_t0=1 - 1e-6,
+        min_tb=1e-6,
+        max_tb=1 - 1e-6,
     )
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever][level] = dm_fts[lever][level]
@@ -5236,10 +5233,9 @@ def datamatrix_to_pickle(dm_fts):
         # for each food category. The fts value is the fraction of the ots waste/loss
         # that is removed (level 2 = 25%, level 3 = 50%, level 4 = 75% reduction).
         dm_ots = dict_ots[lever].copy()
-        array_temp = (
+        array_temp = 1 - (1 - dm_ots[:, years_ots[-1], "agr_livestock_losses", :]) * (
             1
-            - (1 - dm_ots[:, years_ots[-1], "agr_livestock_losses", :])
-            * (1 - dm_fts[lever][level][:, years_fts[-1], "agr_livestock_losses", np.newaxis])
+            - dm_fts[lever][level][:, years_fts[-1], "agr_livestock_losses", np.newaxis]
         )
         # Append with ots
         dm_ots.add(

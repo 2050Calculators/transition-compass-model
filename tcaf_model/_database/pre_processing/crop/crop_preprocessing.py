@@ -230,7 +230,6 @@ def crop_losses():
 
 
 def crop_yield(dm_prod_share):
-
     # CROPS  (QCL) (for everything except lgn-energycrop, gas-energycrop, algae and insect)
     try:
         df_yield = pd.read_csv(file_dict["QCL_yield"])
@@ -471,7 +470,6 @@ def crop_yield(dm_prod_share):
 
 # CalculationLeaf CAL - DOM PROD CROP & BEV
 def crop_calibration(list_countries_calc, dm_losses, dm_fxa_pro_yield, cdm_bev):
-
     # ----------------------------------------------------------------------------------------------------------------------
     # DOMESTIC PRODUCTION (CROP PRODUCTS) ----------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -903,7 +901,6 @@ def cropland_calibration(list_countries):
 
 # CalculationLeaf FXA - PROCESSING YIELD CROP & BEV
 def fxa_processing_yield(df_processing_yield_fxa, cdm_kcal):
-
     # PROCESSING YIELD
     # Pivot df
     pivot_df = df_processing_yield_fxa.pivot_table(
@@ -2354,7 +2351,6 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
 
 
 def production_share():
-
     # Step DATA CROPS
     # Source: Exploitations agricoles et surface agricole utile (SAU) selon le niveau de classification 3 par canton
     # https://www.pxweb.bfs.admin.ch/pxweb/fr/px-x-0702000000_106/px-x-0702000000_106/px-x-0702000000_106.px
@@ -2571,7 +2567,6 @@ def production_share():
 
 
 def constant():
-
     # FEED PROCESSING YIELD -------------------------------------------------------
     # Read excel
     df = pd.read_excel("data/crop_constants.xlsx", sheet_name="cp_ibp_processed")
@@ -2655,7 +2650,6 @@ def constant():
 
 # CalculationLeaf FTS
 def fts_processing():
-
     # Read Excel
     df_fts_data = pd.read_excel("data/crop_fts.xlsx", sheet_name="fts")
     df_fts_data = df_fts_data[
@@ -2681,7 +2675,6 @@ def fts_processing():
 
 
 def datamatrix_to_pickle(dm_fts):
-
     # Make list with all years
     years_all = years_ots + years_fts
 
@@ -2877,7 +2870,9 @@ def datamatrix_to_pickle(dm_fts):
     lever = "crop-share-intensive"
     # Level 1 - business as usual scenario: linear fitting on past data (share, bounded 0-1)
     dm_bau_1 = dict_ots[lever].copy()
-    linear_fitting(dm_bau_1, years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6)
+    linear_fitting(
+        dm_bau_1, years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
+    )
     dm_bau_1.filter({"Years": years_fts}, inplace=True)
     for level in range(2, 5):
         # Propagate the overall lever value across all categories
@@ -2905,7 +2900,9 @@ def datamatrix_to_pickle(dm_fts):
     lever = "crop-share-extensive"
     # Level 1 - business as usual scenario: linear fitting on past data (share, bounded 0-1)
     dm_bau_1 = dict_ots[lever].copy()
-    linear_fitting(dm_bau_1, years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6)
+    linear_fitting(
+        dm_bau_1, years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
+    )
     dm_bau_1.filter({"Years": years_fts}, inplace=True)
     for level in range(2, 5):
         # Propagate the overall lever value across all categories
@@ -2933,7 +2930,9 @@ def datamatrix_to_pickle(dm_fts):
     lever = "crop-share-organic"
     # Level 1 - business as usual scenario: linear fitting on past data (share, bounded 0-1)
     dm_bau_1 = dict_ots[lever].copy()
-    linear_fitting(dm_bau_1, years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6)
+    linear_fitting(
+        dm_bau_1, years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
+    )
     dm_bau_1.filter({"Years": years_fts}, inplace=True)
     for level in range(2, 5):
         # Propagate the overall lever value across all categories
@@ -2966,10 +2965,8 @@ def datamatrix_to_pickle(dm_fts):
         # for each food category. The fts value is the fraction of the ots waste/loss
         # that is removed (level 2 = 25%, level 3 = 50%, level 4 = 75% reduction).
         dm_ots = dict_ots[lever].copy()
-        array_temp = (
-            1
-            - (1 - dm_ots[:, years_ots[-1], "agr_crop_losses", :])
-            * (1 - dm_fts[lever][level][:, years_fts[-1], "agr_crop_losses", np.newaxis])
+        array_temp = 1 - (1 - dm_ots[:, years_ots[-1], "agr_crop_losses", :]) * (
+            1 - dm_fts[lever][level][:, years_fts[-1], "agr_crop_losses", np.newaxis]
         )
         # Append with ots
         dm_ots.add(

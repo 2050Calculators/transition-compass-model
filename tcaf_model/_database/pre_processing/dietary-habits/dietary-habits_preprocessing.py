@@ -598,7 +598,6 @@ def energy_requirements_processing(country_list, years_ots):
 
 # CalculationLeaf SHARE DIET ADHERENCE -----------------------------------------------------------------------------------
 def diet_adherence_processing(list_countries_calc, years_ots):
-
     # Create df with dummy year
     df_adherence = pd.DataFrame(
         {"Years": [2020], "Country": ["Switzerland"], "share_diet_adherence[-]": [0.0]}
@@ -862,7 +861,6 @@ def dietaryhabits_calibration(list_countries_calc, cdm_kcal):
 
 # CalculationLeaf CAL - DOM PROD CROP & BEV
 def crop_calibration(list_countries_calc, dm_fxa_pro_yield, cdm_bev):
-
     # ----------------------------------------------------------------------------------------------------------------------
     # DOMESTIC PRODUCTION (CROP PRODUCTS) ----------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -1168,7 +1166,6 @@ def crop_calibration(list_countries_calc, dm_fxa_pro_yield, cdm_bev):
 
 # CalculationLeaf HEALTH (SHARE WHOLE GRAINS AND PROCESSED MEAT) ---------------
 def health_processing():
-
     # Read csv files from Global Dietary Database
     # Filter for CH, all gender, age, education level and residential urban
     # Refined grains v07
@@ -1286,7 +1283,6 @@ def health_processing():
 
 # CalculationLeaf CALIBRATION FORMATTING
 def calibration_formatting(df_diet_calibration):
-
     # Concatenate dfs
     df_calibration = df_diet_calibration
 
@@ -2573,7 +2569,6 @@ def fxa_processing_yield(cdm_kcal):
 
 
 def constant():
-
     # KCAL TO T ----------------------------------------------------------------------------------------
 
     # Read excel
@@ -2641,7 +2636,6 @@ def constant():
 
 # CalculationLeaf FTS  ------------------------------
 def fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal):
-
     # fwaste, diet-adherence, kcal-req, ssr-bev -------------------------------------------
     # Read Excel
     df_fts_data = pd.read_excel("data/dietary-habits_fts.xlsx", sheet_name="fts")
@@ -2913,7 +2907,9 @@ def explicit_processed_share_processing():
     array = np.zeros((1, 1, len(variables), len(levels)))
     for i, rows in enumerate(share_rows.values()):
         for diet, level in level_map.items():
-            array[0, 0, i, levels.index(level)] = float(df.loc[rows, diet].notna().any())
+            array[0, 0, i, levels.index(level)] = float(
+                df.loc[rows, diet].notna().any()
+            )
 
     dm = DataMatrix(
         col_labels={
@@ -2970,7 +2966,6 @@ def share_processed_food_fts(dm_fts, dict_ots, dm_explicit):
 
 
 def datamatrix_to_pickle(dm_fts, cdm_bev):
-
     # Make list with all years
     years_all = years_ots + years_fts
 
@@ -3082,7 +3077,12 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
     linear_fitting(
-        dm_fts[lever][level], years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
+        dm_fts[lever][level],
+        years_fts,
+        min_t0=1e-6,
+        max_t0=1 - 1e-6,
+        min_tb=1e-6,
+        max_tb=1 - 1e-6,
     )
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever][level] = dm_fts[lever][level]
@@ -3093,7 +3093,12 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
     linear_fitting(
-        dm_fts[lever][level], years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
+        dm_fts[lever][level],
+        years_fts,
+        min_t0=1e-6,
+        max_t0=1 - 1e-6,
+        min_tb=1e-6,
+        max_tb=1 - 1e-6,
     )
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     for level in range(2, 5):
@@ -3101,15 +3106,13 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
         # for each food category. The fts value is the fraction of the ots waste/loss
         # that is removed (level 2 = 25%, level 3 = 50%, level 4 = 75% reduction).
         dm_ots = dict_ots[lever].copy()
-        array_temp = (
+        array_temp = 1 - (
+            1 - dm_ots[:, years_ots[-1], "lfs_consumers-food-wastes", :]
+        ) * (
             1
-            - (1 - dm_ots[:, years_ots[-1], "lfs_consumers-food-wastes", :])
-            * (
-                1
-                - dm_fts[lever][level][
-                    :, years_fts[-1], "lfs_consumers-food-wastes", np.newaxis
-                ]
-            )
+            - dm_fts[lever][level][
+                :, years_fts[-1], "lfs_consumers-food-wastes", np.newaxis
+            ]
         )
         # Append with ots
         dm_ots.add(
@@ -3161,7 +3164,12 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
     linear_fitting(
-        dm_fts[lever][level], years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
+        dm_fts[lever][level],
+        years_fts,
+        min_t0=1e-6,
+        max_t0=1 - 1e-6,
+        min_tb=1e-6,
+        max_tb=1 - 1e-6,
     )
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever][level] = dm_fts[lever][level]
@@ -3196,7 +3204,12 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
     linear_fitting(
-        dm_fts[lever][level], years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
+        dm_fts[lever][level],
+        years_fts,
+        min_t0=1e-6,
+        max_t0=1 - 1e-6,
+        min_tb=1e-6,
+        max_tb=1 - 1e-6,
     )
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever][level] = dm_fts[lever][level]
@@ -3211,7 +3224,12 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
     level = 1
     dm_fts[lever][level] = dict_ots[lever].copy()
     linear_fitting(
-        dm_fts[lever][level], years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
+        dm_fts[lever][level],
+        years_fts,
+        min_t0=1e-6,
+        max_t0=1 - 1e-6,
+        min_tb=1e-6,
+        max_tb=1 - 1e-6,
     )
     dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
     dict_fts[lever][level] = dm_fts[lever][level]

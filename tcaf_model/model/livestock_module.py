@@ -410,7 +410,9 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
         pop_arr = DM_liv_prod["liv_slaughtered_rate"].array[
             :, :, idx_rate["agr_liv_population_raw"], :
         ]
-        for yi in range(1, len(DM_liv_prod["liv_slaughtered_rate"].col_labels["Years"])):
+        for yi in range(
+            1, len(DM_liv_prod["liv_slaughtered_rate"].col_labels["Years"])
+        ):
             mask = unreliable[:, yi, :]
             if mask.any():
                 pop_arr[:, yi, :][mask] = pop_arr[:, yi - 1, :][mask]
