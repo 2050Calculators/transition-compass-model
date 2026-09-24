@@ -795,7 +795,14 @@ def build_demand_trend_by_sector(
 
 
 def compute_electricity_generation_emissions(
-    DM_2050, dm_prod_cap_cntr, country_prod, country_list, years_ots, years_fts, endyr
+    DM_2050,
+    dm_prod_cap_cntr,
+    country_prod,
+    country_list,
+    years_ots,
+    years_fts,
+    endyr,
+    share_of_national_demand,
 ):
     # --- Electricity generation emissions (scope 1, sent to emissions module) ---
     # Swiss scope 1 electricity CO2 comes from two sources:
@@ -895,10 +902,9 @@ def compute_electricity_generation_emissions(
     # Build DataMatrix: Variable "electricity-generation", Categories1 gas types.
     # GWP_op is already CO2-equivalent → put in CO2; CH4 and N2O remain 0
     # so make_co2_equivalent in emissions/workflows.py applies no additional factor.
-    all_countries = [country_prod] + [c for c in country_list if c != country_prod]
     dm_energy_emi = DataMatrix(
         col_labels={
-            "Country": all_countries,
+            "Country": country_list,
             "Years": all_years,
             "Variables": ["electricity-generation"],
             "Categories1": ["CH4", "CO2", "N2O"],
@@ -906,10 +912,11 @@ def compute_electricity_generation_emissions(
         units={"electricity-generation": "Mt"},
     )
     e_idx = dm_energy_emi.idx
-    for country in all_countries:
+    for country in country_list:
+        scaling = 1.0 if country == country_prod else share_of_national_demand
         dm_energy_emi.array[
             e_idx[country], :, e_idx["electricity-generation"], e_idx["CO2"]
-        ] = emi_ts
+        ] = emi_ts * scaling
 
     return dm_energy_emi
 
@@ -1077,6 +1084,7 @@ def energyscope_pyomo(
         years_ots,
         years_fts,
         endyr,
+        share_of_national_demand,
     )
 
     results_run = inter.prepare_TPE_output(

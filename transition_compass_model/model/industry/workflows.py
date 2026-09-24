@@ -1729,6 +1729,26 @@ def emissions(
     dm_emissions_bygastech.rename_col("emissions-total", "emissions", "Variables")
     dm_emissions_bygastech.switch_categories_order("Categories1", "Categories2")
 
+    # UNFCCC: biogenic CO2 from combustion is not counted in territorial scope-1 emissions.
+    # Subtract bio-carrier CO2 (already in dm_emissions_combustion_bio) and the biogenic
+    # fraction of solid-waste (~50% per Swiss NIR for industrial RDF use).
+    idx_bt = dm_emissions_bygastech.idx
+    idx_bio = dm_emissions_combustion_bio.idx
+    dm_emissions_bygastech.array[:, :, idx_bt["emissions"], idx_bt["CO2"], :] -= (
+        dm_emissions_combustion_bio.array[
+            :, :, idx_bio["emissions-biogenic"], idx_bio["CO2"], :
+        ]
+    )
+    dm_waste_bio = dm_emissions_combustion.filter(
+        {"Categories2": ["solid-waste"]}, inplace=False
+    )
+    dm_waste_bio.group_all("Categories2")
+    dm_waste_bio.switch_categories_order("Categories2", "Categories1")
+    idx_wb = dm_waste_bio.idx
+    dm_emissions_bygastech.array[:, :, idx_bt["emissions"], idx_bt["CO2"], :] -= (
+        dm_waste_bio.array[:, :, idx_wb["emissions"], idx_wb["CO2"], :] * 0.5
+    )
+
     # put in dict
     DM_emissions = {
         "combustion": dm_emissions_combustion,
