@@ -6,11 +6,11 @@ import os
 
 import numpy as np
 
+from transition_compass_model._database.pre_processing.params import (
+    country_list,
+)
 from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
     passenger_fleet as get_data,
-)
-from transition_compass_model._database.pre_processing.transport.Switzerland.params import (
-    country_list,
 )
 from transition_compass_model._database.pre_processing.transport.Switzerland.processors.transport_demand_pipeline import (
     run as demand_pkm_vkm_run,

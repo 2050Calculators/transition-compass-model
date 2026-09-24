@@ -11,6 +11,7 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
     get_data_api_swiss_stats,
 )
+from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
@@ -70,6 +71,18 @@ def get_all_elements_except_total(structure, var_name) -> list:
 
 
 def extract_stock_floor_area(file, agency, dataflow):
+    """
+    Extrcat data from the datasaet :  Dwellings by geographical institutional levels, building category, floor space, and construction period
+    Observation period : 2012-2025
+    Newer version of "px-x-0902020200_103"which has data from 2010 to 2023
+    Args:
+        file (str): file path to store the data
+        agency (str): agency to call the api
+        dataflow (str): dataflow to call the api
+
+    Returns:
+        DataMatrix: _description_
+    """
     try:
         with open(file, "rb") as handle:
             dm_floor_area = pickle.load(handle)
@@ -127,28 +140,28 @@ def extract_stock_floor_area(file, agency, dataflow):
         dm_floor_area.rename_col_regex("- ", "", dim="Country")
 
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        # f = os.path.join(current_file_directory, file)
-        # with open(f, "wb") as handle:
-        #     pickle.dump(dm_floor_area, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        f = os.path.join(current_file_directory, file)
+        with open(f, "wb") as handle:
+            pickle.dump(dm_floor_area, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    if "......5892 Blonay Saint-Légier" in dm_floor_area.col_labels["Country"]:
-        dm_floor_area.drop(dim="Country", col_label="......5892 Blonay Saint-Légier")
-    rename_cantons(dm_floor_area)
-    dm_floor_area.rename_col("Suisse", "Switzerland", "Country")
     dm_floor_area.sort("Country")
 
     dm_floor_area.groupby(
         {
-            "single-family-households": ["Maisons individuelles"],
+            "single-family-households": ["Single-family house"],
             "multi-family-households": [
-                "Maisons à plusieurs logements",
-                "Bâtiments d'habitation avec usage annexe",
-                "Bâtiments partiellement à usage d'habitation",
+                "Multi-family house",
+                "Other residential building (wit subsidiary use)",
+                "Building with partial residential use",
             ],
         },
         dim="Categories1",
         inplace=True,
     )
+
+    # Clean period name
+    dm_floor_area.rename_col_regex("Period from ", "", "Categories2")
+    dm_floor_area.rename_col_regex(" to ", "-", "Categories2")
 
     # There is something weird happening where the number of buildings with less than 30m2 built before
     # 1919 increases over time. Maybe they are re-arranging the internal space?
@@ -162,29 +175,31 @@ def extract_stock_floor_area(file, agency, dataflow):
     dm_floor_area.rename_col_regex(" m2", "", "Variables")
     # The average size for less than 30 is a guess, as is the average size for 150+,
     # we will use the data from bfs to calibrate
-    avg_size = {
-        "<30": 25,
-        "30-49": 39.5,
-        "50-69": 59.5,
-        "70-99": 84.5,
-        "100-149": 124.5,
-        "150+": 375,
+    avg_size_single = {
+        "Less than 60": 30,
+        "60 - 79": 69.5,
+        "80 - 99": 89.5,
+        "100 - 119": 109.5,
+        "120 - 159": 139.5,
+        "160 and more": 375,
     }
     for size in dm_floor_area.col_labels["Variables"]:
         dm_floor_area[:, :, size, "single-family-households", :] = (
-            avg_size[size] * dm_floor_area[:, :, size, "single-family-households", :]
+            avg_size_single[size]
+            * dm_floor_area[:, :, size, "single-family-households", :]
         )
-    avg_size = {
-        "<30": 25,
-        "30-49": 39.5,
-        "50-69": 59.5,
-        "70-99": 84.5,
-        "100-149": 124.5,
-        "150+": 160,
+    avg_size_multi = {
+        "Less than 60": 30,
+        "60 - 79": 69.5,
+        "80 - 99": 89.5,
+        "100 - 119": 109.5,
+        "120 - 159": 139.5,
+        "160 and more": 170,
     }
     for size in dm_floor_area.col_labels["Variables"]:
         dm_floor_area[:, :, size, "multi-family-households", :] = (
-            avg_size[size] * dm_floor_area[:, :, size, "multi-family-households", :]
+            avg_size_multi[size]
+            * dm_floor_area[:, :, size, "multi-family-households", :]
         )
     dm_floor_area.groupby(
         {"bld_floor-area_stock": ".*"}, dim="Variables", regex=True, inplace=True
@@ -314,8 +329,9 @@ def compute_floor_area_stock_v2(
     # Computes:
     #   floor-area stock in m2 by sfh and mfh,
     #   2023 split also by envelope category
-    dm_stock_area, dm_num_bld = extract_stock_floor_area_ofs(table_id, file)
+    dm_stock_area_old, dm_num_bld_old = extract_stock_floor_area_ofs(table_id, file)
 
+    dm_stock_area_old.filter({"Country": country_list}, inplace=True)
     # https://stats.swiss/vis?lc=fr&df[ds]=disseminate&df[id]=DF_GWS_REG7&df[ag]=CH1.GWS&dq=A....8100&lom=LASTNPERIODS&lo=1&to[TIME_PERIOD]=false
     agency = "CH1.GWS"
     dataflow = "DF_GWS_REG7"
@@ -327,10 +343,8 @@ def compute_floor_area_stock_v2(
         file_swiss_stat, agency, dataflow
     )
 
-    # Remove 2010 data because they are odd
-    dm_stock_area.drop(dim="Years", col_label=2010)
-    dm_num_bld.drop(dim="Years", col_label=2010)
-
+    dm_stock_area.filter({"Country": country_list}, inplace=True)
+    dm_num_bld.filter({"Country": country_list}, inplace=True)
     # Compute average floor area
     dm = dm_stock_area.copy()
     dm.append(dm_num_bld, dim="Variables")

@@ -5,9 +5,9 @@
 import os
 
 import numpy as np
-from params import country_list
 
 import transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions.efficiency as get_data
+from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     linear_fitting,

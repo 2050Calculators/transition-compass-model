@@ -3,7 +3,6 @@ import pickle
 
 import numpy as np
 from get_data_functions import utils as utils
-from params import years_ots
 
 from transition_compass_model._database.pre_processing.api_routines_CH import (
     get_data_api_CH,
@@ -11,6 +10,7 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
     get_data_api_swiss_stats,
 )
+from transition_compass_model._database.pre_processing.params import years_ots
 from transition_compass_model.model.common.auxiliary_functions import moving_average
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 

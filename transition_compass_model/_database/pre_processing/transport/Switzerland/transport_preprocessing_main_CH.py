@@ -1,4 +1,3 @@
-from params import country_list, years_fts, years_ots
 from processors.aviation_ots_pipeline_CH import run as aviation_ots_run
 from processors.aviation_part1_pipeline_CH import run as aviation_pt1_run
 from processors.electricity_emissions_pipeline import run as electricity_emission_run
@@ -27,6 +26,11 @@ from scenarios.transport_fts_DLS import run as DLS_pickle_run
 from scenarios.transport_fts_PCV1 import run as fts_PCV1_pickle_run
 from scenarios.transport_fts_PCV2 import run as fts_PCV2_pickle_run
 
+from transition_compass_model._database.pre_processing.params import (
+    country_list,
+    years_fts,
+    years_ots,
+)
 from transition_compass_model._database.pre_processing.transport.Switzerland.scenarios.transport_fts_fill import (
     run as fts_fill_pickle_run,
 )
