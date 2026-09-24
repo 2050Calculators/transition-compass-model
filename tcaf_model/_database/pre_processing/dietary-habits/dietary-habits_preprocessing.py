@@ -2731,7 +2731,6 @@ def fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal):
         [
             "variables",
             "diet_eat-lancet-phd-2025",
-            "diet_eat-lancet-phd-2019",
             "diet_sfp-2024",
         ]
     ]
@@ -2745,10 +2744,10 @@ def fts_processing(list_countries_calc, years_ots, years_fts, cdm_kcal):
     )
 
     # Associate a level for each diet
-    # Mapping
+    # Mapping. Level 3 is the current (2023) diet, built from the ots in
+    # datamatrix_to_pickle, not read from the sheet.
     level_map = {
         "diet_eat-lancet-phd-2025": 2,
-        "diet_eat-lancet-phd-2019": 3,
         "diet_sfp-2024": 4,
     }
 
@@ -2885,7 +2884,8 @@ def explicit_processed_share_processing():
     takes the share from the diet split in that case (the share-processed-food
     levers are then ignored) and from the levers otherwise. A blank cell is not
     the same as a zero, so this reads the sheet before the NaN are filled with
-    0.0 in fts_processing. Level 1 (BAU) never gives a share.
+    0.0 in fts_processing. Level 1 (BAU) never gives a share, level 3 (current
+    diet) always does: the share of the last ots year.
 
     Returns a DataMatrix with Variables lfs_share-explicit_<share> and
     Categories1 level-1 ... level-4, holding 1.0 (explicit) or 0.0.
@@ -2896,7 +2896,6 @@ def explicit_processed_share_processing():
     # The columns are the diets, which fts_processing maps to the levers
     level_map = {
         "diet_eat-lancet-phd-2025": 2,
-        "diet_eat-lancet-phd-2019": 3,
         "diet_sfp-2024": 4,
     }
     # The diet-split rows that carry each share
@@ -2914,6 +2913,7 @@ def explicit_processed_share_processing():
     for i, rows in enumerate(share_rows.values()):
         for diet, level in level_map.items():
             array[0, 0, i, levels.index(level)] = float(df.loc[rows, diet].notna().any())
+        array[0, 0, i, levels.index(CURRENT_DIET_LEVEL)] = 1.0
 
     dm = DataMatrix(
         col_labels={
@@ -2928,11 +2928,28 @@ def explicit_processed_share_processing():
     return dm
 
 
+# Levels of diet-split-share: 1 = BAU, 2 = EAT-Lancet 2025, 3 = current diet
+# (2023), 4 = Swiss food pyramid 2024
+TARGET_DIET_LEVELS = [2, 4]
+CURRENT_DIET_LEVEL = 3
+
+
+def current_diet_fts(dm_ots):
+    """Fts that stay at the value of the last ots year (the current diet)."""
+    year_last = dm_ots.col_labels["Years"][-1]
+    dm = dm_ots.filter({"Years": [year_last]})
+    dm.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
+    dm.array[:, 1:, ...] = dm.array[:, [0], ...]
+    dm.filter({"Years": years_fts}, inplace=True)
+    return dm
+
+
 def share_processed_food_fts(dm_fts, dict_ots, dm_explicit):
     """Levels 1 to 4 of the share-processed-food levers (diet-split-share).
 
-    Levels 2 to 4 go from the last ots value to the share of the target diet in
-    2050 (see fts_processing), level 1 is the BAU trend, bounded to 0-1. A diet
+    Levels 2 and 4 go from the last ots value to the share of the target diet in
+    2050 (see fts_processing), level 1 is the BAU trend, bounded to 0-1, level 3
+    (current diet) stays at the last ots value. A diet
     that does not give a share must not send its level to 0%, which is what its
     blank cell filled with 0.0 gives: that level takes the BAU trend instead, so
     that no information means BAU, whichever way the diet or the lever is
@@ -2941,10 +2958,11 @@ def share_processed_food_fts(dm_fts, dict_ots, dm_explicit):
     dict_fts = {}
     for share in ["crop-cereal-whole", "unprocessed-meat"]:
         lever = f"share-processed-food_{share}"
-        for level in range(2, 5):
+        for level in TARGET_DIET_LEVELS:
             dm_fts[lever][level].append(dict_ots[lever], dim="Years")
             linear_fitting(dm_fts[lever][level], years_fts)
             dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
+        dm_fts[lever][CURRENT_DIET_LEVEL] = current_diet_fts(dict_ots[lever])
         # Compute BAU scenario level 1 (share, bounded 0-1)
         level = 1
         dm_fts[lever][level] = dict_ots[lever].copy()
@@ -3152,10 +3170,11 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
 
     # Lever - diet-split-share
     lever = "diet-split-share"
-    for level in range(2, 5):
+    for level in TARGET_DIET_LEVELS:
         dm_fts[lever][level].append(dict_ots[lever], dim="Years")
         linear_fitting(dm_fts[lever][level], years_fts)
         dm_fts[lever][level].filter({"Years": years_fts}, inplace=True)
+    dm_fts[lever][CURRENT_DIET_LEVEL] = current_diet_fts(dict_ots[lever])
     dict_fts[lever] = dm_fts[lever]
     # Compute BAU scenario level 1 (share, bounded 0-1)
     level = 1

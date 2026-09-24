@@ -22,6 +22,9 @@ def init_years_lever():
     return years_setting, lever_setting
 
 
+# Level of diet-split-share that is the current diet: the 2023 diet held constant
+CURRENT_DIET_LEVEL = 3
+
 # The levers giving the share of processed food (whole cereals, unprocessed meat)
 SHARE_PROCESSED_FOOD_LEVERS = {
     "diet-split-share": [
@@ -82,6 +85,25 @@ def explicit_shares_from_diet_split(dm_share_pro_food, DM_diet_input, lever_sett
     return dm_share_pro_food
 
 
+def kcal_req_for_diet_split(dm_kcal_req, DM_diet_input, lever_setting):
+    # The current diet (diet-split-share at CURRENT_DIET_LEVEL) is the 2023 diet
+    # in quantities, not only in composition: it gives its own energy
+    # requirement, the one of the last ots year held constant, and the kcal-req
+    # lever does not change the results for it. The BAU diet keeps the BAU trend
+    # (agr_kcal-req_bau is extrapolated from the ots in lifestyle_share_workflow).
+    if lever_setting["lever_diet-split-share"] != CURRENT_DIET_LEVEL:
+        return dm_kcal_req
+    years_fts = DM_diet_input["fts"]["kcal-req"][1].col_labels["Years"]
+    years = dm_kcal_req.col_labels["Years"]
+    year_last_ots = max(y for y in years if y not in years_fts)
+    dm_kcal_req = dm_kcal_req.copy()
+    for year in years_fts:
+        dm_kcal_req[:, year, "agr_kcal-req", :] = dm_kcal_req[
+            :, year_last_ots, "agr_kcal-req", :
+        ]
+    return dm_kcal_req
+
+
 # CalculationLeaf READ PICKLE
 def read_data(DM_diet_input, lever_setting, tpe_scenario):
 
@@ -91,7 +113,9 @@ def read_data(DM_diet_input, lever_setting, tpe_scenario):
     DM_ots_fts = read_level_data(DM_diet_input, lever_setting)
 
     # Sub-matrix for DIETARY HABITS
-    dm_diet_requirement = DM_ots_fts["kcal-req"]
+    dm_diet_requirement = kcal_req_for_diet_split(
+        DM_ots_fts["kcal-req"], DM_diet_input, lever_setting
+    )
     dm_diet_split_share = DM_ots_fts["diet-split-share"]
     dm_diet_fwaste = DM_ots_fts["fwaste"]
     dm_fxa_cal_diet = DM_diet_input["fxa"]["cal_agr_diet"]
