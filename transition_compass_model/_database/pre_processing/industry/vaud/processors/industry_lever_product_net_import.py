@@ -241,12 +241,10 @@ def run(years_ots, years_fts):
     # Remaining materials (chem, glass, lime, paper, timber, other): keep CH values
     # — chem: T06.03_1b invalid (pharma-export dominance flips sign); keep CH +0.249
     # — glass/timber/paper/other: insufficient VD-specific data; impact negligible for timber
-    # TODO: lime — CH is −0.80 (strong net exporter). Carmeuse Group may operate a lime
-    #   kiln in Villeneuve (VD), which would make VD an even larger net exporter, analogous
-    #   to Holcim Eclépens for cement. To implement: (1) verify VD lime plant via Swiss
-    #   E-PRTR / OFEV facility registry (https://www.bafu.admin.ch/prtr), (2) obtain CH
-    #   lime production vs consumption in kt from a Swiss lime industry source, (3) apply
-    #   the same estimation formula used for cement above.
+    # lime — CH is −0.80 (strong net exporter). No active lime kiln exists in Vaud:
+    #   industrial lime production consolidated or ceased in the canton during the 20th
+    #   century (verified via Swiss E-PRTR / OFEV registry and web search). CH default
+    #   net-import ratio retained.
 
     # ---- fxa/prod: scale CH by Vaud/CH FTE ratio per model sector ----
     table_id = "px-x-0602010000_101"
