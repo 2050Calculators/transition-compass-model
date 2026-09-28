@@ -142,6 +142,7 @@ def _fetch_structure(agency, dataflow, headers):
                     code_list = []
                     for c in codes:
                         if "parent" in c.keys():
+                            # 8100 correspond to  switzerland like this only cantons are selected
                             if c["parent"] == "8100":
                                 code_list.append({"id": c["id"], "name": c["name"]})
                         else:

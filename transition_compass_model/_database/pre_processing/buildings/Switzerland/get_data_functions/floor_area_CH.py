@@ -27,15 +27,14 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 def compute_avg_floor_area(dm_floor_area, years_ots):
     dm_avg_floor_area = dm_floor_area.filter({"Variables": ["bld_avg-floor-area-new"]})
     years_to_keep = [
-        "1991-2000",
-        "2001-2005",
+        "1991-1995",
+        "1996-20002001-2005",
         "2006-2010",
         "2011-2015",
         "2016-2020",
-        "2021-2023",
+        "2021-2025",
     ]
-    # years_to_keep = dm_avg_floor_area.col_labels['Categories2'].copy()
-    # years_to_keep.remove('Avant 1919')
+
     dm_avg_floor_area.filter({"Categories2": years_to_keep}, inplace=True)
     # Compute the avg floor area over the years, by construction period
     arr_avg_area = np.nanmean(dm_avg_floor_area.array, axis=1, keepdims=True)
@@ -72,7 +71,7 @@ def get_all_elements_except_total(structure, var_name) -> list:
 
 def extract_stock_floor_area(file, agency, dataflow):
     """
-    Extrcat data from the datasaet :  Dwellings by geographical institutional levels, building category, floor space, and construction period
+    Extract data from the datasaet :  Dwellings by geographical institutional levels, building category, floor space, and construction period
     Observation period : 2012-2025
     Newer version of "px-x-0902020200_103"which has data from 2010 to 2023
     Args:
@@ -89,18 +88,19 @@ def extract_stock_floor_area(file, agency, dataflow):
     except OSError:
         dm_floor_area = None
         structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
-        cantons_list = [
-            "Switzerland",
-            "Vaud",
-            "Fribourg",
-            "Schwyz",
-        ]
+        # cantons_list = [
+        #     "Switzerland",
+        #     "Vaud",
+        #     "Fribourg",
+        #     "Schwyz",
+        # ]
 
         construction_period_list = get_all_elements_except_total(structure, "GBAUPS")
         superficy_list = get_all_elements_except_total(structure, "FLAECHKL")
         category_list = get_all_elements_except_total(structure, "GKATS")
 
-        for cntr in cantons_list:
+        # Iterate
+        for cntr in structure["GEMEINDENAME"]:
             # Extract buildings floor area
 
             filtering = {
@@ -163,8 +163,11 @@ def extract_stock_floor_area(file, agency, dataflow):
     dm_floor_area.rename_col_regex("Period from ", "", "Categories2")
     dm_floor_area.rename_col_regex(" to ", "-", "Categories2")
 
-    # There is something weird happening where the number of buildings with less than 30m2 built before
-    # 1919 increases over time. Maybe they are re-arranging the internal space?
+    # Clean cantons labels
+    dm_floor_area.rename_col_regex("-", " ", "Country")
+
+    # There is something weird happening where the number of buildings constructed before a certain date
+    # increases over time after that date. Maybe they are re-arranging the internal space?
     # Save number of bld (to compute avg size)
     dm_num_bld = dm_floor_area.groupby(
         {"bld_stock-number-bld": ".*"}, dim="Variables", regex=True, inplace=False
@@ -343,8 +346,8 @@ def compute_floor_area_stock_v2(
         file_swiss_stat, agency, dataflow
     )
 
-    dm_stock_area.filter({"Country": country_list}, inplace=True)
-    dm_num_bld.filter({"Country": country_list}, inplace=True)
+    dm_stock_area.filter({"Years": years_ots}, inplace=True)
+    dm_num_bld.filter({"Years": years_ots}, inplace=True)
     # Compute average floor area
     dm = dm_stock_area.copy()
     dm.append(dm_num_bld, dim="Variables")

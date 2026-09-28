@@ -268,7 +268,6 @@ def run(dm_pkm, years_ots):
     # SECTION Vehicle fleet and technology share LDV, 2W ots
     #### Passenger fleet by technology (stock) LDV, 2W 1990 -2024
     # https://www.bfs.admin.ch/asset/fr/px-x-1103020100_101
-    # TODO : replace with swissstats api
     table_id_tot_veh = "px-x-1103020100_101"
     file_tot_veh = os.path.join(this_dir, "../data/tra_tot_fleet.pickle")
     dm_pass_fleet_raw_old = get_data.get_passenger_stock_fleet_by_tech_raw_ofs_api(

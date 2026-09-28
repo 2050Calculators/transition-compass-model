@@ -200,8 +200,8 @@ def run(global_var, dm_all, country_list, years_ots):
         "Zurich",
     ]
 
-    construction_period_envelope_cat_sfh = global_var["envelope construction sfh"]
-    construction_period_envelope_cat_mfh = global_var["envelope construction mfh"]
+    construction_period_envelope_cat_sfh = global_var["envelope construction sfh old"]
+    construction_period_envelope_cat_mfh = global_var["envelope construction mfh old"]
     envelope_cat_new = global_var["envelope cat new"]
 
     # SECTION: Heating technology

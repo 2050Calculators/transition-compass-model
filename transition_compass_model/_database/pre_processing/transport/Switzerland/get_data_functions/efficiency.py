@@ -266,6 +266,16 @@ def get_vehicle_efficiency_co2(
         with open(f, "wb") as handle:
             pickle.dump(dm_veh_eff, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+    # Distribute Inconnu on other categories based on their share
+    # Remove fuel type "Autre" (there are only very few car in this category)
+    dm_veh_eff = utils.drop_if_smaller_than_0_01(
+        dm_veh_eff, cat_to_drop="Categories2", col_to_drop="No data/unknown"
+    )
+
+    dm_veh_eff = utils.drop_if_smaller_than_0_01(
+        dm_veh_eff, cat_to_drop="Categories1", col_to_drop="Other"
+    )
+
     # Group categories1 according to model
     dict_tech = {
         "ICE-diesel": ["Diesel: conventional", "Diesel: hybrid electric vehicle (HEV)"],
@@ -287,23 +297,13 @@ def get_vehicle_efficiency_co2(
     dm_veh_eff.array[mask] = np.nan
 
     # Flat extrapolation data is bad before 2016 so backstage it
-    dm_veh_eff.filter({"Years": list(range(2017, years_ots[-1]))}, inplace=True)
+    dm_veh_eff.filter({"Years": list(range(2016, years_ots[-1]))}, inplace=True)
     years_to_add = [
         year for year in years_ots if year not in dm_veh_eff.col_labels["Years"]
     ]
     dm_veh_eff.add(np.nan, dummy=True, col_label=years_to_add, dim="Years")
     dm_veh_eff.sort(dim="Years")
     dm_veh_eff.fill_nans(dim_to_interp="Years")
-
-    # Distribute Inconnu on other categories based on their share
-    # Remove fuel type "Autre" (there are only very few car in this category)
-    dm_veh_eff = utils.drop_if_smaller_than_0_01(
-        dm_veh_eff, cat_to_drop="Categories2", col_to_drop="No data/unknown"
-    )
-
-    dm_veh_eff = utils.drop_if_smaller_than_0_01(
-        dm_veh_eff, cat_to_drop="Categories1", col_to_drop="Other"
-    )
 
     # Clean grams CO2 category and perform weighted average
     # cols are e.g '0 - 50 g' -> '0-50' -> 25
@@ -724,6 +724,35 @@ def get_new_vehicle_efficiency_co2(file: str, agency: str, dataflow: str, var_na
         with open(f, "wb") as handle:
             pickle.dump(dm_veh_eff, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+    dm_veh_eff.rename_col("Total_Country", "Switzerland", dim="Country")
+    dm_veh_eff_raw = dm_veh_eff.copy()
+
+    mask = dm_veh_eff.array == 0
+    dm_veh_eff.array[mask] = np.nan
+    # Distribute Inconnu on other categories based on their share
+    # Remove fuel type "Autre" (there are only very few car in this category)
+
+    # Flat extrapolation data is bad before 2016 so backstage it
+    dm_veh_eff.filter({"Years": list(range(2017, years_ots[-1]))}, inplace=True)
+    years_to_add = [
+        year for year in years_ots if year not in dm_veh_eff.col_labels["Years"]
+    ]
+    dm_veh_eff.add(np.nan, dummy=True, col_label=years_to_add, dim="Years")
+    dm_veh_eff.sort(dim="Years")
+    dm_veh_eff.fill_nans(dim_to_interp="Years")
+
+    # Remove inconnue share
+    # dm_veh_eff = utils.drop_if_smaller_than_0_01_per_category_country_cat_2(
+    #         dm_veh_eff, cat_to_drop="Categories2", col_to_drop="No data/unknown"
+    #     )
+
+    dm_veh_eff.drop(dim="Categories2", col_label="No data/unknown")
+    # For BEV electric consumption check get_vehicle_electric_efficiency
+    dm_veh_eff.drop(dim="Categories1", col_label="BEV")
+    # # Do this to have realistic curve
+
+    dm_veh_eff.drop(dim="Categories1", col_label="Other")
+
     # Group categories1 according to model
     dict_tech = {
         "ICE-diesel": ["Diesel: conventional", "Diesel: hybrid electric vehicle (HEV)"],
@@ -737,31 +766,6 @@ def get_new_vehicle_efficiency_co2(file: str, agency: str, dataflow: str, var_na
     }
     # Rename columns with dict tech
     dm_veh_eff.groupby(dict_tech, dim="Categories1", inplace=True)
-
-    # For BEV electric consumption check get_vehicle_electric_efficiency
-    dm_veh_eff.drop(dim="Categories1", col_label="BEV")
-    # # Do this to have realistic curves
-    mask = dm_veh_eff.array == 0
-    dm_veh_eff.array[mask] = np.nan
-
-    # Flat extrapolation data is bad before 2016 so backstage it
-    dm_veh_eff.filter({"Years": list(range(2017, years_ots[-1]))}, inplace=True)
-    years_to_add = [
-        year for year in years_ots if year not in dm_veh_eff.col_labels["Years"]
-    ]
-    dm_veh_eff.add(np.nan, dummy=True, col_label=years_to_add, dim="Years")
-    dm_veh_eff.sort(dim="Years")
-    dm_veh_eff.fill_nans(dim_to_interp="Years")
-
-    # Distribute Inconnu on other categories based on their share
-    # Remove fuel type "Autre" (there are only very few car in this category)
-    dm_veh_eff = utils.drop_if_smaller_than_0_01(
-        dm_veh_eff, cat_to_drop="Categories2", col_to_drop="No data/unknown"
-    )
-
-    dm_veh_eff = utils.drop_if_smaller_than_0_01(
-        dm_veh_eff, cat_to_drop="Categories1", col_to_drop="Other"
-    )
 
     # Clean grams CO2 category and perform weighted average
     # cols are e.g '0 - 50 g' -> '0-50' -> 25
@@ -784,13 +788,6 @@ def get_new_vehicle_efficiency_co2(file: str, agency: str, dataflow: str, var_na
 
     dm_veh_eff.change_unit(var_name, 1, old_unit="%", new_unit="gCO2/km")
 
-    for i in range(2):
-        window_size = 3  # Change window size to control the smoothing effect
-        data_smooth = moving_average(
-            dm_veh_eff.array, window_size, axis=dm_veh_eff.dim_labels.index("Years")
-        )
-        dm_veh_eff.array[:, 1:-1, ...] = data_smooth
-
     # Add LDV
     dm_veh_eff_LDV = DataMatrix.based_on(
         dm_veh_eff.array[..., np.newaxis],
@@ -799,10 +796,10 @@ def get_new_vehicle_efficiency_co2(file: str, agency: str, dataflow: str, var_na
         units=dm_veh_eff.units,
     )
     dm_veh_eff_LDV.switch_categories_order()
-    dm_veh_eff_LDV.rename_col("Total_Country", "Switzerland", dim="Country")
 
     dm_veh_eff_LDV.filter({"Years": years_ots}, inplace=True)
-    return dm_veh_eff_LDV
+
+    return dm_veh_eff_LDV, dm_veh_eff_raw
 
 
 def get_new_vehicle_efficiency_ofs(table_id, file, years_ots, var_name):
@@ -860,6 +857,9 @@ def get_new_vehicle_efficiency_ofs(table_id, file, years_ots, var_name):
         f = os.path.join(current_file_directory, file)
         with open(f, "wb") as handle:
             pickle.dump(dm_veh_eff, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    dm_veh_eff.groupby({var_name: ".*"}, dim="Variables", regex=True, inplace=True)
+    df_veh_eff_raw = dm_veh_eff.copy()
 
     # Do this to have realistic curves
     mask = dm_veh_eff.array == 0
@@ -924,8 +924,6 @@ def get_new_vehicle_efficiency_ofs(table_id, file, years_ots, var_name):
     }
     dm_veh_eff.groupby(map_cat, dim="Categories1", inplace=True)
 
-    dm_veh_eff.groupby({var_name: ".*"}, dim="Variables", regex=True, inplace=True)
-
     # Clean grams CO2 category and perform weighted average
     # cols are e.g '0 - 50 g' -> '0-50' -> 25
     dm_veh_eff.rename_col_regex(" g", "", dim="Categories2")
@@ -953,4 +951,4 @@ def get_new_vehicle_efficiency_ofs(table_id, file, years_ots, var_name):
     dm_veh_eff_LDV.rename_col("Suisse", "Switzerland", dim="Country")
 
     dm_veh_eff_LDV.filter({"Years": years_ots}, inplace=True)
-    return dm_veh_eff_LDV
+    return dm_veh_eff_LDV, df_veh_eff_raw

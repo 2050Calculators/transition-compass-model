@@ -533,8 +533,8 @@ def compute_renov_fts_mapping(renov_distrib_fts: DataMatrix):
 def run(
     DM_buildings, dm_stock_cat, dm_pop, global_var, country_list, lev=2
 ):  # lever =2 for energy law and 3 for PCV 4 is perfect world 1 is BAU
-    construction_period_envelope_cat_sfh = global_var["envelope construction sfh"]
-    construction_period_envelope_cat_mfh = global_var["envelope construction mfh"]
+    construction_period_envelope_cat_sfh = global_var["envelope construction sfh old"]
+    construction_period_envelope_cat_mfh = global_var["envelope construction mfh old"]
 
     # SECTION: Loi Energie - Renovation fts
     # LEVEL 2 Vaud: Loi Energie + Plan Climat

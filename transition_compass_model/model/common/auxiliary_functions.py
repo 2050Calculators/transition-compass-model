@@ -1810,3 +1810,23 @@ def init_years_lever():
     f = open(os.path.join(current_file_directory, "../../config/lever_position.json"))
     lever_setting = json.load(f)[0]
     return years_setting, lever_setting
+
+
+def compute_diff(dm, new_col, old_col):
+    dm.array = np.nan_to_num(dm.array)
+    dm.operation(new_col, "-", old_col, out_col="diff_out_col")
+    dm.operation("diff_out_col", "/", old_col, out_col="diff_out_perc")
+    dm.flattest().datamatrix_plot()
+    return dm
+
+
+def compare_dm(dm_new, dm_old):
+    new_variable = dm_new.col_labels["Variables"][0]
+    old_variable = dm_old.col_labels["Variables"][0]
+    if new_variable == old_variable:
+        dm_old.rename_col(old_variable, old_variable + "_old", "Variables")
+        old_variable = old_variable + "_old"
+    # Efficiency for BEV
+
+    dm_new.append(dm_old, dim="Variables")
+    return compute_diff(dm_new, new_variable, old_variable)
