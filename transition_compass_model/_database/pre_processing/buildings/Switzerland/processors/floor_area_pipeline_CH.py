@@ -146,12 +146,14 @@ def run(global_vars, country_list, years_ots):
     # SECTION Floor area New ots
     # New residential buildings by sfh, mfh
     # Nouveaux logements selon la grande région, le canton, la commune et le type de bâtiment, depuis 2013
+    # TODO : This database is still available in stat-tab : move when needed.
     table_id = "px-x-0904030000_107"
     file = os.path.join(
         this_dir, "../data/bld_new_buidlings_2013_2023_all_cantons.pickle"
     )
     dm_bld_new_buildings_1 = fla.extract_bld_new_buildings_1(table_id, file)
 
+    # TODO : For now this database is still available in stat-tab : move when needed.
     # Nouveaux logements selon le type de bâtiment, 1995-2012
     table_id = "px-x-0904030000_103"
     file = os.path.join(

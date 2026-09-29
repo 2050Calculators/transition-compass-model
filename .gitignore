@@ -232,3 +232,4 @@ transition_compass_model/.vscode/launch.json
 transition_compass_model/_database/pre_processing/**/*.json
 transition_compass_model/_database/pre_processing/**/*.zip
 .vscode/launch.json
+transition_compass_model/model/common/compare_dm.py

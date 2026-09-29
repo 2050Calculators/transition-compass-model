@@ -11,7 +11,6 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
     get_data_api_swiss_stats,
 )
-from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
@@ -334,7 +333,25 @@ def compute_floor_area_stock_v2(
     #   2023 split also by envelope category
     dm_stock_area_old, dm_num_bld_old = extract_stock_floor_area_ofs(table_id, file)
 
-    dm_stock_area_old.filter({"Country": country_list}, inplace=True)
+    dm_stock_area_old.filter(
+        {
+            "Years": [
+                2012,
+                2013,
+                2014,
+                2015,
+                2016,
+                2017,
+                2018,
+                2019,
+                2020,
+                2021,
+                2022,
+                2023,
+            ]
+        },
+        inplace=True,
+    )
     # https://stats.swiss/vis?lc=fr&df[ds]=disseminate&df[id]=DF_GWS_REG7&df[ag]=CH1.GWS&dq=A....8100&lom=LASTNPERIODS&lo=1&to[TIME_PERIOD]=false
     agency = "CH1.GWS"
     dataflow = "DF_GWS_REG7"
@@ -362,14 +379,21 @@ def compute_floor_area_stock_v2(
     # (Basically you want the category construction period to become the year category)
     dm_avg_floor_area = compute_avg_floor_area(dm, years_ots)
 
-    # Turn construction period to envelope category
-    dm_sfh = dm_stock_area.filter({"Categories1": ["single-family-households"]})
-    dm_mfh = dm_stock_area.filter({"Categories1": ["multi-family-households"]})
-    dm_sfh.groupby(cat_map_sfh, dim="Categories2", inplace=True)
-    dm_mfh.groupby(cat_map_mfh, dim="Categories2", inplace=True)
-    dm = dm_sfh
-    dm.append(dm_mfh, dim="Categories1")
-    dm.sort("Categories1")
+    def merge_multi_single(dm_stock_area, cat_map_sfh, cat_map_mfh):
+        # Turn construction period to envelope category
+        dm_sfh = dm_stock_area.filter({"Categories1": ["single-family-households"]})
+        dm_mfh = dm_stock_area.filter({"Categories1": ["multi-family-households"]})
+        dm_sfh.groupby(cat_map_sfh, dim="Categories2", inplace=True)
+        dm_mfh.groupby(cat_map_mfh, dim="Categories2", inplace=True)
+        dm = dm_sfh
+        dm.append(dm_mfh, dim="Categories1")
+        dm.sort("Categories1")
+        return dm
+
+    dm = merge_multi_single(dm_stock_area, cat_map_sfh, cat_map_mfh)
+    # vars = load_construction_period_param()
+    # dm_old = merge_multi_single(dm_stock_area_old,vars["envelope construction sfh old"], vars["envelope construction mfh old"])
+    # compare_dm(dm, dm_old)
 
     # Remove split by envelope category (see Building module Overleaf)
     dm_stock_tot = dm.group_all("Categories2", inplace=False)

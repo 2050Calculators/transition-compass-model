@@ -200,39 +200,48 @@ def run(global_var, dm_all, country_list, years_ots):
         "Zurich",
     ]
 
-    construction_period_envelope_cat_sfh = global_var["envelope construction sfh old"]
-    construction_period_envelope_cat_mfh = global_var["envelope construction mfh old"]
+    construction_period_envelope_cat_sfh_old = global_var[
+        "envelope construction sfh old"
+    ]
+    construction_period_envelope_cat_mfh_old = global_var[
+        "envelope construction mfh old"
+    ]
+    construction_period_envelope_cat_sfh = global_var["envelope construction sfh"]
+    construction_period_envelope_cat_mfh = global_var["envelope construction mfh"]
     envelope_cat_new = global_var["envelope cat new"]
+    this_dir = os.path.dirname(os.path.abspath(__file__))
 
     # SECTION: Heating technology
-    ##########   HEATING TECHNOLOGY     #########
+    ##########   HEATING TECHNOLOGY    #########
     # You need to extract the heating technology (you only have the last 3 years
     # but you have the energy mix for the historical period)
     # https://www.pxweb.bfs.admin.ch/pxweb/fr/px-x-0902010000_102/-/px-x-0902010000_102.px/
     # In order to check the result the things I can validate are the 1990, 2000 value and the 2021-2023 values
     # You can run the check to see if the allocation by envelope category is well done and matches with the original data
     # The problem is that at the end the energy demand decreases.
+    # table_id  = "px-x-0902010000_102"
+    # file = os.path.join(this_dir, "../data/bld_heating_technology_all_cantons.pickle")
 
-    table_id = "px-x-0902010000_102"
-    this_dir = os.path.dirname(os.path.abspath(__file__))
-    file = os.path.join(this_dir, "../data/bld_heating_technology_all_cantons.pickle")
+    # dm_heating_tech_old_version = ht.extract_heating_technologies_old_version(
+    #     table_id,
+    #     file,
+    #     construction_period_envelope_cat_sfh_old,
+    #     construction_period_envelope_cat_mfh_old,
+    # )
+
+    ### Call Heating technology with swiss stat
+    agency = "CH1.GWS"
+    dataflow = "DF_GWS_REG4"
+    file = os.path.join(
+        this_dir, "../data/bld_heating_technology_all_cantons_swiss_stat.pickle"
+    )
     dm_heating_tech = ht.extract_heating_technologies(
-        table_id,
         file,
+        agency,
+        dataflow,
         construction_period_envelope_cat_sfh,
         construction_period_envelope_cat_mfh,
     )
-    if "gaz" in dm_heating_tech.col_labels["Categories2"]:
-        dm_heating_tech.rename_col("gaz", "gas", "Categories2")
-    dm_heating_tech.add(np.nan, dummy=True, dim="Categories2", col_label="coal")
-    # !FIXME Geneva data are missing
-    dm_pop = load_pop(cantons_en + ["Switzerland"], dm_heating_tech.col_labels["Years"])
-    dm_pop.sort("Country")
-    pop_ratio = (
-        dm_pop["Geneva", :, :, np.newaxis, np.newaxis, np.newaxis]
-        / dm_pop["Basel Stadt", :, :, np.newaxis, np.newaxis, np.newaxis]
-    )
-    dm_heating_tech["Geneva", ...] = dm_heating_tech["Basel Stadt", ...] * pop_ratio
 
     dm_heating_tech.drop("Categories2", "other")
 

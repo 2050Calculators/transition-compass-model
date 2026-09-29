@@ -22,10 +22,60 @@ def fill_var_nans_based_on_var_curve(dm, var_nan, var_ref, keep_all_vars=False):
     return dm
 
 
+def drop_if_smaller_than_0_01_per_category_country_cat_2(
+    dm, col_to_drop, cat_to_drop="Categories2"
+):
+    if cat_to_drop == "Categories2":
+        cat_not_to_drop = "Categories1"
+    else:
+        cat_not_to_drop = "Categories2"
+
+    dm_norm = dm.normalise(dim=cat_to_drop, inplace=False)
+    idx = dm_norm.idx
+    dm_missing = dm_norm.filter({cat_to_drop: [col_to_drop]}).copy()
+    if (dm_missing.array < 0.01).any():
+        dm.drop(col_label=col_to_drop, dim=cat_to_drop)
+        return dm
+
+    for country in dm.col_labels["Country"]:
+        for year in dm.col_labels["Years"]:
+            for cat in dm.col_labels[cat_not_to_drop]:
+                # If "Inconnu" is more than 20% remove the data points
+                if cat_to_drop == "Categories2":
+                    if (
+                        dm_norm.array[
+                            idx[country], idx[year], 0, idx[cat], idx[col_to_drop]
+                        ]
+                        > 0.2
+                    ):
+                        dm.array[idx[country], idx[year], 0, idx[cat], :] = np.nan
+
+    # for i in range(2):
+    #         window_size = 3  # Change window size to control the smoothing effect
+    #         data_smooth = moving_average(
+    #             dm.array, window_size, axis=dm.dim_labels.index("Years")
+    #         )
+    #         dm.array[:, 1:-1, ...] = data_smooth
+
+    # Distribute Inconnu on other categories based on their share
+    cat_other = [cat for cat in dm.col_labels[cat_to_drop] if cat != col_to_drop]
+    dm_other = dm.filter({cat_to_drop: cat_other}, inplace=False)
+    dm_other.normalise(dim=cat_to_drop, inplace=True)
+    dm_other.array = np.nan_to_num(dm_other.array)
+    idx = dm.idx
+    arr_inc = (
+        np.nan_to_num(dm.array[:, :, :, :, idx[col_to_drop], np.newaxis])
+        * dm_other.array
+    )
+    dm.drop(dim=cat_to_drop, col_label=col_to_drop)
+    dm.array = dm.array + arr_inc
+    return dm
+
+
 def drop_if_smaller_than_0_01(dm_og, cat_to_drop="Categories2", col_to_drop="Other"):
     dm = dm_og.copy()
     dm_ratio = dm.normalise(dim=cat_to_drop, inplace=False)
-
+    idx = dm_ratio.idx
     dm_missing = dm_ratio.filter({cat_to_drop: [col_to_drop]}).copy()
     if (dm_missing.array > 0.01).any():
         print(

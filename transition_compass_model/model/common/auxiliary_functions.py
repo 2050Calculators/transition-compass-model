@@ -1812,10 +1812,22 @@ def init_years_lever():
     return years_setting, lever_setting
 
 
-def compute_diff(dm, new_col, old_col):
+def compute_diff(dm_og, new_col, old_col):
+    dm = dm_og.copy()
     dm.array = np.nan_to_num(dm.array)
     dm.operation(new_col, "-", old_col, out_col="diff_out_col")
     dm.operation("diff_out_col", "/", old_col, out_col="diff_out_perc")
+    dm.array = np.nan_to_num(dm.array)
+    dm2 = dm.filter({"Variables": ["diff_out_perc"]})
+    arr = dm2.array
+
+    print((arr > 0.01).any())
+    if (arr > 0.01).any():
+        max_val = np.nanmax(arr)
+        max_pos = np.unravel_index(np.nanargmax(arr), arr.shape)
+        print("Max value:", max_val)
+        for dim, pos in zip(dm2.dim_labels, max_pos):
+            print(f"{dim}: {dm2.col_labels[dim][pos]}")
     dm.flattest().datamatrix_plot()
     return dm
 

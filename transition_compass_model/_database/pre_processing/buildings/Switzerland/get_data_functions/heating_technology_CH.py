@@ -9,6 +9,10 @@ import pandas as pd
 from transition_compass_model._database.pre_processing.api_routines_CH import (
     get_data_api_CH,
 )
+from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
+    get_data_api_swiss_stats,
+)
+from transition_compass_model._database.pre_processing.params import years_ots
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     linear_fitting,
@@ -222,7 +226,170 @@ def extract_heating_technologies_old(table_id, file, cat_sfh, cat_mfh):
     return dm_heating_old
 
 
-def extract_heating_technologies(table_id, file, cat_sfh, cat_mfh):
+def extract_heating_technologies(
+    file: str, agency: str, dataflow: str, cat_sfh: dict, cat_mfh: dict
+) -> DataMatrix:
+    """Create a datamatrix with data of the database "Buildings by canton, building category, main energy source for heating, main energy source for hot water and construction period"
+
+    Args:
+        file (str): The file path where data is stored
+        agency (str): Agency for the api call
+        dataflow (str): Dataflow for the api call
+        cat_sfh (dict): Grouping of the date into building categories for single family households according to [1]
+        cat_mfh (dict): Grouping of the date into building categories for multi family households according
+        [1] Pongelli, A.; Priore, Y.D.; Bacher, J.-P.; Jusselme, T. Definition of Building Archetypes Based on the Swiss Energy Performance Certificates Database. Buildings 2023, 13, 40. https://doi.org/10.3390/buildings13010040​
+
+    Returns:
+        DataMatrix: Datamatrix with the number of buildings in the followings categories :
+        Categories1 : ['multi-family-households', 'single-family-households']
+        Categories2 : ['wood', 'district-heating', 'electricity', 'gas', 'heating-oil', 'other-tech', 'heat-pump', 'solar']
+        Categories3 : ['B', 'C', 'D', 'E', 'F'] # A and B as well as F and G are groupd in one category
+    """
+
+    try:
+        with open(file, "rb") as handle:
+            dm_heating = pickle.load(handle)
+    except OSError:
+        structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
+        # Extract buildings floor area
+        dm_heating = None
+
+        # Remove totals to avoid useless calls
+        list_construction_period = [
+            x for x in structure["GBAUPS"] if x not in ["Total"]
+        ]
+        list_energy_heating = [x for x in structure["GWAERZH"] if x not in ["Total"]]
+        list_cat_building = [x for x in structure["GKATS"] if x not in ["Total"]]
+
+        def extract_cntr_heating(cntr_list, structure):
+            filter = {
+                "TIME_PERIOD": structure["TIME_PERIOD"],
+                "KANTONSNUMMER": cntr_list,
+                "GWAERZH": list_energy_heating,  # Source of energy for heating
+                "GWAERZW": ["Total"],  # Source of energy for hot water
+                "GBAUPS": list_construction_period,  # construction period
+                "GKATS": list_cat_building,  # category of buildings
+            }
+            mapping_dim = {
+                "Country": "KANTONSNUMMER",
+                "Years": "TIME_PERIOD",
+                "Variables": "GBAUPS",
+                "Categories1": "GKATS",
+                "Categories2": "GWAERZH",
+            }
+            unit_all = ["number"] * len(list_construction_period)
+            # Get api data
+            dm_heating_cntr = get_data_api_swiss_stats(
+                agency,
+                dataflow,
+                mode="extract",
+                filter=filter,
+                mapping_dims=mapping_dim,
+                units=unit_all,
+                language="en",
+            )
+            return dm_heating_cntr
+
+        for cntr in structure["KANTONSNUMMER"]:
+            cntr_list = [cntr]
+
+            dm_heating_cntr = extract_cntr_heating(cntr_list, structure)
+            if dm_heating is None:
+                dm_heating = dm_heating_cntr
+            else:
+                dm_heating.append(dm_heating_cntr, dim="Country")
+
+        # dm_heating_cntr = extract_cntr_heating(["Suisse", "Neuchâtel", "St. Gallen"])
+        # dm_heating.append(dm_heating_cntr, dim="Country")
+
+        dm_heating.groupby(
+            {
+                "single-family-households": ["Single-family house"],
+                "multi-family-households": [
+                    "Multi-family house",
+                    "Other residential building (wit subsidiary use)",
+                    "Building with partial residential use",
+                ],
+            },
+            dim="Categories1",
+            inplace=True,
+        )
+
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(current_file_directory, file)
+        with open(f, "wb") as handle:
+            pickle.dump(dm_heating, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # Clean period name
+    dm_heating.rename_col_regex("Period from ", "", "Variables")
+    dm_heating.rename_col_regex(" to ", "-", "Variables")
+
+    # Group by construction period for single family households
+    dm_heating_sfh = dm_heating.filter(
+        {"Categories1": ["single-family-households"]}, inplace=False
+    )
+    cat_sfh = {"bld_heating-mix_" + key: value for key, value in cat_sfh.items()}
+    dm_heating_sfh.groupby(cat_sfh, dim="Variables", inplace=True)
+
+    # Group by construction period for multi family households
+    dm_heating_mfh = dm_heating.filter(
+        {"Categories1": ["multi-family-households"]}, inplace=False
+    )
+    cat_sfh = {"bld_heating-mix_" + key: value for key, value in cat_mfh.items()}
+    dm_heating_mfh.groupby(cat_sfh, dim="Variables", inplace=True)
+    # Merge sfh and mfh
+    dm_heating_mfh.append(dm_heating_sfh, dim="Categories1")
+    dm_heating = dm_heating_mfh
+
+    dm_heating.groupby({"Others": ["None", "Others"]}, dim="Categories2", inplace=True)
+    dm_heating.rename_col(
+        [
+            "Wood",
+            "District heating",
+            "Electricity",
+            "Gas",
+            "Heating oil",
+            "Others",
+            "Energy sources for heat pump",
+            "Solar thermal",
+        ],
+        [
+            "wood",
+            "district-heating",
+            "electricity",
+            "gas",
+            "heating-oil",
+            "other-tech",
+            "heat-pump",
+            "solar",
+        ],
+        dim="Categories2",
+    )
+
+    dm_heating.deepen(based_on="Variables")
+
+    rename_cantons(dm_heating)
+    dm_heating.filter(
+        {"Years": list(set(years_ots) & set(dm_heating.col_labels["Years"]))},
+        inplace=True,
+    )
+
+    # Cleaning categories 2
+    if "gaz" in dm_heating.col_labels["Categories2"]:
+        dm_heating.rename_col("gaz", "gas", "Categories2")
+    dm_heating.add(np.nan, dummy=True, dim="Categories2", col_label="coal")
+
+    return dm_heating
+
+
+def extract_heating_technologies_old_version(table_id, file, cat_sfh, cat_mfh):
+    """
+    Inputs :
+    table_id  = "px-x-0902010000_102"
+    file = os.path.join(this_dir, "../data/bld_heating_technology_all_cantons.pickle")
+
+    """
+
     def extract_cntr_heating(cntr_list):
         filter = {
             "Année": structure["Année"],
@@ -338,6 +505,10 @@ def extract_heating_technologies(table_id, file, cat_sfh, cat_mfh):
     dm_heating.deepen(based_on="Variables")
 
     rename_cantons(dm_heating)
+    dm_heating.filter(
+        {"Years": list(set(years_ots) & set(dm_heating.col_labels["Years"]))},
+        inplace=True,
+    )
     return dm_heating
 
 
