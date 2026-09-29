@@ -1842,3 +1842,7 @@ def compare_dm(dm_new, dm_old):
 
     dm_new.append(dm_old, dim="Variables")
     return compute_diff(dm_new, new_variable, old_variable)
+
+
+def get_common_values_between_2_list(list_a: list, list_b: list):
+    return list(set(list_a) & set(list_b))

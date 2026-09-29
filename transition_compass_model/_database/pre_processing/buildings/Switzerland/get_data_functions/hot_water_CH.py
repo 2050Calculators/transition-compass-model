@@ -7,8 +7,13 @@ import pandas as pd
 from transition_compass_model._database.pre_processing.api_routines_CH import (
     get_data_api_CH,
 )
+from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
+    get_data_api_swiss_stats,
+)
+from transition_compass_model._database.pre_processing.params import years_ots
 from transition_compass_model.model.common.auxiliary_functions import (
     df_excel_to_dm,
+    get_common_values_between_2_list,
     save_url_to_file,
 )
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
@@ -81,6 +86,125 @@ def clean_country_names(dm):
 
     dm.sort("Country")
     return dm
+
+
+def extract_hotwater_technologies_v2(file, agency, dataflow):
+    """Extrcat hotwater data from the ofs database  "Buildings by canton, building category, main energy source for heating, main energy source for hot water and construction period"
+
+
+    Args:
+        file (str): The file path where data is stored
+        agency (str): Agency for the api call
+        dataflow (str): Dataflow for the api call
+
+    Returns:
+        DataMatrix: Datamatrix with the number of buildings in the followings categories :
+        'Categories1' =['multi-family-households', 'single-family-households']
+        'Categories2' =['wood', 'district-heating', 'electricity', 'gas', 'heating-oil', 'heat-pump', 'solar', 'other'] The type of heating used for hotwater
+    """
+    # Domaine de l'énergie: bâtiments selon le canton, le type de bâtiment, l'époque de construction, le type de chauffage,
+    # la production d'eau chaude, les agents énergétiques utilisés pour le chauffage et l'eau chaude
+    try:
+        with open(file, "rb") as handle:
+            dm_hw = pickle.load(handle)
+    except OSError:
+        structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
+        # Extract buildings floor area
+        dm_hw = None
+
+        # Remove totals to avoid useless calls
+        list_energy_heating = [x for x in structure["GWAERZW"] if x not in ["Total"]]
+        list_cat_building = [x for x in structure["GKATS"] if x not in ["Total"]]
+
+        def extract_cntr_heating(cntr_list, structure):
+            filter = {
+                "TIME_PERIOD": structure["TIME_PERIOD"],
+                "KANTONSNUMMER": cntr_list,
+                "GWAERZH": ["Total"],  # Source of energy for heating
+                "GWAERZW": list_energy_heating,  # Source of energy for hot water
+                "GBAUPS": ["Total"],  # construction period
+                "GKATS": list_cat_building,  # category of buildings
+            }
+            mapping_dim = {
+                "Country": "KANTONSNUMMER",
+                "Years": "TIME_PERIOD",
+                "Variables": "GKATS",
+                "Categories1": "GWAERZW",
+            }
+            unit_all = ["number"] * len(list_cat_building)
+            # Get api data
+            dm_hw_cntr = get_data_api_swiss_stats(
+                agency,
+                dataflow,
+                mode="extract",
+                filter=filter,
+                mapping_dims=mapping_dim,
+                units=unit_all,
+                language="en",
+            )
+            return dm_hw_cntr
+
+        for cntr in structure["KANTONSNUMMER"]:
+            cntr_list = [cntr]
+
+            dm_hw_cntr = extract_cntr_heating(cntr_list, structure)
+            if dm_hw is None:
+                dm_hw = dm_hw_cntr
+            else:
+                dm_hw.append(dm_hw_cntr, dim="Country")
+
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(current_file_directory, file)
+        with open(f, "wb") as handle:
+            pickle.dump(dm_hw, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    dm_hw.groupby(
+        {
+            "bld_hot-water_tech_single-family-house": ["Single-family house"],
+            "bld_hot-water_tech_multi-family-house": [
+                "Multi-family house",
+                "Other residential building (wit subsidiary use)",
+                "Building with partial residential use",
+            ],
+        },
+        dim="Variables",
+        inplace=True,
+    )
+    dm_hw.deepen(based_on="Variables")
+    dm_hw.switch_categories_order()
+
+    dm_hw.groupby({"other": ["None", "Others"]}, dim="Categories2", inplace=True)
+    dm_hw.rename_col(
+        [
+            "Heating oil",
+            "Wood",
+            "Energy sources for heat pump",
+            "Electricity",
+            "Gas",
+            "District heating",
+            "Solar thermal",
+        ],
+        [
+            "heating-oil",
+            "wood",
+            "heat-pump",
+            "electricity",
+            "gas",
+            "district-heating",
+            "solar",
+        ],
+        dim="Categories2",
+    )
+
+    clean_country_names(dm_hw)
+    dm_hw.filter(
+        {
+            "Years": get_common_values_between_2_list(
+                years_ots, dm_hw.col_labels["Years"]
+            )
+        },
+        inplace=True,
+    )
+    return dm_hw
 
 
 def extract_hotwater_technologies(table_id, file):

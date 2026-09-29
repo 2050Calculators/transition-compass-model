@@ -222,13 +222,14 @@ def run(country_list, years_ots):
     ####      TECHNOLOGY-MIX     #####
     ##################################
     # Get Hot water fuel split at household level per canton
-    table_id = "px-x-0902010000_102"
-    file_hw = os.path.join(this_dir, "../data/bld_hotwater_technology_2021-2023.pickle")
-    # Extract the number of buildings, disaggregated by hot water heating technology and building type in 2021-2023
-    # It only has data for the last 3 years
-    #!FIXME extract 2000 and 1990
-    dm_tech_mix = hw.extract_hotwater_technologies(table_id, file_hw)
+    agency = "CH1.GWS"
+    dataflow = "DF_GWS_REG4"
+    file = os.path.join(
+        this_dir, "../data/bld_hotwater_technology_2021-2023_swiss_stat.pickle"
+    )
+    dm_tech_mix = hw.extract_hotwater_technologies_v2(file, agency, dataflow)
 
+    # still on stat tab
     # Tech mix 1990 and 2000
     table_id = "px-x-0902020100_112"
     file_hw = os.path.join(
