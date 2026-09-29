@@ -4,7 +4,7 @@ import numpy as np
 
 import transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.hot_water_CH as hw
 from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH import (
-    extract_nb_of_apartments_per_building_type,
+    extract_nb_of_apartments_per_building_type_v2,
 )
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
@@ -244,12 +244,16 @@ def run(country_list, years_ots):
     dm_add_missing_variables(dm_tech_mix, {"Years": years_ots}, fill_nans=True)
     dm_tech_mix.normalise("Categories2", inplace=True, keep_original=False)
 
-    # Extract number of apartments per building type
-    table_id = "px-x-0902020200_103"
-    file = os.path.join(this_dir, "../data/bld_apartments_per_bld_type.pickle")
-    dm_apt = extract_nb_of_apartments_per_building_type(
-        table_id, file, cantons_fr, cantons_en
+    # Extract number of apartments per building type with the new api
+    agency = "CH1.GWS"
+    dataflow = "DF_GWS_REG7"
+    file = os.path.join(
+        this_dir, "../data/bld_apartments_per_bld_type_swiss_stat.pickle"
     )
+    dm_apt = extract_nb_of_apartments_per_building_type_v2(
+        file, agency, dataflow, cantons_en
+    )
+
     # Extrapolate number of apartments based on apt/pop
     dm_apt = extrapolate_missing_years_based_on_per_capita(dm_apt, dm_pop, years_ots)
 
