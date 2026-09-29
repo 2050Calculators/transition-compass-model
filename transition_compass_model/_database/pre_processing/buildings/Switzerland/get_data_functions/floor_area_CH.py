@@ -11,6 +11,7 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
     get_data_api_swiss_stats,
 )
+from transition_compass_model._database.pre_processing.params import years_ots
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     dm_add_missing_variables,
@@ -72,14 +73,14 @@ def extract_stock_floor_area(file, agency, dataflow):
     """
     Extract data from the datasaet :  Dwellings by geographical institutional levels, building category, floor space, and construction period
     Observation period : 2012-2025
-    Newer version of "px-x-0902020200_103"which has data from 2010 to 2023
+    Newer version of "px-x-0902020200_103" which has data from 2010 to 2023
     Args:
         file (str): file path to store the data
         agency (str): agency to call the api
         dataflow (str): dataflow to call the api
 
     Returns:
-        DataMatrix: _description_
+        DataMatrix: With the average floor area of the stock
     """
     try:
         with open(file, "rb") as handle:
@@ -725,6 +726,100 @@ def compute_floor_area_new_cat(dm_new_tot, cat_map):
     return dm_new_cat
 
 
+def extract_nb_of_apartments_per_building_type_v2(file, agency, dataflow, cantons_en):
+    """
+    Extract data from the datasaet :  Dwellings by geographical institutional levels, building category, floor space, and construction period
+    Observation period : 2012-2025
+    Newer version of "px-x-0902020200_103" which has data from 2010 to 2023
+    Args:
+        file (str): file path to store the data
+        agency (str): agency to call the api
+        dataflow (str): dataflow to call the api
+        cantons_en (list):  list of cantons name in english
+
+    Returns:
+        DataMatrix: With the average floor area of the stock
+    """
+    try:
+        with open(file, "rb") as handle:
+            dm_nb_bld = pickle.load(handle)
+    except OSError:
+        dm_nb_bld = None
+        structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
+        # cantons_list = [
+        #     "Switzerland",
+        #     "Vaud",
+        #     "Fribourg",
+        #     "Schwyz",
+        # ]
+
+        construction_period_list = ["Total"]
+        superficy_list = ["Total"]
+        category_list = get_all_elements_except_total(structure, "GKATS")
+
+        # Iterate
+        for cntr in structure["GEMEINDENAME"]:
+            # Extract buildings floor area
+
+            filtering = {
+                "TIME_PERIOD": structure["TIME_PERIOD"],
+                "GEMEINDENAME": [cntr],
+                "GBAUPS": construction_period_list,  # époque de construction
+                "FLAECHKL": superficy_list,
+                "GKATS": category_list,
+                "FREQ": ["Annual"],
+            }
+            mapping_dim = {
+                "Country": "GEMEINDENAME",
+                "Years": "TIME_PERIOD",
+                "Variables": "FLAECHKL",
+                "Categories1": "GKATS",
+            }
+            unit_all = ["number"] * len(superficy_list)
+            # Get api data
+            dm_nb_bld_cntr = get_data_api_swiss_stats(
+                agency,
+                dataflow,
+                mode="extract",
+                filter=filtering,
+                mapping_dims=mapping_dim,
+                units=unit_all,
+                language="en",
+            )
+
+            dm_nb_bld_cntr.col_labels["Years"]
+            if dm_nb_bld is None:
+                dm_nb_bld = dm_nb_bld_cntr.copy()
+            else:
+                # Remove cities when cantons have homonyms as cities
+                dm_nb_bld.append(dm_nb_bld_cntr.copy(), dim="Country")
+
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(current_file_directory, file)
+        with open(f, "wb") as handle:
+            pickle.dump(dm_nb_bld, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    dm_nb_bld.groupby(
+        {
+            "single-family-house": ["Single-family house"],
+            "multi-family-house": [
+                "Multi-family house",
+                "Other residential building (wit subsidiary use)",
+                "Building with partial residential use",
+            ],
+        },
+        dim="Categories1",
+        inplace=True,
+    )
+    dm_nb_bld.sort("Country")
+    dm_nb_bld.sort("Categories1")
+    dm_nb_bld.rename_col_regex("-", " ", dim="Country")
+    dm_nb_bld.rename_col_regex("Total_Variables", "bld_apartments", dim="Variables")
+    dm_nb_bld.filter({"Years": years_ots}, inplace=True)
+
+    return dm_nb_bld
+
+
 def extract_nb_of_apartments_per_building_type(table_id, file, cantons_fr, cantons_en):
     try:
         with open(file, "rb") as handle:
@@ -770,8 +865,8 @@ def extract_nb_of_apartments_per_building_type(table_id, file, cantons_fr, canto
         dm.groupby({"bld_apartments": ".*"}, regex=True, dim="Variables", inplace=True)
         dm.groupby(
             {
-                "single-family-house": ["Maisons individuelles"],
-                "multi-family-house": [
+                "single-family-households": ["Maisons individuelles"],
+                "multi-family-households": [
                     "Maisons à plusieurs logements",
                     "Bâtiments d'habitation avec usage annexe",
                     "Bâtiments partiellement à usage d'habitation",

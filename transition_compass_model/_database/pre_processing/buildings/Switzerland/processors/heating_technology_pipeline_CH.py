@@ -7,7 +7,7 @@ from transition_compass_model._database.pre_processing.buildings.Switzerland.get
     load_construction_period_param,
 )
 from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH import (
-    extract_nb_of_apartments_per_building_type,
+    extract_nb_of_apartments_per_building_type_v2,
 )
 from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.hot_water_CH import (
     extract_heating_efficiencies_EP2050,
@@ -215,20 +215,6 @@ def run(global_var, dm_all, country_list, years_ots):
     ##########   HEATING TECHNOLOGY    #########
     # You need to extract the heating technology (you only have the last 3 years
     # but you have the energy mix for the historical period)
-    # https://www.pxweb.bfs.admin.ch/pxweb/fr/px-x-0902010000_102/-/px-x-0902010000_102.px/
-    # In order to check the result the things I can validate are the 1990, 2000 value and the 2021-2023 values
-    # You can run the check to see if the allocation by envelope category is well done and matches with the original data
-    # The problem is that at the end the energy demand decreases.
-    # table_id  = "px-x-0902010000_102"
-    # file = os.path.join(this_dir, "../data/bld_heating_technology_all_cantons.pickle")
-
-    # dm_heating_tech_old_version = ht.extract_heating_technologies_old_version(
-    #     table_id,
-    #     file,
-    #     construction_period_envelope_cat_sfh_old,
-    #     construction_period_envelope_cat_mfh_old,
-    # )
-
     ### Call Heating technology with swiss stat
     agency = "CH1.GWS"
     dataflow = "DF_GWS_REG4"
@@ -245,6 +231,7 @@ def run(global_var, dm_all, country_list, years_ots):
 
     dm_heating_tech.drop("Categories2", "other")
 
+    # FIXME  : move to new api when not on stat tab anymore
     table_id = "px-x-0902020100_112"
     file = os.path.join(
         this_dir, "../data/bld_heating_technology_1990-2000_all_cantons.pickle"
@@ -252,21 +239,24 @@ def run(global_var, dm_all, country_list, years_ots):
     dm_heating_tech_old = ht.extract_heating_technologies_old(
         table_id,
         file,
-        construction_period_envelope_cat_sfh,
-        construction_period_envelope_cat_mfh,
+        construction_period_envelope_cat_sfh_old,
+        construction_period_envelope_cat_mfh_old,
     )
     dm_heating_tech_old.drop("Categories2", "other")
 
     adjust_based_on_apt = False  # This does not work well for Vaud
     if adjust_based_on_apt:
         dm_pop = load_pop(cantons_en + ["Switzerland"], years_ots)
-        # Extract number of apartments per building type
-        table_id = "px-x-0902020200_103"
-        file = os.path.join(this_dir, "../data/bld_apartments_per_bld_type_new.pickle")
-        dm_apt = extract_nb_of_apartments_per_building_type(
-            table_id, file, cantons_fr, cantons_en
-        )
 
+        # Extract number of apartments per building type with the new api
+        agency = "CH1.GWS"
+        dataflow = "DF_GWS_REG7"
+        file = os.path.join(
+            this_dir, "../data/bld_apartments_per_bld_type_new_swiss_stat.pickle"
+        )
+        dm_apt = extract_nb_of_apartments_per_building_type_v2(
+            file, agency, dataflow, cantons_en
+        )
         # Extrapolate number of apartments based on apt/pop
         dm_apt = extrapolate_missing_years_based_on_per_capita(
             dm_apt, dm_pop, years_ots, var_name="bld_apartments"
