@@ -240,8 +240,107 @@ def bld_agriculture_interface(dm_agriculture, write_pickle=False):
     return dm_agriculture
 
 
+def bld_energy_demand_by_use(
+    DM_heating_by_use, DM_services, DM_appliances, DM_light, DM_hotwater
+):
+    """Buildings energy demand split by building category and end-use.
+
+    Returns bld_energy-demand [TWh] with
+      Categories1 = residential / non-residential
+      Categories2 = space-heating / hot-water / appliances / lighting
+
+    Space heating is the one end-use that is not split anywhere downstream:
+    DM_energy['energy-demand-heating'] covers residential *and* services together,
+    and DM_services['services_energy-consumption'] has no space-heating category.
+    The split therefore comes from the energy workflow's 'power_households' and
+    'power_services', which sum back exactly to bld_energy-demand_heating.
+    """
+    parts = []
+
+    # -- residential --------------------------------------------------------
+    dm = DM_heating_by_use["residential"].filter(
+        {"Variables": ["bld_energy-demand_heating"]}
+    )
+    dm.group_all("Categories1", inplace=True)
+    dm.rename_col(
+        "bld_energy-demand_heating",
+        "bld_energy-demand_residential_space-heating",
+        "Variables",
+    )
+    parts.append(dm)
+
+    dm = DM_hotwater["power"].filter({"Variables": ["bld_hot-water_energy-demand"]})
+    dm.group_all("Categories1", inplace=True)
+    dm.rename_col(
+        "bld_hot-water_energy-demand",
+        "bld_energy-demand_residential_hot-water",
+        "Variables",
+    )
+    parts.append(dm)
+
+    dm = DM_appliances.filter({"Variables": ["bld_appliances_tot-elec-demand"]})
+    dm.rename_col(
+        "bld_appliances_tot-elec-demand",
+        "bld_energy-demand_residential_appliances",
+        "Variables",
+    )
+    parts.append(dm)
+
+    dm = DM_light.filter({"Variables": ["bld_residential-lighting"]})
+    dm.rename_col(
+        "bld_residential-lighting",
+        "bld_energy-demand_residential_lighting",
+        "Variables",
+    )
+    parts.append(dm)
+
+    # -- non-residential ----------------------------------------------------
+    dm = DM_heating_by_use["non-residential"].filter(
+        {"Variables": ["bld_energy-demand_heating"]}
+    )
+    dm.group_all("Categories1", inplace=True)
+    dm.rename_col(
+        "bld_energy-demand_heating",
+        "bld_energy-demand_non-residential_space-heating",
+        "Variables",
+    )
+    parts.append(dm)
+
+    # 'elec' is the services catch-all for non-lighting electricity, i.e. the
+    # non-residential counterpart of residential appliances.
+    dm_services = DM_services["services_energy-consumption"].group_all(
+        "Categories2", inplace=False
+    )
+    for category, end_use in [
+        ("hot-water", "hot-water"),
+        ("elec", "appliances"),
+        ("lighting", "lighting"),
+    ]:
+        dm = dm_services.filter({"Categories1": [category]}).flatten()
+        dm.rename_col(
+            "bld_services_energy-consumption_" + category,
+            "bld_energy-demand_non-residential_" + end_use,
+            "Variables",
+        )
+        parts.append(dm)
+
+    dm_out = parts[0]
+    for dm in parts[1:]:
+        dm_out.append(dm, dim="Variables")
+    dm_out.sort("Variables")
+    dm_out.deepen_twice()
+
+    return dm_out
+
+
 def bld_TPE_interface(
-    DM_energy, DM_area, DM_services, DM_appliances, DM_light, DM_hotwater
+    DM_energy,
+    DM_area,
+    DM_services,
+    DM_appliances,
+    DM_light,
+    DM_hotwater,
+    DM_heating_by_use,
 ):
     dm_tpe = DM_energy["energy-emissions-by-class"].flattest()
     dm_tpe.append(
@@ -388,24 +487,22 @@ def bld_TPE_interface(
     #     )
     # dm_energy_heating.change_unit("energy_consumption", factor=1e6, old_unit="TWh", new_unit="MWh")
 
-    # Total energy demand (residential + non-residential, all end-uses):
-    # heating (both), hot water (res + non-res), appliances (res) already in dm_energy_comsumption_tot;
-    # add residential lighting and non-residential electricity + lighting (excl. space-heating, already counted above)
-    dm_energy_tot_scalar = dm_energy_comsumption_tot.group_all(
-        "Categories1", inplace=False
+    # Energy demand by building category and end-use (residential / non-residential
+    # x space-heating / hot-water / appliances / lighting), plus the total across all
+    # of them. The KPI reads off the same series so chart and card cannot drift.
+    dm_energy_by_use = bld_energy_demand_by_use(
+        DM_heating_by_use, DM_services, DM_appliances, DM_light, DM_hotwater
     )
-    value_energy_core = dm_energy_tot_scalar[0, yr, "energy_consumption"]
+    dm_tpe.append(dm_energy_by_use.flattest(), dim="Variables")
 
-    value_light_res = DM_light[0, yr, "bld_residential-lighting"]
-
-    dm_nonres_other = DM_services["services_energy-consumption"].filter(
-        {"Categories1": ["elec", "lighting"]}
+    dm_energy_total = dm_energy_by_use.group_all("Categories2", inplace=False)
+    dm_energy_total.group_all("Categories1", inplace=True)
+    dm_energy_total.rename_col(
+        "bld_energy-demand", "bld_energy-demand_total", "Variables"
     )
-    dm_nonres_other = dm_nonres_other.group_all("Categories2", inplace=False)
-    dm_nonres_other.group_all("Categories1", inplace=True)
-    value_nonres_other = dm_nonres_other[0, yr, "bld_services_energy-consumption"]
+    dm_tpe.append(dm_energy_total.flattest(), dim="Variables")
 
-    value = value_energy_core + value_light_res + value_nonres_other
+    value = dm_energy_total[0, yr, "bld_energy-demand_total"]
     KPI.append({"title": "Total energy demand", "value": value, "unit": "TWh"})
 
     # Floor area stock (residential + non-residential)
