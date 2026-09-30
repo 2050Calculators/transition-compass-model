@@ -105,6 +105,9 @@ def _read_bfs_gts_road():
     """Return dict {mode: pd.Series(year→million tkm)} for HDVH and HDVM, CH-registered only."""
     path = os.path.join(_DATA_DIR, "Freight/ts-x-11.05-GTS-E26.csv")
     df = pd.read_csv(path, sep=";")
+    # Import immatriculation for switzerland and total but there is information on import
+    # export, domestic and transit
+    # TODO : change from residnetial with immatriculation to residential with demand with only import and domestic and all fleet
     df = df[(df["IMMATRICULATION"] == "CH") & (df["TRAFFIC_TYPE"] == "_T")]
     df = df[df["VEH_TYPE"].isin(["LORRY", "HAV"])]
     piv = df.pivot(index="REF_YEAR", columns="VEH_TYPE", values="OBS_VALUE")
