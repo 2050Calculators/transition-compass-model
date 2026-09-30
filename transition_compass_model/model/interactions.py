@@ -22,6 +22,79 @@ from transition_compass_model.model.lca_module import lca
 from transition_compass_model.model.lifestyles_module import lifestyles
 from transition_compass_model.model.transport_module import transport
 
+# Cross-sector totals shown on the Overall page. Each list is exactly the set of
+# bands stacked in the corresponding Overall chart, so the KPI card always equals
+# the top of its stack. Buildings and transport only: agriculture and industry are
+# not part of the Overall view yet.
+OVERALL_KPI_DEFINITIONS = [
+    (
+        "Total emissions (all sectors)",
+        "Mt CO₂eq",
+        [
+            ("buildings", "bld_emissions-CO2e"),
+            ("transport", "tra_emissions-CO2e_passenger-land"),
+            ("transport", "tra_emissions-CO2e_freight"),
+            ("transport", "tra_emissions-CO2e_passenger_aviation"),
+        ],
+    ),
+    (
+        "Total energy demand (all sectors)",
+        "TWh",
+        [
+            ("buildings", "bld_energy-demand_total"),
+            ("transport", "tra_energy-demand_passenger-land"),
+            ("transport", "tra_energy-demand_freight"),
+            ("transport", "tra_passenger_energy-demand-by-mode_aviation"),
+        ],
+    ),
+]
+
+
+def compute_overall_KPI(TPE, years_setting):
+    """Cross-sector KPI cards for the Overall page.
+
+    Returns [] unless every sector involved has been run, so that partial runs
+    (a single sector requested by the frontend) do not raise.
+
+    The gauge bounds are derived from the last historical year rather than being
+    hard-coded: Vaud and Switzerland differ by roughly a factor ten, and the
+    historical value is unaffected by lever settings, so the scale stays put while
+    the needle moves. The headroom above the historical value is deliberate --
+    under the default lever positions the 2050 total is *above* the historical one,
+    driven by aviation growth, so a scale that stopped at the base year would peg.
+
+    The warning/danger fractions are placeholders, not policy targets.
+    """
+    required = {
+        sector for _, _, terms in OVERALL_KPI_DEFINITIONS for sector, _ in terms
+    }
+    if not required.issubset(TPE.keys()):
+        return []
+
+    base_year = years_setting[1]
+    end_year = years_setting[3]
+
+    KPI_overall = []
+    for title, unit, terms in OVERALL_KPI_DEFINITIONS:
+        try:
+            value = sum(TPE[sector][0, end_year, var] for sector, var in terms)
+            base = sum(TPE[sector][0, base_year, var] for sector, var in terms)
+        except KeyError:
+            continue
+        KPI_overall.append(
+            {
+                "title": title,
+                "value": value,
+                "unit": unit,
+                "min": 0,
+                "max": 1.5 * base,
+                "warning": 0.5 * base,
+                "danger": 0.8 * base,
+            }
+        )
+
+    return KPI_overall
+
 
 def runner(lever_setting, years_setting, DM_in, sectors, logger):
     # lever setting dictionary convert float to integer
@@ -140,6 +213,10 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
     # TPE['emissions'] = emissions(lever_setting, years_setting, interface)
     # logger.info('Execution time Emissions: {0:.3g} s'.format(time.time() - start_time))
     # start_time = time.time()
+
+    KPI_overall = compute_overall_KPI(TPE, years_setting)
+    if KPI_overall:
+        KPI["overall"] = KPI_overall
 
     logger.info("Total runtime: {0:.3g} s".format(time.time() - init_time))
 
