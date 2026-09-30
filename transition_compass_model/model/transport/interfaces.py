@@ -18,6 +18,9 @@ import pickle
 import numpy as np
 
 from transition_compass_model.model.common.auxiliary_functions import my_pickle_dump
+from transition_compass_model.model.transport.workflows import (
+    convert_to_cO2eq_emissions,
+)
 
 
 def tra_industry_interface(
@@ -452,6 +455,51 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
         factor=1e-9,
     )
 
+    # Transport totals for the cross-sector (Overall) charts: passenger land,
+    # freight, and passenger aviation kept apart. Passenger aviation is already
+    # published per mode, so only the two land/freight aggregates are built here.
+    # Freight aviation stays inside freight: it is territorial, whereas passenger
+    # aviation is the residency-based round-trip figure (see emissions/workflows.py).
+    land_modes = ["2W", "LDV", "bus", "metrotram", "rail"]
+
+    dm_emi_pass_land = DM_passenger_out["emissions"].filter({"Categories1": land_modes})
+    dm_emi_pass_land.group_all("Categories1", inplace=True)
+    dm_emi_pass_land.rename_col(
+        "tra_emissions-CO2e_passenger",
+        "tra_emissions-CO2e_passenger-land",
+        dim="Variables",
+    )
+
+    # Freight emissions still carry the gas dimension here, unlike passenger which
+    # transport_module has already converted, so apply the same GWP helper.
+    dm_emi_freight = convert_to_cO2eq_emissions(DM_freight_out["emissions"].copy())
+    dm_emi_freight.group_all("Categories1", inplace=True)
+    dm_emi_freight.rename_col(
+        "tra_freight_emissions", "tra_emissions-CO2e_freight", dim="Variables"
+    )
+
+    dm_energy_pass_land = dm_keep_mode.filter(
+        {
+            "Variables": ["tra_passenger_energy-demand-by-mode"],
+            "Categories1": land_modes,
+        }
+    )
+    dm_energy_pass_land.group_all("Categories1", inplace=True)
+    dm_energy_pass_land.rename_col(
+        "tra_passenger_energy-demand-by-mode",
+        "tra_energy-demand_passenger-land",
+        dim="Variables",
+    )
+
+    dm_energy_freight_tot = dm_freight_energy_by_mode.group_all(
+        "Categories1", inplace=False
+    )
+    dm_energy_freight_tot.rename_col(
+        "tra_freight_energy-demand-by-mode",
+        "tra_energy-demand_freight",
+        dim="Variables",
+    )
+
     # Merge datamatrices for new-app
     dm_tpe = dm_keep_mode.flattest()
     dm_tpe.append(dm_keep_tech.flattest(), dim="Variables")
@@ -467,6 +515,10 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
     dm_tpe.append(dm_keep_aviation_energy.flattest(), dim="Variables")
     dm_tpe.append(dm_tech_HDVH.flattest(), dim="Variables")
     dm_tpe.append(dm_freight_emissions.flattest(), dim="Variables")
+    dm_tpe.append(dm_emi_pass_land.flattest(), dim="Variables")
+    dm_tpe.append(dm_emi_freight.flattest(), dim="Variables")
+    dm_tpe.append(dm_energy_pass_land.flattest(), dim="Variables")
+    dm_tpe.append(dm_energy_freight_tot.flattest(), dim="Variables")
 
     DM_kpi_dict = {
         "emission_pass": DM_passenger_out["emissions"].copy(),
