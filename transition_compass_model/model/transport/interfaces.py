@@ -402,6 +402,14 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
     dm_keep_tech = DM_passenger_out["tech"].filter(
         {"Variables": ["tra_passenger_vehicle-fleet"], "Categories1": ["LDV"]}
     )
+    # Same conversion as the mode-level fleet above, so the per-technology series is
+    # on the same scale as its sibling rather than raw vehicle counts.
+    dm_keep_tech.change_unit(
+        "tra_passenger_vehicle-fleet",
+        old_unit="number",
+        new_unit="millions",
+        factor=1e-6,
+    )
 
     dm_keep_fuel = DM_passenger_out["fuel"]
 
