@@ -426,16 +426,15 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
         "tra_freight_total-energy", "tra_freight_energy-demand-by-fuel", dim="Variables"
     )
 
-    # Total energy demand
+    # Passenger and freight energy totals, by fuel, for the KPI cards below.
+    # Note these cover surface modes only: aviation energy is absent from both
+    # by-fuel matrices (passenger kerosene is 0, and freight by-fuel is short of
+    # by-mode by exactly the aviation figure). The whole-transport totals used by
+    # the Overall charts are built from the by-mode matrices further down.
     dm_energy_tot_pass = DM_passenger_out["energy"].copy()
     dm_energy_tot_pass.group_all(dim="Categories1")
-    dm_energy_tot = dm_energy_tot_pass.copy()
     dm_energy_freight = DM_freight_out["energy"].copy()
     dm_energy_freight.group_all(dim="Categories1")
-    dm_energy_tot.append(dm_energy_freight, dim="Variables")
-    dm_energy_tot.groupby(
-        {"tra_energy-demand_total": ".*"}, inplace=True, regex=True, dim="Variables"
-    )
 
     dm_tech_HDVH = DM_freight_out["tech"].filter(
         {"Variables": ["tra_freight_technology-share-fleet"], "Categories1": ["HDVH"]}
@@ -506,7 +505,6 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
     dm_tpe.append(dm_keep_fuel.flattest(), dim="Variables")
     dm_tpe.append(dm_keep_energy.flattest(), dim="Variables")
     dm_tpe.append(dm_freight_energy_by_mode.flattest(), dim="Variables")
-    dm_tpe.append(dm_energy_tot.flattest(), dim="Variables")
     dm_tpe.append(dm_freight_energy_by_fuel.flattest(), dim="Variables")
     dm_tpe.append(DM_passenger_out["soft-mobility"].flattest(), dim="Variables")
     dm_tpe.append(DM_passenger_out["emissions"].flattest(), dim="Variables")
