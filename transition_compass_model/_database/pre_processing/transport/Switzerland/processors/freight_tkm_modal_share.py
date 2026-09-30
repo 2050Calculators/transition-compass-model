@@ -59,6 +59,7 @@ Marine:
 Aviation:
   Residual after all other modes to maintain _AVIATION_SHARE = 4.4 % of total.
   Calibrated to BAZL Swiss airport cargo (~500 kt/yr at ~2600 km avg haul ≈ 1.3 bn-tkm).
+  #TODO : maybe check that the 4.4% makes sense and use other database for getting the aviation bn-tkm
 
 Vaud canton share:
   BFS GTS canton survey 2016-2020 average. Freight originating from Vaud: 767 635
