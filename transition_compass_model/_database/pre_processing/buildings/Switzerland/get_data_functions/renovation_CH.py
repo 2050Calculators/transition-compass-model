@@ -2,11 +2,93 @@ import os
 import pickle
 
 import numpy as np
+from get_data_functions import utils
 
 from transition_compass_model._database.pre_processing.api_routines_CH import (
     get_data_api_CH,
 )
+from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
+    get_data_api_swiss_stats,
+)
+from transition_compass_model._database.pre_processing.params import (
+    country_list,
+    years_ots,
+)
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
+
+
+def extract_number_of_buildings_v2(file, agency, dataflow):
+    try:
+        with open(file, "rb") as handle:
+            dm_nb_bld = pickle.load(handle)
+    except OSError:
+        dm_nb_bld = None
+        structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
+        # cantons_list = [
+        #     "Switzerland",
+        #     "Vaud",
+        #     "Fribourg",
+        #     "Schwyz",
+        # ]
+
+        category_list = utils.get_all_elements_except_total(structure, "GKATS")
+        # Iterate
+        for cntr in structure["GEMEINDENAME"]:
+            # Extract buildings floor area
+
+            filtering = {
+                "TIME_PERIOD": structure["TIME_PERIOD"],
+                "GEMEINDENAME": [cntr],
+                "GBAUPS": ["Total"],  # époque de construction
+                "FLAECHKL": ["Total"],
+                "GKATS": category_list,
+                "FREQ": ["Annual"],
+            }
+            mapping_dim = {
+                "Country": "GEMEINDENAME",
+                "Years": "TIME_PERIOD",
+                "Variables": "GBAUPS",
+                "Categories1": "GKATS",
+            }
+            unit_all = ["number"] * len(filtering[mapping_dim["Variables"]])
+            # Get api data
+            dm_nb_bld_cntr = get_data_api_swiss_stats(
+                agency,
+                dataflow,
+                mode="extract",
+                filter=filtering,
+                mapping_dims=mapping_dim,
+                units=unit_all,
+                language="en",
+            )
+
+            if dm_nb_bld is None:
+                dm_nb_bld = dm_nb_bld_cntr.copy()
+            else:
+                dm_nb_bld.append(dm_nb_bld_cntr.copy(), dim="Country")
+
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(current_file_directory, file)
+        with open(f, "wb") as handle:
+            pickle.dump(dm_nb_bld, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    dm_nb_bld.filter({"Country": country_list, "Years": years_ots}, inplace=True)
+    dm_nb_bld.sort("Country")
+    dm_nb_bld.rename_col_regex("Total_Variables", "bld_nb-bld", dim="Variables")
+    dm_nb_bld.groupby(
+        {
+            "single-family-households": ["Single-family house"],
+            "multi-family-households": [
+                "Multi-family house",
+                "Other residential building (wit subsidiary use)",
+                "Building with partial residential use",
+            ],
+        },
+        dim="Categories1",
+        inplace=True,
+    )
+
+    return dm_nb_bld
 
 
 def extract_number_of_buildings(table_id, file):

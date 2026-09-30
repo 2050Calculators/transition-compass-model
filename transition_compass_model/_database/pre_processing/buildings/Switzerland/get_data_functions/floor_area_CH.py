@@ -4,6 +4,7 @@ import zipfile
 
 import numpy as np
 import pandas as pd
+from get_data_functions import utils
 
 from transition_compass_model._database.pre_processing.api_routines_CH import (
     get_data_api_CH,
@@ -65,10 +66,6 @@ def compute_avg_floor_area(dm_floor_area, years_ots):
     return dm
 
 
-def get_all_elements_except_total(structure, var_name) -> list:
-    return [x for x in structure[var_name] if x not in ["Total"]]
-
-
 def extract_stock_floor_area(file, agency, dataflow):
     """
     Extract data from the datasaet :  Dwellings by geographical institutional levels, building category, floor space, and construction period
@@ -88,16 +85,12 @@ def extract_stock_floor_area(file, agency, dataflow):
     except OSError:
         dm_floor_area = None
         structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
-        # cantons_list = [
-        #     "Switzerland",
-        #     "Vaud",
-        #     "Fribourg",
-        #     "Schwyz",
-        # ]
 
-        construction_period_list = get_all_elements_except_total(structure, "GBAUPS")
-        superficy_list = get_all_elements_except_total(structure, "FLAECHKL")
-        category_list = get_all_elements_except_total(structure, "GKATS")
+        construction_period_list = utils.get_all_elements_except_total(
+            structure, "GBAUPS"
+        )
+        superficy_list = utils.get_all_elements_except_total(structure, "FLAECHKL")
+        category_list = utils.get_all_elements_except_total(structure, "GKATS")
 
         # Iterate
         for cntr in structure["GEMEINDENAME"]:
@@ -572,12 +565,13 @@ def extract_energy_reference_area(file_path=""):
         "multi-family-households": [
             "Immeubles_a_trois_logements_et_plus",
             "Maisons_a_deux_logements",
-            "Habitat communautaire",
+            "Habitat_communautaire",
         ],
     }
     for keys, values in single_multi_code.items():
-        df_single = df[df["gklas"].isin(values)]
-        dic_ERA[keys] = df_single["gebf"].sum()
+        df_cat = df[df["gklas"].isin(values)]
+        dic_ERA[keys] = df_cat["gebf"].sum()
+        print(df_cat)
 
     return dic_ERA
 
@@ -755,7 +749,7 @@ def extract_nb_of_apartments_per_building_type_v2(file, agency, dataflow, canton
 
         construction_period_list = ["Total"]
         superficy_list = ["Total"]
-        category_list = get_all_elements_except_total(structure, "GKATS")
+        category_list = utils.get_all_elements_except_total(structure, "GKATS")
 
         # Iterate
         for cntr in structure["GEMEINDENAME"]:

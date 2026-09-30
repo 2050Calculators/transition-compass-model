@@ -32,3 +32,7 @@ def read_excel_with_merged_cells(filepath, sheet_name=0):
     # Convert to DataFrame
     df = pd.DataFrame(data)
     return df
+
+
+def get_all_elements_except_total(structure, var_name) -> list:
+    return [x for x in structure[var_name] if x not in ["Total"]]

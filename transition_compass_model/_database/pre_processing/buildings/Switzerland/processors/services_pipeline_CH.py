@@ -488,6 +488,7 @@ def run(country_list, years_ots):
     )
 
     # Extract energy demand by sector at national level by fuel
+    # FIXME : for now it is stilll on stat tab change when not anymore
     table_id = "px-x-0204000000_106"
     local_filename = os.path.join(
         this_dir, "../data/energy_accounts_economy_households.pickle"
@@ -498,6 +499,7 @@ def run(country_list, years_ots):
 
     # Extract number of employees per industry and service sector by canton
     # This is in order to map the national energy demand to cantons
+    # FIXME : for now it is stilll on stat tab change when not anymore
     table_id = "px-x-0602010000_101"
     local_filename = os.path.join(
         this_dir, "../data/employees_per_sector_canton.pickle"

@@ -13,6 +13,7 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
     # SECTION Floor area Renovated ots
     # Number of buildings
     # Bâtiments selon les niveaux géographiques institutionnels, la catégorie de bâtiment et l'époque de construction
+    # Still present on stat tab
     table_id = "px-x-0902010000_103"
     this_dir = os.path.dirname(os.path.abspath(__file__))
     file = os.path.join(this_dir, "../data/bld_nb-buildings_2010_2022.pickle")
