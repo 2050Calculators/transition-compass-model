@@ -421,8 +421,16 @@ def bld_TPE_interface(
     dm_tpe.append(dm_emission_global.flattest(), dim="Variables")
     # dm_emission_global.change_unit("bld_CO2-emissions", factor=1e6, old_unit="Mt", new_unit="t" )
 
+    # Buildings-wide total, published for the cross-sector (Overall) charts and read
+    # back for the KPI so card and chart share one source. Named CO2e for consistency
+    # with the tra_emissions-CO2e_* series; buildings model no CH4/N2O, so CO2e = CO2.
     dm_emission_global.group_all("Categories1", inplace=True)
-    value = dm_emission_global[0, yr, "bld_CO2-emissions"]
+    dm_emission_global.rename_col(
+        "bld_CO2-emissions", "bld_emissions-CO2e", "Variables"
+    )
+    dm_tpe.append(dm_emission_global.flattest(), dim="Variables")
+
+    value = dm_emission_global[0, yr, "bld_emissions-CO2e"]
 
     KPI.append({"title": "Total emissions", "value": value, "unit": "Mt"})
 
