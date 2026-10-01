@@ -138,6 +138,9 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
         DM_floor_area, dm_lfs, cdm_const, years_ots, years_fts
     )
 
+    # print(DM_floor_out.keys())
+    # print(DM_floor_out["TPE"])
+
     DM_appliances_out = wkf.bld_appliances_workflow(DM_appliances, dm_lfs)
 
     # print('You are missing appliances (that should run before energy, so that you have the missing term of the equation')
@@ -296,6 +299,34 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
         from_sector="buildings", to_sector="oil-refinery", dm=DM_energy_out["refinery"]
     )
 
+    # Exercise Anna (creating Buildings_to_TEST.pickle) --------------------
+    # TEST interface
+    DM_buildings_TEST = {
+        "floor-area": DM_floor_out[
+            "TPE"
+        ]  # ["floor-area-cumulated"] #data labeled floor_area
+        # sends DM_floor_out["TPE"] to TEST
+        # I take TPE from the data matrix DM_floor_out and then call it "floor-area"
+    }
+
+    interface.add_link(
+        from_sector="buildings",
+        to_sector="TEST",
+        dm=DM_buildings_TEST,
+    )
+
+    # Save TEST interface as pickle
+    write_pickle = True
+
+    if write_pickle:
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(
+            current_file_directory,
+            "../_database/data/interface/buildings_to_TEST.pickle",
+        )
+        my_pickle_dump(DM_buildings_TEST, f)
+
+    # Exercise Anna ---------------------------------
     return results_run, KPI
 
 

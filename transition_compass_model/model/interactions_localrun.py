@@ -15,15 +15,14 @@ from transition_compass_model.model.common.config_loader import load_lever_confi
 
 # from model.minerals_module import minerals
 from transition_compass_model.model.common.interface_class import Interface
-from transition_compass_model.model.emissions_module import emissions
 from transition_compass_model.model.energy_module import energy
-from transition_compass_model.model.forestry_module import forestry
 from transition_compass_model.model.industry_module import industry
 
 # from model.landuse_module import land_use
 # from model.oilrefinery_module import refinery
 from transition_compass_model.model.lca_module import lca
 from transition_compass_model.model.lifestyles_module import lifestyles
+from transition_compass_model.model.TEST_module import test
 from transition_compass_model.model.transport_module import transport
 
 
@@ -96,24 +95,30 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
         logger.info(
             "Execution time Ammonia: {0:.3g} s".format(time.time() - start_time)
         )
+
+    if "TEST" in sectors:
+        start_time = time.time()
+        TPE["TEST"] = test(lever_setting, years_setting, DM_input["TEST"], interface)
+        logger.info("Execution time TEST: {0:.3g} s".format(time.time() - start_time))
+
     if "energy" in sectors:
         start_time = time.time()
         TPE["energy"] = energy(lever_setting, years_setting, country_list, interface)
         logger.info("Execution time Energy: {0:.3g} s".format(time.time() - start_time))
-    if "emissions" in sectors:
-        start_time = time.time()
-        TPE["emissions"] = emissions(years_setting, interface)
-        logger.info(
-            "Execution time Emissions: {0:.3g} s".format(time.time() - start_time)
-        )
-    if "forestry" in sectors:
-        start_time = time.time()
-        TPE["forestry"] = forestry(
-            lever_setting, years_setting, DM_input["forestry"], interface
-        )
-        logger.info(
-            "Execution time Forestry: {0:.3g} s".format(time.time() - start_time)
-        )
+    # if "emissions" in sectors:
+    #     start_time = time.time()
+    #     TPE["emissions"] = emissions(years_setting, interface)
+    #     logger.info(
+    #         "Execution time Emissions: {0:.3g} s".format(time.time() - start_time)
+    #     )
+    # if "forestry" in sectors:
+    #     start_time = time.time()
+    #     TPE["forestry"] = forestry(
+    #         lever_setting, years_setting, DM_input["forestry"], interface
+    #     )
+    #     logger.info(
+    #         "Execution time Forestry: {0:.3g} s".format(time.time() - start_time)
+    #     )
     if "lca" in sectors:
         start_time = time.time()
         TPE["lca"] = lca(lever_setting, years_setting, DM_input["lca"], interface)
@@ -167,9 +172,9 @@ def local_interactions_run():
         "lifestyles",
         "transport",
         "buildings",
-        "industry",
         "agriculture",
         "ammonia",
+        "TEST",
         # 'landuse',
         "energy",
         "emissions",

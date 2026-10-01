@@ -31,6 +31,7 @@ POWER_TECH_REVERSED_MAPPING = {
     "GasCC-CCS": ["CCGT_CCS"],
     "Nuclear": ["NUCLEAR"],
     "PV-roof": ["PV"],
+    # "PV-open": ["OPEN_PV"],
     "WindOn": ["WIND"],
     "Dam": ["NEW_HYDRO_DAM", "HYDRO_DAM"],
     "RoR": ["NEW_HYDRO_RIVER", "HYDRO_RIVER"],
@@ -246,6 +247,7 @@ def extract_2050_output_pyomo(m, country_prod, endyr, years_fts):
         "Net-import": ["ELECTRICITY"],
         "Nuclear": ["NUCLEAR"],
         "PV-roof": ["PV"],
+        # "PV-open": ["OPEN_PV"],
         "WindOn": ["WIND"],
         "Dam": ["HYDRO_DAM"],
         "Dam_new": ["NEW_HYDRO_DAM"],
@@ -760,6 +762,12 @@ def apply_power_capacity_levers(m, DM_lever_fts, lever_setting, nuclear_curve_mw
         DM_lever_fts, "pv-capacity", lever_setting
     )
     m.f_max["PV"] = snap_to_ref_size("PV", pv_curve_mw[-1] / 1000, "ceil")
+
+    # Open-field PV (anna)
+    # _, open_pv_curve_mw = get_power_capacity_lever(
+    #     DM_lever_fts, "open-pv-capacity", lever_setting
+    # )
+    # m.f_max["OPEN_PV"] = snap_to_ref_size("OPEN_PV", open_pv_curve_mw[-1] / 1000, "ceil")
 
     # No new gas capacity (policy stance, not lever-adjustable for now)
     m.f_max["CCGT"] = 0

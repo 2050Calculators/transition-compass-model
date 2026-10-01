@@ -89,7 +89,8 @@
       "TRAIN_PUB": 0.0,
       "TRAMWAY_TROLLEY": 0.0,
       "TRUCK": 0.0,
-      "WIND": 1465.62
+      "WIND": 1465.62,
+      "OPEN_PV": 500.0
     },
     "c_maint": {
       "BUS_COACH_CNG_STOICH": 0.0,
@@ -161,7 +162,8 @@
       "TRAIN_PUB": 0.0,
       "TRAMWAY_TROLLEY": 0.0,
       "TRUCK": 0.0,
-      "WIND": 22.9
+      "WIND": 22.9,
+      "OPEN_PV": 7.94
     },
     "c_op": {
       "BIODIESEL": {
@@ -474,7 +476,8 @@
       "TRAIN_PUB": 1.0,
       "TRAMWAY_TROLLEY": 1.0,
       "TRUCK": 1.0,
-      "WIND": 1.0
+      "WIND": 1.0,
+      "OPEN_PV": 1.0
     },
     "c_p_t": {
       "DEC_SOLAR": {
@@ -548,6 +551,20 @@
         "9": 0.548
       },
       "PV": {
+        "1": 0.053,
+        "10": 0.088,
+        "11": 0.052,
+        "12": 0.036,
+        "2": 0.094,
+        "3": 0.12,
+        "4": 0.153,
+        "5": 0.156,
+        "6": 0.157,
+        "7": 0.164,
+        "8": 0.156,
+        "9": 0.128
+      },
+      "OPEN_PV": {
         "1": 0.053,
         "10": 0.088,
         "11": 0.052,
@@ -690,7 +707,8 @@
       "TRAIN_PUB": 16.7,
       "TRAMWAY_TROLLEY": 16.7,
       "TRUCK": 3.2,
-      "WIND": 5.3
+      "WIND": 5.3,
+      "OPEN_PV": 25.0
     },
     "f_min": {
       "BUS_COACH_CNG_STOICH": 0.0,
@@ -762,7 +780,8 @@
       "TRAIN_PUB": 0.0,
       "TRAMWAY_TROLLEY": 0.0,
       "TRUCK": 0.92,
-      "WIND": 0.0
+      "WIND": 0.0,
+      "OPEN_PV": 0.0
     },
     "fmax_perc": {
       "BUS_COACH_CNG_STOICH": 0.3,
@@ -834,7 +853,8 @@
       "TRAIN_PUB": 0.8,
       "TRAMWAY_TROLLEY": 0.3,
       "TRUCK": 1.0,
-      "WIND": 0.5
+      "WIND": 0.5,
+      "OPEN_PV": 0.5
     },
     "fmin_perc": {
       "BUS_COACH_CNG_STOICH": 0.0,
@@ -906,7 +926,8 @@
       "TRAIN_PUB": 0.0,
       "TRAMWAY_TROLLEY": 0.0,
       "TRUCK": 0.0,
-      "WIND": 0.0
+      "WIND": 0.0,
+      "OPEN_PV": 0.0
     },
     "gwp_constr": {
       "BUS_COACH_CNG_STOICH": 0.0,
@@ -978,7 +999,8 @@
       "TRAIN_PUB": 0.0,
       "TRAMWAY_TROLLEY": 0.0,
       "TRUCK": 0.0,
-      "WIND": 622.85
+      "WIND": 622.85,
+      "OPEN_PV": 2081.43
     },
     "gwp_op": {
       "BIODIESEL": 0.0,
@@ -2665,6 +2687,28 @@
         "WASTE": 0.0,
         "WOOD": 0.0
       },
+      "OPEN_PV": {
+        "COAL": 0.0,
+        "COAL_CCS": 0.0,
+        "DIESEL": 0.0,
+        "ELECTRICITY": 1.0,
+        "GASOLINE": 0.0,
+        "H2": 0.0,
+        "HEAT_HIGH_T": 0.0,
+        "HEAT_LOW_T_DECEN": 0.0,
+        "HEAT_LOW_T_DHN": 0.0,
+        "LFO": 0.0,
+        "LNG": 0.0,
+        "MOB_FREIGHT_RAIL": 0.0,
+        "MOB_FREIGHT_ROAD": 0.0,
+        "MOB_PRIVATE": 0.0,
+        "MOB_PUBLIC": 0.0,
+        "NG": 0.0,
+        "NG_CCS": 0.0,
+        "URANIUM": 0.0,
+        "WASTE": 0.0,
+        "WOOD": 0.0
+      },
       "PYROLYSIS": {
         "COAL": 0.0,
         "COAL_CCS": 0.0,
@@ -2956,7 +3000,8 @@
       "TRAIN_PUB": 1.0,
       "TRAMWAY_TROLLEY": 1.0,
       "TRUCK": 1.0,
-      "WIND": 20.0
+      "WIND": 20.0,
+      "OPEN_PV": 25.0
     },
     "lighting_month": {
       "1": 0.124,
@@ -3047,7 +3092,8 @@
       "TRAIN_PUB": 0.001,
       "TRAMWAY_TROLLEY": 0.001,
       "TRUCK": 0.001,
-      "WIND": 0.003
+      "WIND": 0.003,
+      "OPEN_PV": 3e-6
     },
     "share_freight_train_max": 0.6,
     "share_freight_train_min": 0.4,
@@ -3250,6 +3296,7 @@
         "COAL_US_CCS",
         "COAL_IGCC_CCS",
         "PV",
+        "OPEN_PV",
         "WIND",
         "HYDRO_DAM",
         "NEW_HYDRO_DAM",

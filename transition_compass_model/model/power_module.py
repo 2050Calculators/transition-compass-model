@@ -85,6 +85,19 @@ def database_from_csv_to_datamatrix():
         dict_fts=dict_fts,
     )
 
+    #     # Database - Power - Lever: Open-field PV capacity
+    #     file = "power_open-pv-capacity"
+    #     lever = "open-pv-capacity"
+    #     dict_ots, dict_fts = read_database_to_ots_fts_dict(
+    #     file,
+    #     lever,
+    #     num_cat=1,
+    #     baseyear=baseyear,
+    #     years=years_all,
+    #     dict_ots=dict_ots,
+    #     dict_fts=dict_fts,
+    # )
+
     # Database - Power - Lever: Solar CSP capacity
     file = "power_csp-capacity"
     lever = "csp-capacity"
@@ -296,6 +309,10 @@ def database_from_csv_to_datamatrix():
     # Database - PV profile
     file = "power_pv-profile"
     dm_profile_pv = hourly_data_reader(file, years_setting)
+
+    # # Database - Open-field PV profile
+    # file = "power_open-pv-profile"
+    # dm_profile_open_pv = hourly_data_reader(file, years_setting)
 
     # Database - Onshore wind profile
     file = "power_wind-onshore-profile"

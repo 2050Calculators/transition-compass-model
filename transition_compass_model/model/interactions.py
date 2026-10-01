@@ -20,6 +20,7 @@ from transition_compass_model.model.industry_module import industry
 # from model.oilrefinery_module import refinery
 from transition_compass_model.model.lca_module import lca
 from transition_compass_model.model.lifestyles_module import lifestyles
+from transition_compass_model.model.TEST_module import test
 from transition_compass_model.model.transport_module import transport
 
 
@@ -100,6 +101,12 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
         logger.info(
             "Execution time Ammonia: {0:.3g} s".format(time.time() - start_time)
         )
+
+    if "TEST" in sectors:
+        start_time = time.time()
+        TPE["TEST"] = test(lever_setting, years_setting, DM_input["TEST"], interface)
+        logger.info("Execution time TEST: {0:.3g} s".format(time.time() - start_time))
+
     if "energy" in sectors:
         start_time = time.time()
         TPE["energy"] = energy(lever_setting, years_setting, country_list, interface)
@@ -110,6 +117,7 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
         logger.info(
             "Execution time Emissions: {0:.3g} s".format(time.time() - start_time)
         )
+
     if "lca" in sectors:
         start_time = time.time()
         TPE["lca"] = lca(lever_setting, years_setting, DM_input["lca"], interface)

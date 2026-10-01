@@ -90,6 +90,22 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
             DM_agriculture["power"].add(0, dim="Country", dummy=True, col_label="Vaud")
         filter_DM(DM_agriculture, {"Country": country_list})
 
+    # --------------------------------------------------------------------------------
+    # Exercise Anna
+
+    if interface.has_link(from_sector="TEST", to_sector="energy"):
+        DM_test = interface.get_link(from_sector="TEST", to_sector="energy")
+    else:
+        if len(interface.list_link()) != 0:
+            print("You are missing " + "TEST" + " to " + "energy" + " interface")
+        TEST_file = os.path.join(
+            current_file_directory,
+            "../_database/data/interface/TEST_to_energy.pickle",
+        )
+        with open(TEST_file, "rb") as handle:
+            DM_test = pickle.load(handle)
+        filter_DM(DM_test, {"Country": country_list})
+    # ----------------------------------------------------------------------------------
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     data_filepath = os.path.join(
         current_file_directory, "../_database/data/datamatrix/energy.pickle"
@@ -108,6 +124,7 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
 
     interface.add_link(from_sector="energy", to_sector="emissions", dm=dm_energy_emi)
 
+    print(results_run)
     return results_run
 
 
@@ -124,6 +141,7 @@ def local_energy_run():
 
     results_run = energy(lever_setting, years_setting, country_list)
 
+    # print(results_run)
     return results_run
 
 

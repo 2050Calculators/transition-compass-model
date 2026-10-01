@@ -1,4 +1,4 @@
-from .ses_pyomo import (
+from transition_compass_model.model.energy.energyscopepyomo.ses_pyomo import (  # was .ses_pyomo before
     attach,
     build_model,
     extract_results,
