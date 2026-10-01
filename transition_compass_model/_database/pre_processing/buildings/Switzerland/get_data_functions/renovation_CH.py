@@ -197,7 +197,7 @@ def compute_renovation_rate(dm_renovation, years_ots):
 def extract_renovation_redistribuition(ren_map_in, ren_map_out, years_ots):
     dm = DataMatrix(
         col_labels={
-            "Country": ["Switzerland", "Vaud"],
+            "Country": country_list,
             "Years": years_ots,
             "Variables": [
                 "bld_renovation-redistribution-in",

@@ -10,6 +10,7 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     linear_fitting,
+    rename_cantons,
 )
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
@@ -344,7 +345,8 @@ def extract_employees_per_sector_canton(table_id, file):
         f = os.path.join(current_file_directory, file)
         with open(f, "wb") as handle:
             pickle.dump(dm_employees, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
+    ### Celan canton name
+    rename_cantons(dm_employees)
     return dm_employees
 
 

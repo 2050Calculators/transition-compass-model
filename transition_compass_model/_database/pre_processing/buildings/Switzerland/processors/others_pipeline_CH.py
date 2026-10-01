@@ -217,7 +217,7 @@ def run(country_list, years_ots, years_fts):
     }
     dm_co2_factor = DataMatrix(col_labels=col_dict, units={"bld_CO2-factor": "kt/TWh"})
 
-    arr_co2_factor = np.zeros((2, 40, 1, 2))
+    arr_co2_factor = np.zeros((len(col_dict["Country"]), len(col_dict["Years"]), 1, 2))
     idx = dm_co2_factor.idx
     arr_co2_factor[:, idx[1990] : idx[2023] + 1, :, idx["electricity"]] = 168.64
     arr_co2_factor[:, idx[2025] : idx[2050], :, idx["electricity"]] = np.nan
