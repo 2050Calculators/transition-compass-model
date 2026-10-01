@@ -10,10 +10,12 @@ from transition_compass_model.model.common.auxiliary_functions import (
 )
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
-
 ####################################
 ######        CDD, HDD       #######
 ####################################
+
+
+# Data can be found here https://polybox.ethz.ch/index.php/s/UbbrQmssjTkXxY6
 def extract_Yasser_dataset(filename, variable, country):
     df = pd.read_csv(filename)
     if "canton" in df.columns:
@@ -45,7 +47,7 @@ def join_ots_fts_Yasser_dataset(dm_ots, dm_fts, years_fts):
     return dm
 
 
-def extract_CDD_HDD_from_Yasser_dataset(years_fts):
+def extract_CDD_HDD_from_Yasser_dataset(years_fts, country_list):
     ots_folder = "data/historical_meteoswiss/"
     fts_folder = "data/ch2018_climate_models/"
     swiss_file_CDD = ots_folder + "historical_meteoswiss_national_CDD.csv"
@@ -68,13 +70,15 @@ def extract_CDD_HDD_from_Yasser_dataset(years_fts):
     mapping = {
         "CDD": {
             "Switzerland": (swiss_file_CDD, swiss_file_CDD_fts),
-            "Vaud": (canton_file_CDD, canton_file_CDD_fts),
         },
-        "HDD": {
-            "Switzerland": (swiss_file_HDD, swiss_file_HDD_fts),
-            "Vaud": (canton_file_HDD, canton_file_HDD_fts),
-        },
+        "HDD": {"Switzerland": (swiss_file_HDD, swiss_file_HDD_fts)},
     }
+
+    canton_list = list(set(country_list) - set(["Switzerland"]))
+    for canton in canton_list:
+        mapping["CDD"][canton] = (canton_file_CDD, canton_file_CDD_fts)
+        mapping["HDD"][canton] = (canton_file_HDD, canton_file_HDD_fts)
+
     name_var = {"CDD": "clm_CDD[daysK]", "HDD": "clm_HDD[daysK]"}
 
     for HCDD, country_file in mapping.items():
@@ -95,7 +99,7 @@ def extract_CDD_HDD_from_Yasser_dataset(years_fts):
     return dm_HCDD
 
 
-def extract_days_Tbase_from_Yasser_dataset(years_fts):
+def extract_days_Tbase_from_Yasser_dataset(years_fts, country_list):
     ots_folder = "data/historical_meteoswiss/"
     fts_folder = "data/ch2018_climate_models/"
     swiss_file_Nabove = ots_folder + "historical_meteoswiss_national_above_tbase.csv"
@@ -118,13 +122,16 @@ def extract_days_Tbase_from_Yasser_dataset(years_fts):
     mapping = {
         "Nabove": {
             "Switzerland": (swiss_file_Nabove, swiss_file_Nabove_fts),
-            "Vaud": (canton_file_Nabove, canton_file_Nabove_fts),
         },
         "Nbelow": {
             "Switzerland": (swiss_file_Nbelow, swiss_file_Nbelow_fts),
-            "Vaud": (canton_file_Nbelow, canton_file_Nbelow_fts),
         },
     }
+    canton_list = list(set(country_list) - set(["Switzerland"]))
+    for canton in canton_list:
+        mapping["Nabove"][canton] = (canton_file_Nabove, canton_file_Nabove_fts)
+        mapping["Nbelow"][canton] = (canton_file_Nbelow, canton_file_Nbelow_fts)
+
     name_var = {
         "Nabove": "clm_days-above-24[days]",
         "Nbelow": "clm_days-below-15[days]",
@@ -248,9 +255,10 @@ def compute_cooling_uptake(dm_CDD_ots, dict_CDD_fts):
 years_ots = create_years_list(1990, 2023, 1)
 years_fts = create_years_list(2025, 2050, 5)
 
-dm_HCDD = extract_CDD_HDD_from_Yasser_dataset(years_fts)
+country_list = ["Switzerland", "Vaud", "Fribourg", "Schwyz"]
+dm_HCDD = extract_CDD_HDD_from_Yasser_dataset(years_fts, country_list)
 
-dm_N = extract_days_Tbase_from_Yasser_dataset(years_fts)
+dm_N = extract_days_Tbase_from_Yasser_dataset(years_fts, country_list)
 
 dm_all = dm_HCDD.copy()
 dm_all.append(dm_N, dim="Variables")
@@ -262,7 +270,7 @@ with open(file, "rb") as handle:
 
 DM_climate_new = dummy_update_DM_module_baseyear(DM_climate_old)
 
-DM_climate_new = filter_country_DM(["Switzerland", "Vaud"], DM_climate_new)
+DM_climate_new = filter_country_DM(country_list, DM_climate_new)
 
 DM_climate_new["ots"]["temp"]["bld_climate-impact-space"] = dm_all.filter(
     {"Years": years_ots}
