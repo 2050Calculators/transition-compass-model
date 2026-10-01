@@ -13,11 +13,13 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
     # SECTION Floor area Renovated ots
     # Number of buildings
     # Bâtiments selon les niveaux géographiques institutionnels, la catégorie de bâtiment et l'époque de construction
-    # Still present on stat tab
-    table_id = "px-x-0902010000_103"
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    file = os.path.join(this_dir, "../data/bld_nb-buildings_2010_2022.pickle")
-    dm_bld = renov.extract_number_of_buildings(table_id, file)
+    agency = "CH1.GWS"
+    dataflow = "DF_GWS_REG1"
+    file = os.path.join(
+        this_dir, "../data/bld_nb-buildings_2010_2025_swiss_stat.pickle"
+    )
+    dm_bld = renov.extract_number_of_buildings_v2(file, agency, dataflow)
 
     # Programme Bâtiments
     # file_url = "https://www.leprogrammebatiments.ch/media/filer_public/01/43/01436bb6-8b18-485f-8070-980102b35db5/recueil_de_tableaux_2024_fr.xlsx"

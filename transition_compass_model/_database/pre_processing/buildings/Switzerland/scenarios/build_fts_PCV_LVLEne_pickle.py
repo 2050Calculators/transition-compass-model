@@ -290,7 +290,7 @@ def compute_renovation_loi_energie(
         idx_fts[-1],
         idx["bld_renovation-rate"],
         idx["multi-family-households"],
-    ] = renovation_rate_F * 0.85 + renovation_E[-1]
+    ] = (renovation_rate_F * 0.85 + renovation_E[-1])[0]
 
     return dm_rr_fts_2, ren_rate_min_class_F
 
@@ -655,9 +655,10 @@ def run(
         idx_fts[-1],
         idx_renov_old["bld_renovation-rate"],
         idx_renov_old["multi-family-households"],
-    ] = (ren_rate_tot_under_750 / (yrs_fts[-1] - yrs_fts[0] + 1)) * 0.85 + renov_yr_E[
-        "multi-family-households"
-    ][-1]
+    ] = (
+        (ren_rate_tot_under_750 / (yrs_fts[-1] - yrs_fts[0] + 1)) * 0.85
+        + renov_yr_E["multi-family-households"][-1]
+    )[0]
 
     prop_E_renovated_before_2035_lev_4 = (
         renov_yr_E["single-family-households"][1]

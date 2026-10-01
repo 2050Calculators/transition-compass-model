@@ -17,7 +17,20 @@ from transition_compass_model._database.pre_processing.params import (
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
-def extract_number_of_buildings_v2(file, agency, dataflow):
+def extract_number_of_buildings_v2(
+    file: str, agency: str = "CH1.GWS", dataflow: str = "DF_GWS_REG1"
+) -> DataMatrix:
+    """Extrait les données de l'api pour le base de donnée:
+    Bâtiments selon les niveaux géographiques institutionnels, la catégorie de bâtiment et l'époque de construction
+
+    Args:
+        file (str): file path
+        agency (str, optional): Agency for api call. Defaults to "CH1.GWS".
+        dataflow (str, optional): dataflow for api call. Defaults to "DF_GWS_REG1".
+
+    Returns:
+        DataMatrix: _description_
+    """
     try:
         with open(file, "rb") as handle:
             dm_nb_bld = pickle.load(handle)
