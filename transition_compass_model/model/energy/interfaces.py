@@ -913,11 +913,16 @@ def impose_industry_demand_pyomo(
     return dm_demand_trend, dm_agr_demand_trend
 
 
-def prepare_TPE_output(dm_prod_cap_cntr, dm_demand):
+def prepare_TPE_output(dm_prod_cap_cntr, dm_demand, country_dem):
     dm_out = dm_prod_cap_cntr.filter({"Variables": ["pow_production", "pow_capacity"]})
     dm_out.groupby({"Gas": ["GasCC", "GasCC-Syn", "GasSC"]}, dim="Categories1")
-    if "Vaud" in dm_demand.col_labels["Country"]:
-        dm_out.rename_col("Switzerland", "Vaud", dim="Country")
+    # The LP always solves at country_prod (Switzerland/EU27); when a canton
+    # was requested, relabel the result under the canton so the frontend
+    # finds it under the geoscale it asked for. Generic over any canton, not
+    # just Vaud.
+    country_prod = dm_out.col_labels["Country"][0]
+    if country_dem != country_prod:
+        dm_out.rename_col(country_prod, country_dem, dim="Country")
     dm_out = dm_out.flattest()
 
     # Energy demand by sector
