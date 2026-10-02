@@ -1832,7 +1832,18 @@ def compute_diff(dm_og, new_col, old_col):
     return dm
 
 
-def compare_dm(dm_new, dm_old):
+def compare_dm(dm_new: DataMatrix, dm_old: DataMatrix):
+    """Compare 2 datamatrix with identical columns to get the differences between there values.
+    Created for comparing data from the old api with the new one
+
+    Args:
+        dm_new (DataMatrix): dm from new api
+        dm_old (DataMatrix): dm from old api
+
+    Returns:
+        DataMatrix: the two dm merged with new variables corresponding to absolute diff and the relative one
+    """
+
     new_variable = dm_new.col_labels["Variables"][0]
     old_variable = dm_old.col_labels["Variables"][0]
     if new_variable == old_variable:

@@ -3,8 +3,8 @@ import pickle
 
 import numpy as np
 
-from transition_compass_model._database.pre_processing.api_routines_CH import (
-    get_data_api_CH,
+from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH import (
+    extract_stock_floor_area_num_bld,
 )
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
@@ -46,96 +46,6 @@ def get_renov_rate_E(DM_buildings, yrs_fts, household_type="multi-family-househo
     return renovation_E
 
 
-def extract_stock_floor_area(table_id, file):
-    try:
-        with open(file, "rb") as handle:
-            dm_floor_area = pickle.load(handle)
-    except OSError:
-        structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-
-        # Extract buildings floor area
-        filter = {
-            "Année": structure["Année"],
-            "Canton (-) / District (>>) / Commune (......)": ["Suisse", "- Vaud"],
-            "Catégorie de bâtiment": structure["Catégorie de bâtiment"],
-            "Surface du logement": structure["Surface du logement"],
-            "Époque de construction": structure["Époque de construction"],
-        }
-        mapping_dim = {
-            "Country": "Canton (-) / District (>>) / Commune (......)",
-            "Years": "Année",
-            "Variables": "Surface du logement",
-            "Categories1": "Catégorie de bâtiment",
-            "Categories2": "Époque de construction",
-        }
-        unit_all = ["number"] * len(structure["Surface du logement"])
-        # Get api data
-        dm_floor_area = get_data_api_CH(
-            table_id,
-            mode="extract",
-            filter=filter,
-            mapping_dims=mapping_dim,
-            units=unit_all,
-            language="fr",
-        )
-        dm_floor_area.rename_col(
-            ["Suisse", "- Vaud"], ["Switzerland", "Vaud"], dim="Country"
-        )
-
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, file)
-        with open(f, "wb") as handle:
-            pickle.dump(dm_floor_area, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    dm_floor_area.groupby(
-        {
-            "single-family-households": ["Maisons individuelles"],
-            "multi-family-households": [
-                "Maisons à plusieurs logements",
-                "Bâtiments d'habitation avec usage annexe",
-                "Bâtiments partiellement à usage d'habitation",
-            ],
-        },
-        dim="Categories1",
-        inplace=True,
-    )
-
-    # There is something weird happening where the number of buildings with less than 30m2 built before
-    # 1919 increases over time. Maybe they are re-arranging the internal space?
-    # Save number of bld (to compute avg size)
-    dm_num_bld = dm_floor_area.groupby(
-        {"bld_stock-number-bld": ".*"}, dim="Variables", regex=True, inplace=False
-    )
-
-    ## Compute total floor space
-    # Drop split by size
-    dm_floor_area.rename_col_regex(" m2", "", "Variables")
-    # The average size for less than 30 is a guess, as is the average size for 150+,
-    # we will use the data from bfs to calibrate
-    avg_size = {
-        "<30": 25,
-        "30-49": 39.5,
-        "50-69": 59.5,
-        "70-99": 84.5,
-        "100-149": 124.5,
-        "150+": 175,
-    }
-
-    dm_num_bld_per_size_per_type = dm_floor_area.copy()
-    idx = dm_floor_area.idx
-    for size in dm_floor_area.col_labels["Variables"]:
-        dm_floor_area.array[:, :, idx[size], :, :] = (
-            avg_size[size] * dm_floor_area.array[:, :, idx[size], :, :]
-        )
-
-    dm_floor_area.groupby(
-        {"bld_floor-area_stock": ".*"}, dim="Variables", regex=True, inplace=True
-    )
-    dm_floor_area.change_unit("bld_floor-area_stock", 1, "number", "m2")
-
-    return dm_floor_area, dm_num_bld, dm_num_bld_per_size_per_type
-
-
 def replace_years_by_corresponding_categories_for_specified_household(
     dm_num_bld, env_cat, type_households="single-family-households"
 ):
@@ -164,7 +74,7 @@ def compute_renovation_loi_energie(
     DM_buildings: DataMatrix,
     dm_num_bld_per_size_per_type: DataMatrix,
 ):
-    """_summary_
+    """
 
     Args:
         dm_stock_area (DataMatrix): _description_
@@ -228,24 +138,42 @@ def compute_renovation_loi_energie(
         #     unit="%",
         # )
 
-    resting_toget_to_20 = 0.20 - (array_ratio["150+"] + array_ratio["100-149"])
+    resting_toget_to_20 = 0.20 - (
+        array_ratio["160 and more"]
+        + array_ratio["120 - 159"]
+        + array_ratio["100 - 119"]
+    )
 
     # we only want the twentypercent  biggest buildings to be renovated
     # For this we need the percentage of dwellings with area between 100-149 meter square to be renovated and we renovate and the buildings
     # with area bigger than 150 meter
-    percent_building_renvoated_70_99 = resting_toget_to_20 / array_ratio["70-99"]
+    percent_building_renvoated_80_99 = resting_toget_to_20 / array_ratio["80 - 99"]
     # We want to convert the number of building to the floor area that need to be renovated, and we assume that the average size of building bigger than 150m2 is 175m2
     # and the average size of building between 100 and 149 is 124.5 m2
-    area_necessary_renovated = (
-        dm_num_bld_F.array[idx["Vaud"], idx[2023], idx["150+"]] * 175
-    )
+    # For multi area households
+    avg_size_multi = {
+        "Less than 60": 30,
+        "60 - 79": 69.5,
+        "80 - 99": 89.5,
+        "100 - 119": 109.5,
+        "120 - 159": 139.5,
+        "160 and more": 170,
+    }
+    area_necessary_renovated = 0
+    for size in ["160 and more", "120 - 159", "100 - 119"]:
+        area_necessary_renovated = (
+            dm_num_bld_F.array[
+                idx["Vaud"], idx[2023], idx[size], idx["multi-family-households"]
+            ]
+            * avg_size_multi[size]
+        )
+
     area_necessary_renovated += (
-        dm_num_bld_F.array[idx["Vaud"], idx[2023], idx["100-149"]] * 124.5
-    )
-    area_necessary_renovated += (
-        dm_num_bld_F.array[idx["Vaud"], idx[2023], idx["70-99"]]
-        * percent_building_renvoated_70_99
-        * 84.5
+        dm_num_bld_F.array[
+            idx["Vaud"], idx[2023], idx["80 - 99"], idx["multi-family-households"]
+        ]
+        * percent_building_renvoated_80_99
+        * avg_size_multi["80 - 99"]
     )
 
     idx = dm_bld.idx
@@ -290,7 +218,7 @@ def compute_renovation_loi_energie(
         idx_fts[-1],
         idx["bld_renovation-rate"],
         idx["multi-family-households"],
-    ] = (renovation_rate_F * 0.85 + renovation_E[-1])[0]
+    ] = renovation_rate_F * 0.85 + renovation_E[-1]
 
     return dm_rr_fts_2, ren_rate_min_class_F
 
@@ -533,18 +461,22 @@ def compute_renov_fts_mapping(renov_distrib_fts: DataMatrix):
 def run(
     DM_buildings, dm_stock_cat, dm_pop, global_var, country_list, lev=2
 ):  # lever =2 for energy law and 3 for PCV 4 is perfect world 1 is BAU
-    construction_period_envelope_cat_sfh = global_var["envelope construction sfh old"]
-    construction_period_envelope_cat_mfh = global_var["envelope construction mfh old"]
+    construction_period_envelope_cat_sfh = global_var["envelope construction sfh"]
+    construction_period_envelope_cat_mfh = global_var["envelope construction mfh"]
 
     # SECTION: Loi Energie - Renovation fts
     # LEVEL 2 Vaud: Loi Energie + Plan Climat
     # According to the Loi Energie, buildings in categories F,G > 750 m2 will have to be renovated before 2035,
     # They estimate this corresponds to 90'000 multi-family-households being renovated before 2035.
-    table_id = "px-x-0902020200_103"
+    # https://stats.swiss/vis?lc=fr&df[ds]=disseminate&df[id]=DF_GWS_REG7&df[ag]=CH1.GWS&dq=A....8100&lom=LASTNPERIODS&lo=1&to[TIME_PERIOD]=false
+    agency = "CH1.GWS"
+    dataflow = "DF_GWS_REG7"
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    file = os.path.join(this_dir, "../data/bld_floor-area_stock.pickle")
-    dm_stock_area, dm_num_bld, dm_num_bld_per_size_per_type = extract_stock_floor_area(
-        table_id, file
+    file = file = os.path.join(
+        this_dir, "../data/bld_floor-area_stock_all_cantons_swiss_stat.pickle"
+    )
+    dm_stock_area, dm_num_bld, dm_num_bld_per_size_per_type = (
+        extract_stock_floor_area_num_bld(file, agency, dataflow)
     )
 
     dm_stock_area = dm_stock_area.filter({"Country": country_list}).copy()
@@ -655,10 +587,9 @@ def run(
         idx_fts[-1],
         idx_renov_old["bld_renovation-rate"],
         idx_renov_old["multi-family-households"],
-    ] = (
-        (ren_rate_tot_under_750 / (yrs_fts[-1] - yrs_fts[0] + 1)) * 0.85
-        + renov_yr_E["multi-family-households"][-1]
-    )[0]
+    ] = (ren_rate_tot_under_750 / (yrs_fts[-1] - yrs_fts[0] + 1)) * 0.85 + renov_yr_E[
+        "multi-family-households"
+    ][-1]
 
     prop_E_renovated_before_2035_lev_4 = (
         renov_yr_E["single-family-households"][1]
