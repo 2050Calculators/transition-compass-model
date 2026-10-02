@@ -4,29 +4,6 @@ import pickle
 import numpy as np
 
 
-def bld_power_interface(dm_appliances, dm_energy, dm_fuel, dm_light_heat):
-    dm_light_heat.append(dm_appliances, dim="Variables")  # append appliances
-    dm_light_heat.append(dm_fuel, dim="Variables")  # append hot-water
-    dm_light_heat.deepen_twice()
-
-    # space-cooling to separate dm
-    dm_cooling = dm_light_heat.filter({"Categories2": ["space-cooling"]})
-    dm_light_heat.drop(col_label="space-cooling", dim="Categories2")
-
-    # split space-heating and heatpumps
-    dm_energy.deepen_twice()
-    dm_heating = dm_energy.filter({"Categories2": ["space-heating"]})
-    dm_heatpumps = dm_energy.filter({"Categories2": ["heatpumps"]})
-
-    DM_pow = {
-        "appliance": dm_light_heat,
-        "space-heating": dm_heating,
-        "heatpump": dm_heatpumps,
-        "cooling": dm_cooling,
-    }
-    return DM_pow
-
-
 def bld_emissions_interface(
     dm_emissions_heating,
     dm_hotwater=None,

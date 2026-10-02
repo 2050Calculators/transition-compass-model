@@ -21,7 +21,6 @@ from . import (
     lifestyles_module,
     minerals_module,
     oilrefinery_module,
-    power_module,
     transport,
     transport_module,
 )
@@ -43,7 +42,6 @@ __all__ = [
     "lifestyles_module",
     "minerals_module",
     "oilrefinery_module",
-    "power_module",
     "transport_module",
     "buildings",
     "common",

@@ -15,7 +15,6 @@ from transition_compass_model.model.energy_module import energy
 from transition_compass_model.model.forestry_module import forestry
 from transition_compass_model.model.industry_module import industry
 
-# from model.power_module import power
 # from model.landuse_module import land_use
 # from model.oilrefinery_module import refinery
 from transition_compass_model.model.lca_module import lca
@@ -194,9 +193,6 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
     # start_time = time.time()
     # TPE['ammonia'] = ammonia(lever_setting, years_setting, interface)
     # logger.info('Execution time Ammonia: {0:.3g} s'.format(time.time() - start_time))
-    # start_time = time.time()
-    # TPE['power'] = power(lever_setting, years_setting, interface)
-    # logger.info('Execution time Power: {0:.3g} s'.format(time.time() - start_time))
     # start_time = time.time()
     # TPE['oil-refinery'] = refinery(lever_setting, years_setting, interface)
     # logger.info('Execution time Oil-refinery: {0:.3g} s'.format(time.time() - start_time))
