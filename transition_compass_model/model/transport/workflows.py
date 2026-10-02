@@ -225,34 +225,9 @@ def passenger_fleet_energy(
     )
     dm_emissions_by_mode_scope_1.group_all("Categories2", inplace=True)
 
-    # SECTION Passenger - GHG Emissions EV
-    # Compute emissions from electricity
-    dm_energy_EV = dm_energy.filter({"Categories2": ["BEV", "CEV"]})
-    dm_fact = DM_other["electricity-emissions"]
-    idx_f = dm_fact.idx
-    idx_e = dm_energy_EV.idx
-    arr = (
-        dm_energy_EV.array[:, :, idx_e["tra_passenger_energy-demand"], :, :, np.newaxis]
-        * dm_fact.array[
-            :,
-            :,
-            idx_f["tra_emission-factor"],
-            np.newaxis,
-            np.newaxis,
-            :,
-            idx_f["electricity"],
-        ]
-    )
-    dm_emissions_elec = DataMatrix.based_on(
-        arr[:, :, np.newaxis, ...],
-        dm_energy_EV,
-        change={
-            "Variables": ["tra_passenger_emissions"],
-            "Categories3": dm_fact.col_labels["Categories1"],
-        },
-        units={"tra_passenger_emissions": "g"},
-    )
-    dm_emissions.append(dm_emissions_elec, dim="Categories2")
+    # TODO: electricity emissions (BEV/CEV) are not counted in transport for now.
+    # They need the grid emission factor from the energy module rather than the
+    # placeholder DM_other["electricity-emissions"].
     dm_emissions.change_unit("tra_passenger_emissions", 1e-12, "g", "Mt")
 
     # SECTION Prepare output
@@ -263,7 +238,6 @@ def passenger_fleet_energy(
             "diesel": ".*diesel",
             "gasoline": ".*gasoline",
             "gas": ".*gas",
-            "electricity": ".*EV",
         },
         dim="Categories1",
         regex=True,
@@ -339,7 +313,7 @@ def passenger_fleet_energy(
         {
             "Categories1": ["aviation"],
             "Categories3": ["CO2"],
-            "Categories2": ["SAF", "BEV", "H2", "kerosene"],
+            "Categories2": ["SAF", "H2", "kerosene"],
         }
     )
 
@@ -445,6 +419,7 @@ def passenger_fleet_energy(
     DM_passenger_out["agriculture"] = dm_biogas
     DM_passenger_out["emissions"] = dm_emissions_by_mode
     DM_passenger_out["emissions_scope1"] = dm_emissions_by_mode_scope_1
+    DM_passenger_out["emissions_by_fuel"] = dm_emissions_by_fuel
     DM_passenger_out["energy"] = dm_energy
     DM_passenger_out["soft-mobility"] = dm_demand_soft
     DM_passenger_out["aviation"] = {
@@ -736,10 +711,18 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
         inplace=True,
     )
 
-    dm_energy_aviation = dm_energy_aviation.groupby(
-        {"ejetfuel": ["ICEefuel"], "biojetfuel": ["ICEbio"]},
-        inplace=False,
-        dim="Categories2",
+    # Road carries empty (NaN) columns for the aviation/marine technologies:
+    # drop them so the aviation and marine fuels below can be appended.
+    dm_energy.drop(
+        dim="Categories2", col_label=["ICE", "ICEbio", "kerosene", "kerosenebio"]
+    )
+
+    # Freight aircraft run on kerosene only (fossil, bio and e-fuel blends)
+    dm_energy_aviation.rename_col(
+        ["kerosenebio", "keroseneefuel"], ["biojetfuel", "ejetfuel"], dim="Categories2"
+    )
+    dm_energy_aviation.filter(
+        {"Categories2": ["kerosene", "biojetfuel", "ejetfuel"]}, inplace=True
     )
 
     dm_energy_marine.rename_col(
@@ -878,6 +861,7 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     DM_freight_out["energy"] = dm_total_energy
     DM_freight_out["agriculture"] = dm_biogas
     DM_freight_out["emissions"] = dm_emissions_by_mode
+    DM_freight_out["emissions_by_fuel"] = dm_emissions_by_fuel
 
     return DM_freight_out
 

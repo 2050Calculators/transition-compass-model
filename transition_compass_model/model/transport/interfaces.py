@@ -353,7 +353,90 @@ def compute_aviation_emission_variants(DM_passenger_out):
     return dm
 
 
+# Fuel labels used by passenger and freight, grouped into the families shown
+# in the whole-transport "by fuel" charts. Labels not listed keep their name.
+FUEL_FAMILIES = {
+    "biofuels": [
+        "biodiesel",
+        "biogas",
+        "biogasoline",
+        "kerosenebio",
+        "biojetfuel",
+        "biomarinefueloil",
+    ],
+    "efuels": ["efuel", "ejetfuel", "emarinefueloil"],
+    "marine-fuel-oil": ["marinefueloil"],
+    "hydrogen": ["hydrogen", "H2"],
+}
+
+
+def _group_fuel_families(dm):
+    labels = dm.col_labels["Categories1"]
+    groups = {}
+    for family, fuels in FUEL_FAMILIES.items():
+        present = [f for f in fuels if f in labels]
+        if present:
+            groups[family] = present
+    dm.groupby(groups, dim="Categories1", inplace=True)
+    return dm
+
+
+def _sum_by_fuel(dm_list, variable):
+    # Sum datamatrices (Categories1 = fuel) whose fuel lists may differ
+    fuels = sorted(set().union(*[dm.col_labels["Categories1"] for dm in dm_list]))
+    dm_out = None
+    for dm in dm_list:
+        dm.rename_col(dm.col_labels["Variables"][0], variable, dim="Variables")
+        missing = [f for f in fuels if f not in dm.col_labels["Categories1"]]
+        if missing:
+            dm.add(0, dummy=True, dim="Categories1", col_label=missing)
+        dm.sort("Categories1")
+        if dm_out is None:
+            dm_out = dm
+        else:
+            dm_out.array = np.nansum([dm_out.array, dm.array], axis=0)
+    return dm_out
+
+
+def compute_transport_by_fuel(DM_passenger_out, DM_freight_out):
+    """Passenger + freight energy demand [TWh] and CO2e emissions [Mt] by fuel family.
+
+    Energy covers all modes, aviation included. Emissions are direct (scope 1),
+    so electricity does not appear; they add up to the by-mode CO2e emissions.
+    """
+    dm_pass_land = DM_passenger_out["energy"].copy()
+    dm_pass_aviation = DM_passenger_out["aviation"]["energy"].copy()
+    dm_pass_aviation.group_all("Categories1", inplace=True)
+    dm_energy = _sum_by_fuel(
+        [
+            _group_fuel_families(dm_pass_land),
+            _group_fuel_families(dm_pass_aviation),
+            _group_fuel_families(DM_freight_out["energy"].copy()),
+        ],
+        variable="tra_energy-demand-by-fuel",
+    )
+
+    dm_emi_pass = convert_to_cO2eq_emissions(
+        DM_passenger_out["emissions_by_fuel"].copy()
+    )
+    dm_emi_freight = convert_to_cO2eq_emissions(
+        DM_freight_out["emissions_by_fuel"].copy()
+    )
+    dm_emissions = _sum_by_fuel(
+        [_group_fuel_families(dm_emi_pass), _group_fuel_families(dm_emi_freight)],
+        variable="tra_emissions-CO2e-by-fuel",
+    )
+
+    return dm_energy, dm_emissions
+
+
 def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
+    # Whole-transport (passenger + freight) totals by fuel family. Built first,
+    # because the aviation energy below is regrouped in place.
+    dm_energy_by_fuel, dm_emissions_by_fuel = compute_transport_by_fuel(
+        DM_passenger_out, DM_freight_out
+    )
+
     # Aviation Energy-demand
     dm_keep_aviation_energy = DM_passenger_out["aviation"]["energy"]
     dm_keep_aviation_energy.groupby(
@@ -480,10 +563,15 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
     # Freight emissions still carry the gas dimension here, unlike passenger which
     # transport_module has already converted, so apply the same GWP helper.
     dm_emi_freight = convert_to_cO2eq_emissions(DM_freight_out["emissions"].copy())
-    dm_emi_freight.group_all("Categories1", inplace=True)
+    dm_emi_freight.groupby(
+        {"HDV": ["HDVH", "HDVM", "HDVL"]}, dim="Categories1", inplace=True
+    )
     dm_emi_freight.rename_col(
         "tra_freight_emissions", "tra_emissions-CO2e_freight", dim="Variables"
     )
+    # Per mode, for the combined passenger + freight emissions chart
+    dm_emi_freight_by_mode = dm_emi_freight.copy()
+    dm_emi_freight.group_all("Categories1", inplace=True)
 
     dm_energy_pass_land = dm_keep_mode.filter(
         {
@@ -525,6 +613,9 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
     dm_tpe.append(dm_emi_freight.flattest(), dim="Variables")
     dm_tpe.append(dm_energy_pass_land.flattest(), dim="Variables")
     dm_tpe.append(dm_energy_freight_tot.flattest(), dim="Variables")
+    dm_tpe.append(dm_emi_freight_by_mode.flattest(), dim="Variables")
+    dm_tpe.append(dm_energy_by_fuel.flattest(), dim="Variables")
+    dm_tpe.append(dm_emissions_by_fuel.flattest(), dim="Variables")
 
     DM_kpi_dict = {
         "emission_pass": DM_passenger_out["emissions"].copy(),
