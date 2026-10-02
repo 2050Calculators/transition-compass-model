@@ -936,6 +936,16 @@ def append_cantonal_capacity(
         np.nan, dummy=True, dim="Years", col_label=missing_years
     )
     dm_cantonal_new_capacity.sort("Years")
+    # Same aggregation as prepare_TPE_output, which this bypasses, so the cantonal
+    # capacity chart carries the same technology groupings as the national ones.
+    dm_cantonal_new_capacity.groupby(
+        {"Gas": ["GasCC", "GasCC-CCS", "GasCC-Syn", "GasSC"]},
+        dim="Categories1",
+        inplace=True,
+    )
+    dm_cantonal_new_capacity.groupby(
+        {"Hydro": ["Dam", "RoR"]}, dim="Categories1", inplace=True
+    )
     results_run.append(dm_cantonal_new_capacity.flattest(), dim="Variables")
     return results_run
 

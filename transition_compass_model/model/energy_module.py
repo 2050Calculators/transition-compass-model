@@ -84,10 +84,15 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
         )
         with open(agr_file, "rb") as handle:
             DM_agriculture = pickle.load(handle)
-        if ("Vaud" in country_list) and (
-            "Vaud" not in DM_agriculture["power"].col_labels["Country"]
-        ):
-            DM_agriculture["power"].add(0, dim="Country", dummy=True, col_label="Vaud")
+        # The pickle only covers whichever regions it was last generated for, so fill
+        # any requested region that is absent with zeros rather than letting the filter
+        # below fail on an empty selection. Agricultural electricity is 0 by design
+        # anyway (see the note in agriculture_energy_interface), so this loses nothing.
+        for cntr in country_list:
+            if cntr not in DM_agriculture["power"].col_labels["Country"]:
+                DM_agriculture["power"].add(
+                    0, dim="Country", dummy=True, col_label=cntr
+                )
         filter_DM(DM_agriculture, {"Country": country_list})
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
