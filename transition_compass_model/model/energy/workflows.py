@@ -746,6 +746,13 @@ def apply_power_capacity_levers(m, DM_lever_fts, lever_setting, nuclear_curve_mw
     m.f_min["NUCLEAR"] = nuclear_frozen_gw
     m.f_max["NUCLEAR"] = nuclear_frozen_gw
 
+    # TODO: PV and wind levers only set the maximum available capacity (f_max). The
+    # optimizer decides how much is actually built, so a higher lever level doesn't
+    # guarantee more deployment. Make the levers control actual deployment (e.g. also
+    # set f_min / impose the lever curve), consistent with nuclear, which is already
+    # frozen above. Once this changes, update the lever descriptions in speed-to-zero
+    # frontend/src/config/levers.ts (lever_pv-capacity, lever_onshore-wind-capacity),
+    # which currently describe an "upper limit".
     # Wind/PV stay continuous: only f_max is lever-controlled, f_min is left free (today's
     # installed capacity, from impose_capacity_constraints_pyomo), so the optimizer decides
     # how much of the allowed range to actually build. f_max is snapped *up* to the nearest

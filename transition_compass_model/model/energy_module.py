@@ -11,6 +11,21 @@ from transition_compass_model.model.common.interface_class import Interface
 
 
 def energy(lever_setting, years_setting, country_list, interface=Interface()):
+    # TODO: open work items for the energy module (details next to the relevant code):
+    #   - Hydro capacity factors are scaled by hardcoded 1.3 (dam) / 1.4 (run-of-river)
+    #     factors to match historical and forecasted production, although the real
+    #     ratio changes meaningfully over time. See energy/interfaces.py.
+    #   - Onshore-wind potential (pow_capacity-Pmax_WindOn) is far higher than what can
+    #     realistically be built in Switzerland. Fix in pre_processing/power/Switzerland/
+    #     processors/renewable_capacity_pipeline_CH.py.
+    #   - PV and wind capacity levers only set the maximum available capacity (f_max);
+    #     they should control actual deployment, as nuclear already does. See
+    #     apply_power_capacity_levers in energy/workflows.py.
+    #   - Frontend (speed-to-zero energy.json): show a warning when electricity
+    #     net-import exceeds 5 TWh/year.
+    #   - Frontend: harmonise graph colours across sectors.
+    #   - Frontend: add two levers for the electrification of the buildings and
+    #     transport sectors.
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     years_fts = create_years_list(years_setting[2], years_setting[3], years_setting[4])
     years_ots = create_years_list(years_setting[0], years_setting[1], 1)

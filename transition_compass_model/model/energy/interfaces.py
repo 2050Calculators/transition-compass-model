@@ -737,6 +737,12 @@ def impose_capacity_constraints_pyomo(m, endyr, dm_capacity, country):
         m.f_min[non_ren] = existing_cap
         m.f_max[non_ren] = max_cap
 
+    # TODO: the 1.3 (dam) and 1.4 (run-of-river) factors below are a calibration hack
+    # to make historical and forecasted hydro production match, so the resulting
+    # hydro output is not reliable. They are applied flat to every period, but the
+    # real capacity/production ratio changes meaningfully over time. Replace with a
+    # proper calibration (e.g. year-dependent, or fix the c_p_t / capacity inputs at
+    # the source).
     # For hydro historical efficiency and forecasted efficiency do not match
     # The adjusting factors I am using here are chosen so that the final efficiency
     # (capacity factor) look coherent
