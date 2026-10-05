@@ -61,16 +61,21 @@ def compute_passenger_new_fleet(
         # Extract the cantonal % of the swiss new vehicles in 2005 and uses it to determine Vaud fleet in 1990-2004
         dm_tmp = dm_tech.group_all(dim="Categories2", inplace=False)
         idx = dm_tmp.idx
-        arr_shares = (
-            dm_tmp.array[idx["Vaud"], 0, :, :]
-            / dm_tmp.array[idx["Switzerland"], 0, :, :]
-        )
-        idx_ch = dm_CH.idx
-        arr_VD = (
-            dm_CH.array[idx_ch["Switzerland"], :, :, :] * arr_shares[np.newaxis, :, :]
-        )
+        cantons_list = [i for i in country_list if i != "Switzerland"]
         dm = dm_CH.copy()
-        dm.add(arr_VD, dim="Country", col_label="Vaud")
+        for canton in cantons_list:
+            arr_shares = (
+                dm_tmp.array[idx[canton], 0, :, :]
+                / dm_tmp.array[idx["Switzerland"], 0, :, :]
+            )
+            idx_ch = dm_CH.idx
+            arr_VD = (
+                dm_CH.array[idx_ch["Switzerland"], :, :, :]
+                * arr_shares[np.newaxis, :, :]
+            )
+
+            dm.add(arr_VD, dim="Country", col_label=canton)
+        dm.sort("Country")
         return dm
 
     ### New Passenger fleet for Switzerland and Vaud from 1990-2023
@@ -270,8 +275,10 @@ def run(dm_pkm, years_ots):
     # https://www.bfs.admin.ch/asset/fr/px-x-1103020100_101
     table_id_tot_veh = "px-x-1103020100_101"
     file_tot_veh = os.path.join(this_dir, "../data/tra_tot_fleet.pickle")
-    dm_pass_fleet_raw_old = get_data.get_passenger_stock_fleet_by_tech_raw_ofs_api(
-        table_id_tot_veh, file_tot_veh
+    dm_pass_fleet_raw_old = (
+        get_data.get_passenger_stock_fleet_by_tech_raw_local_archive(
+            table_id_tot_veh, file_tot_veh
+        )
     )
 
     #### Passenger fleet by technology (stock) LDV, 2W 2005-2025

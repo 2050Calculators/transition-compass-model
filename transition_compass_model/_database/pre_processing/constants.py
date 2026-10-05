@@ -1,14 +1,4 @@
-from transition_compass_model.model.common.auxiliary_functions import (
-    create_years_list,
-)
-
-years_ots = create_years_list(1990, 2023, 1)
-years_fts = create_years_list(2025, 2050, 5)
-
-country_list = ["Switzerland", "Vaud"]
-
-
-cantons_name = {
+CANTONS_NAME = {
     "accronym_to_name": {
         "AG": "Aargau",
         "AR": "Appenzell Ausserrhoden",
@@ -66,4 +56,21 @@ cantons_name = {
         "Zug": "ZG",
         "Zurich": "ZH",
     },
+}
+GRANDE_REGION_CANTONS = {
+    "Région lémanique": ["Geneva", "Valais", "Vaud"],
+    "Espace Mittelland": ["Bern", "Fribourg", "Jura", "Neuchatel", "Solothurn"],
+    "Suisse du Nord-Ouest": ["Aargau", "Basel-Landschaft", "Basel-Stadt"],
+    "Zurich": ["Zurich"],
+    "Suisse orientale": [
+        "Appenzell Ausserrhoden",
+        "Appenzell Innerrhoden",
+        "Glarus",
+        "Graubunden",
+        "St. Gallen",
+        "Schaffhausen",
+        "Thurgau",
+    ],
+    "Suisse centrale": ["Lucerne", "Nidwalden", "Obwalden", "Schwyz", "Uri", "Zug"],
+    "Tessin": ["Ticino"],
 }

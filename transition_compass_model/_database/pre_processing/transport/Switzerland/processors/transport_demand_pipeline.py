@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 
+from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
     utils,
 )
@@ -9,6 +10,7 @@ from transition_compass_model._database.pre_processing.transport.Switzerland.get
     get_transport_demand_pkm,
     get_transport_demand_vkm,
     get_travel_demand_region_microrecencement,
+    pkm_MRMT,
 )
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
@@ -27,13 +29,13 @@ def extrapolate_missing_pkm_cap_based_on_pkm_CH(
 ):
     """
     Fills missing years in pkm/cap for Switzerland and Vaud based on the pkm curve of Switzerland, with the following steps:
-    1. Interpolate swiss MRMT data for missing year with FSO data (by doing ratio than linear interpolation)
-    2. Use swiss MRMt interpolate to interpolate vaud MRMT with the smae method as beforess
+    1. Interpolate swiss MRMT data for missing year with FSO data (by doing ratio and then linear interpolation)
+    2. Use swiss MRMt interpolate to interpolate vaud MRMT with the same method as before
     Args:
         dm_pkm_cap_MRMT (DataMatrix): _data for pkm/cap from the microrecencement, with missing years, for Switzerland and Vaud
         dm_pkm_CH (DataMatrix): pkm for Switzerland from FSO, with all years but no split for Vaud
-        dm_pop (DataMatrix): population data for Switzerland and Vaud, in cap
-        years_ots (list): list of years for which to compute the demand, in OTS (1990-2023)
+        dm_pop (DataMatrix): population data for Switzerland and Vaud
+        years_ots (list): list of years for which to compute the demand (1990-2023)
 
     Returns:
         DataMatrix: Adjusted pkm/cap for Switzerland and Vaud, with all years, in pkm/cap
@@ -72,27 +74,35 @@ def extrapolate_missing_pkm_cap_based_on_pkm_CH(
     )
 
     # For Vaud, extrapolate pkm/cap for all years based on the official pkm/cap of Switzerland and the ratio between MRMT and official for Switzerland (assuming same ratio applies to Vaud)
-    dm_tmp = dm_pkm_cap_new_CH.filter({"Variables": ["tra_pkm-cap_MRMT"]})
-    dm_tmp.rename_col("Switzerland", "Vaud", dim="Country")
-    dm_tmp.rename_col("tra_pkm-cap_MRMT", "tra_pkm-cap_MRMT_CH", dim="Variables")
-    dm_tmp.append(
-        dm_pkm_cap_MRMT.filter(
-            {"Country": ["Vaud"], "Categories1": dm_tmp.col_labels["Categories1"]}
-        ),
-        dim="Variables",
-    )
-    # fill missing years for Vaud based on the ratio of MRMT/official for Switzerland
-    dm_pkm_cap_new_VD = utils.fill_var_nans_based_on_var_curve(
-        dm_tmp, var_nan="tra_pkm-cap_MRMT", var_ref="tra_pkm-cap_MRMT_CH"
-    )
-    # No adjusting factors are used
-    dm_pkm_cap_new_VD.rename_col(
-        "tra_pkm-cap_MRMT", "tra_pkm-cap_official", dim="Variables"
-    )
-    # Keep only "official" data
+    dm_tmp_switzerland = dm_pkm_cap_new_CH.filter({"Variables": ["tra_pkm-cap_MRMT"]})
     dm_pkm_cap_new_CH.filter({"Variables": ["tra_pkm-cap_official"]}, inplace=True)
-    dm_pkm_cap_new_VD.filter({"Variables": ["tra_pkm-cap_official"]}, inplace=True)
-    dm_pkm_cap_new_CH.append(dm_pkm_cap_new_VD, dim="Country")
+
+    # ITerate over cantons and fill missing years based on the ratio of MRMT/official for Switzerland
+    cantons_list = [x for x in country_list if x != "Switzerland"]
+    for canton in cantons_list:
+        dm_tmp = dm_tmp_switzerland.copy()
+        dm_tmp.rename_col("Switzerland", canton, dim="Country")
+        dm_tmp.rename_col("tra_pkm-cap_MRMT", "tra_pkm-cap_MRMT_CH", dim="Variables")
+        dm_tmp.append(
+            dm_pkm_cap_MRMT.filter(
+                {"Country": [canton], "Categories1": dm_tmp.col_labels["Categories1"]}
+            ),
+            dim="Variables",
+        )
+        # fill missing years for Vaud based on the ratio of MRMT/official for Switzerland
+        dm_pkm_cap_new_canton = utils.fill_var_nans_based_on_var_curve(
+            dm_tmp, var_nan="tra_pkm-cap_MRMT", var_ref="tra_pkm-cap_MRMT_CH"
+        )
+        # No adjusting factors are used
+        dm_pkm_cap_new_canton.rename_col(
+            "tra_pkm-cap_MRMT", "tra_pkm-cap_official", dim="Variables"
+        )
+        # Keep only "official" data
+
+        dm_pkm_cap_new_canton.filter(
+            {"Variables": ["tra_pkm-cap_official"]}, inplace=True
+        )
+        dm_pkm_cap_new_CH.append(dm_pkm_cap_new_canton, dim="Country")
     dm_pkm_cap_new_CH.rename_col("tra_pkm-cap_official", "tra_pkm-cap", dim="Variables")
 
     return dm_pkm_cap_new_CH
@@ -111,10 +121,10 @@ def compute_pkm_from_pkm_cap(dm_pkm_cap, dm_pop):
     return dm_pkm
 
 
-def compute_vkm_CH_VD(dm_vkm_CH, dm_pkm_CH, dm_pkm):
+def compute_vkm_CH_canton(dm_vkm_CH, dm_pkm_CH, dm_pkm):
     """
-    Compute vkm for Switzerland and Vaud based on occupancy rate of Switzerland.
-    The occupancy rate is computed as pkm/vkm for Switzerland, and then applied to both Switzerland and Vaud to compute vkm from pkm.
+    Compute vkm for Switzerland and cantons based on occupancy rate of Switzerland.
+    The occupancy rate is computed as pkm/vkm for Switzerland, and then applied to both Switzerland and cantons to compute vkm from pkm.
     """
     # Occupancy = demand (pkm) / demand (vkm)
     dm_vkm_CH.append(
@@ -132,9 +142,14 @@ def compute_vkm_CH_VD(dm_vkm_CH, dm_pkm_CH, dm_pkm):
 
     # Extract occupancy and set same occupancy for CH and VD
     dm_occupancy = dm_vkm_CH.filter({"Variables": ["tra_passenger_occupancy"]})
-    dm_occupancy_VD = dm_occupancy.copy()
-    dm_occupancy_VD.rename_col("Switzerland", "Vaud", dim="Country")
-    dm_occupancy.append(dm_occupancy_VD, dim="Country")
+
+    cantons_list = [x for x in country_list if x != "Switzerland"]
+    # Add occupancy for cantons based on Switzerland occupancy
+    dm_occupancy_switzerland = dm_occupancy.copy()
+    for canton in cantons_list:
+        dm_occupancy_canton = dm_occupancy_switzerland.copy()
+        dm_occupancy_canton.rename_col("Switzerland", canton, dim="Country")
+        dm_occupancy.append(dm_occupancy_canton, dim="Country")
 
     dm_occupancy.append(
         dm_pkm.filter({"Categories1": dm_vkm_CH.col_labels["Categories1"]}),
@@ -223,6 +238,7 @@ def run(dm_pop_ots, years_ots):
         else:
             dm_pkm_cap_raw.append(dm, dim="Years")
     dm_pkm_cap_raw.sort("Years")
+    dm_pkm_cap_raw.filter({"Country": country_list}, inplace=True)
 
     # For Vaud, adjust pkm/cap for 2015 and 2021 with actual values (split unchanged)
     # !FIXME: This should be adjusted to all cantons!
@@ -231,23 +247,30 @@ def run(dm_pop_ots, years_ots):
     # https://www.bfs.admin.ch/bfs/fr/home/statistiques/mobilite-transports/transport-personnes/comportements-transports/tableaux-2021/cantons.assetdetail.24025445.html
     # FSO, 2017. Comportement de la population en matière de transport, chiffres clés par canton (MRMT).
     # https://www.bfs.admin.ch/bfs/fr/home/statistiques/mobilite-transports/transport-personnes/comportements-transports/tableaux-2015/cantons.html
-    VD_pkm_day = {2015: 38.2, 2021: 32.1}
-    idx = dm_pkm_cap_raw.idx
-    arr_tot_pkm_cap_raw = np.nansum(dm_pkm_cap_raw.array, axis=-1)
-    corr_fact = dict()
-    for yr in VD_pkm_day.keys():
-        corr_fact[yr] = arr_tot_pkm_cap_raw[
-            idx["Vaud"], idx[yr], idx["tra_pkm-cap"]
-        ] / (VD_pkm_day[yr] * 365)
-    avg_fact = sum(corr_fact.values()) / len(corr_fact.values())
 
-    for yr in dm_pkm_cap_raw.col_labels["Years"]:
-        if yr not in VD_pkm_day.keys():
-            corr_fact[yr] = avg_fact
-        dm_pkm_cap_raw.array[idx["Vaud"], idx[yr], idx["tra_pkm-cap"], :] = (
-            dm_pkm_cap_raw.array[idx["Vaud"], idx[yr], idx["tra_pkm-cap"], :]
-            / corr_fact[yr]
-        )
+    local_filename_2021 = os.path.join(
+        this_dir, "../data/MRMT/su-f-11.04.03-MZ-2021-A2_Kant.xlsx"
+    )
+    local_folder_2015 = os.path.join(this_dir, "../data/MRMT/2015/")
+    pkm_day = pkm_MRMT(local_folder_2015, local_filename_2021)
+    cantons_list = [x for x in country_list if x != "Switzerland"]
+    for canton in cantons_list:
+        idx = dm_pkm_cap_raw.idx
+        arr_tot_pkm_cap_raw = np.nansum(dm_pkm_cap_raw.array, axis=-1)
+        corr_fact = dict()
+        for yr in pkm_day[canton].keys():
+            corr_fact[yr] = arr_tot_pkm_cap_raw[
+                idx[canton], idx[yr], idx["tra_pkm-cap"]
+            ] / (pkm_day[canton][yr] * 365)
+        avg_fact = sum(corr_fact.values()) / len(corr_fact.values())
+
+        for yr in dm_pkm_cap_raw.col_labels["Years"]:
+            if yr not in pkm_day[canton].keys():
+                corr_fact[yr] = avg_fact
+            dm_pkm_cap_raw.array[idx[canton], idx[yr], idx["tra_pkm-cap"], :] = (
+                dm_pkm_cap_raw.array[idx[canton], idx[yr], idx["tra_pkm-cap"], :]
+                / corr_fact[yr]
+            )
 
     # For the missing years extrapolate the pkm/cap value base on the pkm curve of Switzerland
     dm_pkm_cap = extrapolate_missing_pkm_cap_based_on_pkm_CH(
@@ -257,8 +280,8 @@ def run(dm_pop_ots, years_ots):
     dm_pkm = compute_pkm_from_pkm_cap(dm_pkm_cap, dm_pop_ots)
     del dm_pkm_cap_raw, dm, local_filename_dict, file_url_dict, year
 
-    # Re-compute vkm CH and extrapolate VD by enforcing vkm/pkm_VD = vkm/pkm_CH
-    dm_vkm = compute_vkm_CH_VD(dm_vkm_CH, dm_pkm_CH, dm_pkm)
+    # Re-compute vkm CH and extrapolate per canton by enforcing vkm/pkm_canton = vkm/pkm_CH (occupancy canton = occupancy switzerland)
+    dm_vkm = compute_vkm_CH_canton(dm_vkm_CH, dm_pkm_CH, dm_pkm)
 
     return dm_pkm_cap, dm_pkm, dm_vkm
 
