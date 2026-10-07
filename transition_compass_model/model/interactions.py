@@ -142,7 +142,7 @@ def runner(lever_setting, years_setting, DM_in, sectors, logger):
         )
     if "industry" in sectors:
         start_time = time.time()
-        TPE["industry"] = industry(
+        TPE["industry"], KPI["industry"] = industry(
             lever_setting, years_setting, DM_input["industry"], interface
         )
         logger.info(
