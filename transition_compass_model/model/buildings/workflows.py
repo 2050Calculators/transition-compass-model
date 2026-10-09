@@ -266,6 +266,15 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots, years_f
     dm_bld_tot = compute_stock_fts(DM, years_ots, years_fts)
     del DM, dm_bld_ots
 
+    res_types = ["multi-family-households", "single-family-households"]
+    nonres_types = [
+        t for t in dm_bld_tot.col_labels["Categories1"] if t not in res_types
+    ]
+    # Building types -> building use, for outputs split residential / non-residential
+    use_groups = {"residential": res_types}
+    if nonres_types:
+        use_groups["non-residential"] = nonres_types
+
     ########################
     ####   CUMULATED    ####
     ########################
@@ -305,7 +314,7 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots, years_f
     )
 
     dm_cumulated.group_all("Categories2")
-    dm_cumulated.group_all("Categories1")
+    dm_cumulated.groupby(use_groups, dim="Categories1", inplace=True)
     dm_cumulated.filter(
         {
             "Variables": [
@@ -326,7 +335,6 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots, years_f
     dm_bld_tot.filter({"Years": years_ots + years_fts}, inplace=True)
 
     # SECTION Prepare output
-    res_types = ["multi-family-households", "single-family-households"]
     flow_vars = [
         "bld_floor-area_new",
         "bld_floor-area_renovated",
@@ -344,9 +352,6 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots, years_f
     DM_industry = {}
     DM_industry["floor-area"] = dm_industry.copy()
 
-    nonres_types = [
-        t for t in dm_bld_tot.col_labels["Categories1"] if t not in res_types
-    ]
     if nonres_types:
         dm_nonres = dm_bld_tot.filter(
             {"Variables": flow_vars, "Categories1": nonres_types}
@@ -401,6 +406,9 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots, years_f
         "TPE": {
             "floor-area-cumulated": dm_cumulated,
             "floor-area-cat": dm_stock.group_all("Categories1", inplace=False),
+            "floor-area-use-cat": dm_stock.groupby(
+                use_groups, dim="Categories1", inplace=False
+            ),
             "floor-area-bld-type": dm_stock.group_all("Categories2", inplace=False),
         },
         "wf-energy": dm_bld_tot,
@@ -427,7 +435,7 @@ def multiply_energy_consumption_by_emission_factor_fxa(
             dm_tech[:, :, variable_name, :, :]
             * dm_emis_tech[:, :, "bld_CO2-factor", np.newaxis, :]
         )
-        new_var = "services_CO2-emissions_heating"
+        new_var = "services_CO2-emissions_hot-water"
 
     elif variable_name == "bld_hot-water_energy-demand":
         arr = dm_tech[:, :, variable_name, :] * dm_emis_tech[:, :, "bld_CO2-factor", :]
@@ -612,13 +620,21 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
     )
 
     # Join fossil and electricity
+    # dm_elec is 0 everywhere
     dm_emissions.append(dm_elec, dim="Categories3")
     dm_emissions.append(dm_district_heating, dim="Categories3")
 
     dm_emiss_by_class = dm_emissions.group_all("Categories3", inplace=False)
     dm_emiss_by_class.group_all("Categories1")
     dm_emissions.group_all("Categories2")
-    dm_emissions.group_all("Categories1")
+    dm_emissions.groupby(
+        {
+            "services": ["education", "health", "hotels", "offices", "other", "trade"],
+            "residential": ["multi-family-households", "single-family-households"],
+        },
+        dim="Categories1",
+        inplace=True,
+    )
 
     # SECTION Prepare output
     #########################
@@ -1536,7 +1552,7 @@ def compute_emissions_per_fuel_type_from_energy(
     emission_factor_district_heating,
     energy_consumption_col,
     fuel_category: str,
-    output_label="services_CO2-emissions_heating",
+    output_label="services_CO2-emissions_hot-water",
 ):
     # Filter fossil fuels
     cdm_emission = cdm_const["emissions"]
@@ -1644,6 +1660,71 @@ def bld_hotwater_workflow(
     return DM_hotwater_out
 
 
+def compute_services_hot_water_emissions(
+    dm_srv_tech_mix, cdm_const, dm_dh_emission_factor
+):
+    # Non-residential hot-water CO2 emissions by fuel (Mt). Space-heating emissions are
+    # computed in bld_energy_workflow (full stock), elec and lighting have no scope 1.
+    cdm_emission = cdm_const["emissions"]
+    dm_srv_emissions = dm_srv_tech_mix.filter(
+        {
+            "Categories2": cdm_emission.col_labels["Categories1"],
+            "Categories1": ["hot-water"],
+            "Variables": ["bld_services_energy-consumption"],
+        }
+    )
+    dm_srv_emissions.sort("Categories2")
+    cdm_emission.sort("Categories1")
+    arr = (
+        dm_srv_emissions[:, :, "bld_services_energy-consumption", :, :]
+        * cdm_emission[np.newaxis, np.newaxis, "bld_CO2-factors", np.newaxis, :]
+    )
+    dm_srv_emissions.add(
+        arr, dim="Variables", col_label="services_CO2-emissions_hot-water", unit="kt"
+    )
+    dm_srv_emissions.change_unit("services_CO2-emissions_hot-water", 1e-3, "kt", "Mt")
+    dm_srv_emissions.filter(
+        {"Variables": ["services_CO2-emissions_hot-water"]}, inplace=True
+    )
+
+    dm_district_consumption = dm_srv_tech_mix.filter(
+        {
+            "Categories2": ["district-heating"],
+            "Categories1": ["hot-water"],
+            "Variables": ["bld_services_energy-consumption"],
+        }
+    )
+    # DH CO2 proxy — see comment in bld_energy_workflow; remove when DH module is activated.
+    dm_district_emissions = multiply_energy_consumption_by_emission_factor_fxa(
+        dm_district_consumption,
+        dm_dh_emission_factor,
+        variable_name="bld_services_energy-consumption",
+    )
+    dm_srv_emissions.append(dm_district_emissions, dim="Categories2")
+
+    # Electricity and heat-pump emissions: zeroed — scope 1 attributed to energy module
+    dm_elec_srv = dm_srv_tech_mix.filter(
+        {
+            "Categories2": ["electricity", "heat-pump"],
+            "Categories1": ["hot-water"],
+            "Variables": ["bld_services_energy-consumption"],
+        }
+    )
+    arr = np.zeros_like(dm_elec_srv[:, :, "bld_services_energy-consumption", :, :])
+    dm_elec_srv.add(
+        arr, dim="Variables", col_label="services_CO2-emissions_hot-water", unit="kt"
+    )
+    dm_elec_srv.change_unit("services_CO2-emissions_hot-water", 1e-3, "kt", "Mt")
+    dm_elec_srv.filter(
+        {"Variables": ["services_CO2-emissions_hot-water"]}, inplace=True
+    )
+    dm_srv_emissions.append(dm_elec_srv, dim="Categories2")
+
+    dm_srv_emissions.group_all("Categories1")
+
+    return dm_srv_emissions
+
+
 # Non-residential services are kept in a separate workflow from residential because
 # the energy demand drivers differ fundamentally: residential uses per-person quantities
 # (population × demand per person) while services use per-floor-area intensities
@@ -1746,60 +1827,9 @@ def bld_services_workflow(
     )
 
     # CO2 emissions — hot-water only; space-heating emissions are in bld_energy_workflow (full stock)
-    cdm_emission = cdm_const["emissions"]
-    dm_srv_emissions = dm_srv_tech_mix.filter(
-        {
-            "Categories2": cdm_emission.col_labels["Categories1"],
-            "Categories1": ["hot-water"],
-            "Variables": ["bld_services_energy-consumption"],
-        }
+    dm_srv_emissions = compute_services_hot_water_emissions(
+        dm_srv_tech_mix, cdm_const, DM_energy["district_heating-emission"]
     )
-    dm_srv_emissions.sort("Categories2")
-    cdm_emission.sort("Categories1")
-    arr = (
-        dm_srv_emissions[:, :, "bld_services_energy-consumption", :, :]
-        * cdm_emission[np.newaxis, np.newaxis, "bld_CO2-factors", np.newaxis, :]
-    )
-    dm_srv_emissions.add(
-        arr, dim="Variables", col_label="services_CO2-emissions_heating", unit="kt"
-    )
-    dm_srv_emissions.change_unit("services_CO2-emissions_heating", 1e-3, "kt", "Mt")
-    dm_srv_emissions.filter(
-        {"Variables": ["services_CO2-emissions_heating"]}, inplace=True
-    )
-
-    dm_district_consumption = dm_srv_tech_mix.filter(
-        {
-            "Categories2": ["district-heating"],
-            "Categories1": ["hot-water"],
-            "Variables": ["bld_services_energy-consumption"],
-        }
-    )
-    # DH CO2 proxy — see comment in bld_energy_workflow; remove when DH module is activated.
-    dm_district_emissions = multiply_energy_consumption_by_emission_factor_fxa(
-        dm_district_consumption,
-        DM_energy["district_heating-emission"],
-        variable_name="bld_services_energy-consumption",
-    )
-    dm_srv_emissions.append(dm_district_emissions, dim="Categories2")
-
-    # Electricity and heat-pump emissions: zeroed — scope 1 attributed to energy module
-    dm_elec_srv = dm_srv_tech_mix.filter(
-        {
-            "Categories2": ["electricity", "heat-pump"],
-            "Categories1": ["hot-water"],
-            "Variables": ["bld_services_energy-consumption"],
-        }
-    )
-    arr = np.zeros_like(dm_elec_srv[:, :, "bld_services_energy-consumption", :, :])
-    dm_elec_srv.add(
-        arr, dim="Variables", col_label="services_CO2-emissions_heating", unit="kt"
-    )
-    dm_elec_srv.change_unit("services_CO2-emissions_heating", 1e-3, "kt", "Mt")
-    dm_elec_srv.filter({"Variables": ["services_CO2-emissions_heating"]}, inplace=True)
-    dm_srv_emissions.append(dm_elec_srv, dim="Categories2")
-
-    dm_srv_emissions.group_all("Categories1")
 
     nonres_tpe = {
         "services_energy-consumption": dm_srv_tech_mix.filter(

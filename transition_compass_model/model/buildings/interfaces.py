@@ -12,8 +12,11 @@ def bld_emissions_interface(
 ):
     # TODO: we are missing appliances emissions
 
-    dm_out = dm_emissions_heating.groupby(
-        {"CO2": dm_emissions_heating.col_labels["Categories1"]}, "Categories1"
+    # Heating emissions are split by building use (Categories1) and fuel (Categories2);
+    # the emissions module only needs the per-gas total.
+    dm_by_fuel = dm_emissions_heating.group_all("Categories1", inplace=False)
+    dm_out = dm_by_fuel.groupby(
+        {"CO2": dm_by_fuel.col_labels["Categories1"]}, "Categories1"
     )
     dm_out.rename_col("bld_CO2-emissions_heating", "buildings-heating", "Variables")
 
@@ -220,25 +223,37 @@ def bld_agriculture_interface(dm_agriculture, write_pickle=False):
 def bld_energy_demand_by_use(
     DM_heating_by_use, DM_services, DM_appliances, DM_light, DM_hotwater
 ):
-    """Buildings energy demand split by building category and end-use.
+    """Buildings energy demand split by building category, end-use and fuel.
 
     Returns bld_energy-demand [TWh] with
       Categories1 = residential / non-residential
       Categories2 = space-heating / hot-water / appliances / lighting
+      Categories3 = fuel (the space-heating carriers, incl. ambient-heat)
 
     Space heating is the one end-use that is not split anywhere downstream:
     DM_energy['energy-demand-heating'] covers residential *and* services together,
     and DM_services['services_energy-consumption'] has no space-heating category.
     The split therefore comes from the energy workflow's 'power_households' and
     'power_services', which sum back exactly to bld_energy-demand_heating.
+    Residential appliances and lighting have no fuel split: they are all electricity.
     """
+    fuels = DM_heating_by_use["residential"].col_labels["Categories1"]
+
+    def _align_fuels(dm):
+        # Not every end-use uses every carrier (e.g. ambient-heat is space-heating
+        # only); pad with zeros so all parts share the same fuel dimension.
+        for fuel in fuels:
+            if fuel not in dm.col_labels["Categories1"]:
+                dm.add(0, dim="Categories1", col_label=fuel, dummy=True)
+        dm.sort("Categories1")
+        return dm
+
     parts = []
 
     # -- residential --------------------------------------------------------
     dm = DM_heating_by_use["residential"].filter(
         {"Variables": ["bld_energy-demand_heating"]}
     )
-    dm.group_all("Categories1", inplace=True)
     dm.rename_col(
         "bld_energy-demand_heating",
         "bld_energy-demand_residential_space-heating",
@@ -247,7 +262,6 @@ def bld_energy_demand_by_use(
     parts.append(dm)
 
     dm = DM_hotwater["power"].filter({"Variables": ["bld_hot-water_energy-demand"]})
-    dm.group_all("Categories1", inplace=True)
     dm.rename_col(
         "bld_hot-water_energy-demand",
         "bld_energy-demand_residential_hot-water",
@@ -258,24 +272,25 @@ def bld_energy_demand_by_use(
     dm = DM_appliances.filter({"Variables": ["bld_appliances_tot-elec-demand"]})
     dm.rename_col(
         "bld_appliances_tot-elec-demand",
-        "bld_energy-demand_residential_appliances",
+        "bld_energy-demand_residential_appliances_electricity",
         "Variables",
     )
+    dm.deepen()
     parts.append(dm)
 
     dm = DM_light.filter({"Variables": ["bld_residential-lighting"]})
     dm.rename_col(
         "bld_residential-lighting",
-        "bld_energy-demand_residential_lighting",
+        "bld_energy-demand_residential_lighting_electricity",
         "Variables",
     )
+    dm.deepen()
     parts.append(dm)
 
     # -- non-residential ----------------------------------------------------
     dm = DM_heating_by_use["non-residential"].filter(
         {"Variables": ["bld_energy-demand_heating"]}
     )
-    dm.group_all("Categories1", inplace=True)
     dm.rename_col(
         "bld_energy-demand_heating",
         "bld_energy-demand_non-residential_space-heating",
@@ -285,27 +300,30 @@ def bld_energy_demand_by_use(
 
     # 'elec' is the services catch-all for non-lighting electricity, i.e. the
     # non-residential counterpart of residential appliances.
-    dm_services = DM_services["services_energy-consumption"].group_all(
-        "Categories2", inplace=False
-    )
+    dm_services = DM_services["services_energy-consumption"]
     for category, end_use in [
         ("hot-water", "hot-water"),
         ("elec", "appliances"),
         ("lighting", "lighting"),
     ]:
-        dm = dm_services.filter({"Categories1": [category]}).flatten()
+        dm = dm_services.filter({"Categories1": [category]})
+        dm.group_all("Categories1", inplace=True)  # fuel moves to Categories1
         dm.rename_col(
-            "bld_services_energy-consumption_" + category,
+            "bld_services_energy-consumption",
             "bld_energy-demand_non-residential_" + end_use,
             "Variables",
         )
         parts.append(dm)
 
-    dm_out = parts[0]
+    dm_out = _align_fuels(parts[0])
     for dm in parts[1:]:
-        dm_out.append(dm, dim="Variables")
+        dm_out.append(_align_fuels(dm), dim="Variables")
     dm_out.sort("Variables")
-    dm_out.deepen_twice()
+    # Variables -> end-use (Categories2) -> building use (Categories3), then put
+    # building use first: (use, end-use, fuel)
+    dm_out.deepen(based_on="Variables")
+    dm_out.deepen(based_on="Variables")
+    dm_out.switch_categories_order("Categories1", "Categories3")
 
     return dm_out
 
@@ -327,6 +345,7 @@ def bld_TPE_interface(
     dm_tpe.append(DM_energy["emissions"].flattest(), dim="Variables")
     dm_tpe.append(DM_area["floor-area-cumulated"].flattest(), dim="Variables")
     dm_tpe.append(DM_area["floor-area-cat"].flattest(), dim="Variables")
+    dm_tpe.append(DM_area["floor-area-use-cat"].flattest(), dim="Variables")
     dm_tpe.append(DM_area["floor-area-bld-type"].flattest(), dim="Variables")
 
     # Hot water residential
@@ -365,7 +384,7 @@ def bld_TPE_interface(
     dm_emission_global.append(DM_hotwater["hotwater_emissions"], dim="Variables")
     dm_energy_emissions_scope1 = DM_energy["emissions"].filter(
         {
-            "Categories1": [
+            "Categories2": [
                 "coal",
                 "district-heating",
                 "gas",
@@ -377,31 +396,39 @@ def bld_TPE_interface(
     )  # only keep scope 1 emissions emetter
     # Add zero entries for electricity/heat-pump so dimensions match hotwater emissions
     for _fuel in ["electricity", "heat-pump"]:
-        if _fuel not in dm_energy_emissions_scope1.col_labels["Categories1"]:
+        if _fuel not in dm_energy_emissions_scope1.col_labels["Categories2"]:
             dm_energy_emissions_scope1.add(
-                0, dummy=True, dim="Categories1", col_label=_fuel
+                0, dummy=True, dim="Categories2", col_label=_fuel
             )
-    dm_energy_emissions_scope1.sort("Categories1")
-    dm_emission_global.append(dm_energy_emissions_scope1, dim="Variables")
-    dm_emission_global.groupby(
-        {
-            "Variables": [
-                "services_CO2-emissions_heating",
-                "bld_hotwater_CO2-emissions",
-                "bld_CO2-emissions_heating",
-            ]
-        },
+    dm_energy_emissions_scope1.sort("Categories2")
+
+    # Restructure hot-water emissions dm
+    dm_emission_global.rename_col(
+        ["services_CO2-emissions_hot-water", "bld_hotwater_CO2-emissions"],
+        [
+            "bld_CO2-emissions_hot-water_services",
+            "bld_CO2-emissions_hot-water_residential",
+        ],
         dim="Variables",
-        inplace=True,
     )
-    dm_emission_global.rename_col("Variables", "bld_CO2-emissions", "Variables")
-    dm_tpe.append(dm_emission_global.flattest(), dim="Variables")
-    # dm_emission_global.change_unit("bld_CO2-emissions", factor=1e6, old_unit="Mt", new_unit="t" )
+    dm_emission_global.deepen(based_on="Variables")
+    dm_emission_global.switch_categories_order("Categories1", "Categories2")
+
+    dm_emission_global.append(dm_energy_emissions_scope1, dim="Variables")
+    dm_emission_global.deepen(based_on="Variables")
+
+    dm_emission_enduse = dm_emission_global.group_all("Categories2", inplace=False)
+    dm_emission_global_fuel = dm_emission_global.group_all("Categories3", inplace=False)
+    dm_emission_global_fuel.group_all("Categories1", inplace=True)
+    dm_tpe.append(dm_emission_global_fuel.flattest(), dim="Variables")
+    dm_tpe.append(dm_emission_enduse.flattest(), dim="Variables")
 
     # Buildings-wide total, published for the cross-sector (Overall) charts and read
     # back for the KPI so card and chart share one source. Named CO2e for consistency
     # with the tra_emissions-CO2e_* series; buildings model no CH4/N2O, so CO2e = CO2.
-    dm_emission_global.group_all("Categories1", inplace=True)
+    # Collapse building use, fuel and end-use down to a single total
+    for _ in range(3):
+        dm_emission_global.group_all("Categories1", inplace=True)
     dm_emission_global.rename_col(
         "bld_CO2-emissions", "bld_emissions-CO2e", "Variables"
     )
@@ -472,16 +499,22 @@ def bld_TPE_interface(
     #     )
     # dm_energy_heating.change_unit("energy_consumption", factor=1e6, old_unit="TWh", new_unit="MWh")
 
-    # Energy demand by building category and end-use (residential / non-residential
-    # x space-heating / hot-water / appliances / lighting), plus the total across all
-    # of them. The KPI reads off the same series so chart and card cannot drift.
+    # Energy demand by building category, end-use (space-heating / hot-water /
+    # appliances / lighting) and fuel, plus the total across all of them. Same
+    # structure as the emissions block above: one (use, end-use, fuel) matrix,
+    # collapsed by fuel for the end-use view and by end-use for the fuel views.
+    # The KPI reads off the same series so chart and card cannot drift.
     dm_energy_by_use = bld_energy_demand_by_use(
         DM_heating_by_use, DM_services, DM_appliances, DM_light, DM_hotwater
     )
-    dm_tpe.append(dm_energy_by_use.flattest(), dim="Variables")
+    dm_energy_enduse = dm_energy_by_use.group_all("Categories3", inplace=False)
+    dm_tpe.append(dm_energy_enduse.flattest(), dim="Variables")
+    dm_energy_use_fuel = dm_energy_by_use.group_all("Categories2", inplace=False)
+    dm_tpe.append(dm_energy_use_fuel.flattest(), dim="Variables")
+    dm_energy_fuel = dm_energy_use_fuel.group_all("Categories1", inplace=False)
+    dm_tpe.append(dm_energy_fuel.flattest(), dim="Variables")
 
-    dm_energy_total = dm_energy_by_use.group_all("Categories2", inplace=False)
-    dm_energy_total.group_all("Categories1", inplace=True)
+    dm_energy_total = dm_energy_fuel.group_all("Categories1", inplace=False)
     dm_energy_total.rename_col(
         "bld_energy-demand", "bld_energy-demand_total", "Variables"
     )
@@ -490,19 +523,12 @@ def bld_TPE_interface(
     value = dm_energy_total[0, yr, "bld_energy-demand_total"]
     KPI.append({"title": "Total energy demand", "value": value, "unit": "TWh"})
 
-    # Floor area stock (residential + non-residential)
-    dm_tot_area = DM_area["floor-area-cumulated"].groupby(
-        {"bld_tot-area": ".*"}, dim="Variables", regex=True, inplace=False
-    )
-    value_stock_res = dm_tot_area[0, yr, "bld_tot-area"]
-
-    value_stock_nonres = 0.0
-    if "services_floor-area" in DM_services:
-        dm_srv_floor_stock = dm_srv_floor_tpe.group_all("Categories2", inplace=False)
-        dm_srv_floor_stock.group_all("Categories1", inplace=True)
-        value_stock_nonres = dm_srv_floor_stock[0, yr, "bld_floor-area_services"]
-
-    value = value_stock_res + value_stock_nonres
+    # Floor area stock (residential + non-residential), from the same series as the
+    # stock charts. The building stock already covers the services building types,
+    # so services_floor-area must not be added on top (it would count them twice).
+    dm_tot_area = DM_area["floor-area-use-cat"].group_all("Categories2", inplace=False)
+    dm_tot_area.group_all("Categories1", inplace=True)
+    value = dm_tot_area[0, yr, "bld_floor-area_stock"]
     KPI.append({"title": "Floor Area Stock", "value": value, "unit": "Mm2"})
 
     return dm_tpe, KPI
