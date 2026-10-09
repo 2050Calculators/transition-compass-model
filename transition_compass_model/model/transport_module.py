@@ -265,6 +265,8 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
         "tra_passenger_emissions", "tra_emissions-CO2e_passenger", dim="Variables"
     )
     DM_passenger_out["emissions"] = dm_emissions
+    # dm_emissions.change_unit("tra_emissions-CO2e_passenger",old_unit ="Mt",new_unit= "t",factor = 10**6)
+    #
 
     results_run, KPI = inter.prepare_TPE_output(
         DM_passenger_out, DM_freight_out, dm_aviation_local=dm_aviation_local

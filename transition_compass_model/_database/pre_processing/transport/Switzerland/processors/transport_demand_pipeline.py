@@ -72,6 +72,7 @@ def extrapolate_missing_pkm_cap_based_on_pkm_CH(
     dm_pkm_cap_new_CH.operation(
         "tra_pkm-cap_official", "/", "tra_pkm-cap_MRMT", out_col="adj_factor", unit="%"
     )
+    dm_adj_fact_ch = dm_pkm_cap_new_CH.filter({"Variables": ["adj_factor"]})
 
     # For Vaud, extrapolate pkm/cap for all years based on the official pkm/cap of Switzerland and the ratio between MRMT and official for Switzerland (assuming same ratio applies to Vaud)
     dm_tmp_switzerland = dm_pkm_cap_new_CH.filter({"Variables": ["tra_pkm-cap_MRMT"]})
@@ -93,16 +94,23 @@ def extrapolate_missing_pkm_cap_based_on_pkm_CH(
         dm_pkm_cap_new_canton = utils.fill_var_nans_based_on_var_curve(
             dm_tmp, var_nan="tra_pkm-cap_MRMT", var_ref="tra_pkm-cap_MRMT_CH"
         )
-        # No adjusting factors are used
-        dm_pkm_cap_new_canton.rename_col(
-            "tra_pkm-cap_MRMT", "tra_pkm-cap_official", dim="Variables"
+        dm_adj_fact = dm_adj_fact_ch.copy()
+        dm_adj_fact.rename_col("Switzerland", canton, dim="Country")
+        dm_pkm_cap_new_canton.append(dm_adj_fact, dim="Variables")
+        dm_pkm_cap_new_canton.operation(
+            "adj_factor",
+            "*",
+            "tra_pkm-cap_MRMT",
+            out_col="tra_pkm-cap_official",
+            unit="pkm/cap",
         )
-        # Keep only "official" data
 
+        # Keep only "official" data
         dm_pkm_cap_new_canton.filter(
             {"Variables": ["tra_pkm-cap_official"]}, inplace=True
         )
         dm_pkm_cap_new_CH.append(dm_pkm_cap_new_canton, dim="Country")
+
     dm_pkm_cap_new_CH.rename_col("tra_pkm-cap_official", "tra_pkm-cap", dim="Variables")
 
     return dm_pkm_cap_new_CH

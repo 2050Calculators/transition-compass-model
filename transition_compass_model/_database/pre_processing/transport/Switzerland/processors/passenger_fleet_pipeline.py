@@ -26,17 +26,20 @@ def downscale_public_fleet_VD(dm_public_fleet, dm_pkm):
     dm_public_pkm = dm_pkm.filter(
         {"Categories1": dm_public_fleet.col_labels["Categories1"]}
     )
-    idx = dm_public_pkm.idx
-    arr_ratio_pkm = (
-        dm_public_pkm.array[idx["Vaud"], :, :, :]
-        / dm_public_pkm.array[idx["Switzerland"], :, :, :]
-    )
-    idx = dm_public_fleet.idx
-    arr_VD = (
-        dm_public_fleet.array[idx["Switzerland"], :, :, :, :]
-        * arr_ratio_pkm[..., np.newaxis]
-    )
-    dm_public_fleet.add(arr_VD, dim="Country", col_label="Vaud")
+    idx_public_pkm = dm_public_pkm.idx
+    cantons_list = [i for i in country_list if i != "Switzerland"]
+    # cantons_idx =
+    for canton in cantons_list:
+        arr_ratio_pkm = (
+            dm_public_pkm.array[idx_public_pkm[canton], :, :, :]
+            / dm_public_pkm.array[idx_public_pkm["Switzerland"], :, :, :]
+        )
+        idx = dm_public_fleet.idx
+        arr_canton = (
+            dm_public_fleet.array[idx["Switzerland"], :, :, :, :]
+            * arr_ratio_pkm[..., np.newaxis]
+        )
+        dm_public_fleet.add(arr_canton, dim="Country", col_label=canton)
     return dm_public_fleet
 
 
