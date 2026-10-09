@@ -3,6 +3,8 @@ import pickle
 
 import numpy as np
 
+import transition_compass_model.model.transport.workflows as tra_wkf
+
 
 def get_interface(
     current_file_directory, interface, from_sector, to_sector, country_list
@@ -98,11 +100,58 @@ def get_interface(
 #     return dm_tpe
 
 
-def variables_for_tpe(dm_matprod, dm_emi_bygas):
+def prepare_KPIs(dm_tpe, years_setting):
+    """Three whole-sector KPI cards for the Industry page.
+
+    Gauge bounds are derived from the last historical year rather than hardcoded per
+    region: that value is unaffected by lever settings, so the scale stays put while
+    the needle moves, and it works for both a canton and the country (~10x apart).
+    """
+    base_year = years_setting[1]
+    end_year = years_setting[3]
+    cntr = dm_tpe.col_labels["Country"][0]
+    KPI = []
+
+    # The multiplier is fitted per sector, not shared: transport roughly doubles by
+    # 2050 under default levers (aviation demand grows ~3.8x), so the max has to clear
+    # 38.4 Mt / 152.2 TWh for Switzerland. compute_overall_KPI uses 1.5 for the same
+    # reasoning because declining buildings emissions dampen the growth there.
+    def _scaled(title, unit, prefix):
+        series = [v for v in dm_tpe.col_labels["Variables"] if v.startswith(prefix)]
+        value = sum(float(dm_tpe[cntr, end_year, v]) for v in series)
+        base = sum(float(dm_tpe[cntr, base_year, v]) for v in series)
+        return {
+            "title": title,
+            "value": value,
+            "unit": unit,
+            "min": 0,
+            "max": 2.0 * base,
+            "warning": 0.5 * base,
+            "danger": 0.8 * base,
+        }
+
+    KPI.append(
+        _scaled(
+            "Total industry emissions",
+            "Mt CO\u2082eq",
+            "ind_emissions-CO2e",
+        )
+    )
+
+    return KPI
+
+
+def variables_for_tpe(dm_matprod, dm_emi_bygas, years_setting):
     dm_out = dm_matprod.flatten()
     dm_out.append(dm_emi_bygas.flatten(), "Variables")
 
-    return dm_out
+    # Compute CO2eq emissions
+    dm_emi_tot = tra_wkf.convert_to_cO2eq_emissions(dm_emi_bygas.copy())
+    dm_emi_tot.rename_col("emissions", "ind_emissions-CO2e", dim="Variables")
+    dm_out.append(dm_emi_tot, "Variables")
+
+    KPI = prepare_KPIs(dm_out, years_setting)
+    return dm_out, KPI
 
 
 def industry_agriculture_interface(

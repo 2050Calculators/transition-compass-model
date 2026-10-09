@@ -233,8 +233,8 @@ def industry(
     )
 
     # get variables for tpe (also writes in DM_cost, dm_bld_matswitch_savings_bymat, DM_emissions and DM_material_production for renaming)
-    results_run = inter.variables_for_tpe(
-        DM_material_production["bymat"], DM_emissions["bygas"]
+    results_run, KPI = inter.variables_for_tpe(
+        DM_material_production["bymat"], DM_emissions["bygas"], years_setting
     )
 
     # interface agriculture
@@ -312,8 +312,6 @@ def industry(
     # dm_airpoll = industry_airpollution_interface(DM_material_production, DM_energy_demand)
     # interface.add_link(from_sector='industry', to_sector='air-pollution', dm=dm_airpoll)
 
-    # return
-    KPI = {}
     return results_run, KPI
 
 

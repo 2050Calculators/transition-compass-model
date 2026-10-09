@@ -960,12 +960,14 @@ def convert_to_cO2eq_emissions(dm_emissions):
     CH4_to_CO2 = 28
 
     idx = dm_emissions.idx
-    dm_emissions.array[:, :, :, :, idx["CH4"]] = (
-        dm_emissions.array[:, :, :, :, idx["CH4"]] * CH4_to_CO2
+    dm_emissions.array[..., idx["CH4"]] = (
+        dm_emissions.array[..., idx["CH4"]] * CH4_to_CO2
     )
-    dm_emissions.array[:, :, :, :, idx["N2O"]] = (
-        dm_emissions.array[:, :, :, :, idx["N2O"]] * N2O_to_CO2
+    dm_emissions.array[..., idx["N2O"]] = (
+        dm_emissions.array[..., idx["N2O"]] * N2O_to_CO2
     )
-    dm_emissions.group_all("Categories2")
-
+    if "Categories2" in dm_emissions.dim_labels:
+        dm_emissions.group_all("Categories2")
+    else:
+        dm_emissions.group_all("Categories1")
     return dm_emissions
