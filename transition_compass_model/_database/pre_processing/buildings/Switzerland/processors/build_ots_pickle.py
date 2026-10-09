@@ -9,6 +9,7 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.services_CH import (
     extract_services_renovation_rate_EP2050,
 )
+from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     linear_fitting,
@@ -271,7 +272,6 @@ def compute_nonres_demolition_rate_CH(dm_srv_floor, dm_nonres_rr, years_ots):
     gives correct annual deltas even when absolute stock values go slightly negative.
     """
     nonres_types = dm_srv_floor.col_labels["Categories1"]
-    country_list = dm_srv_floor.col_labels["Country"]
 
     stock_C_raw = dm_srv_floor.array[:, :, 0, :, dm_srv_floor.idx["C"]]
     stock_B_raw = dm_srv_floor.array[:, :, 0, :, dm_srv_floor.idx["B"]]
@@ -440,11 +440,11 @@ def run(dm_pop, DM_all, years_ots, years_fts):
     if dm_srv_floor is not None:
         DM_buildings["ots"]["services-floor-area"] = dm_srv_floor
 
-    # CALIBRATION
-    # SECTION: fxa - heating-energy-calibration
-    DM_buildings["fxa"]["heating-energy-calibration"] = DM_bld["fxa"][
-        "heating-energy-calibration"
-    ].filter({"Country": ["Switzerland", "Vaud"]})
+    # # CALIBRATION
+    # # SECTION: fxa - heating-energy-calibration
+    # DM_buildings["fxa"]["heating-energy-calibration"] = DM_bld["fxa"][
+    #     "heating-energy-calibration"
+    # ].filter({"Country": country_list})
 
     # OTS
     # SECTION: ots - floor-intensity
@@ -504,7 +504,7 @@ def run(dm_pop, DM_all, years_ots, years_fts):
         "../data/EP2050_sectors/EP2050+_Szenarienergebnisse_Details_Nachfragesektoren/"
         "EP2050+_Detailergebnisse 2020-2060_Dienstleistung_alle Szenarien_2022-10-20.xlsx",
     )
-    country_list = dm_rr.col_labels["Country"]
+
     dm_nonres_rr = extract_services_renovation_rate_EP2050(
         ep2050_services_file, years_ots, nonres_types, country_list
     )["ots"]
