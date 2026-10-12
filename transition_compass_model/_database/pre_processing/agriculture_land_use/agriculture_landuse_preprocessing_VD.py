@@ -8,6 +8,7 @@ from scenarios.agr_fts_BAU_pickle import run as run_bau_fts
 from transition_compass_model._database.pre_processing.api_routines_CH import (
     get_data_api_CH,
 )
+from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model.model.common.auxiliary_functions import (
     add_dummy_country_to_DM,
     create_years_list,
@@ -39,7 +40,7 @@ def get_livestock_all(table_id, file, years_ots):
                 "Cheptel - Volailles",
                 "Cheptel - Autres animaux",
             ],
-            "Canton": ["Vaud"],
+            "Canton": ["Vaud", "Fribourg / Freiburg", "Schwyz"],
             "Zone de production agricole": ["Zone de production agricole - total"],
             "Classe de taille": ["Classe de taille - total"],
             "Système d'exploitation": ["Système d'exploitation - total"],
@@ -77,6 +78,7 @@ def get_livestock_all(table_id, file, years_ots):
         dm.groupby(dict_cat, dim="Categories1", inplace=True)
         dm.sort("Years")
         dm.filter({"Years": years_ots}, inplace=True)
+        dm.rename_col_regex("Fribourg / Freiburg", "Fribourg", dim="Country")
 
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(current_file_directory, file)
@@ -84,6 +86,7 @@ def get_livestock_all(table_id, file, years_ots):
             pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     dm = linear_fitting(dm, years_ots)
+    dm.filter({"Country": cantons_list}, inplace=True)
     return dm
 
 
@@ -104,7 +107,7 @@ def get_livestock_dairy_egg(table_id, file, years_ots):
                 "Cheptel - Chèvres laitières",
                 "Cheptel - Poules de ponte et d'élevage",
             ],
-            "Canton": ["Vaud"],
+            "Canton": ["Vaud", "Fribourg / Freiburg", "Schwyz"],
             "Zone de production agricole": ["Zone de production agricole - total"],
             "Système d'exploitation": ["Système d'exploitation - total"],
             "Forme d'exploitation": ["Forme d'exploitation - total"],
@@ -142,12 +145,13 @@ def get_livestock_dairy_egg(table_id, file, years_ots):
         dm.groupby(dict_cat, dim="Categories1", inplace=True)
         dm.sort("Years")
         dm.filter({"Years": years_ots}, inplace=True)
+        dm.rename_col_regex("Fribourg / Freiburg", "Fribourg", dim="Country")
 
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(current_file_directory, file)
         with open(f, "wb") as handle:
             pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
+    dm.filter({"Years": years_ots, "Country": cantons_list}, inplace=True)
     dm.array[dm.array == 0] = np.nan
     dm = linear_fitting(dm, years_ots)
     return dm
@@ -210,7 +214,7 @@ def get_crop_prod(table_id, file, years_ots):
         # The table is too big to be downloaded at once
         filtering = {
             "Unité d'observation": structure["Unité d'observation"],
-            "Canton": ["Vaud"],
+            "Canton": ["Vaud", "Fribourg / Freiburg", "Schwyz"],
             "Zone de production agricole": ["Zone de production agricole - total"],
             "Système d'exploitation": ["Système d'exploitation - total"],
             "Forme d'exploitation": ["Forme d'exploitation - total"],
@@ -233,6 +237,7 @@ def get_crop_prod(table_id, file, years_ots):
         dm.drop(dim="Categories1", col_label=["Exploitations", "SAU - Total (en ha)"])
         dm.rename_col_regex("SAU - ", "", dim="Categories1")
         dm.rename_col_regex(" (en ha)", "", dim="Categories1")
+        dm.rename_col_regex("Fribourg / Freiburg", "Fribourg", dim="Country")
 
         cat_map = {
             "crop-cereal": [
@@ -336,7 +341,7 @@ def get_crop_prod(table_id, file, years_ots):
             pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     linear_fitting(dm, years_ots)
-    dm.filter({"Years": years_ots}, inplace=True)
+    dm.filter({"Years": years_ots, "Country": cantons_list}, inplace=True)
     return dm
 
 
@@ -347,7 +352,7 @@ def compute_wine_production(dm_crop_wine, wine_hl, conversion_hl_to_kcal):
     arr_wine = np.array(arr_wine)
     dm_wine = DataMatrix(
         col_labels={
-            "Country": ["Vaud"],
+            "Country": cantons_list,
             "Years": years_wine,
             "Variables": ["agr_production"],
             "Categories1": ["pro-bev-wine"],
@@ -496,16 +501,16 @@ def extract_variables_to_file():
 years_ots = create_years_list(1990, 2023, 1)
 years_fts = create_years_list(2025, 2050, 5)
 
-
+cantons_list = [canton for canton in country_list if canton != "Switzerland"]
 # Population
 data_file = "../../data/datamatrix/lifestyles.pickle"
 with open(data_file, "rb") as handle:
     DM_lfs = pickle.load(handle)
 dm_pop = DM_lfs["ots"]["pop"]["lfs_population_"].filter(
-    {"Country": ["Vaud"]}, inplace=False
+    {"Country": cantons_list}, inplace=False
 )
 dm_demo = DM_lfs["ots"]["pop"]["lfs_demography_"].filter(
-    {"Country": ["Vaud"]}, inplace=False
+    {"Country": cantons_list}, inplace=False
 )
 
 # Load Agriculture pickle to read fake Vaud data (as Switzerland)
@@ -531,8 +536,9 @@ filter_DM(DM_CH, {"Country": ["Switzerland"]})
 # my_pickle_dump(DM_agriculture, data_file)
 
 filter_DM(DM_agriculture, {"Country": ["Switzerland"]})
-add_dummy_country_to_DM(DM_agriculture, "Vaud", "Switzerland")
-filter_DM(DM_agriculture, {"Country": ["Vaud"]})
+for canton in cantons_list:
+    add_dummy_country_to_DM(DM_agriculture, canton, "Switzerland")
+filter_DM(DM_agriculture, {"Country": cantons_list})
 
 # dm_kcal = DM_agriculture['ots']['kcal-req']
 # linear_fitting(dm_kcal, years_ots)
@@ -540,12 +546,13 @@ filter_DM(DM_agriculture, {"Country": ["Vaud"]})
 
 # Section: Production - Animals
 # All livestock
+# FIXME : update with new api
 table_id = "px-x-0702000000_101"
-file = "data/agr_livestock_all.pickle"
+file = "data/agr_livestock_all_cantons.pickle"
 dm_lsu_meat = get_livestock_all(table_id, file, years_ots)
 # Dairy livestock
 table_id = "px-x-0702000000_108"
-file = "data/agr_livestock_dairy_egg.pickle"
+file = "data/agr_livestock_dairy_egg_cantons.pickle"
 dm_lsu_dairy_egg = get_livestock_dairy_egg(table_id, file, years_ots)
 # All livestock (meat, dairy, egg)
 dm_lsu = compute_livestock(dm_lsu_meat, dm_lsu_dairy_egg)
@@ -609,7 +616,7 @@ dm_lsu.operation(
 
 # Section: Production - Crop & Co
 table_id = "px-x-0702000000_106"
-file = "data/agr_crop_prod.pickle"
+file = "data/agr_crop_prod_fribourg_schwyz.pickle"
 # Production in *ha* / Land-Use
 dm_crop_land = get_crop_prod(table_id, file, years_ots)
 # Production in kcal = Production in ha x yield in kcal/ha
@@ -731,7 +738,7 @@ dm_supply.operation(
 # FIXME! Difference between VD and CH
 
 # Overwrite Vaud net-import in DM
-DM_agriculture["ots"]["food-net-import"].drop(col_label="Vaud", dim="Country")
+DM_agriculture["ots"]["food-net-import"].drop(col_label=cantons_list, dim="Country")
 DM_agriculture["ots"]["food-net-import"].append(
     dm_supply.filter({"Variables": ["agr_food-net-import"]}), dim="Country"
 )
