@@ -257,42 +257,42 @@ def run(
     local_filename_eff = os.path.join(
         this_dir, "../data/tra_veh_efficiency_swiss_stat_elec.pickle"
     )
-    dm_veh_eff_LDV_elec = get_data.get_vehicle_electric_efficiency(
-        local_filename_eff,
-        agency_eff,
-        dataflow_eff,
-        var_name="tra_passenger_veh-efficiency_fleet",
-    )
-    dm_veh_eff_LDV_elec.filter(
-        {"Country": country_list, "Years": years_ots}, inplace=True
-    )
+    # dm_veh_eff_LDV_elec = get_data.get_vehicle_electric_efficiency(
+    #     local_filename_eff,
+    #     agency_eff,
+    #     dataflow_eff,
+    #     var_name="tra_passenger_veh-efficiency_fleet",
+    # )
+    # dm_veh_eff_LDV_elec.filter(
+    #     {"Country": country_list, "Years": years_ots}, inplace=True
+    # )
 
-    #### Vehicle efficiency new - LDV - CO2/km _ old version
-    # FCEV data are off, BEV = 25 gCO2/km independently of car power
-    table_id_new_eff = "px-x-1103020200_201"
-    local_filename_new = os.path.join(
-        this_dir, "../data/tra_new-veh_efficiency.pickle"
-    )  # The file is created if it doesn't exist
-    dm_veh_new_eff_LDV, dm_new_eff_old_raw = get_data.get_new_vehicle_efficiency_ofs(
-        table_id_new_eff,
-        local_filename_new,
-        var_name="tra_passenger_veh-efficiency_new",
-        years_ots=years_ots,
-    )
+    # #### Vehicle efficiency new - LDV - CO2/km _ old version
+    # # FCEV data are off, BEV = 25 gCO2/km independently of car power
+    # table_id_new_eff = "px-x-1103020200_201"
+    # local_filename_new = os.path.join(
+    #     this_dir, "../data/tra_new-veh_efficiency.pickle"
+    # )  # The file is created if it doesn't exist
+    # dm_veh_new_eff_LDV, dm_new_eff_old_raw = get_data.get_new_vehicle_efficiency_ofs(
+    #     table_id_new_eff,
+    #     local_filename_new,
+    #     var_name="tra_passenger_veh-efficiency_new",
+    #     years_ots=years_ots,
+    # )
 
-    dm_veh_new_eff_LDV.filter(
-        {
-            "Categories2": [
-                "ICE-diesel",
-                "ICE-gas",
-                "ICE-gasoline",
-                "PHEV-diesel",
-                "PHEV-gasoline",
-            ]
-        },
-        inplace=True,
-    )
-    del table_id_new_eff, local_filename_new
+    # dm_veh_new_eff_LDV.filter(
+    #     {
+    #         "Categories2": [
+    #             "ICE-diesel",
+    #             "ICE-gas",
+    #             "ICE-gasoline",
+    #             "PHEV-diesel",
+    #             "PHEV-gasoline",
+    #         ]
+    #     },
+    #     inplace=True,
+    # )
+    # del table_id_new_eff, local_filename_new
 
     #### Vehicle efficiency new - LDV - CO2/km -swiss stats version
     # swiss stats url : https://stats.swiss/vis?lc=fr&df%5bds%5d=disseminate&df%5bid%5d=DF_IVS_1_EMISSION&df%5bag%5d=CH1.MFZ_IVS
@@ -315,14 +315,14 @@ def run(
         this_dir, "../data/tra_new-veh_efficiency_elec.pickle"
     )  # The file is created if it doesn't exist
 
-    dm_veh_new_eff_LDV_elec = get_data.get_new_vehicle_efficiency_elec(
-        local_filename_new,
-        agency_new_eff,
-        dataflow_new_eff,
-        var_name="tra_passenger_veh-efficiency_new",
-    )
+    # dm_veh_new_eff_LDV_elec = get_data.get_new_vehicle_efficiency_elec(
+    #     local_filename_new,
+    #     agency_new_eff,
+    #     dataflow_new_eff,
+    #     var_name="tra_passenger_veh-efficiency_new",
+    # )
 
-    dm_veh_new_eff_LDV_elec.filter({"Country": country_list}, inplace=True)
+    # dm_veh_new_eff_LDV_elec.filter({"Country": country_list}, inplace=True)
 
     del agency_new_eff, dataflow_new_eff
 
@@ -333,7 +333,7 @@ def run(
         new_var_name="tra_passenger_veh-efficiency_fleet",
     )
     dm_veh_new_eff_LDV = convert_eff_from_gCO2_km_to_MJ_km(
-        dm_veh_new_eff_LDV,
+        dm_veh_new_eff_LDV_co2,
         cdm_emissions_factors,
         new_var_name="tra_passenger_veh-efficiency_new",
     )
@@ -380,7 +380,9 @@ def run(
         unit="MJ/km",
         dummy=True,
     )
-    dm_veh_eff.add(np.nan, dim="Country", col_label="Vaud", dummy=True)
+
+    cantons_list = [i for i in country_list if i != "Switzerland"]
+    dm_veh_eff.add(np.nan, dim="Country", col_label=cantons_list, dummy=True)
     dm_veh_eff.fill_nans(dim_to_interp="Variables")
     dm_veh_eff.fill_nans(dim_to_interp="Country")
     dm_veh_eff.fill_nans("Years")

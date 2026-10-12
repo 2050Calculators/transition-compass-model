@@ -10,7 +10,10 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
     get_data_api_swiss_stats,
 )
-from transition_compass_model._database.pre_processing.params import years_ots
+from transition_compass_model._database.pre_processing.params import (
+    country_list,
+    years_ots,
+)
 from transition_compass_model.model.common.auxiliary_functions import moving_average
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
@@ -142,18 +145,20 @@ def get_vehicle_electric_efficiency(
     # Distribute Inconnu on other categories based on their share
     # Remove fuel type "Autre" (there are only very few car in this category)
     # Before 2022 data is mainly unknown so it is dropped as it is doesn't give us efficiency information
+
+    dm_veh_eff.filter(
+        {
+            "Country": country_list,
+            "Years": [year for year in range(2022, years_ots[-1] + 1)],
+        },
+        inplace=True,
+    )
+
     dm_veh_eff = utils.drop_if_smaller_than_0_01(
         dm_veh_eff, cat_to_drop="Categories2", col_to_drop="Missing/Undefined/Unknown"
     )
 
     dm_veh_eff = clean_energy_dimension(dm_veh_eff, var_name)
-
-    for i in range(2):
-        window_size = 3  # Change window size to control the smoothing effect
-        data_smooth = moving_average(
-            dm_veh_eff.array, window_size, axis=dm_veh_eff.dim_labels.index("Years")
-        )
-        dm_veh_eff.array[:, 1:-1, ...] = data_smooth
 
     # Add LDV
     dm_veh_eff_LDV = DataMatrix.based_on(
@@ -597,6 +602,11 @@ def get_new_vehicle_efficiency_elec(file: str, agency: str, dataflow: str, var_n
     dict_tech = {
         "BEV": ["Battery electric vehicle (BEV)"],
     }
+
+    # Before 2021 data is mainly unknown so it is dropped as it is doesn't give us efficiency information
+    dm_veh_eff.filter(
+        {"Years": [year for year in range(2022, years_ots[-1] + 1)]}, inplace=True
+    )
     # Rename columns with dict tech
     dm_veh_eff.groupby(dict_tech, dim="Categories1", inplace=True)
 
