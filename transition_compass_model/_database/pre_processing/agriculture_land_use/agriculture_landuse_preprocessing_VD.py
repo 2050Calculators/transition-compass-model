@@ -11,6 +11,7 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model.model.common.auxiliary_functions import (
     add_dummy_country_to_DM,
+    check_filtering_size,
     create_years_list,
     filter_DM,
     linear_fitting,
@@ -28,56 +29,65 @@ def get_livestock_all(table_id, file, years_ots):
             )
     except OSError:
         structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-        i = 0
+
         # The table is too big to be downloaded at once
-        filtering = {
-            "Unité d'observation": [
-                "Cheptel - Bovins",
-                "Cheptel - Equidés",
-                "Cheptel - Moutons",
-                "Cheptel - Chèvres",
-                "Cheptel - Porcs",
-                "Cheptel - Volailles",
-                "Cheptel - Autres animaux",
-            ],
-            "Canton": ["Vaud", "Fribourg / Freiburg", "Schwyz"],
-            "Zone de production agricole": ["Zone de production agricole - total"],
-            "Classe de taille": ["Classe de taille - total"],
-            "Système d'exploitation": ["Système d'exploitation - total"],
-            "Forme d'exploitation": ["Forme d'exploitation - total"],
-            "Année": structure["Année"],
-        }
+        for i, canton in enumerate(["Vaud", "Fribourg / Freiburg", "Schwyz"]):
+            filtering = {
+                "Unité d'observation": [
+                    "Cheptel - Bovins",
+                    "Cheptel - Equidés",
+                    "Cheptel - Moutons",
+                    "Cheptel - Chèvres",
+                    "Cheptel - Porcs",
+                    "Cheptel - Volailles",
+                    "Cheptel - Autres animaux",
+                ],
+                "Canton": [canton],
+                "Zone de production agricole": ["Zone de production agricole - total"],
+                "Classe de taille": ["Classe de taille - total"],
+                "Système d'exploitation": ["Système d'exploitation - total"],
+                "Forme d'exploitation": ["Forme d'exploitation - total"],
+                "Année": structure["Année"],
+            }
 
-        mapping_dim = {
-            "Country": "Canton",
-            "Years": "Année",
-            "Variables": "Zone de production agricole",
-            "Categories1": "Unité d'observation",
-        }
+            # check that the number of combinations is not too big to download at once
+            check_filtering_size(filtering)
 
-        # Extract new fleet
-        dm = get_data_api_CH(
-            table_id,
-            mode="extract",
-            filter=filtering,
-            mapping_dims=mapping_dim,
-            units=["animals"],
-            language="fr",
-        )
-        dm.rename_col(
-            "Zone de production agricole - total", "agr_livestock", "Variables"
-        )
-        dm.rename_col_regex("Cheptel - ", "", dim="Categories1")
-        dict_cat = {
-            "bovine": ["Bovins"],
-            "sheep": ["Moutons"],
-            "pig": ["Porcs"],
-            "poultry": ["Volailles"],
-            "oth-animals": ["Equidés", "Chèvres", "Autres animaux"],
-        }
-        dm.groupby(dict_cat, dim="Categories1", inplace=True)
-        dm.sort("Years")
-        dm.filter({"Years": years_ots}, inplace=True)
+            mapping_dim = {
+                "Country": "Canton",
+                "Years": "Année",
+                "Variables": "Zone de production agricole",
+                "Categories1": "Unité d'observation",
+            }
+
+            # Extract new fleet
+            dm_canton = get_data_api_CH(
+                table_id,
+                mode="extract",
+                filter=filtering,
+                mapping_dims=mapping_dim,
+                units=["animals"],
+                language="fr",
+            )
+            dm_canton.rename_col(
+                "Zone de production agricole - total", "agr_livestock", "Variables"
+            )
+            dm_canton.rename_col_regex("Cheptel - ", "", dim="Categories1")
+            dict_cat = {
+                "bovine": ["Bovins"],
+                "sheep": ["Moutons"],
+                "pig": ["Porcs"],
+                "poultry": ["Volailles"],
+                "oth-animals": ["Equidés", "Chèvres", "Autres animaux"],
+            }
+            dm_canton.groupby(dict_cat, dim="Categories1", inplace=True)
+            dm_canton.sort("Years")
+            dm_canton.filter({"Years": years_ots}, inplace=True)
+            if i == 0:
+                dm = dm_canton.copy()
+            else:
+                dm.append(dm_canton.copy(), dim="Country")
+
         dm.rename_col_regex("Fribourg / Freiburg", "Fribourg", dim="Country")
 
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
@@ -113,6 +123,9 @@ def get_livestock_dairy_egg(table_id, file, years_ots):
             "Forme d'exploitation": ["Forme d'exploitation - total"],
             "Année": structure["Année"],
         }
+
+        # check that the number of combinations is not too big to download at once
+        check_filtering_size(filtering)
 
         mapping_dim = {
             "Country": "Canton",
@@ -212,31 +225,45 @@ def get_crop_prod(table_id, file, years_ots):
     except OSError:
         structure, title = get_data_api_CH(table_id, mode="example", language="fr")
         # The table is too big to be downloaded at once
-        filtering = {
-            "Unité d'observation": structure["Unité d'observation"],
-            "Canton": ["Vaud", "Fribourg / Freiburg", "Schwyz"],
-            "Zone de production agricole": ["Zone de production agricole - total"],
-            "Système d'exploitation": ["Système d'exploitation - total"],
-            "Forme d'exploitation": ["Forme d'exploitation - total"],
-            "Année": structure["Année"],
-        }
-        mapping_dim = {
-            "Country": "Canton",
-            "Years": "Année",
-            "Variables": "Zone de production agricole",
-            "Categories1": "Unité d'observation",
-        }
-        dm = get_data_api_CH(
-            table_id,
-            mode="extract",
-            filter=filtering,
-            mapping_dims=mapping_dim,
-            units=["ha"],
-            language="fr",
-        )
-        dm.drop(dim="Categories1", col_label=["Exploitations", "SAU - Total (en ha)"])
-        dm.rename_col_regex("SAU - ", "", dim="Categories1")
-        dm.rename_col_regex(" (en ha)", "", dim="Categories1")
+
+        cantons_to_call = ["Vaud", "Fribourg / Freiburg", "Schwyz"]
+        for i, canton in enumerate(cantons_to_call):
+            filtering = {
+                "Unité d'observation": structure["Unité d'observation"],
+                "Canton": [canton],
+                "Zone de production agricole": ["Zone de production agricole - total"],
+                "Système d'exploitation": ["Système d'exploitation - total"],
+                "Forme d'exploitation": ["Forme d'exploitation - total"],
+                "Année": structure["Année"],
+            }
+
+            # check that the number of combinations is not too big to download at once
+            check_filtering_size(filtering)
+
+            mapping_dim = {
+                "Country": "Canton",
+                "Years": "Année",
+                "Variables": "Zone de production agricole",
+                "Categories1": "Unité d'observation",
+            }
+            dm_canton = get_data_api_CH(
+                table_id,
+                mode="extract",
+                filter=filtering,
+                mapping_dims=mapping_dim,
+                units=["ha"],
+                language="fr",
+            )
+            dm_canton.drop(
+                dim="Categories1", col_label=["Exploitations", "SAU - Total (en ha)"]
+            )
+            dm_canton.rename_col_regex("SAU - ", "", dim="Categories1")
+            dm_canton.rename_col_regex(" (en ha)", "", dim="Categories1")
+            if i == 0:
+                dm = dm_canton.copy()
+            else:
+                dm.append(dm_canton.copy(), dim="Country")
+
         dm.rename_col_regex("Fribourg / Freiburg", "Fribourg", dim="Country")
 
         cat_map = {

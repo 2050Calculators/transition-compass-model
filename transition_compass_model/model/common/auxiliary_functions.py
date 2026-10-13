@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import pickle
 import re
@@ -1855,5 +1856,10 @@ def compare_dm(dm_new: DataMatrix, dm_old: DataMatrix):
     return compute_diff(dm_new, new_variable, old_variable)
 
 
-def get_common_values_between_2_list(list_a: list, list_b: list):
-    return list(set(list_a) & set(list_b))
+def check_filtering_size(filtering, max_size_allowed=5000):
+    # check that the number of combinations is not too big to download at once for the api
+    len_filtering = [len(filtering[dim]) for dim in filtering.keys()]
+    len_filtering = math.prod(len_filtering)
+    assert len_filtering <= max_size_allowed, (
+        f"Too many combinations to download at once: {len_filtering}. Please reduce the filtering."
+    )
