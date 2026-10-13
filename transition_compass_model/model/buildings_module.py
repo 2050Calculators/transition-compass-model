@@ -304,7 +304,7 @@ def buildings_local_run():
     # Function to run only transport module without converter and tpe
 
     # get geoscale
-    country_list = ["Fribourg"]
+    country_list = ["Switzerland", "Vaud", "Fribourg"]
     DM_input = filter_country_and_load_data_from_pickles(
         country_list=country_list, modules_list="buildings"
     )

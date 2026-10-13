@@ -60,17 +60,44 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
         )
 
     # For 2014 - 2016 we assume VD share = VD share 2017
-    VD_share = {
-        2014: 0.11,
-        2015: 0.11,
-        2016: 0.11,
-        2017: 0.110,
-        2018: 0.103,
-        2019: 0.154,
-        2020: 0.16,
-        2021: 0.193,
-        2022: 0.15,
-        2023: 0.15,
+    # FIXME : find real values for fribourg and schwyz
+    canton_share = {
+        "Vaud": {
+            2014: 0.11,
+            2015: 0.11,
+            2016: 0.11,
+            2017: 0.110,
+            2018: 0.103,
+            2019: 0.154,
+            2020: 0.16,
+            2021: 0.193,
+            2022: 0.15,
+            2023: 0.15,
+        },
+        "Fribourg": {
+            2014: 0.05,
+            2015: 0.05,
+            2016: 0.05,
+            2017: 0.05,
+            2018: 0.05,
+            2019: 0.05,
+            2020: 0.05,
+            2021: 0.05,
+            2022: 0.05,
+            2023: 0.05,
+        },
+        "Schwyz": {
+            2014: 0.02,
+            2015: 0.02,
+            2016: 0.02,
+            2017: 0.02,
+            2018: 0.02,
+            2019: 0.02,
+            2020: 0.02,
+            2021: 0.02,
+            2022: 0.02,
+            2023: 0.02,
+        },
     }
     share_by_bld = {
         "single-family-households": 0.55,
@@ -78,7 +105,7 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
         "other": 0.1,
     }
     dm_renovation = renov.compute_renovated_buildings(
-        dm_bld, nb_buildings_renovated, VD_share, share_by_bld
+        dm_bld, nb_buildings_renovated, canton_share, share_by_bld
     )
 
     # Compute renovation-rate

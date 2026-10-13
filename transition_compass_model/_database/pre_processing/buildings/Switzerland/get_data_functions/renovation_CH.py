@@ -157,7 +157,9 @@ def extract_number_of_buildings(table_id, file):
     return dm_nb_bld
 
 
-def compute_renovated_buildings(dm_bld, nb_buildings_renovated, VD_share, share_by_bld):
+def compute_renovated_buildings(
+    dm_bld, nb_buildings_renovated, canton_share, share_by_bld
+):
     dm_bld.add(
         np.nan,
         dim="Variables",
@@ -171,9 +173,14 @@ def compute_renovated_buildings(dm_bld, nb_buildings_renovated, VD_share, share_
             dm_bld.array[
                 idx["Switzerland"], idx[yr], idx["bld_nb-bld-renovated"], idx[cat]
             ] = nb_buildings_renovated[yr] * share_by_bld[cat]
-            dm_bld.array[
-                idx["Vaud"], idx[yr], idx["bld_nb-bld-renovated"], idx[cat]
-            ] = nb_buildings_renovated[yr] * VD_share[yr] * share_by_bld[cat]
+            for canton in canton_share.keys():
+                dm_bld.array[
+                    idx[canton], idx[yr], idx["bld_nb-bld-renovated"], idx[cat]
+                ] = (
+                    nb_buildings_renovated[yr]
+                    * canton_share[canton][yr]
+                    * share_by_bld[cat]
+                )
     return dm_bld
 
 
@@ -323,7 +330,7 @@ def compute_stock_area_by_cat(
     dm_stock_cat, dm_new_cat, dm_renov_cat, dm_waste_cat, dm_stock_tot
 ):
     # s_{c,t}(t-1) &= s_{c,t}(t) - n_{c,t}(t) - r_{c,t}(t) + w_{c,t}(t)
-    dm_all_cat = dm_stock_cat
+    dm_all_cat = dm_stock_cat.copy()
     dm_all_cat.append(dm_new_cat, dim="Variables")
     dm_all_cat.append(dm_renov_cat, dim="Variables")
     dm_all_cat.append(dm_waste_cat, dim="Variables")

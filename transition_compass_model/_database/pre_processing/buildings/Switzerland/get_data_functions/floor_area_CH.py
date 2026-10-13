@@ -14,6 +14,7 @@ from transition_compass_model._database.pre_processing.api_routines_swiss_stats 
 )
 from transition_compass_model._database.pre_processing.params import years_ots
 from transition_compass_model.model.common.auxiliary_functions import (
+    check_filtering_size,
     create_years_list,
     dm_add_missing_variables,
     extrapolate_missing_years_based_on_per_capita,
@@ -102,6 +103,9 @@ def extract_floor_area_stock_all_cantons_swiss_stat_raw(file, agency, dataflow):
                 "GKATS": category_list,
                 "FREQ": ["Annual"],
             }
+
+            check_filtering_size(filtering, max_size_allowed=5000)
+
             mapping_dim = {
                 "Country": "GEMEINDENAME",
                 "Years": "TIME_PERIOD",
@@ -457,16 +461,16 @@ def compute_floor_area_stock_v2(
     # (Basically you want the category construction period to become the year category)
     dm_avg_floor_area = compute_avg_floor_area(dm, years_ots)
 
-    def merge_multi_single(dm_stock_area, cat_map_sfh, cat_map_mfh):
+    def merge_multi_single(dm_stock, cat_map_sfh, cat_map_mfh):
         # Turn construction period to envelope category
-        dm_sfh = dm_stock_area.filter({"Categories1": ["single-family-households"]})
-        dm_mfh = dm_stock_area.filter({"Categories1": ["multi-family-households"]})
+        dm_sfh = dm_stock.filter({"Categories1": ["single-family-households"]})
+        dm_mfh = dm_stock.filter({"Categories1": ["multi-family-households"]})
         dm_sfh.groupby(cat_map_sfh, dim="Categories2", inplace=True)
         dm_mfh.groupby(cat_map_mfh, dim="Categories2", inplace=True)
-        dm = dm_sfh
-        dm.append(dm_mfh, dim="Categories1")
-        dm.sort("Categories1")
-        return dm
+        dm_grouped = dm_sfh
+        dm_grouped.append(dm_mfh, dim="Categories1")
+        dm_grouped.sort("Categories1")
+        return dm_grouped
 
     dm = merge_multi_single(dm_stock_area, cat_map_sfh, cat_map_mfh)
     # vars = load_construction_period_param()
