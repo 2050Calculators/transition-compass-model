@@ -1305,9 +1305,13 @@ def TCAF_TPE_interface(
 
     # LCA monetized results (Switzerland) [CHF], summed over method (intensive/organic)
     # FIXME add lca world
-    dm_lca_ch = DM_TCAF_lca["lca-switzerland"].filter({"Variables": ["agr_production-tcaf"]})
+    dm_lca_ch = DM_TCAF_lca["lca-switzerland"].filter(
+        {"Variables": ["agr_production-tcaf"]}
+    )
     dm_lca_ch.rename_col("agr_production-tcaf", "tcaf_lca_cost", dim="Variables")
-    dm_lca_ch.group_all("Categories2", inplace=True)  # sum over method -> Categories1 food, Categories2 impact
+    dm_lca_ch.group_all(
+        "Categories2", inplace=True
+    )  # sum over method -> Categories1 food, Categories2 impact
 
     # Swiss domestic fish, same structure: sum over method, then add as a food
     if fish is not None:
@@ -1324,17 +1328,23 @@ def TCAF_TPE_interface(
 
     # lca per food category (summed over impact categories)
     dm_lca_ch_food = dm_lca_ch.copy()
-    dm_lca_ch_food.group_all("Categories2", inplace=True)  # sum over impact -> Categories1 food
+    dm_lca_ch_food.group_all(
+        "Categories2", inplace=True
+    )  # sum over impact -> Categories1 food
     dm_tpe.append(dm_lca_ch_food.flattest(), dim="Variables")
 
     # lca per impact category (summed over food categories)
     dm_lca_ch_imp = dm_lca_ch.copy()
-    dm_lca_ch_imp.group_all("Categories1", inplace=True)  # sum over food -> Categories1 impact
+    dm_lca_ch_imp.group_all(
+        "Categories1", inplace=True
+    )  # sum over food -> Categories1 impact
     dm_tpe.append(dm_lca_ch_imp.flattest(), dim="Variables")
 
     # lca total (summed over food and impact categories)
     dm_lca_ch_tot = dm_lca_ch_imp.copy()
-    dm_lca_ch_tot.group_all("Categories1", inplace=True)  # sum over impact -> no categories left
+    dm_lca_ch_tot.group_all(
+        "Categories1", inplace=True
+    )  # sum over impact -> no categories left
     dm_lca_ch_tot.rename_col("tcaf_lca_cost", "tcaf_lca_cost_total", dim="Variables")
     dm_tpe.append(dm_lca_ch_tot, dim="Variables")
 
@@ -1442,7 +1452,9 @@ def TCAF(lever_setting, years_setting, DM_input, interface=Interface()):
     # from dietary-habits; without either, fish is left out and this says so.
     fish = None
     if DM_fish is not None and "food-demand" in DM_diet:
-        fish = TCAF_fish_lca_workflow(DM_fish, DM_diet["food-demand"], CDM_const, CDM_MF)
+        fish = TCAF_fish_lca_workflow(
+            DM_fish, DM_diet["food-demand"], CDM_const, CDM_MF
+        )
     else:
         print("TCAF: fish LCA skipped (fish inputs or diet food-demand missing)")
 

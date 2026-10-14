@@ -55,7 +55,6 @@ def ensure_structure(df):
 
 
 def crop_yield(dm_prod_share):
-
     # CROPS  (QCL) (for everything except lgn-energycrop, gas-energycrop, algae and insect)
     try:
         df_yield = pd.read_csv(file_dict["QCL_yield"])
@@ -435,7 +434,6 @@ def cropland_calibration(list_countries):
 
 
 def production_share():
-
     # Step DATA CROPS
     # Source: Exploitations agricoles et surface agricole utile (SAU) selon le niveau de classification 3 par canton
     # https://www.pxweb.bfs.admin.ch/pxweb/fr/px-x-0702000000_106/px-x-0702000000_106/px-x-0702000000_106.px
@@ -650,7 +648,6 @@ def production_share():
 
 # CalculationLeaf LIVESTOCK DENSITY & GRAZING INTENSITY
 def livestock_density(df_liv_pop):
-
     try:
         df_land_use_fao = pd.read_csv(file_dict["RL_land-use"])
     except OSError:
@@ -1484,7 +1481,6 @@ def constant():
 
 # CalculationLeaf FTS
 def fts_processing():
-
     # Read Excel
     df_fts_data = pd.read_excel("data/land-use_fts.xlsx", sheet_name="fts")
     df_fts_data = df_fts_data[
@@ -1510,7 +1506,6 @@ def fts_processing():
 
 
 def datamatrix_to_pickle(dm_fts):
-
     # Make list with all years
     years_all = years_ots + years_fts
 
@@ -1601,7 +1596,9 @@ def datamatrix_to_pickle(dm_fts):
     lever = "crop-share-intensive"
     # Level 1 - business as usual scenario: linear fitting on past data (share, bounded 0-1)
     dm_bau_1 = dict_ots[lever].copy()
-    linear_fitting(dm_bau_1, years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6)
+    linear_fitting(
+        dm_bau_1, years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
+    )
     dm_bau_1.filter({"Years": years_fts}, inplace=True)
     for level in range(2, 5):
         # Propagate the overall lever value across all categories
@@ -1629,7 +1626,9 @@ def datamatrix_to_pickle(dm_fts):
     lever = "crop-share-extensive"
     # Level 1 - business as usual scenario: linear fitting on past data (share, bounded 0-1)
     dm_bau_1 = dict_ots[lever].copy()
-    linear_fitting(dm_bau_1, years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6)
+    linear_fitting(
+        dm_bau_1, years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
+    )
     dm_bau_1.filter({"Years": years_fts}, inplace=True)
     for level in range(2, 5):
         # Propagate the overall lever value across all categories
@@ -1657,7 +1656,9 @@ def datamatrix_to_pickle(dm_fts):
     lever = "crop-share-organic"
     # Level 1 - business as usual scenario: linear fitting on past data (share, bounded 0-1)
     dm_bau_1 = dict_ots[lever].copy()
-    linear_fitting(dm_bau_1, years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6)
+    linear_fitting(
+        dm_bau_1, years_fts, min_t0=1e-6, max_t0=1 - 1e-6, min_tb=1e-6, max_tb=1 - 1e-6
+    )
     dm_bau_1.filter({"Years": years_fts}, inplace=True)
     for level in range(2, 5):
         # Propagate the overall lever value across all categories
