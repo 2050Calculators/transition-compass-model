@@ -1,3 +1,5 @@
+import contextlib
+import io
 import os
 import pickle
 import re
@@ -605,6 +607,227 @@ def _keep_per_kg_rows(df, source_name):
     return df[keep].copy()
 
 
+# Non-standard ecoinvent region codes: used as proxies, dropped from the final DMs
+_LCA_REGION_CODES = ["GLO", "RoW", "RER", "RNA", "RLA", "WI", "EU"]
+
+
+def _lca_process_inventory(df_animal, df_plant, mapping_lca):
+    """One row per LCIA process x geography x production method, saying whether
+    (and into which TCAF food / method) it enters the per-kg averages.
+
+    Mirrors TCAF_lca_preprocessing: plant rows are all averaged; animal rows use
+    only the explicit-kg rows of a group, the no-unit rows only when the group has
+    no explicit-kg row (see _agg_prefer_explicit_kg).
+    """
+    grp = ["Impact category", "Category", "Country", "Production Method"]
+
+    def _fu(df):
+        return (
+            df["Functional Unit"]
+            .astype(str)
+            .str.extract(r"\[([^\]]+)\]", expand=False)
+            .str.strip()
+            .str.lower()
+        )
+
+    df_animal = df_animal.copy()
+    is_kg = _fu(df_animal).eq("kg")
+    has_kg = is_kg.groupby([df_animal[c] for c in grp], dropna=False).transform("any")
+    df_animal["used"] = is_kg | ~has_kg
+    df_animal["source_file"] = "animal"
+    df_plant = df_plant.copy()
+    df_plant["used"] = True
+    df_plant["source_file"] = "plant"
+
+    cols = [
+        "source_file",
+        "Category",
+        "Country",
+        "Production Method",
+        "Process",
+        "Database",
+        "Functional Unit",
+    ]
+    df = pd.concat([df_animal, df_plant], ignore_index=True)
+    df = df.groupby(cols, dropna=False, as_index=False).agg(
+        used=("used", "any"),
+        n_impacts=("Impact category", "nunique"),
+    )
+
+    cat_to_food = {c: food for food, cats in mapping_lca.items() for c in cats}
+    df.insert(0, "tcaf_food", df["Category"].map(cat_to_food).fillna("not-mapped"))
+    method = (
+        df["Production Method"]
+        .astype(str)
+        .str.lower()
+        .str.replace(r"[^a-z0-9\-]+", "-", regex=True)
+        .str.strip("-")
+    )
+    df.insert(
+        1,
+        "tcaf_method",
+        method.where(
+            ~method.isin(["conventional", "intensive", "not-specified"]), "intensive"
+        ),
+    )
+    excluded = df["tcaf_food"].isin(["to-exclude", "not-mapped"])
+    df["reason"] = np.where(
+        excluded,
+        "category not used in TCAF",
+        np.where(
+            df["used"],
+            "averaged",
+            "dropped: no unit while per-kg rows exist (assumed per head)",
+        ),
+    )
+    df["used"] = df["used"] & ~excluded
+    return df.sort_values(["tcaf_food", "Country", "tcaf_method", "Process"])
+
+
+def _lca_source_geography(dm, target_countries, proxy_map, cat_names, year=2023):
+    """For every country x category cell of an LCA DM (before the proxy fill), the
+    geography whose data the cell ends up with after add_and_fill_missing_countries_dm.
+
+    Runs the same fill on a copy whose values are the index of the source country,
+    so the proxy logic is exactly the one used for the impacts.
+    """
+    tag = dm.copy()
+    codes = list(tag.col_labels["Country"])
+    ids = np.arange(len(codes), dtype=float).reshape(
+        [len(codes)] + [1] * (tag.array.ndim - 1)
+    )
+    tag.array = np.where(np.isnan(tag.array), np.nan, ids * np.ones_like(tag.array))
+    with contextlib.redirect_stdout(io.StringIO()):
+        add_and_fill_missing_countries_dm(tag, target_countries, proxy_map)
+
+    arr = tag.array[:, tag.col_labels["Years"].index(year), 0, ...]
+    cat_dims = sorted(d for d in tag.col_labels if d.startswith("Categories"))
+    labels = [tag.col_labels["Country"]] + [tag.col_labels[d] for d in cat_dims]
+    index = pd.MultiIndex.from_product(labels, names=["Country"] + cat_names)
+    df = pd.Series(arr.ravel(), index=index, name="id").dropna().reset_index()
+    df["data_from"] = df["id"].astype(int).map(dict(enumerate(codes)))
+    # Collapse the impact axis (normally one source geography for all impacts)
+    keys = [c for c in ["Country"] + cat_names if c != "impact_category"]
+    return df.groupby(keys, as_index=False)["data_from"].agg(
+        lambda x: ", ".join(sorted(set(x)))
+    )
+
+
+def export_lca_processes(
+    df_inventory,
+    df_geo_ch,
+    df_geo_world,
+    country_names,
+    dm_fish_lca=None,
+    df_fish_processes=None,
+):
+    """Write which LCIA processes are averaged per TCAF food and geography.
+
+    Swiss freshwater fish (ffish, from TCAF_fish_lca_for_exports) is added to the
+    Switzerland sheet; its processes are listed when the blue-food inputs exist.
+    """
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    used = df_inventory[df_inventory["used"]]
+
+    def _processes(df_geo, keys):
+        # Attach the processes averaged in the geography the data comes from
+        agg = used.groupby(keys + ["Country"], as_index=False).agg(
+            n_processes=("Process", "nunique"),
+            source_categories=("Category", lambda x: ", ".join(sorted(set(x)))),
+            processes=(
+                "Process",
+                lambda x: "; ".join(sorted(set(x)))[:32000],  # Excel cell limit
+            ),
+        )
+        agg = agg.rename(columns={"Country": "data_from"})
+        df = df_geo.merge(agg, on=keys + ["data_from"], how="left")
+        df["n_processes"] = df["n_processes"].fillna(0).astype(int)
+        df["proxy"] = df["data_from"] != df["Country"]
+        df.insert(0, "geography", df["Country"].map(country_names))
+        return df.rename(columns={"Country": "code"})
+
+    df_ch = _processes(
+        df_geo_ch[df_geo_ch["Country"] == "CH"].rename(
+            columns={"food": "tcaf_food", "method": "tcaf_method"}
+        ),
+        ["tcaf_food", "tcaf_method"],
+    )
+    df_world = _processes(
+        df_geo_world[~df_geo_world["Country"].isin(_LCA_REGION_CODES)].rename(
+            columns={"food": "tcaf_food"}
+        ),
+        ["tcaf_food"],
+    )
+    df_inventory = df_inventory.copy()
+    df_inventory.insert(3, "geography", df_inventory["Country"].map(country_names))
+
+    # Swiss freshwater fish: one row per method (aquaculture / capture)
+    if dm_fish_lca is not None:
+        methods = dm_fish_lca.col_labels["Categories2"]
+        df_fish = pd.DataFrame(
+            {
+                "geography": "Switzerland",
+                "code": "CH",
+                "tcaf_food": _FISH_FOOD,
+                "tcaf_method": methods,
+                "data_from": "fisheries-LCA",
+            }
+        )
+        if df_fish_processes is not None:
+            fish_used = df_fish_processes[df_fish_processes["used"]]
+            agg = fish_used.groupby("tcaf_method", as_index=False).agg(
+                n_processes=("Process", "nunique"),
+                source_categories=(
+                    "Category",
+                    lambda x: ", ".join(sorted(set(x))),
+                ),
+                processes=("Process", lambda x: "; ".join(sorted(set(x)))[:32000]),
+            )
+            df_fish = df_fish.merge(agg, on="tcaf_method", how="left")
+            df_inventory = pd.concat(
+                [df_inventory, df_fish_processes], ignore_index=True
+            )
+        else:
+            df_fish["processes"] = (
+                "not available: data/blue-food is missing "
+                "(run TCAF_fish_extract_inputs.py)"
+            )
+        df_fish["proxy"] = False
+        df_ch = pd.concat([df_ch, df_fish], ignore_index=True)
+
+    df_readme = pd.DataFrame(
+        {
+            "how the per-kg LCA values are averaged": [
+                "1. Per source category x geography x production method x impact: "
+                "mean over the processes marked used=True in sheet 'processes'.",
+                "2. Production methods conventional / intensive / not-specified are "
+                "averaged into 'intensive'.",
+                "3. Source categories are averaged into the TCAF food "
+                "(e.g. starchyroots + starchycrops -> crop-starch).",
+                "4. World only: production methods are averaged.",
+                "5. Missing geography / cells are filled from a proxy geography "
+                "(column data_from; proxy=True).",
+                "Sheets CH_food-method / world_food-geography list, for each final "
+                "value, the processes averaged in the data_from geography.",
+                "Freshwater fish (ffish, Switzerland only): aquaculture = mean of the "
+                "processes of each Swiss ISSCAAP group (or of its division when the "
+                "group has none), weighted by Swiss aquaculture tonnage 2018-2022; "
+                "capture = trammel-net process as proxy (see TCAF_fish_preprocessing).",
+            ]
+        }
+    )
+
+    out_dir = os.path.join(current_file_directory, "data/lca-costs")
+    os.makedirs(out_dir, exist_ok=True)
+    f = os.path.join(out_dir, "TCAF_lca-processes.xlsx")
+    with pd.ExcelWriter(f) as writer:
+        df_readme.to_excel(writer, sheet_name="README", index=False)
+        df_ch.to_excel(writer, sheet_name="CH_food-method", index=False)
+        df_world.to_excel(writer, sheet_name="world_food-geography", index=False)
+        df_inventory.to_excel(writer, sheet_name="processes", index=False)
+    print(f"  ✓ LCA processes averaged per food and geography written to {f}")
+
+
 # CalculationLeaf TCAF - LCA
 
 
@@ -1153,6 +1376,30 @@ def TCAF_lca_preprocessing():
     }
 
     target_countries = list(faostat_country_names.keys())
+
+    # Which processes are averaged per food and geography, for export_lca_processes
+    # (traced before the proxy fill, so the source geography of every value is known)
+    LCA_PROCESSES = {
+        "df_inventory": _lca_process_inventory(
+            df_lcia_animal_production_recipe,
+            df_lcia_plant_production_recipe,
+            mapping_lca,
+        ),
+        "df_geo_ch": _lca_source_geography(
+            dm_lcia_recipe_all_ch,
+            target_countries,
+            proxy_map,
+            ["food", "method", "impact_category"],
+        ),
+        "df_geo_world": _lca_source_geography(
+            dm_lcia_recipe_all_world,
+            target_countries,
+            proxy_map,
+            ["food", "impact_category"],
+        ),
+        "country_names": faostat_country_names,
+    }
+
     add_and_fill_missing_countries_dm(
         dm_lcia_recipe_all_ch, target_countries, proxy_map
     )
@@ -1211,7 +1458,7 @@ def TCAF_lca_preprocessing():
         "lca-world": dm_lcia_recipe_all_world,
     }
 
-    return DM_TCAF_lca, cdm_mf_lca
+    return DM_TCAF_lca, cdm_mf_lca, LCA_PROCESSES
 
 
 # CalculationLeaf TCAF - GHG CALIBRATION DATA
@@ -1478,6 +1725,225 @@ def TCAF_livestock_ghg_perhead_preprocessing():
     return cdm_ef, cdm_lsu
 
 
+# CalculationLeaf TCAF - FRESHWATER FISH LCA (for the exports)
+
+_FISH_FOOD = "ffish"
+
+
+def TCAF_fish_lca_for_exports(dm_lca_ch):
+    """Swiss freshwater-fish LCA for the Excel exports.
+
+    The fish LCA is built by TCAF_fish_preprocessing.py, which extends TCAF.pickle
+    after this script. Here it is only rebuilt for the exports:
+      - from data/blue-food (same build() as the fish script) when the inputs
+        exist -> impacts + the processes behind them;
+      - else from the fish entry of the current TCAF.pickle (read before this
+        script overwrites it) -> impacts only, no process list.
+    Returns (dm_fish_lca [impact-unit/kg live weight] or None, df_processes or None).
+    """
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    blue = os.path.join(current_file_directory, "data", "blue-food")
+
+    if os.path.isdir(blue):
+        import TCAF_fish_preprocessing as fish
+
+        DM_fish, _ = fish.build(dm_lca_ch)  # also writes fish_lca_ch_ffish_basis.csv
+        basis = pd.read_csv(os.path.join(blue, "fish_lca_ch_ffish_basis.csv"))
+        processes = pd.read_csv(
+            os.path.join(blue, "fish_lca_processes_per_kg_whole.csv")
+        )
+        n_impacts = len(dm_lca_ch.col_labels["Categories3"])
+
+        rows = []
+        aq = processes[processes["production_env"] == "Aquaculture"]
+        for b in basis[basis["method"] == "aquaculture"].itertuples():
+            if b.lca_source == "observed":
+                sel = aq[aq["isscaap_group"] == b.isscaap_group]
+                how = "averaged in its ISSCAAP group"
+            else:  # division_pooled: mean of the observed groups of the division
+                sel = aq[aq["division"] == b.division]
+                how = f"division-pooled proxy for '{b.isscaap_group}'"
+            for p in sel.itertuples():
+                rows.append(
+                    {
+                        "tcaf_method": "aquaculture",
+                        "Category": b.isscaap_group,
+                        "Process": p.Process,
+                        "Functional Unit": p.functional_unit,
+                        "reason": f"{how}, weight {b.swiss_tonnes_mean_2018_2022} t",
+                    }
+                )
+        cap = processes[processes["lca_gear"] == fish.CAPTURE_PROXY_GEAR]
+        for p in cap.itertuples():
+            rows.append(
+                {
+                    "tcaf_method": "capture",
+                    "Category": "all Swiss wild capture",
+                    "Process": p.Process,
+                    "Functional Unit": p.functional_unit,
+                    "reason": f"proxy: {fish.CAPTURE_PROXY_GEAR}",
+                }
+            )
+        df = pd.DataFrame(rows)
+        df.insert(0, "tcaf_food", _FISH_FOOD)
+        df["source_file"] = "blue-food"
+        df["Database"] = "TCAF_fisheries_aquaculture"
+        df["used"] = True
+        df["n_impacts"] = n_impacts
+        return DM_fish["lca-ch"], df
+
+    f = os.path.join(current_file_directory, "../../data/datamatrix/TCAF.pickle")
+    DM_fish = None
+    if os.path.exists(f):
+        with open(f, "rb") as handle:
+            DM_fish = pickle.load(handle)["fxa"].get("fish")
+    if DM_fish is None:
+        print(
+            "  ⚠️ No freshwater-fish LCA (data/blue-food missing and none in "
+            "TCAF.pickle): fish left out of the LCA exports."
+        )
+        return None, None
+    print(
+        "  ⚠️ data/blue-food missing: freshwater-fish LCA taken from the current "
+        "TCAF.pickle (no process list)."
+    )
+    return DM_fish["lca-ch"], None
+
+
+# CalculationLeaf TCAF - LCA COSTS EXPORT
+
+
+def export_lca_costs(
+    DM_TCAF_lca, cdm_mf_lca, cdm_liv_ghg_ef, dm_fish_lca=None, year="2023"
+):
+    """Write the monetized LCA costs per kg of product and per animal to Excel.
+
+    cost = physical impact [impact-unit/kg or /head] x monetization factor
+    [CHF/impact-unit]. Only the monetizable impact categories are exported (the
+    ones in cdm_mf_lca). The LCA data is static (one 2023 value, linearly fitted
+    to all years), so a single year is exported.
+
+    Sheets:
+      per-kg_CH_total    CHF/kg summed over impacts, food x method (Switzerland,
+                         incl. freshwater fish 'ffish' per kg live weight,
+                         methods aquaculture / capture)
+      per-kg_CH          detail per food, method and impact (Switzerland)
+      per-kg_world_total CHF/kg summed over impacts, country x food
+      per-kg_world       detail per country, food and impact
+      per-head_total     CHF/head summed over impacts, animal x method
+      per-head           detail per animal, method and impact
+      monetization-factors
+    """
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+
+    # Monetization factors [CHF/impact-unit] + impact unit (from the factor label,
+    # e.g. 'acidification[eur2022/kg-so2-eq]' -> 'kg-so2-eq')
+    impacts = cdm_mf_lca.col_labels["Categories1"]
+    mf = dict(zip(impacts, cdm_mf_lca.array[0, :]))
+    df_mf_src = pd.read_csv(
+        os.path.join(
+            current_file_directory, "data/monetization-factors/monetization-factor.csv"
+        )
+    )
+    df_mf_src = df_mf_src[df_mf_src["Key"] == "EUR"]
+    unit_by_stem = dict(
+        zip(
+            df_mf_src["Variable"].str.split("[").str[0],
+            df_mf_src["Variable"].str.extract(r"/([^\]]+)\]", expand=False),
+        )
+    )
+    unit = {imp: unit_by_stem.get(_LCA_MF_CROSSWALK[imp]) for imp in impacts}
+    df_mf = pd.DataFrame(
+        {
+            "impact": impacts,
+            "impact-unit": [unit[i] for i in impacts],
+            "mf_variable": [_LCA_MF_CROSSWALK[i] for i in impacts],
+            "mf [CHF/impact-unit]": [mf[i] for i in impacts],
+        }
+    )
+
+    def _to_long(arr, labels):
+        index = pd.MultiIndex.from_product(
+            list(labels.values()), names=list(labels.keys())
+        )
+        return pd.Series(arr.ravel(), index=index, name="impact").reset_index()
+
+    def _dm_to_long(dm, cat_names):
+        # Drop the Years and (single) Variables axes, keep Country + Categories
+        dm = dm.filter({"Years": [int(year)]})
+        arr = dm.array[:, 0, 0, ...]
+        labels = {"country": dm.col_labels["Country"]}
+        cat_dims = sorted(d for d in dm.col_labels if d.startswith("Categories"))
+        for dim, name in zip(cat_dims, cat_names):
+            labels[name] = dm.col_labels[dim]
+        return _to_long(arr, labels)
+
+    def _monetize(df, per):
+        df = df[df["impact"].notna() & df["impact_category"].isin(impacts)].copy()
+        df = df.rename(columns={"impact": f"impact [impact-unit/{per}]"})
+        df.insert(
+            df.columns.get_loc("impact_category") + 1,
+            "impact-unit",
+            df["impact_category"].map(unit),
+        )
+        df["mf [CHF/impact-unit]"] = df["impact_category"].map(mf)
+        df[f"cost [CHF/{per}]"] = (
+            df[f"impact [impact-unit/{per}]"] * df["mf [CHF/impact-unit]"]
+        )
+        return df
+
+    def _total(df, rows, cols, per):
+        return df.pivot_table(
+            index=rows, columns=cols, values=f"cost [CHF/{per}]", aggfunc="sum"
+        ).reset_index()
+
+    # Per kg of product - Switzerland (with production methods)
+    df_ch = _monetize(
+        _dm_to_long(
+            DM_TCAF_lca["lca-switzerland"], ["food", "method", "impact_category"]
+        ),
+        "kg",
+    ).drop(columns="country")
+    if dm_fish_lca is not None:
+        df_fish = _monetize(
+            _dm_to_long(dm_fish_lca, ["food", "method", "impact_category"]), "kg"
+        ).drop(columns="country")
+        df_ch = pd.concat([df_ch, df_fish], ignore_index=True)
+    df_ch_total = _total(df_ch, "food", "method", "kg")
+
+    # Per kg of product - world (methods averaged)
+    df_world = _monetize(
+        _dm_to_long(DM_TCAF_lca["lca-world"], ["food", "impact_category"]), "kg"
+    )
+    df_world_total = _total(df_world, "country", "food", "kg")
+
+    # Per animal (per head, per year of life; see TCAF_livestock_ghg_perhead_preprocessing)
+    cl = cdm_liv_ghg_ef.col_labels
+    df_head = _to_long(
+        cdm_liv_ghg_ef.array,
+        {
+            "impact_category": cl["Variables"],
+            "animal": cl["Categories1"],
+            "method": cl["Categories2"],
+        },
+    )[["animal", "method", "impact_category", "impact"]]
+    df_head = _monetize(df_head, "head")
+    df_head_total = _total(df_head, "animal", "method", "head")
+
+    out_dir = os.path.join(current_file_directory, "data/lca-costs")
+    os.makedirs(out_dir, exist_ok=True)
+    f = os.path.join(out_dir, "TCAF_lca-costs.xlsx")
+    with pd.ExcelWriter(f) as writer:
+        df_ch_total.to_excel(writer, sheet_name="per-kg_CH_total", index=False)
+        df_ch.to_excel(writer, sheet_name="per-kg_CH", index=False)
+        df_world_total.to_excel(writer, sheet_name="per-kg_world_total", index=False)
+        df_world.to_excel(writer, sheet_name="per-kg_world", index=False)
+        df_head_total.to_excel(writer, sheet_name="per-head_total", index=False)
+        df_head.to_excel(writer, sheet_name="per-head", index=False)
+        df_mf.to_excel(writer, sheet_name="monetization-factors", index=False)
+    print(f"  ✓ LCA costs per kg and per head written to {f}")
+
+
 # CalculationLeaf CONSTANTS
 
 
@@ -1621,11 +2087,18 @@ years_fts = create_years_list(2025, 2050, 5)
 years_all = years_ots + years_fts
 DM_TCAF_health_diet, dm_health_dalys = TCAF_health_diet_preprocessing()
 DM_TCAF_biodiversity = TCAF_biodiversity_preprocessing()
-DM_TCAF_lca, cdm_mf_lca = TCAF_lca_preprocessing()
+DM_TCAF_lca, cdm_mf_lca, LCA_PROCESSES = TCAF_lca_preprocessing()
+dm_fish_lca, df_fish_processes = TCAF_fish_lca_for_exports(
+    DM_TCAF_lca["lca-switzerland"]
+)
 CDM_MF = TCAF_MF_preprocessing()
 cdm_kcal = constant()
 dm_cal_lca_ghg = TCAF_ghg_calibration_preprocessing()
 cdm_liv_ghg_ef, cdm_liv_lsu = TCAF_livestock_ghg_perhead_preprocessing()
+export_lca_costs(DM_TCAF_lca, cdm_mf_lca, cdm_liv_ghg_ef, dm_fish_lca)
+export_lca_processes(
+    **LCA_PROCESSES, dm_fish_lca=dm_fish_lca, df_fish_processes=df_fish_processes
+)
 
 # CalculationTree RUNNING PICKLE CREATION --------------------------------------
 database_from_csv_to_datamatrix(years_ots, years_fts)
