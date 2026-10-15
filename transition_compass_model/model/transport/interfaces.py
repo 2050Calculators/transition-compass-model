@@ -230,8 +230,11 @@ def prepare_KPIs(DM_kpi_dict):
     dm_pass_emi.group_all("Categories1", inplace=True)
     cntr = dm_pass_emi.col_labels["Country"][0]
     value = dm_pass_emi[cntr, yr, "tra_emissions-CO2e_passenger"]
+    # TODO : ask stakeholder for coherent kpi for fribourg and schwyz
     thresholds_dict = {
         "Vaud": {"min": 0, "max": 1, "warning": 0.1, "danger": 0.5},
+        "Fribourg": {"min": 0, "max": 1, "warning": 0.1, "danger": 0.5},
+        "Schwyz": {"min": 0, "max": 1, "warning": 0.1, "danger": 0.5},
         "Switzerland": {"min": 0, "max": 10, "warning": 1, "danger": 5},
         "EU27": {"min": 0, "max": 500, "warning": 50, "danger": 250},
     }
@@ -245,6 +248,8 @@ def prepare_KPIs(DM_kpi_dict):
     value = dm_avia_emi[0, yr, "tra_passenger_emissions", "aviation", "CO2"]
     thresholds_dict = {
         "Vaud": {"min": 0, "max": 5, "warning": 1, "danger": 3},
+        "Fribourg": {"min": 0, "max": 5, "warning": 1, "danger": 3},
+        "Schwyz": {"min": 0, "max": 5, "warning": 1, "danger": 3},
         "Switzerland": {"min": 0, "max": 50, "warning": 10, "danger": 30},
         "EU27": {"min": 0, "max": 2500, "warning": 500, "danger": 1500},
     }
@@ -258,6 +263,8 @@ def prepare_KPIs(DM_kpi_dict):
     value = dm_energy_pass[0, yr, "tra_passenger_energy-demand-by-fuel"]
     thresholds_dict = {
         "Vaud": {"min": 0, "max": 3, "warning": 1, "danger": 2},
+        "Fribourg": {"min": 0, "max": 3, "warning": 1, "danger": 2},
+        "Schwyz": {"min": 0, "max": 3, "warning": 1, "danger": 2},
         "Switzerland": {"min": 0, "max": 30, "warning": 10, "danger": 20},
         "EU27": {"min": 0, "max": 1500, "warning": 500, "danger": 600},
     }
@@ -271,6 +278,8 @@ def prepare_KPIs(DM_kpi_dict):
     value = dm_energy_freight[0, yr, "tra_freight_total-energy"]
     thresholds_dict = {
         "Vaud": {"min": 0, "max": 1, "warning": 0.2, "danger": 0.5},
+        "Fribourg": {"min": 0, "max": 1, "warning": 0.2, "danger": 0.5},
+        "Schwyz": {"min": 0, "max": 1, "warning": 0.2, "danger": 0.5},
         "Switzerland": {"min": 0, "max": 10, "warning": 2, "danger": 5},
         "EU27": {"min": 0, "max": 500, "warning": 100, "danger": 250},
     }
@@ -286,6 +295,8 @@ def prepare_KPIs(DM_kpi_dict):
     value = dm_LDV_EV[0, yr, "tra_passenger_technology-share-fleet", "LDV", "BEV"] * 100
     thresholds_dict = {
         "Vaud": {"min": 0, "max": 100, "warning": 90, "danger": 50},
+        "Fribourg": {"min": 0, "max": 100, "warning": 90, "danger": 50},
+        "Schwyz": {"min": 0, "max": 100, "warning": 90, "danger": 50},
         "Switzerland": {"min": 0, "max": 100, "warning": 90, "danger": 50},
         "EU27": {"min": 0, "max": 100, "warning": 90, "danger": 50},
     }
@@ -304,6 +315,8 @@ def prepare_KPIs(DM_kpi_dict):
     value = dm_tech_HDVH[0, yr, "tra_freight_technology-share-fleet", "HDVH", "Non-ICE"]
     thresholds_dict = {
         "Vaud": {"min": 0, "max": 100, "warning": 70, "danger": 30},
+        "Fribourg": {"min": 0, "max": 100, "warning": 70, "danger": 30},
+        "Schwyz": {"min": 0, "max": 100, "warning": 70, "danger": 30},
         "Switzerland": {"min": 0, "max": 100, "warning": 70, "danger": 30},
         "EU27": {"min": 0, "max": 100, "warning": 70, "danger": 30},
     }

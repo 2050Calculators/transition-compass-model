@@ -380,12 +380,14 @@ def run(
         unit="MJ/km",
         dummy=True,
     )
+    cantons_list = [canton for canton in country_list if canton != "Switzerland"]
+    for i, canton in enumerate(cantons_list):
+        dm_veh_eff.add(np.nan, dim="Country", col_label=canton, dummy=True)
+        if i == 0:
+            dm_veh_eff.fill_nans(dim_to_interp="Variables")
 
-    cantons_list = [i for i in country_list if i != "Switzerland"]
-    dm_veh_eff.add(np.nan, dim="Country", col_label=cantons_list, dummy=True)
-    dm_veh_eff.fill_nans(dim_to_interp="Variables")
-    dm_veh_eff.fill_nans(dim_to_interp="Country")
-    dm_veh_eff.fill_nans("Years")
+        dm_veh_eff.fill_nans(dim_to_interp="Country")
+        dm_veh_eff.fill_nans("Years")
 
     # If it is all 0 for all years, replace with nans
     arr = dm_veh_eff.array
