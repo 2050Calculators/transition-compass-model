@@ -23,6 +23,7 @@ def _extract_type_class_shares_from_cadastre(this_dir):
     )
     df = pd.read_csv(cadastre_path, sep="\t")
 
+    # Documentation is available here https://www.housing-stat.ch/catalog/fr/4.3/final
     type_map = {
         1220: "offices",
         1230: "trade",
