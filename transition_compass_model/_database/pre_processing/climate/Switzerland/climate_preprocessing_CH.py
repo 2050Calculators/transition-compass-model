@@ -208,12 +208,9 @@ def compute_cooling_uptake(dm_CDD_ots, dict_CDD_fts):
         return dm
 
     ####   Cooling uptake   ####
-    # uptake = 0.95/ (1 + e−((CDD−700) / 150))
     # uptake = 0.815 x (1 − e−0.00225 CDD)
-    # arr = 0.95/(1 + np.exp(-(dm_clm.array[:, :, idx_c['clm_CDD']] - 700)/150))
-    idx = dm_CDD_ots.idx
-    arr = 0.815 * (1 - np.exp(-0.00225 * dm_CDD_ots.array[:, :, idx["clm_CDD"]]))
-    idx_ots = [idx[yr] for yr in years_ots]
+    arr = 0.815 * (1 - np.exp(-0.00225 * dm_CDD_ots[:, :, "clm_CDD"]))
+    idx_ots = [dm_CDD_ots.idx[yr] for yr in years_ots]
     arr_ots = arr[:, idx_ots]
     for i in range(10):
         window_size = 5
@@ -263,38 +260,24 @@ dm_N = extract_days_Tbase_from_Yasser_dataset(years_fts, country_list)
 dm_all = dm_HCDD.copy()
 dm_all.append(dm_N, dim="Variables")
 
+DM_climate_new = {"ots": {}, "fts": {"temp": {}}}
 
-file = "../../../data/datamatrix/climate.pickle"
-with open(file, "rb") as handle:
-    DM_climate_old = pickle.load(handle)
+DM_climate_new["ots"] = {"temp": dm_all.filter({"Years": years_ots})}
 
-DM_climate_new = dummy_update_DM_module_baseyear(DM_climate_old)
-
-DM_climate_new = filter_country_DM(country_list, DM_climate_new)
-
-DM_climate_new["ots"]["temp"]["bld_climate-impact-space"] = dm_all.filter(
-    {"Years": years_ots}
-)
 for lev in range(4):
     lev = lev + 1
-    DM_climate_new["fts"]["temp"]["bld_climate-impact-space"][lev] = dm_all.filter(
-        {"Years": years_fts}
-    )
+    DM_climate_new["fts"]["temp"][lev] = dm_all.filter({"Years": years_fts})
 
 #########################
 ####    AC UPTAKE    ####
 #########################
-dict_fts = DM_climate_new["fts"]["temp"]["bld_climate-impact-space"].copy()
-dm_ots = DM_climate_new["ots"]["temp"]["bld_climate-impact-space"].copy()
+dict_fts = DM_climate_new["fts"]["temp"].copy()
+dm_ots = DM_climate_new["ots"]["temp"].copy()
 dm_uptake_ots, dict_uptake_fts = compute_cooling_uptake(dm_ots, dict_fts)
-DM_climate_new["ots"]["temp"]["bld_climate-impact-space"].append(
-    dm_uptake_ots, dim="Variables"
-)
+DM_climate_new["ots"]["temp"].append(dm_uptake_ots, dim="Variables")
 for lev in range(4):
     lev = lev + 1
-    DM_climate_new["fts"]["temp"]["bld_climate-impact-space"][lev].append(
-        dict_uptake_fts[lev], dim="Variables"
-    )
+    DM_climate_new["fts"]["temp"][lev].append(dict_uptake_fts[lev], dim="Variables")
 
 file = "../../../data/datamatrix/climate.pickle"
 with open(file, "wb") as handle:
