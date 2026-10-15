@@ -21,18 +21,15 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
     )
     dm_bld = renov.extract_number_of_buildings_v2(file, agency, dataflow)
 
+    # https://www.leprogrammebatiments.ch/fr/meta/publications-et-photos/rapports-et-statistiques/
     # Programme Bâtiments
-    # file_url = "https://www.leprogrammebatiments.ch/media/filer_public/01/43/01436bb6-8b18-485f-8070-980102b35db5/recueil_de_tableaux_2024_fr.xlsx"
-    # local_filename = os.path.join(this_dir, '../data/programme_batiments.xlsx')
-    # file_extract = os.path.join(this_dir, '../data/bld_prog_bat_renovation_rate.pickle')
-
-    # dm_renov_rate = renov.extract_renovation_rate(file_url, local_filename, file_extract)
+    dm_renovation = renov.extract_nb_renovated_bld(dm_bld)
 
     # Number of renovated-buildings (thermal insulation)
     # https://www.newsd.admin.ch/newsd/message/attachments/82234.pdf
     # "Programme bâtiments" rapports annuels 2014-2022, focus sur isolation thérmique
     nb_buildings_isolated = {
-        # 2023 : 8924,
+        2023: 8924,
         2022: 8148,
         2021: 8400,
         2020: 8050,
@@ -43,7 +40,7 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
         2014: 8303,
     }
     nb_buildings_systemic_renovation = {
-        # 2023 : 2520,
+        2023: 2520,
         2022: 2326,
         2021: 2320,
         2020: 2240,
@@ -104,9 +101,9 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
         "multi-family-households": 0.35,
         "other": 0.1,
     }
-    dm_renovation = renov.compute_renovated_buildings(
-        dm_bld, nb_buildings_renovated, canton_share, share_by_bld
-    )
+    # dm_renovation = renov.compute_renovated_buildings(
+    #     dm_bld, nb_buildings_renovated, canton_share, share_by_bld
+    # )
 
     # Compute renovation-rate
     dm_renovation = renov.compute_renovation_rate(dm_renovation, years_ots)

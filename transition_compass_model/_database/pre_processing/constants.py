@@ -1,5 +1,6 @@
 CANTONS_NAME = {
     "accronym_to_name": {
+        "CH": "Switzerland",
         "AG": "Aargau",
         "AR": "Appenzell Ausserrhoden",
         "AI": "Appenzell Innerrhoden",
@@ -29,6 +30,7 @@ CANTONS_NAME = {
         "ZH": "Zurich",
     },
     "name_to_accronym": {
+        "Switzerland": "CH",
         "Aargau": "AG",
         "Appenzell Ausserrhoden": "AR",
         "Appenzell Innerrhoden": "AI",

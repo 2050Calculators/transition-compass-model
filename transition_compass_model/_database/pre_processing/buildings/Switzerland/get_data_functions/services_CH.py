@@ -16,32 +16,28 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def _extract_type_class_shares_from_cadastre(this_dir):
-    """Return P(type | class) shares from Vaud cadastre, shape (n_types, n_classes)."""
-    cadastre_path = os.path.join(this_dir, "../data/cadastre_regener.csv")
-    df = pd.read_csv(cadastre_path, low_memory=False)
+    """Return P(type | class) shares from RegBL cadastre, shape (n_types, n_classes)."""
+    # For now use REGBL data which contains lots of missing values. #FIXME
+    cadastre_path = os.path.join(
+        this_dir, "../data/Regbl/Switzerland/gebaeude_batiment_edificio.csv"
+    )
+    df = pd.read_csv(cadastre_path, sep="\t")
 
-    non_res_sia = [
-        "Administration",
-        "Commerce",
-        "Ecoles",
-        "Hopitaux",
-        "Restauration",
-        "Lieux_de_rassemblement",
-        "Installations_sportives",
-    ]
     type_map = {
-        "Administration": "offices",
-        "Commerce": "trade",
-        "Ecoles": "education",
-        "Hopitaux": "health",
-        "Restauration": "hotels",
-        "Lieux_de_rassemblement": "other",
-        "Installations_sportives": "other",
+        1220: "offices",
+        1230: "trade",
+        1261: "education",
+        1263: "education",
+        1264: "health",
+        1211: "hotels",
+        1212: "hotels",
+        1231: "hotels",
     }
 
-    df = df[df["aff_sia"].isin(non_res_sia)].copy()
-    df = df[df["gebf"].notna() & (df["gebf"] > 0)]
-    df["model_type"] = df["aff_sia"].map(type_map)
+    df = df[df["GKLAS"] > 1200].copy()
+    df = df[df["GEBF"].notna() & (df["GEBF"] > 0)]
+    df["model_type"] = df["GKLAS"].map(type_map)
+    df["model_type"].fillna("other", inplace=True)
 
     def _year_to_class(yr):
         if pd.isna(yr):
@@ -58,11 +54,11 @@ def _extract_type_class_shares_from_cadastre(this_dir):
         else:
             return "B"
 
-    df["energy_class"] = df["gbauj"].apply(_year_to_class)
+    df["energy_class"] = df["GBAUJ"].apply(_year_to_class)
     df = df[df["energy_class"].notna()]
 
     area_by_type_class = (
-        df.groupby(["model_type", "energy_class"])["gebf"]
+        df.groupby(["model_type", "energy_class"])["GEBF"]
         .sum()
         .unstack("energy_class")
         .fillna(0)

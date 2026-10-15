@@ -1,6 +1,7 @@
 import os
 import pickle
 import zipfile
+from urllib.request import urlretrieve
 
 import numpy as np
 import pandas as pd
@@ -12,7 +13,11 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
     get_data_api_swiss_stats,
 )
-from transition_compass_model._database.pre_processing.params import years_ots
+from transition_compass_model._database.pre_processing.constants import CANTONS_NAME
+from transition_compass_model._database.pre_processing.params import (
+    country_list,
+    years_ots,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     check_filtering_size,
     create_years_list,
@@ -622,31 +627,14 @@ def extract_bld_new_buildings_2(table_id, file):
     return dm_new_area
 
 
-def extract_energy_reference_area(file_path=""):
-    """Download data from https://www.housing-stat.ch/fr/data/supply/public.html and extract the energy reference area per building category.
-    This is the area used to compute the energy demand of new buildings, as it corresponds to the area that needs to be heated/cooled.
-    It is different from the dwelling area, as it does include staircases, hallways etc ...
-    To get the documentation of the data check https://www.housing-stat.ch/catalog/fr/4.3/final
+def extract_energy_reference_area_regener():
+    """Download data from the regener cadastre"""
 
-    Args:
-        years_ots (_type_): _description_
-        file_path (str, optional): _description_. Defaults to "".
-    """
-    # TODO: automatize the download and extraction of the data, currently I downloaded it manually and saved it as an csv
-    # file_path = "transition_compass_model/_database/pre_processing/buildings/Switzerland/data/cadastre_regener.csv"
+    dic_ERA = {}
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     file_path = current_file_directory + "/../data/cadastre_regener.csv"
 
     df = pd.read_csv(file_path)
-
-    # 1110 single_family_households
-    # 1122 and 1121 multi_family_households
-    # 1130 multi_family_households Bâtiments résidentiels pour collectivités, y compris les résidences et résidences-services pour les personnes âgées, les étudiants, les enfants et d'autres groupes sociaux: par exemple, maisons de retraite, foyers pour travailleurs, foyers pour étudiants, orphelinats, foyers pour sans-abri etc.
-    # df = df[df["gkat"].isin(['Batiments_exclusivement_a_usage_d_habitation','Batiment_d_habitation_a_usage_annexe'])]
-
-    dic_ERA = {}
-    # dic_ERA["single-family-households"] = df[df["gklas"] == "Maisons_individuelles"]["gebf"].sum()
-    # dic_ERA["multi-family-households"] = df[df["gklas"] != "Maisons_individuelles"]["gebf"].sum()
 
     single_multi_code = {
         "single-family-households": ["Maisons_individuelles"],
@@ -660,6 +648,71 @@ def extract_energy_reference_area(file_path=""):
         df_cat = df[df["gklas"].isin(values)]
         dic_ERA[keys] = df_cat["gebf"].sum()
         print(df_cat)
+
+    return dic_ERA
+
+
+def extract_energy_reference_area():
+    """Download data from https://www.housing-stat.ch/fr/data/supply/public.html and extract the energy reference area per building category.
+    This is the area used to compute the energy demand of new buildings, as it corresponds to the area that needs to be heated/cooled.
+    It is different from the dwelling area, as it does include staircases, hallways etc ...
+    To get the documentation of the data check https://www.housing-stat.ch/catalog/fr/4.3/final
+    """
+
+    dic_ERA = {}
+
+    for country in country_list:
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        file_dir = current_file_directory + f"/../data/Regbl/{country}/"
+        file_path = file_dir + "gebaeude_batiment_edificio.csv"
+
+        try:
+            df = pd.read_csv(file_path, sep="\t")
+
+        except FileNotFoundError:
+            print(f"File not found for {country}, dowloading...")
+            print("Warning it might take long as the files are quite heavy ")
+
+            if not os.path.exists(file_dir):
+                os.makedirs(file_dir)
+
+            zip_file_path = (
+                current_file_directory
+                + f"/../data/Regbl/cadastre_regener_{country}.zip"
+            )
+
+            # get the canton accronym to dowload the data
+            cantons_accronym = CANTONS_NAME["name_to_accronym"][country].lower()
+
+            # use the url to dowload the data
+            url = f"http://public.madd.bfs.admin.ch/{cantons_accronym}.zip"
+            urlretrieve(url, zip_file_path)
+
+            with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
+                # Extract only 'gebaeude_batiment_edificio.csv'
+                zip_ref.extract("gebaeude_batiment_edificio.csv", path=file_dir)
+
+            os.remove(zip_file_path)
+            df = pd.read_csv(file_path, sep="\t")
+
+        # 1110 single_family_households
+        # 1122 and 1121 multi_family_households
+        # 1130 multi_family_households Bâtiments résidentiels pour collectivités, y compris les résidences et résidences-services pour les personnes âgées, les étudiants, les enfants et d'autres groupes sociaux: par exemple, maisons de retraite, foyers pour travailleurs, foyers pour étudiants, orphelinats, foyers pour sans-abri etc.
+        single_multi_code = {
+            "single-family-households": [1110.0],
+            "multi-family-households": [1121, 1122, 1130],
+        }
+        # conserve uniquement les batiments existnts
+        df = df[df["GSTAT"] == 1004]
+        # Compute the sum energy reference are per building category as a proxy to the total ERA of the canton
+        dic_ERA[country] = {}
+        for keys, values in single_multi_code.items():
+            df_cat = df[df["GKLAS"].isin(values)]
+            perc_of_data = len(df_cat[df_cat["GEBF"].notnull()]) / len(df_cat)
+            print(
+                f"Percentage of ERA data available for {keys} in {country}: {perc_of_data * 100:.2f}%"
+            )
+            dic_ERA[country][keys] = df_cat["GEBF"].sum()
 
     return dic_ERA
 

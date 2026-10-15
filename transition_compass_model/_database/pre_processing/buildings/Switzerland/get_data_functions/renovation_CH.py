@@ -2,6 +2,7 @@ import os
 import pickle
 
 import numpy as np
+import pandas as pd
 from get_data_functions import utils
 
 from transition_compass_model._database.pre_processing.api_routines_CH import (
@@ -10,6 +11,7 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
     get_data_api_swiss_stats,
 )
+from transition_compass_model._database.pre_processing.constants import CANTONS_NAME
 from transition_compass_model._database.pre_processing.params import (
     country_list,
     years_ots,
@@ -155,6 +157,98 @@ def extract_number_of_buildings(table_id, file):
             pickle.dump(dm_nb_bld, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return dm_nb_bld
+
+
+def extract_nb_renovated_bld(dm_bld: DataMatrix) -> DataMatrix:
+    """From the programme batiments excels that can be downloaded at https://www.leprogrammebatiments.ch/fr/meta/publications-et-photos/rapports-et-statistiques/.
+    Extract the number of buildings renovated and add it to dm_bld as a new variable.
+
+    Args:
+        dm_bld (DataMatrix): DataMatrix with shape (nb_country, 14,1, 2), variables ['bld_nb-bld'] and categories1 ['multi-family-households', 'single-family-households']
+
+    Returns:
+        DataMatrix: DataMatrix with shape (nb_country, 14,2, 2), variables ['bld_nb-bld', 'bld_nb-bld-renovated'] and categories1 ['multi-family-households', 'single-family-households']
+    """
+
+    # Create an empty variable in the dm to
+    dm_bld.add(
+        np.nan,
+        dim="Variables",
+        dummy=True,
+        col_label="bld_nb-bld-renovated",
+        unit="number",
+    )
+    idx = dm_bld.idx
+
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+
+    # get renovation data from 2017  to 2020
+    for year in range(2017, 2021):
+        file_path = current_file_directory + f"/../data/programme_batiment/{year}.xlsx"
+        # 2. Analyse (versements)
+
+        df = pd.read_excel(file_path, sheet_name="2. Analyse (versements)")
+
+        # get the rows of interest
+        start = df.index[df.iloc[:, 0].str.contains("Tableau 2b", na=False)][0]
+        end = df.index[df.iloc[:, 0].str.contains("Tableau 2c", na=False)][0]
+        df = df.iloc[df.index.get_loc(start) : df.index.get_loc(end) + 1]
+
+        # Get from the excel the number of buildings renovated for single family households for each canton
+        sfh_index = df.index[df.iloc[:, 0] == "NOMBRE DE MAISONS INDIVIDUELLES"][0]
+        mfh_index = df.index[df.iloc[:, 0] == "NOMBRE D'IMMEUBLES COLLECTIFS"][0]
+        for country in country_list:
+            canton_acronym = CANTONS_NAME["name_to_accronym"][country]
+            # single-family-households
+            dm_bld.array[
+                idx[country],
+                idx[year],
+                idx["bld_nb-bld-renovated"],
+                idx["single-family-households"],
+            ] = df.loc[
+                sfh_index + 2 : sfh_index + 3,
+                df.loc[sfh_index + 1, :] == canton_acronym,
+            ].sum()
+            # multi-family-households
+            dm_bld.array[
+                idx[country],
+                idx[year],
+                idx["bld_nb-bld-renovated"],
+                idx["multi-family-households"],
+            ] = df.loc[
+                mfh_index + 2 : mfh_index + 3,
+                df.loc[mfh_index + 1, :] == canton_acronym,
+            ].sum()
+
+    # get renovation data from 2021
+    for year in range(2021, years_ots[-1]):
+        file_path = current_file_directory + f"/../data/programme_batiment/{year}.xlsx"
+
+        df = pd.read_excel(file_path, sheet_name="2.2 Détails (versements)")
+        # get the rows of interest
+        end = df.index[df.iloc[:, 0].str.contains("Tableau 2.2b", na=False)][0]
+        df = df.iloc[: df.index.get_loc(end) + 1]
+
+        sfh_index = df.index[df.iloc[:, 0] == "NOMBRE DE MAISONS INDIVIDUELLES"][0]
+        mfh_index = df.index[df.iloc[:, 0] == "NOMBRE D'IMMEUBLES COLLECTIFS"][0]
+        for country in country_list:
+            canton_acronym = CANTONS_NAME["name_to_accronym"][country]
+
+            dm_bld.array[
+                idx[country],
+                idx[year],
+                idx["bld_nb-bld-renovated"],
+                idx["single-family-households"],
+            ] = df.loc[sfh_index, df.loc[1, :] == canton_acronym].item()
+            # multi-family-households
+            dm_bld.array[
+                idx[country],
+                idx[year],
+                idx["bld_nb-bld-renovated"],
+                idx["multi-family-households"],
+            ] = df.loc[mfh_index, df.loc[1, :] == canton_acronym].item()
+
+    return dm_bld
 
 
 def compute_renovated_buildings(
