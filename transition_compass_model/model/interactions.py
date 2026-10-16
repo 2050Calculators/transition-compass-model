@@ -23,8 +23,8 @@ from transition_compass_model.model.transport_module import transport
 
 # Cross-sector totals shown on the Overall page. Each list is exactly the set of
 # bands stacked in the corresponding Overall chart, so the KPI card always equals
-# the top of its stack. Buildings and transport only: agriculture and industry are
-# not part of the Overall view yet.
+# the top of its stack. Buildings, transport and agriculture: industry is not part
+# of the Overall view yet.
 OVERALL_KPI_DEFINITIONS = [
     (
         "Total emissions (all sectors)",
@@ -34,6 +34,7 @@ OVERALL_KPI_DEFINITIONS = [
             ("transport", "tra_emissions-CO2e_passenger-land"),
             ("transport", "tra_emissions-CO2e_freight"),
             ("transport", "tra_emissions-CO2e_passenger_aviation"),
+            ("agriculture", "agr_emissions-CO2e"),
         ],
     ),
     (
@@ -44,6 +45,7 @@ OVERALL_KPI_DEFINITIONS = [
             ("transport", "tra_energy-demand_passenger-land"),
             ("transport", "tra_energy-demand_freight"),
             ("transport", "tra_passenger_energy-demand-by-mode_aviation"),
+            ("agriculture", "agr_energy-demand_total"),
         ],
     ),
 ]
