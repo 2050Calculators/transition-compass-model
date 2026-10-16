@@ -72,7 +72,19 @@ def drop_if_smaller_than_0_01_per_category_country_cat_2(
     return dm
 
 
-def drop_if_smaller_than_0_01(dm_og, cat_to_drop="Categories2", col_to_drop="Other"):
+def drop_if_smaller_than_0_01(
+    dm_og: DataMatrix, cat_to_drop="Categories2", col_to_drop="Other"
+) -> DataMatrix:
+    """Drop a column from a category in a datamatrix
+
+    Args:
+        dm_og (DataMatrix)
+        cat_to_drop (str, optional): Categories with the column you want to drop. Defaults to "Categories2".
+        col_to_drop (str, optional): _description_. Defaults to "Other".
+
+    Returns:
+        DataMatrix: _description_
+    """
     dm = dm_og.copy()
     dm_ratio = dm.normalise(dim=cat_to_drop, inplace=False)
     idx = dm_ratio.idx

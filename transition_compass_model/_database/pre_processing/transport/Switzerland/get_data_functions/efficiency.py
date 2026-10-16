@@ -26,6 +26,7 @@ def clean_energy_dimension(dm_veh_eff, var_name):
     # TODO : search for real maximum efficiency value.
     dm_veh_eff.rename_col("20.01ormore", "20.01‒27.5", dim="Categories2")
     dm_veh_eff.rename_col("Upto12.50", "0‒12.50", dim="Categories2")
+
     cat2_list_old = dm_veh_eff.col_labels["Categories2"]
     co2_km = []
     for i in range(len(cat2_list_old)):
@@ -644,6 +645,7 @@ def get_new_vehicle_efficiency_co2(file: str, agency: str, dataflow: str, var_na
     Extract data from https://stats.swiss/vis?lc=en&df[ds]=disseminate&df[id]=DF_IVS_1_EMISSION&df[ag]=CH1.MFZ_IVS&dq=5%2B22._T._T.N._T._T%2BPC%2BPH%2BDC%2BDH%2BHP%2BHD%2BGA%2B_O.1%2B2%2B3%2B4%2B5%2B6%2B7%2B_Z%2B_U%2B_T._T.A&pd=2005%2C2025&to[TIME_PERIOD]=false&pg=0
     Get CO2/km from this database.
     However data is available only from 2021.
+    New version of "px-x-1103020200_201"
 
     Args:
         file (str): filepath where the pickle is saved
