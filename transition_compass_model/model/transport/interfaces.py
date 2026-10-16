@@ -513,6 +513,26 @@ def prepare_TPE_output(
         factor=1e-6,
     )
 
+    # The mode-level aviation "fleet" is in seats, not aircraft: aviation occupancy is a
+    # load factor (pkm per seat-km), so its demand-vkm is seat-km and fleet = seat-km /
+    # utilisation-rate counts seats. Published on its own, in thousands, so it isn't
+    # stacked with vehicle counts.
+    dm_keep_aviation_seats = DM_passenger_out["mode"].filter(
+        {"Variables": ["tra_passenger_vehicle-fleet"], "Categories1": ["aviation"]}
+    )
+    dm_keep_aviation_seats.group_all("Categories1", inplace=True)
+    dm_keep_aviation_seats.rename_col(
+        "tra_passenger_vehicle-fleet",
+        "tra_passenger_aviation-fleet-seats",
+        dim="Variables",
+    )
+    dm_keep_aviation_seats.change_unit(
+        "tra_passenger_aviation-fleet-seats",
+        old_unit="number",
+        new_unit="thousands",
+        factor=1e-3,
+    )
+
     dm_keep_tech = DM_passenger_out["tech"].filter(
         {"Variables": ["tra_passenger_vehicle-fleet"], "Categories1": ["LDV"]}
     )
@@ -619,6 +639,7 @@ def prepare_TPE_output(
     # Merge datamatrices for new-app
     dm_tpe = dm_keep_mode.flattest()
     dm_tpe.append(dm_keep_tech.flattest(), dim="Variables")
+    dm_tpe.append(dm_keep_aviation_seats.flattest(), dim="Variables")
     dm_tpe.append(dm_keep_fuel.flattest(), dim="Variables")
     dm_tpe.append(dm_keep_energy.flattest(), dim="Variables")
     dm_tpe.append(dm_freight_energy_by_mode.flattest(), dim="Variables")
