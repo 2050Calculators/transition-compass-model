@@ -133,22 +133,6 @@ def variables_to_tpe(DM_ots_fts):
     return dm_tpe
 
 
-def climate_power_interface(DM_ots_fts, write_pickle=False):
-    dm = DM_ots_fts["temp"]["clm_capacity-factor"].copy()
-
-    # if write_pickle is True, write pickle
-    if write_pickle is True:
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(
-            current_file_directory,
-            "../_database/data/interface/climate_to_power.pickle",
-        )
-        with open(f, "wb") as handle:
-            pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    return dm
-
-
 # CORE module
 def climate(
     lever_setting, years_setting, DM_input, interface=Interface(), calibration=False
@@ -163,10 +147,6 @@ def climate(
     # interface buildings
     dm_bld = climate_buildings_interface(DM_ots_fts)
     interface.add_link(from_sector="climate", to_sector="buildings", dm=dm_bld)
-
-    # interface power
-    dm_pow = climate_power_interface(DM_ots_fts)
-    interface.add_link(from_sector="climate", to_sector="power", dm=dm_pow)
 
     # TODO: interface water when water is ready
 

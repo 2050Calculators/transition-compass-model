@@ -27,6 +27,10 @@ def extract_renewable_capacity_data(file_url, local_filename):
     # Set the new header
     df.columns = df.iloc[1]
     df = df.loc[[48, 231]].copy()
+    # TODO: the resulting wind Pmax (~11.9 GW, i.e. wind lever level 4) is far above
+    # what can realistically be built in Switzerland. Find a realistic potential
+    # (source or constraint) and fix it here. It flows into the wind lever levels in
+    # scenarios/power_fts_capacity_levers_CH.py.
     df["Technologie"] = df["Technologie"].replace(
         {
             "Photovoltaikanl. (Netz+Insel)": "pow_capacity-Pmax_PV-roof[MW]",

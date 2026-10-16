@@ -134,6 +134,8 @@ def run(dm_capacity, reactor_list, years_ots, years_fts):
     # technical potential (pow_capacity-Pmax), levels 2/3 linearly interpolated. Only endyr
     # matters here (no decommissioning story to preserve), so a single-point fts DataMatrix
     # is enough.
+    # TODO: wind Pmax (level 4) is unrealistically high - see the TODO in
+    # processors/renewable_capacity_pipeline_CH.py.
     for lever_name in ["onshore-wind-capacity", "pv-capacity"]:
         category = lever_categories[lever_name]
         level1_value = dm_capacity[

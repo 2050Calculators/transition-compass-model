@@ -267,7 +267,10 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
     DM_passenger_out["emissions"] = dm_emissions
 
     results_run, KPI = inter.prepare_TPE_output(
-        DM_passenger_out, DM_freight_out, dm_aviation_local=dm_aviation_local
+        DM_passenger_out,
+        DM_freight_out,
+        dm_aviation_local=dm_aviation_local,
+        years_setting=years_setting,
     )
     return results_run, KPI
 
