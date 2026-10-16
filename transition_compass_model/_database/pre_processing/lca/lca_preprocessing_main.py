@@ -2,11 +2,10 @@ from processors.lca_levers import run as levers_run
 from processors.lca_ots_pickle import run as ots_pickle_run
 from scenarios.lca_fts_BAU_pickle import run as fts_bau_pickle_run
 
-from transition_compass_model.model.common.auxiliary_functions import create_years_list
-
-# years
-years_ots = create_years_list(1990, 2023, 1)
-years_fts = create_years_list(2025, 2050, 5)
+from transition_compass_model._database.pre_processing.params import (
+    years_fts,
+    years_ots,
+)
 
 # footprint lever
 print("Footprint")

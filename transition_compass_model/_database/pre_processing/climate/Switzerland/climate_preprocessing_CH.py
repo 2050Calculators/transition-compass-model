@@ -3,8 +3,12 @@ import pickle
 import numpy as np
 import pandas as pd
 
+from transition_compass_model._database.pre_processing.params import (
+    country_list,
+    years_fts,
+    years_ots,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
-    create_years_list,
     linear_fitting,
     moving_average,
 )
@@ -249,10 +253,6 @@ def compute_cooling_uptake(dm_CDD_ots, dict_CDD_fts):
     return dm_uptake_ots, dict_uptake_fts
 
 
-years_ots = create_years_list(1990, 2023, 1)
-years_fts = create_years_list(2025, 2050, 5)
-
-country_list = ["Switzerland", "Vaud", "Fribourg", "Schwyz"]
 dm_HCDD = extract_CDD_HDD_from_Yasser_dataset(years_fts, country_list)
 
 dm_N = extract_days_Tbase_from_Yasser_dataset(years_fts, country_list)

@@ -1392,8 +1392,6 @@ def my_pickle_dump(
             backup_file_path = os.path.join(
                 backup_folder_path, local_pickle_file.split("/")[-1]
             )
-            with open(backup_file_path, "wb") as handle:
-                pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
             # save the new file in place of the old file
             with open(local_pickle_file, "wb") as handle:
                 pickle.dump(DM_new, handle, protocol=pickle.HIGHEST_PROTOCOL)
