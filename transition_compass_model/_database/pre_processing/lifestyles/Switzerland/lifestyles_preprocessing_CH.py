@@ -882,7 +882,4 @@ file = os.path.join(
     current_file_directory, "../../../data/datamatrix/lifestyles.pickle"
 )
 
-# with open(file, 'wb') as handle:
-#  pickle.dump(DM_lfs, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
 my_pickle_dump(DM_new=DM_lfs, local_pickle_file=file)
