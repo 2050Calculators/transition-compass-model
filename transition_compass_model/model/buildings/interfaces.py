@@ -336,6 +336,7 @@ def bld_TPE_interface(
     DM_light,
     DM_hotwater,
     DM_heating_by_use,
+    years_setting,
 ):
     dm_tpe = DM_energy["energy-emissions-by-class"].flattest()
     dm_tpe.append(
@@ -376,8 +377,25 @@ def bld_TPE_interface(
         )
         dm_tpe.append(dm_srv_floor_tpe.flattest(), dim="Variables")
 
+    # KPI gauge bounds are derived from the last historical year, as in transport's
+    # prepare_KPIs: that value is unaffected by lever settings, so the scale stays put
+    # while the needle moves, and it works for both a canton and the country (~10x
+    # apart). The warning/danger fractions are placeholders, not policy targets.
+    base_year = years_setting[1]
+    end_year = years_setting[3]
     KPI = []
-    yr = 2050
+
+    def _scaled(title, unit, dm, var, max_f, warning_f, danger_f):
+        base = float(dm[0, base_year, var])
+        return {
+            "title": title,
+            "value": float(dm[0, end_year, var]),
+            "unit": unit,
+            "min": 0,
+            "max": max_f * base,
+            "warning": warning_f * base,
+            "danger": danger_f * base,
+        }
 
     # Emissions global
     dm_emission_global = DM_services["services_emissions"].copy()
@@ -434,9 +452,19 @@ def bld_TPE_interface(
     )
     dm_tpe.append(dm_emission_global.flattest(), dim="Variables")
 
-    value = dm_emission_global[0, yr, "bld_emissions-CO2e"]
-
-    KPI.append({"title": "Total emissions", "value": value, "unit": "Mt"})
+    # Buildings emissions only fall under every lever setting, so the scale stops a
+    # little above the base year rather than at transport's 2x.
+    KPI.append(
+        _scaled(
+            "Total emissions",
+            "Mt",
+            dm_emission_global,
+            "bld_emissions-CO2e",
+            1.2,
+            0.5,
+            0.8,
+        )
+    )
 
     # Energy demand total heating  (hotwater + space heating residential + services)
     # TODO : add a plot for the total energy demand for heating (hot water + space heating for residential + services) and the share of ambient heat and other tech in it.
@@ -520,15 +548,33 @@ def bld_TPE_interface(
     )
     dm_tpe.append(dm_energy_total.flattest(), dim="Variables")
 
-    value = dm_energy_total[0, yr, "bld_energy-demand_total"]
-    KPI.append({"title": "Total energy demand", "value": value, "unit": "TWh"})
+    KPI.append(
+        _scaled(
+            "Total energy demand",
+            "TWh",
+            dm_energy_total,
+            "bld_energy-demand_total",
+            1.2,
+            0.5,
+            0.8,
+        )
+    )
 
     # Floor area stock (residential + non-residential), from the same series as the
     # stock charts. The building stock already covers the services building types,
     # so services_floor-area must not be added on top (it would count them twice).
     dm_tot_area = DM_area["floor-area-use-cat"].group_all("Categories2", inplace=False)
     dm_tot_area.group_all("Categories1", inplace=True)
-    value = dm_tot_area[0, yr, "bld_floor-area_stock"]
-    KPI.append({"title": "Floor Area Stock", "value": value, "unit": "Mm2"})
+    KPI.append(
+        _scaled(
+            "Floor Area Stock",
+            "Mm2",
+            dm_tot_area,
+            "bld_floor-area_stock",
+            1.5,
+            1.1,
+            1.25,
+        )
+    )
 
     return dm_tpe, KPI
