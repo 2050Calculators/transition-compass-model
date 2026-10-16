@@ -31,6 +31,8 @@ def run(DM_agriculture: DataMatrix, years_ots: list, years_fts: list) -> DataMat
         "biomass-hierarchy_biomass-mix_digestor",
     ]  #'biomass-hierarchy_bioenergy_liquid_biodiesel'
     #'biomass-hierarchy_bioenergy_liquid_biogasoline'
+    # Levers kept constant at the last ots value
+    list_constant = ["climate-smart-livestock_slaughtered"]
 
     for key in DM_agriculture["ots"].keys():
         if isinstance(DM_agriculture["ots"][key], dict):
@@ -42,6 +44,13 @@ def run(DM_agriculture: DataMatrix, years_ots: list, years_fts: list) -> DataMat
                     linear_fit_ratio(
                         dm, years_fts, years_range=[years_ots[0], years_ots[-1]]
                     )
+
+                elif subkey in list_constant:
+                    linear_fitting(dm, years_fts, based_on=years_ots)
+                    idx = dm.idx
+                    dm.array[:, [idx[y] for y in years_fts], ...] = dm.array[
+                        :, idx[years_ots[-1]], np.newaxis, ...
+                    ]
 
                 else:
                     linear_fitting(dm, years_fts, based_on=years_ots)
