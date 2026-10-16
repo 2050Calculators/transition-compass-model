@@ -150,6 +150,11 @@ def variables_for_tpe(dm_matprod, dm_emi_bygas, years_setting):
     dm_emi_tot.rename_col("emissions", "ind_emissions-CO2e", dim="Variables")
     dm_out.append(dm_emi_tot, "Variables")
 
+    # prefix all output variables with "ind_" so they don't clash with other sectors
+    for var in dm_out.col_labels["Variables"].copy():
+        if not var.startswith("ind_"):
+            dm_out.rename_col(var, "ind_" + var, dim="Variables")
+
     KPI = prepare_KPIs(dm_out, years_setting)
     return dm_out, KPI
 
