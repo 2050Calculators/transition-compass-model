@@ -83,7 +83,7 @@ def local_climate_run():
     years_setting, lever_setting = init_years_lever()
 
     # get geoscale
-    country_list = ["EU27", "Switzerland", "Vaud"]
+    country_list = ["Switzerland", "Vaud", "Fribourg"]
     DM_input = filter_country_and_load_data_from_pickles(
         country_list=country_list, modules_list="climate"
     )
