@@ -151,6 +151,124 @@ def extract_floor_area_stock_all_cantons_swiss_stat_raw(file, agency, dataflow):
     return dm_floor_area
 
 
+def dowload_regbl_data(country: str, file_name="gebaeude_batiment_edificio.csv"):
+    """Download data from https://www.housing-stat.ch/fr/data/supply/public.html if the file doesn't exist
+    To get the documentation of the data check https://www.housing-stat.ch/catalog/fr/4.3/final
+
+    Args:
+        country (str): Canton name or switzerland
+        file_name (str, optional): Name of the file to extract from the zip. Defaults to "gebaeude_batiment_edificio.csv".
+        possibilities are [eingang_entree_entrata.csv, kodes_codes_codici.csv, wohnung_logement_abitazione.csv, gebaeude_batiment_edificio.csv]
+
+    Returns:
+        DataFrame: df of the csv downloaded
+    """
+
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    file_dir = current_file_directory + f"/../data/Regbl/{country}/"
+    file_path = file_dir + file_name
+    try:
+        df = pd.read_csv(file_path, sep="\t")
+
+    except FileNotFoundError:
+        print(f"File not found for {country}, dowloading...")
+        print("Warning it might take long as the files are quite heavy ")
+
+        if not os.path.exists(file_dir):
+            os.makedirs(file_dir)
+
+        zip_file_path = (
+            current_file_directory + f"/../data/Regbl/cadastre_regener_{country}.zip"
+        )
+
+        # get the canton accronym to dowload the data
+        cantons_accronym = CANTONS_NAME["name_to_accronym"][country].lower()
+
+        # use the url to dowload the data
+        url = f"http://public.madd.bfs.admin.ch/{cantons_accronym}.zip"
+        urlretrieve(url, zip_file_path)
+
+        with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
+            # Extract only 'gebaeude_batiment_edificio.csv'
+            zip_ref.extract(file_name, path=file_dir)
+
+        os.remove(zip_file_path)
+        df = pd.read_csv(file_path, sep="\t")
+    return df
+
+
+def get_bld_surface_distribution(dm_floor_area: DataMatrix) -> dict:
+    """Get distribution of dwellings areas.for single and multi family households from REGBL data
+    Args:
+        dm_floor_area (DataMatrix) : Dm from which to extract the shape
+    Returns:
+        DataMatrix: With the average dwelling surface by country, size catgeory and building type
+    """
+
+    # Create an empty dm for appending value slater
+    arr = np.full(
+        (
+            1,
+            1,
+            len(dm_floor_area.col_labels["Variables"]),
+            len(dm_floor_area.col_labels["Categories1"]),
+        ),
+        np.nan,
+    )
+    dm_mean_surface_per_cat = dm_floor_area.based_on(
+        arr,
+        dm_floor_area,
+        {"Country": ["Switzerland"], "Years": [years_ots[-1]], "Categories2": None},
+    )
+
+    # define cleaning dictionnary
+    single_multi_code = {
+        "single-family-households": [1110.0],
+        "multi-family-households": [1121, 1122, 1130],
+    }
+
+    separation_single = {
+        "Less than 60": [0, 59],
+        "60 - 79": [60, 79],
+        "80 - 99": [80, 99],
+        "100 - 119": [100, 119],
+        "120 - 159": [120, 159],
+        "160 and more": [160, 999999999],  # just a random value for the max size
+    }
+
+    df_dwellings = dowload_regbl_data(
+        "Switzerland", file_name="wohnung_logement_abitazione.csv"
+    )
+    df_buildings = dowload_regbl_data(
+        "Switzerland", file_name="gebaeude_batiment_edificio.csv"
+    )
+
+    # Multi family
+    # Only keep existing buildings
+    df_buildings = df_buildings[df_buildings["GSTAT"] == 1004]
+    df_dwellings = df_dwellings[df_dwellings["WSTAT"] == 3004]
+    # Compute the sum energy reference are per building category as a proxy to the total ERA of the canton
+
+    for bld_type, values in single_multi_code.items():
+        # Select o
+        df_cat = df_buildings[df_buildings["GKLAS"].isin(values)]
+        df_single_or_multi = df_dwellings[df_dwellings["EGID"].isin(df_cat["EGID"])]
+        for size, min_max in separation_single.items():
+            # WAREA correspond to the dwelling surface
+            df_size_interest = df_single_or_multi[
+                (df_single_or_multi["WAREA"] >= min_max[0])
+                & (df_single_or_multi["WAREA"] <= min_max[1])
+            ]
+            # get the average dwelling surface for the size category and append it
+            dm_mean_surface_per_cat["Switzerland", :, size, bld_type] = (
+                df_size_interest["WAREA"].mean()
+            )
+
+    dm_mean_surface_per_cat.sort("Variables")
+    dm_mean_surface_per_cat.sort("Categories1")
+    return dm_mean_surface_per_cat
+
+
 def extract_stock_floor_area(file, agency, dataflow):
     """
     Extract data from the datasaet :  Dwellings by geographical institutional levels, building category, floor space, and construction period
@@ -197,32 +315,12 @@ def extract_stock_floor_area(file, agency, dataflow):
     dm_floor_area.rename_col_regex(" m2", "", "Variables")
     # The average size for less than 30 is a guess, as is the average size for 150+,
     # we will use the data from bfs to calibrate
-    avg_size_single = {
-        "Less than 60": 30,
-        "60 - 79": 69.5,
-        "80 - 99": 89.5,
-        "100 - 119": 109.5,
-        "120 - 159": 139.5,
-        "160 and more": 375,
-    }
-    for size in dm_floor_area.col_labels["Variables"]:
-        dm_floor_area[:, :, size, "single-family-households", :] = (
-            avg_size_single[size]
-            * dm_floor_area[:, :, size, "single-family-households", :]
-        )
-    avg_size_multi = {
-        "Less than 60": 30,
-        "60 - 79": 69.5,
-        "80 - 99": 89.5,
-        "100 - 119": 109.5,
-        "120 - 159": 139.5,
-        "160 and more": 170,
-    }
-    for size in dm_floor_area.col_labels["Variables"]:
-        dm_floor_area[:, :, size, "multi-family-households", :] = (
-            avg_size_multi[size]
-            * dm_floor_area[:, :, size, "multi-family-households", :]
-        )
+    dm_mean_surface_per_cat = get_bld_surface_distribution(dm_floor_area)
+
+    dm_floor_area.array = (
+        dm_mean_surface_per_cat.array[..., np.newaxis] * dm_floor_area.array
+    )
+
     dm_floor_area.groupby(
         {"bld_floor-area_stock": ".*"}, dim="Variables", regex=True, inplace=True
     )
@@ -662,38 +760,7 @@ def extract_energy_reference_area():
     dic_ERA = {}
 
     for country in country_list:
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        file_dir = current_file_directory + f"/../data/Regbl/{country}/"
-        file_path = file_dir + "gebaeude_batiment_edificio.csv"
-
-        try:
-            df = pd.read_csv(file_path, sep="\t")
-
-        except FileNotFoundError:
-            print(f"File not found for {country}, dowloading...")
-            print("Warning it might take long as the files are quite heavy ")
-
-            if not os.path.exists(file_dir):
-                os.makedirs(file_dir)
-
-            zip_file_path = (
-                current_file_directory
-                + f"/../data/Regbl/cadastre_regener_{country}.zip"
-            )
-
-            # get the canton accronym to dowload the data
-            cantons_accronym = CANTONS_NAME["name_to_accronym"][country].lower()
-
-            # use the url to dowload the data
-            url = f"http://public.madd.bfs.admin.ch/{cantons_accronym}.zip"
-            urlretrieve(url, zip_file_path)
-
-            with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
-                # Extract only 'gebaeude_batiment_edificio.csv'
-                zip_ref.extract("gebaeude_batiment_edificio.csv", path=file_dir)
-
-            os.remove(zip_file_path)
-            df = pd.read_csv(file_path, sep="\t")
+        df = dowload_regbl_data(country, file_name="gebaeude_batiment_edificio.csv")
 
         # 1110 single_family_households
         # 1122 and 1121 multi_family_households
