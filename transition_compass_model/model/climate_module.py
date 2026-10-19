@@ -49,6 +49,14 @@ def climate_buildings_interface(DM_ots_fts, write_pickle=False):
     return dm_bld
 
 
+def variables_to_tpe(DM_ots_fts):
+    dm_tpe = DM_ots_fts["temp"]["clm_capacity-factor"].flatten()
+    dm_tpe.append(DM_ots_fts["temp"]["clm_temp_global"], "Variables")
+    dm_tpe.flattest()
+
+    return dm_tpe
+
+
 # CORE module
 def climate(
     lever_setting, years_setting, DM_input, interface=Interface(), calibration=False

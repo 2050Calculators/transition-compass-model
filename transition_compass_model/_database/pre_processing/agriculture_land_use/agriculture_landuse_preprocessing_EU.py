@@ -8309,12 +8309,19 @@ def database_from_csv_to_datamatrix(
 
     # Levers to be normalised
     list_norm = ["climate-smart-livestock_ration"]
+    # Levers kept constant at the last ots value
+    list_constant = ["climate-smart-livestock_slaughtered"]
 
     for key in DM_ots.keys():
         if isinstance(DM_ots[key], dict):
             for subkey in DM_ots[key].keys():
                 dm = DM_ots[key][subkey].copy()
                 linear_fitting(dm, years_fts)
+                if subkey in list_constant:
+                    idx = dm.idx
+                    dm.array[:, [idx[y] for y in years_fts], ...] = dm.array[
+                        :, idx[years_ots[-1]], np.newaxis, ...
+                    ]
 
                 for lev in range(1, 5):  # 1 to 4
                     if subkey in list_norm:  # ✅ check subkey, not key

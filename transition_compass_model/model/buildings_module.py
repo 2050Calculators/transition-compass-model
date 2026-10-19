@@ -225,6 +225,11 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
         DM_appliances_out["power"],
         DM_light_out["TPE"],
         DM_hotwater_out["TPE"],
+        {
+            "residential": DM_energy_out["power_households"],
+            "non-residential": DM_energy_out["power_services"],
+        },
+        years_setting=years_setting,
     )
 
     # 'District-heating' module interface

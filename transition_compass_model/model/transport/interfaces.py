@@ -18,6 +18,9 @@ import pickle
 import numpy as np
 
 from transition_compass_model.model.common.auxiliary_functions import my_pickle_dump
+from transition_compass_model.model.transport.workflows import (
+    convert_to_cO2eq_emissions,
+)
 
 
 def tra_industry_interface(
@@ -220,109 +223,70 @@ def tra_oilrefinery_interface(dm_pass_energy, dm_freight_energy, write_pickle=Fa
     return dm_tot_energy
 
 
-def prepare_KPIs(DM_kpi_dict):
+def prepare_KPIs(dm_tpe, DM_kpi_dict, years_setting):
+    """Three whole-sector KPI cards for the Transport page.
+
+    The two totals are summed from the *-main-mode_* series, whose eight categories
+    partition all of transport (passenger: aviation, LDV, 2W, bus, rail, metrotram;
+    freight: aviation, HDV, IWW, marine, rail). Summing exactly the series the charts
+    stack means each card equals the top of its stack.
+
+    Gauge bounds are derived from the last historical year rather than hardcoded per
+    region: that value is unaffected by lever settings, so the scale stays put while
+    the needle moves, and it works for both a canton and the country (~10x apart).
+    """
+    base_year = years_setting[1]
+    end_year = years_setting[3]
+    cntr = dm_tpe.col_labels["Country"][0]
     KPI = []
-    yr = 2050
 
-    # Emissions Passenger
-    dm_pass_emi = DM_kpi_dict["emission_pass"]
-    dm_pass_emi.drop(col_label="aviation", dim="Categories1")
-    dm_pass_emi.group_all("Categories1", inplace=True)
-    cntr = dm_pass_emi.col_labels["Country"][0]
-    value = dm_pass_emi[cntr, yr, "tra_emissions-CO2e_passenger"]
-    # TODO : ask stakeholder for coherent kpi for fribourg and schwyz
-    thresholds_dict = {
-        "Vaud": {"min": 0, "max": 1, "warning": 0.1, "danger": 0.5},
-        "Fribourg": {"min": 0, "max": 1, "warning": 0.1, "danger": 0.5},
-        "Schwyz": {"min": 0, "max": 1, "warning": 0.1, "danger": 0.5},
-        "Switzerland": {"min": 0, "max": 10, "warning": 1, "danger": 5},
-        "EU27": {"min": 0, "max": 500, "warning": 50, "danger": 250},
-    }
+    # The multiplier is fitted per sector, not shared: transport roughly doubles by
+    # 2050 under default levers (aviation demand grows ~3.8x), so the max has to clear
+    # 38.4 Mt / 152.2 TWh for Switzerland. compute_overall_KPI uses 1.5 for the same
+    # reasoning because declining buildings emissions dampen the growth there.
+    def _scaled(title, unit, prefix):
+        series = [v for v in dm_tpe.col_labels["Variables"] if v.startswith(prefix)]
+        value = sum(float(dm_tpe[cntr, end_year, v]) for v in series)
+        base = sum(float(dm_tpe[cntr, base_year, v]) for v in series)
+        return {
+            "title": title,
+            "value": value,
+            "unit": unit,
+            "min": 0,
+            "max": 2.0 * base,
+            "warning": 0.5 * base,
+            "danger": 0.8 * base,
+        }
+
     KPI.append(
-        {"title": "Passenger land transport CO2", "value": value, "unit": "Mt"}
-        | thresholds_dict[cntr]
+        _scaled(
+            "Total transport emissions",
+            "Mt CO\u2082eq",
+            "tra_emissions-CO2e-main-mode_",
+        )
+    )
+    KPI.append(
+        _scaled("Total transport energy demand", "TWh", "tra_energy-demand-main-mode_")
     )
 
-    # Aviation CO2
-    dm_avia_emi = DM_kpi_dict["emission_aviation"]
-    value = dm_avia_emi[0, yr, "tra_passenger_emissions", "aviation", "CO2"]
-    thresholds_dict = {
-        "Vaud": {"min": 0, "max": 5, "warning": 1, "danger": 3},
-        "Fribourg": {"min": 0, "max": 5, "warning": 1, "danger": 3},
-        "Schwyz": {"min": 0, "max": 5, "warning": 1, "danger": 3},
-        "Switzerland": {"min": 0, "max": 50, "warning": 10, "danger": 30},
-        "EU27": {"min": 0, "max": 2500, "warning": 500, "danger": 1500},
-    }
-    KPI.append(
-        {"title": "Passenger aviation CO2", "value": value, "unit": "Mt"}
-        | thresholds_dict[cntr]
-    )
-
-    # Energy demand Passenger in TWh
-    dm_energy_pass = DM_kpi_dict["energy_pass"]
-    value = dm_energy_pass[0, yr, "tra_passenger_energy-demand-by-fuel"]
-    thresholds_dict = {
-        "Vaud": {"min": 0, "max": 3, "warning": 1, "danger": 2},
-        "Fribourg": {"min": 0, "max": 3, "warning": 1, "danger": 2},
-        "Schwyz": {"min": 0, "max": 3, "warning": 1, "danger": 2},
-        "Switzerland": {"min": 0, "max": 30, "warning": 10, "danger": 20},
-        "EU27": {"min": 0, "max": 1500, "warning": 500, "danger": 600},
-    }
-    KPI.append(
-        {"title": "Passenger energy demand", "value": value, "unit": "TWh"}
-        | thresholds_dict[cntr]
-    )
-
-    # Energy demand Freight in TWh
-    dm_energy_freight = DM_kpi_dict["energy_freight"]
-    value = dm_energy_freight[0, yr, "tra_freight_total-energy"]
-    thresholds_dict = {
-        "Vaud": {"min": 0, "max": 1, "warning": 0.2, "danger": 0.5},
-        "Fribourg": {"min": 0, "max": 1, "warning": 0.2, "danger": 0.5},
-        "Schwyz": {"min": 0, "max": 1, "warning": 0.2, "danger": 0.5},
-        "Switzerland": {"min": 0, "max": 10, "warning": 2, "danger": 5},
-        "EU27": {"min": 0, "max": 500, "warning": 100, "danger": 250},
-    }
-    KPI.append(
-        {"title": "Freight energy demand", "value": value, "unit": "TWh"}
-        | thresholds_dict[cntr]
-    )
-
-    # Share of public transport
-
-    # % EV cars
+    # Share of electric cars in the LDV stock. Bounds are policy levels on a 0-100
+    # scale, not scaled history: the share starts near zero and should grow, so
+    # deriving a max from the base year would peg the gauge immediately.
     dm_LDV_EV = DM_kpi_dict["stock_EV"]
-    value = dm_LDV_EV[0, yr, "tra_passenger_technology-share-fleet", "LDV", "BEV"] * 100
-    thresholds_dict = {
-        "Vaud": {"min": 0, "max": 100, "warning": 90, "danger": 50},
-        "Fribourg": {"min": 0, "max": 100, "warning": 90, "danger": 50},
-        "Schwyz": {"min": 0, "max": 100, "warning": 90, "danger": 50},
-        "Switzerland": {"min": 0, "max": 100, "warning": 90, "danger": 50},
-        "EU27": {"min": 0, "max": 100, "warning": 90, "danger": 50},
-    }
-    KPI.append(
-        {"title": "Electric car share", "value": value, "unit": "%"}
-        | thresholds_dict[cntr]
+    value = (
+        dm_LDV_EV[0, end_year, "tra_passenger_technology-share-fleet", "LDV", "BEV"]
+        * 100
     )
-
-    # % Non fossil fuel trucks
-    dm_tech_HDVH = DM_kpi_dict["stock_trucks"]
-    dm_tech_HDVH.groupby(
-        {"Non-ICE": ["BEV", "FCEV", "CEV", "PHEV-diesel", "PHEV-gasoline"]},
-        dim="Categories2",
-        inplace=True,
-    )
-    value = dm_tech_HDVH[0, yr, "tra_freight_technology-share-fleet", "HDVH", "Non-ICE"]
-    thresholds_dict = {
-        "Vaud": {"min": 0, "max": 100, "warning": 70, "danger": 30},
-        "Fribourg": {"min": 0, "max": 100, "warning": 70, "danger": 30},
-        "Schwyz": {"min": 0, "max": 100, "warning": 70, "danger": 30},
-        "Switzerland": {"min": 0, "max": 100, "warning": 70, "danger": 30},
-        "EU27": {"min": 0, "max": 100, "warning": 70, "danger": 30},
-    }
     KPI.append(
-        {"title": "Low emission truck share", "value": value, "unit": "%"}
-        | thresholds_dict[cntr]
+        {
+            "title": "Electric car share",
+            "value": value,
+            "unit": "%",
+            "min": 0,
+            "max": 100,
+            "warning": 90,
+            "danger": 50,
+        }
     )
 
     return KPI
@@ -363,7 +327,147 @@ def compute_aviation_emission_variants(DM_passenger_out):
     return dm
 
 
-def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
+# Fuel labels used by passenger and freight, grouped into the families shown
+# in the whole-transport "by fuel" charts. Labels not listed keep their name.
+FUEL_FAMILIES = {
+    "biofuels": [
+        "biodiesel",
+        "biogas",
+        "biogasoline",
+        "kerosenebio",
+        "biojetfuel",
+        "biomarinefueloil",
+    ],
+    "efuels": ["efuel", "ejetfuel", "emarinefueloil"],
+    "marine-fuel-oil": ["marinefueloil"],
+    "hydrogen": ["hydrogen", "H2"],
+}
+
+
+def _group_fuel_families(dm):
+    labels = dm.col_labels["Categories1"]
+    groups = {}
+    for family, fuels in FUEL_FAMILIES.items():
+        present = [f for f in fuels if f in labels]
+        if present:
+            groups[family] = present
+    dm.groupby(groups, dim="Categories1", inplace=True)
+    return dm
+
+
+def _sum_by_fuel(dm_list, variable):
+    # Sum datamatrices (Categories1 = fuel) whose fuel lists may differ
+    fuels = sorted(set().union(*[dm.col_labels["Categories1"] for dm in dm_list]))
+    dm_out = None
+    for dm in dm_list:
+        dm.rename_col(dm.col_labels["Variables"][0], variable, dim="Variables")
+        missing = [f for f in fuels if f not in dm.col_labels["Categories1"]]
+        if missing:
+            dm.add(0, dummy=True, dim="Categories1", col_label=missing)
+        dm.sort("Categories1")
+        if dm_out is None:
+            dm_out = dm
+        else:
+            dm_out.array = np.nansum([dm_out.array, dm.array], axis=0)
+    return dm_out
+
+
+def compute_transport_by_fuel(DM_passenger_out, DM_freight_out):
+    """Passenger + freight energy demand [TWh] and CO2e emissions [Mt] by fuel family.
+
+    Energy covers all modes, aviation included. Emissions are direct (scope 1),
+    so electricity does not appear; they add up to the by-mode CO2e emissions.
+    """
+    dm_pass_land = DM_passenger_out["energy"].copy()
+    dm_pass_aviation = DM_passenger_out["aviation"]["energy"].copy()
+    dm_pass_aviation.group_all("Categories1", inplace=True)
+    dm_energy = _sum_by_fuel(
+        [
+            _group_fuel_families(dm_pass_land),
+            _group_fuel_families(dm_pass_aviation),
+            _group_fuel_families(DM_freight_out["energy"].copy()),
+        ],
+        variable="tra_energy-demand-by-fuel",
+    )
+
+    dm_emi_pass = convert_to_cO2eq_emissions(
+        DM_passenger_out["emissions_by_fuel"].copy()
+    )
+    dm_emi_freight = convert_to_cO2eq_emissions(
+        DM_freight_out["emissions_by_fuel"].copy()
+    )
+    dm_emissions = _sum_by_fuel(
+        [_group_fuel_families(dm_emi_pass), _group_fuel_families(dm_emi_freight)],
+        variable="tra_emissions-CO2e-by-fuel",
+    )
+
+    return dm_energy, dm_emissions
+
+
+# Main categories shown in the primary transport charts, as
+# {main category: [detailed categories]}. The detailed series stay in the output.
+MAIN_MODES = {
+    "aviation-passenger": [("passenger", "aviation")],
+    "aviation-freight": [("freight", "aviation")],
+    "cars": [("passenger", "LDV")],
+    "trucks": [("freight", "HDV")],
+    "other-passenger": [("passenger", "2W"), ("passenger", "bus")],
+    "other-freight": [("freight", "IWW"), ("freight", "marine")],
+    "rail-freight": [("freight", "rail")],
+    "rail-passenger": [("passenger", "rail"), ("passenger", "metrotram")],
+}
+MAIN_FUELS = {
+    "kerosene": ["kerosene"],
+    "diesel": ["diesel"],
+    "gasoline": ["gasoline"],
+    "other-fossil": ["gas", "marine-fuel-oil"],
+    "other-renewable": ["biofuels", "efuels", "hydrogen", "SAF"],
+    "electricity": ["electricity"],
+}
+
+
+def group_main_categories(dm_tpe):
+    """Sum the detailed by-mode and by-fuel transport variables of the flat TPE
+    datamatrix into the main categories of MAIN_MODES and MAIN_FUELS."""
+    by_mode = {
+        "tra_emissions-CO2e-main-mode": {
+            "passenger": "tra_emissions-CO2e_passenger_",
+            "freight": "tra_emissions-CO2e_freight_",
+        },
+        "tra_energy-demand-main-mode": {
+            "passenger": "tra_passenger_energy-demand-by-mode_",
+            "freight": "tra_freight_energy-demand-by-mode_",
+        },
+    }
+    by_fuel = {
+        "tra_emissions-CO2e-main-fuel": "tra_emissions-CO2e-by-fuel_",
+        "tra_energy-demand-main-fuel": "tra_energy-demand-by-fuel_",
+    }
+    variables = dm_tpe.col_labels["Variables"]
+    groups = {}
+    for out_var, prefix in by_mode.items():
+        for main, members in MAIN_MODES.items():
+            groups[f"{out_var}_{main}"] = [
+                prefix[kind] + mode for kind, mode in members
+            ]
+    for out_var, prefix in by_fuel.items():
+        for main, members in MAIN_FUELS.items():
+            # Not every fuel exists for both (e.g. no electricity in emissions)
+            present = [prefix + f for f in members if prefix + f in variables]
+            if present:
+                groups[f"{out_var}_{main}"] = present
+    return dm_tpe.groupby(groups, dim="Variables", inplace=False)
+
+
+def prepare_TPE_output(
+    DM_passenger_out, DM_freight_out, dm_aviation_local, years_setting
+):
+    # Whole-transport (passenger + freight) totals by fuel family. Built first,
+    # because the aviation energy below is regrouped in place.
+    dm_energy_by_fuel, dm_emissions_by_fuel = compute_transport_by_fuel(
+        DM_passenger_out, DM_freight_out
+    )
+
     # Aviation Energy-demand
     dm_keep_aviation_energy = DM_passenger_out["aviation"]["energy"]
     dm_keep_aviation_energy.groupby(
@@ -409,8 +513,36 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
         factor=1e-6,
     )
 
+    # The mode-level aviation "fleet" is in seats, not aircraft: aviation occupancy is a
+    # load factor (pkm per seat-km), so its demand-vkm is seat-km and fleet = seat-km /
+    # utilisation-rate counts seats. Published on its own, in thousands, so it isn't
+    # stacked with vehicle counts.
+    dm_keep_aviation_seats = DM_passenger_out["mode"].filter(
+        {"Variables": ["tra_passenger_vehicle-fleet"], "Categories1": ["aviation"]}
+    )
+    dm_keep_aviation_seats.group_all("Categories1", inplace=True)
+    dm_keep_aviation_seats.rename_col(
+        "tra_passenger_vehicle-fleet",
+        "tra_passenger_aviation-fleet-seats",
+        dim="Variables",
+    )
+    dm_keep_aviation_seats.change_unit(
+        "tra_passenger_aviation-fleet-seats",
+        old_unit="number",
+        new_unit="thousands",
+        factor=1e-3,
+    )
+
     dm_keep_tech = DM_passenger_out["tech"].filter(
         {"Variables": ["tra_passenger_vehicle-fleet"], "Categories1": ["LDV"]}
+    )
+    # Same conversion as the mode-level fleet above, so the per-technology series is
+    # on the same scale as its sibling rather than raw vehicle counts.
+    dm_keep_tech.change_unit(
+        "tra_passenger_vehicle-fleet",
+        old_unit="number",
+        new_unit="millions",
+        factor=1e-6,
     )
 
     dm_keep_fuel = DM_passenger_out["fuel"]
@@ -436,17 +568,6 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
         "tra_freight_total-energy", "tra_freight_energy-demand-by-fuel", dim="Variables"
     )
 
-    # Total energy demand
-    dm_energy_tot_pass = DM_passenger_out["energy"].copy()
-    dm_energy_tot_pass.group_all(dim="Categories1")
-    dm_energy_tot = dm_energy_tot_pass.copy()
-    dm_energy_freight = DM_freight_out["energy"].copy()
-    dm_energy_freight.group_all(dim="Categories1")
-    dm_energy_tot.append(dm_energy_freight, dim="Variables")
-    dm_energy_tot.groupby(
-        {"tra_energy-demand_total": ".*"}, inplace=True, regex=True, dim="Variables"
-    )
-
     dm_tech_HDVH = DM_freight_out["tech"].filter(
         {"Variables": ["tra_freight_technology-share-fleet"], "Categories1": ["HDVH"]}
     )
@@ -465,13 +586,63 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
         factor=1e-9,
     )
 
+    # Transport totals for the cross-sector (Overall) charts: passenger land,
+    # freight, and passenger aviation kept apart. Passenger aviation is already
+    # published per mode, so only the two land/freight aggregates are built here.
+    # Freight aviation stays inside freight: it is territorial, whereas passenger
+    # aviation is the residency-based round-trip figure (see emissions/workflows.py).
+    land_modes = ["2W", "LDV", "bus", "metrotram", "rail"]
+
+    dm_emi_pass_land = DM_passenger_out["emissions"].filter({"Categories1": land_modes})
+    dm_emi_pass_land.group_all("Categories1", inplace=True)
+    dm_emi_pass_land.rename_col(
+        "tra_emissions-CO2e_passenger",
+        "tra_emissions-CO2e_passenger-land",
+        dim="Variables",
+    )
+
+    # Freight emissions still carry the gas dimension here, unlike passenger which
+    # transport_module has already converted, so apply the same GWP helper.
+    dm_emi_freight = convert_to_cO2eq_emissions(DM_freight_out["emissions"].copy())
+    dm_emi_freight.groupby(
+        {"HDV": ["HDVH", "HDVM", "HDVL"]}, dim="Categories1", inplace=True
+    )
+    dm_emi_freight.rename_col(
+        "tra_freight_emissions", "tra_emissions-CO2e_freight", dim="Variables"
+    )
+    # Per mode, for the combined passenger + freight emissions chart
+    dm_emi_freight_by_mode = dm_emi_freight.copy()
+    dm_emi_freight.group_all("Categories1", inplace=True)
+
+    dm_energy_pass_land = dm_keep_mode.filter(
+        {
+            "Variables": ["tra_passenger_energy-demand-by-mode"],
+            "Categories1": land_modes,
+        }
+    )
+    dm_energy_pass_land.group_all("Categories1", inplace=True)
+    dm_energy_pass_land.rename_col(
+        "tra_passenger_energy-demand-by-mode",
+        "tra_energy-demand_passenger-land",
+        dim="Variables",
+    )
+
+    dm_energy_freight_tot = dm_freight_energy_by_mode.group_all(
+        "Categories1", inplace=False
+    )
+    dm_energy_freight_tot.rename_col(
+        "tra_freight_energy-demand-by-mode",
+        "tra_energy-demand_freight",
+        dim="Variables",
+    )
+
     # Merge datamatrices for new-app
     dm_tpe = dm_keep_mode.flattest()
     dm_tpe.append(dm_keep_tech.flattest(), dim="Variables")
+    dm_tpe.append(dm_keep_aviation_seats.flattest(), dim="Variables")
     dm_tpe.append(dm_keep_fuel.flattest(), dim="Variables")
     dm_tpe.append(dm_keep_energy.flattest(), dim="Variables")
     dm_tpe.append(dm_freight_energy_by_mode.flattest(), dim="Variables")
-    dm_tpe.append(dm_energy_tot.flattest(), dim="Variables")
     dm_tpe.append(dm_freight_energy_by_fuel.flattest(), dim="Variables")
     dm_tpe.append(DM_passenger_out["soft-mobility"].flattest(), dim="Variables")
     dm_tpe.append(DM_passenger_out["emissions"].flattest(), dim="Variables")
@@ -480,14 +651,18 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
     dm_tpe.append(dm_keep_aviation_energy.flattest(), dim="Variables")
     dm_tpe.append(dm_tech_HDVH.flattest(), dim="Variables")
     dm_tpe.append(dm_freight_emissions.flattest(), dim="Variables")
+    dm_tpe.append(dm_emi_pass_land.flattest(), dim="Variables")
+    dm_tpe.append(dm_emi_freight.flattest(), dim="Variables")
+    dm_tpe.append(dm_energy_pass_land.flattest(), dim="Variables")
+    dm_tpe.append(dm_energy_freight_tot.flattest(), dim="Variables")
+    dm_tpe.append(dm_emi_freight_by_mode.flattest(), dim="Variables")
+    dm_tpe.append(dm_energy_by_fuel.flattest(), dim="Variables")
+    dm_tpe.append(dm_emissions_by_fuel.flattest(), dim="Variables")
+    dm_tpe.append(group_main_categories(dm_tpe), dim="Variables")
 
+    # Only the electric-car share needs a datamatrix of its own; the two totals are
+    # summed from dm_tpe, which by now carries the grouped main-mode series.
     DM_kpi_dict = {
-        "emission_pass": DM_passenger_out["emissions"].copy(),
-        "emission_aviation": dm_keep_aviation_emissions.group_all(
-            "Categories2", inplace=False
-        ),
-        "energy_pass": dm_energy_tot_pass,
-        "energy_freight": dm_energy_freight,
         "stock_EV": DM_passenger_out["tech"].filter(
             {
                 "Variables": ["tra_passenger_technology-share-fleet"],
@@ -495,10 +670,9 @@ def prepare_TPE_output(DM_passenger_out, DM_freight_out, dm_aviation_local):
             },
             inplace=False,
         ),
-        "stock_trucks": dm_tech_HDVH,
     }
 
-    KPI = prepare_KPIs(DM_kpi_dict)
+    KPI = prepare_KPIs(dm_tpe, DM_kpi_dict, years_setting)
 
     # Freight emissions
     return dm_tpe, KPI
