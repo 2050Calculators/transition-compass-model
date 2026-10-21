@@ -9,11 +9,14 @@ import requests
 from transition_compass_model._database.pre_processing.api_routines_CH import (
     get_data_api_CH,
 )
+from transition_compass_model._database.pre_processing.params import (
+    years_fts,
+    years_ots,
+)
 from transition_compass_model._database.pre_processing.WorldBank_data_extract import (
     get_WB_data,
 )
 from transition_compass_model.model.common.auxiliary_functions import (
-    create_years_list,
     linear_fitting,
     my_pickle_dump,
 )
@@ -193,7 +196,7 @@ def extract_lfs_pop(years_ots, table_id, file):
                 "Citizenship (category)": "Citizenship (category) - total",  # Swiss and non-Swiss resident
                 "Sex": ["Male", "Female"],
                 "Age": structure["Age"],
-                "Demographic component": "Population on 31 December",
+                "Demographic component": "Population on 1 January",
             }
 
             mapping_dim = {
@@ -270,7 +273,7 @@ def extract_lfs_pop(years_ots, table_id, file):
     dm_lfs_pop_tot.group_all("Categories2")
     dm_lfs_pop_tot.group_all("Categories1")
     dm_lfs_pop_tot.rename_col(
-        "Population on 31 December", "lfs_population_total", dim="Variables"
+        "Population on 1 January", "lfs_population_total", dim="Variables"
     )
 
     # Sort Years
@@ -790,15 +793,6 @@ def filter_country_DM(cntr_list, DM):
     return DM
 
 
-years_setting = [
-    1990,
-    2023,
-    2050,
-    5,
-]  # Set the timestep for historical years & scenarios
-years_ots = create_years_list(start_year=1990, end_year=2023, step=1)
-years_fts = create_years_list(start_year=2025, end_year=2050, step=5)
-
 cantons_en = [
     "Aargau",
     "Appenzell Ausserrhoden",
@@ -873,11 +867,11 @@ DM_lfs = {
     "ots": {"pop": {"lfs_demography_": [], "lfs_population_": []}},
     "fts": {"pop": {"lfs_demography_": dict(), "lfs_population_": dict()}},
 }
-DM_lfs["ots"]["pop"]["lfs_demography_"] = dm_lfs_age
+DM_lfs["ots"]["pop"]["lfs_demography_"] = dm_lfs_age.filter({"Years": years_ots})
 for lev in range(4):
     lev = lev + 1
     DM_lfs["fts"]["pop"]["lfs_demography_"][lev] = dict_lfs_age_fts[lev]
-DM_lfs["ots"]["pop"]["lfs_population_"] = dm_lfs_tot_pop
+DM_lfs["ots"]["pop"]["lfs_population_"] = dm_lfs_tot_pop.filter({"Years": years_ots})
 for lev in range(4):
     lev = lev + 1
     DM_lfs["fts"]["pop"]["lfs_population_"][lev] = dict_lfs_tot_pop_fts[lev]
@@ -887,8 +881,5 @@ current_file_directory = os.path.dirname(os.path.abspath(__file__))
 file = os.path.join(
     current_file_directory, "../../../data/datamatrix/lifestyles.pickle"
 )
-
-# with open(file, 'wb') as handle:
-#  pickle.dump(DM_lfs, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 my_pickle_dump(DM_new=DM_lfs, local_pickle_file=file)

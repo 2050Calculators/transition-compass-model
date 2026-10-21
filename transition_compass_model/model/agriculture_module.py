@@ -1484,7 +1484,7 @@ def agriculture(lever_setting, years_setting, DM_input, interface=Interface()):
 
 
 def agriculture_local_run():
-    country_list = ["Switzerland", "Vaud"]
+    country_list = ["Switzerland", "Vaud", "Fribourg"]
     DM_input = filter_country_and_load_data_from_pickles(
         country_list=country_list, modules_list="agriculture"
     )

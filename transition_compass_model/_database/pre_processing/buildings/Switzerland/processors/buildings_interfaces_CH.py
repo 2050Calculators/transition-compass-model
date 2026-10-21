@@ -36,12 +36,8 @@ def run(country_list):
     with open(file, "rb") as handle:
         DM_clm = pickle.load(handle)
 
-    dm_clm_ots = DM_clm["ots"]["temp"]["bld_climate-impact-space"].filter(
-        {"Country": country_list}
-    )
-    dm_clm_fts = DM_clm["fts"]["temp"]["bld_climate-impact-space"][1].filter(
-        {"Country": country_list}
-    )
+    dm_clm_ots = DM_clm["ots"]["temp"].filter({"Country": country_list})
+    dm_clm_fts = DM_clm["fts"]["temp"][1].filter({"Country": country_list})
     dm_clm_ots.append(dm_clm_fts, dim="Years")
     DM_interface_clm_to_bld = {"cdd-hdd": dm_clm_ots}
 

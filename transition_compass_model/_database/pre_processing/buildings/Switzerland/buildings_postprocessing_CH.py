@@ -8,7 +8,6 @@ from transition_compass_model.model.common.auxiliary_functions import my_pickle_
 
 
 def extract_heating_demand(table_id, file):
-
     try:
         with open(file, "rb") as handle:
             dm_heating = pickle.load(handle)
@@ -77,6 +76,7 @@ def extract_heating_demand(table_id, file):
 
 # SECTION calibration Heating demand
 # Energy demand for heating in building sector
+# TODO : still in stat tab api must move when not in stat tab api anymore
 table_id = "px-x-0204000000_106"
 file = "data/bld_heating-energy-demand.pickle"
 dm_heating = extract_heating_demand(table_id, file)

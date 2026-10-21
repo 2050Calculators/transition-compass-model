@@ -2,11 +2,108 @@ import os
 import pickle
 
 import numpy as np
+import pandas as pd
+from get_data_functions import utils
 
 from transition_compass_model._database.pre_processing.api_routines_CH import (
     get_data_api_CH,
 )
+from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
+    get_data_api_swiss_stats,
+)
+from transition_compass_model._database.pre_processing.constants import CANTONS_NAME
+from transition_compass_model._database.pre_processing.params import (
+    country_list,
+    years_ots,
+)
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
+
+
+def extract_number_of_buildings_v2(
+    file: str, agency: str = "CH1.GWS", dataflow: str = "DF_GWS_REG1"
+) -> DataMatrix:
+    """Extrait les données de l'api pour le base de donnée:
+    Bâtiments selon les niveaux géographiques institutionnels, la catégorie de bâtiment et l'époque de construction
+
+    Args:
+        file (str): file path
+        agency (str, optional): Agency for api call. Defaults to "CH1.GWS".
+        dataflow (str, optional): dataflow for api call. Defaults to "DF_GWS_REG1".
+
+    Returns:
+        DataMatrix: _description_
+    """
+    try:
+        with open(file, "rb") as handle:
+            dm_nb_bld = pickle.load(handle)
+    except OSError:
+        dm_nb_bld = None
+        structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
+        # cantons_list = [
+        #     "Switzerland",
+        #     "Vaud",
+        #     "Fribourg",
+        #     "Schwyz",
+        # ]
+
+        category_list = utils.get_all_elements_except_total(structure, "GKATS")
+        # Iterate
+        for cntr in structure["GEMEINDENAME"]:
+            # Extract buildings floor area
+
+            filtering = {
+                "TIME_PERIOD": structure["TIME_PERIOD"],
+                "GEMEINDENAME": [cntr],
+                "GBAUPS": ["Total"],  # époque de construction
+                "FLAECHKL": ["Total"],
+                "GKATS": category_list,
+                "FREQ": ["Annual"],
+            }
+            mapping_dim = {
+                "Country": "GEMEINDENAME",
+                "Years": "TIME_PERIOD",
+                "Variables": "GBAUPS",
+                "Categories1": "GKATS",
+            }
+            unit_all = ["number"] * len(filtering[mapping_dim["Variables"]])
+            # Get api data
+            dm_nb_bld_cntr = get_data_api_swiss_stats(
+                agency,
+                dataflow,
+                mode="extract",
+                filter=filtering,
+                mapping_dims=mapping_dim,
+                units=unit_all,
+                language="en",
+            )
+
+            if dm_nb_bld is None:
+                dm_nb_bld = dm_nb_bld_cntr.copy()
+            else:
+                dm_nb_bld.append(dm_nb_bld_cntr.copy(), dim="Country")
+
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(current_file_directory, file)
+        with open(f, "wb") as handle:
+            pickle.dump(dm_nb_bld, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    dm_nb_bld.filter({"Country": country_list, "Years": years_ots}, inplace=True)
+    dm_nb_bld.sort("Country")
+    dm_nb_bld.rename_col_regex("Total_Variables", "bld_nb-bld", dim="Variables")
+    dm_nb_bld.groupby(
+        {
+            "single-family-households": ["Single-family house"],
+            "multi-family-households": [
+                "Multi-family house",
+                "Other residential building (wit subsidiary use)",
+                "Building with partial residential use",
+            ],
+        },
+        dim="Categories1",
+        inplace=True,
+    )
+
+    return dm_nb_bld
 
 
 def extract_number_of_buildings(table_id, file):
@@ -62,7 +159,101 @@ def extract_number_of_buildings(table_id, file):
     return dm_nb_bld
 
 
-def compute_renovated_buildings(dm_bld, nb_buildings_renovated, VD_share, share_by_bld):
+def extract_nb_renovated_bld(dm_bld: DataMatrix) -> DataMatrix:
+    """From the programme batiments excels that can be downloaded at https://www.leprogrammebatiments.ch/fr/meta/publications-et-photos/rapports-et-statistiques/.
+    Extract the number of buildings renovated and add it to dm_bld as a new variable.
+
+    Args:
+        dm_bld (DataMatrix): DataMatrix with shape (nb_country, 14,1, 2), variables ['bld_nb-bld'] and categories1 ['multi-family-households', 'single-family-households']
+
+    Returns:
+        DataMatrix: DataMatrix with shape (nb_country, 14,2, 2), variables ['bld_nb-bld', 'bld_nb-bld-renovated'] and categories1 ['multi-family-households', 'single-family-households']
+    """
+
+    # Create an empty variable in the dm to
+    dm_bld.add(
+        np.nan,
+        dim="Variables",
+        dummy=True,
+        col_label="bld_nb-bld-renovated",
+        unit="number",
+    )
+    idx = dm_bld.idx
+
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+
+    # get renovation data from 2017  to 2020
+    for year in range(2017, 2021):
+        file_path = current_file_directory + f"/../data/programme_batiment/{year}.xlsx"
+        # 2. Analyse (versements)
+
+        df = pd.read_excel(file_path, sheet_name="2. Analyse (versements)")
+
+        # get the rows of interest
+        start = df.index[df.iloc[:, 0].str.contains("Tableau 2b", na=False)][0]
+        end = df.index[df.iloc[:, 0].str.contains("Tableau 2c", na=False)][0]
+        df = df.iloc[df.index.get_loc(start) : df.index.get_loc(end) + 1]
+
+        # Get from the excel the number of buildings renovated for single family households for each canton
+        sfh_index = df.index[df.iloc[:, 0] == "NOMBRE DE MAISONS INDIVIDUELLES"][0]
+        mfh_index = df.index[df.iloc[:, 0] == "NOMBRE D'IMMEUBLES COLLECTIFS"][0]
+        for country in country_list:
+            canton_acronym = CANTONS_NAME["name_to_accronym"][country]
+            # single-family-households
+            dm_bld.array[
+                idx[country],
+                idx[year],
+                idx["bld_nb-bld-renovated"],
+                idx["single-family-households"],
+            ] = df.loc[
+                sfh_index + 2 : sfh_index + 3,
+                df.loc[sfh_index + 1, :] == canton_acronym,
+            ].sum()
+            # multi-family-households
+            dm_bld.array[
+                idx[country],
+                idx[year],
+                idx["bld_nb-bld-renovated"],
+                idx["multi-family-households"],
+            ] = df.loc[
+                mfh_index + 2 : mfh_index + 3,
+                df.loc[mfh_index + 1, :] == canton_acronym,
+            ].sum()
+
+    # get renovation data from 2021
+    for year in range(2021, years_ots[-1]):
+        file_path = current_file_directory + f"/../data/programme_batiment/{year}.xlsx"
+
+        df = pd.read_excel(file_path, sheet_name="2.2 Détails (versements)")
+        # get the rows of interest
+        end = df.index[df.iloc[:, 0].str.contains("Tableau 2.2b", na=False)][0]
+        df = df.iloc[: df.index.get_loc(end) + 1]
+
+        sfh_index = df.index[df.iloc[:, 0] == "NOMBRE DE MAISONS INDIVIDUELLES"][0]
+        mfh_index = df.index[df.iloc[:, 0] == "NOMBRE D'IMMEUBLES COLLECTIFS"][0]
+        for country in country_list:
+            canton_acronym = CANTONS_NAME["name_to_accronym"][country]
+
+            dm_bld.array[
+                idx[country],
+                idx[year],
+                idx["bld_nb-bld-renovated"],
+                idx["single-family-households"],
+            ] = df.loc[sfh_index, df.loc[1, :] == canton_acronym].item()
+            # multi-family-households
+            dm_bld.array[
+                idx[country],
+                idx[year],
+                idx["bld_nb-bld-renovated"],
+                idx["multi-family-households"],
+            ] = df.loc[mfh_index, df.loc[1, :] == canton_acronym].item()
+
+    return dm_bld
+
+
+def compute_renovated_buildings(
+    dm_bld, nb_buildings_renovated, canton_share, share_by_bld
+):
     dm_bld.add(
         np.nan,
         dim="Variables",
@@ -76,9 +267,14 @@ def compute_renovated_buildings(dm_bld, nb_buildings_renovated, VD_share, share_
             dm_bld.array[
                 idx["Switzerland"], idx[yr], idx["bld_nb-bld-renovated"], idx[cat]
             ] = nb_buildings_renovated[yr] * share_by_bld[cat]
-            dm_bld.array[
-                idx["Vaud"], idx[yr], idx["bld_nb-bld-renovated"], idx[cat]
-            ] = nb_buildings_renovated[yr] * VD_share[yr] * share_by_bld[cat]
+            for canton in canton_share.keys():
+                dm_bld.array[
+                    idx[canton], idx[yr], idx["bld_nb-bld-renovated"], idx[cat]
+                ] = (
+                    nb_buildings_renovated[yr]
+                    * canton_share[canton][yr]
+                    * share_by_bld[cat]
+                )
     return dm_bld
 
 
@@ -102,7 +298,7 @@ def compute_renovation_rate(dm_renovation, years_ots):
 def extract_renovation_redistribuition(ren_map_in, ren_map_out, years_ots):
     dm = DataMatrix(
         col_labels={
-            "Country": ["Switzerland", "Vaud"],
+            "Country": country_list,
             "Years": years_ots,
             "Variables": [
                 "bld_renovation-redistribution-in",
@@ -228,7 +424,7 @@ def compute_stock_area_by_cat(
     dm_stock_cat, dm_new_cat, dm_renov_cat, dm_waste_cat, dm_stock_tot
 ):
     # s_{c,t}(t-1) &= s_{c,t}(t) - n_{c,t}(t) - r_{c,t}(t) + w_{c,t}(t)
-    dm_all_cat = dm_stock_cat
+    dm_all_cat = dm_stock_cat.copy()
     dm_all_cat.append(dm_new_cat, dim="Variables")
     dm_all_cat.append(dm_renov_cat, dim="Variables")
     dm_all_cat.append(dm_waste_cat, dim="Variables")

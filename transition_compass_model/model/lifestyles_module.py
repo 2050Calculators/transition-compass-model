@@ -113,7 +113,7 @@ def local_lifestyles_run(write_pickle=False):
     # Initiate the year & lever setting
     years_setting, lever_setting = init_years_lever()
 
-    country_list = ["EU27", "Switzerland", "Vaud"]
+    country_list = ["EU27", "Switzerland", "Vaud", "Fribourg", "Schwyz"]
     DM_input = filter_country_and_load_data_from_pickles(
         country_list=country_list, modules_list="lifestyles"
     )

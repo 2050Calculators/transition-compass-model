@@ -7,12 +7,11 @@ import pandas as pd
 
 warnings.simplefilter("ignore")
 
-from _database.pre_processing.lca.processors.lca_levers import (
+from transition_compass_model._database.pre_processing.lca.processors.lca_levers import (
     make_aggregates_footprint,
     make_footprint_dm,
     scale_vehicle_units,
 )
-
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     linear_fitting,

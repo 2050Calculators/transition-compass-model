@@ -400,6 +400,8 @@ def bld_TPE_interface(
     # Emissions global
     dm_emission_global = DM_services["services_emissions"].copy()
     dm_emission_global.append(DM_hotwater["hotwater_emissions"], dim="Variables")
+
+    # Emissions scope1
     dm_energy_emissions_scope1 = DM_energy["emissions"].filter(
         {
             "Categories2": [
@@ -508,24 +510,25 @@ def bld_TPE_interface(
                 "bld_services_energy-consumption_hot-water",
                 "bld_energy-demand_heating",
                 "bld_hot-water_energy-demand",
-                "bld_appliances",
-            ]
+            ]  # "bld_appliances",
         },
         dim="Variables",
     )
 
     dm_tpe.append(dm_energy_comsumption_tot.flattest(), dim="Variables")
-    # dm_energy_heating = dm_energy_global.groupby(
-    #         {
-    #             "energy_consumption": [
-    #                 "bld_services_energy-consumption_hot-water",
-    #                 "bld_energy-demand_heating",
-    #                 "bld_hot-water_energy-demand",
-    #             ]
-    #         },
-    #         dim="Variables",
-    #     )
-    # dm_energy_heating.change_unit("energy_consumption", factor=1e6, old_unit="TWh", new_unit="MWh")
+    dm_energy_heating = dm_energy_global.groupby(
+        {
+            "energy_consumption": [
+                "bld_services_energy-consumption_hot-water",
+                "bld_energy-demand_heating",
+                "bld_hot-water_energy-demand",
+            ]
+        },
+        dim="Variables",
+    )
+    dm_energy_heating.change_unit(
+        "energy_consumption", factor=1e6, old_unit="TWh", new_unit="MWh"
+    )
 
     # Energy demand by building category, end-use (space-heating / hot-water /
     # appliances / lighting) and fuel, plus the total across all of them. Same

@@ -20,14 +20,14 @@ from scenarios.build_fts_technical_limit_pickle import run as fts_techno_run
 from scenarios.build_fts_Tint_heating_pickle import run as fts_Tint_heating_run
 from scenarios.buildings_fts_EP2050_pickle import run as fts_Vaud_EP2050_run
 
-from transition_compass_model.model.common.auxiliary_functions import create_years_list
-
-years_ots = create_years_list(1990, 2023, 1)
-years_fts = create_years_list(2025, 2050, 5)
+from transition_compass_model._database.pre_processing.params import (
+    country_list,
+    years_fts,
+    years_ots,
+)
 
 global_var = load_construction_period_param()
 
-country_list = ["Switzerland", "Vaud"]
 
 print("Running load interface")
 DM_pop = load_interface_run(country_list)
