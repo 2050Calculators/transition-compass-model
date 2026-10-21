@@ -7,6 +7,7 @@ import numpy as np
 
 # from _database.pre_processing.api_routines_CH import get_data_api_CH
 import pandas as pd
+from scenarios.agr_fts_BAU_pickle import run as run_BAU_fts
 
 from transition_compass_model.model.common.auxiliary_functions import (
     add_dummy_country_to_DM,
@@ -8301,49 +8302,49 @@ def database_from_csv_to_datamatrix(
 
     # LeversToDatamatrix FTS linear fitting of ots
 
-    DM_ots = DM_agriculture_old["ots"].copy()
-    DM_fts = DM_agriculture_old["fts"].copy()
-
     # To do once when adding a new lever
     # DM_fts['climate-smart-crop']['processing-net-import'] = {'processing-net-import': dict()}
+    DM_agriculture = run_BAU_fts(DM_agriculture_old, years_ots, years_fts)
+    DM_ots = DM_agriculture["ots"].copy()
+    DM_fts = DM_agriculture["fts"].copy()
 
     # Levers to be normalised
-    list_norm = ["climate-smart-livestock_ration"]
-    # Levers kept constant at the last ots value
-    list_constant = ["climate-smart-livestock_slaughtered"]
+    # list_norm = ["climate-smart-livestock_ration"]
+    # # Levers kept constant at the last ots value
+    # list_constant = ["climate-smart-livestock_slaughtered"]
 
-    for key in DM_ots.keys():
-        if isinstance(DM_ots[key], dict):
-            for subkey in DM_ots[key].keys():
-                dm = DM_ots[key][subkey].copy()
-                linear_fitting(dm, years_fts)
-                if subkey in list_constant:
-                    idx = dm.idx
-                    dm.array[:, [idx[y] for y in years_fts], ...] = dm.array[
-                        :, idx[years_ots[-1]], np.newaxis, ...
-                    ]
+    # for key in DM_ots.keys():
+    #     if isinstance(DM_ots[key], dict):
+    #         for subkey in DM_ots[key].keys():
+    #             dm = DM_ots[key][subkey].copy()
+    #             linear_fitting(dm, years_fts)
+    #             if subkey in list_constant:
+    #                 idx = dm.idx
+    #                 dm.array[:, [idx[y] for y in years_fts], ...] = dm.array[
+    #                     :, idx[years_ots[-1]], np.newaxis, ...
+    #                 ]
 
-                for lev in range(1, 5):  # 1 to 4
-                    if subkey in list_norm:  # ✅ check subkey, not key
-                        dm_norm = dm.copy()
-                        # Replace negative values with 0
-                        array_temp = dm_norm.array[:, :, :, :]
-                        array_temp[array_temp < 0] = 0.0
-                        dm_norm.array[:, :, :, :] = array_temp
-                        # Normalise
-                        dm_norm.normalise(dim="Categories1", inplace=True)
-                        DM_fts[key][subkey][lev] = dm_norm.filter(
-                            {"Years": years_fts}, inplace=False
-                        )
-                    else:
-                        DM_fts[key][subkey][lev] = dm.filter(
-                            {"Years": years_fts}, inplace=False
-                        )
-        else:
-            dm = DM_ots[key].copy()
-            linear_fitting(dm, years_fts)
-            for lev in range(1, 5):
-                DM_fts[key][lev] = dm.filter({"Years": years_fts}, inplace=False)
+    #             for lev in range(1, 5):  # 1 to 4
+    #                 if subkey in list_norm:  # ✅ check subkey, not key
+    #                     dm_norm = dm.copy()
+    #                     # Replace negative values with 0
+    #                     array_temp = dm_norm.array[:, :, :, :]
+    #                     array_temp[array_temp < 0] = 0.0
+    #                     dm_norm.array[:, :, :, :] = array_temp
+    #                     # Normalise
+    #                     dm_norm.normalise(dim="Categories1", inplace=True)
+    #                     DM_fts[key][subkey][lev] = dm_norm.filter(
+    #                         {"Years": years_fts}, inplace=False
+    #                     )
+    #                 else:
+    #                     DM_fts[key][subkey][lev] = dm.filter(
+    #                         {"Years": years_fts}, inplace=False
+    #                     )
+    #     else:
+    #         dm = DM_ots[key].copy()
+    #         linear_fitting(dm, years_fts)
+    #         for lev in range(1, 5):
+    #             DM_fts[key][lev] = dm.filter({"Years": years_fts}, inplace=False)
 
     # To remove '_' at the ending of some keys as the ones for diet
     # for key in dm_fts.keys():
@@ -8643,6 +8644,7 @@ def database_from_csv_to_datamatrix(
     dm = DataMatrix.create_from_df(df_ots, num_cat=0)
     dm_temp = dm.filter_w_regex({"Variables": "agr_food-net-import.*"})
     dm_temp.deepen()
+    dm_temp.array = np.where(dm_temp.array < 0, 0, dm_temp.array)
     dict_ots[lever] = dm_temp
 
     # Data - Lever - climate smart livestock
