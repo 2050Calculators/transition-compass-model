@@ -579,6 +579,7 @@ def calibration_rates(
         dm_cal_sub.append(dm_sub, "Variables")
         var_raw = dm_sub.col_labels["Variables"][0]
         var_cal = dm_cal_sub.col_labels["Variables"][0]
+        # delta = calibration - raw
         dm_cal_sub.operation(var_cal, "-", var_raw, out_col="delta", unit="")
         dm_cal_sub.operation("delta", "/", var_raw, out_col="cal_rate", unit="%")
         dm_cal_sub.array = dm_cal_sub.array + 1

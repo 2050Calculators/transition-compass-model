@@ -30,7 +30,7 @@ def run(DM_agriculture: DataMatrix, years_ots: list, years_fts: list) -> DataMat
         "share",
         "biomass-hierarchy_biomass-mix_digestor",
     ]  #'biomass-hierarchy_bioenergy_liquid_biodiesel'
-    #'biomass-hierarchy_bioenergy_liquid_biogasoline'
+    #'biomass-hierarchy_bioenergy_liquid_biogasoline'#"food-net-import"
     # Levers kept constant at the last ots value
     list_constant = ["climate-smart-livestock_slaughtered"]
 
@@ -63,6 +63,15 @@ def run(DM_agriculture: DataMatrix, years_ots: list, years_fts: list) -> DataMat
         else:
             dm = DM_agriculture["ots"][key].copy()
             linear_fitting(dm, years_fts, based_on=years_ots)
+            if key == "food-net-import" and "Vaud" in dm.col_labels["Country"]:
+                idx = dm.idx
+                # Ensure cereal production stays above 1 for Vaud
+                dm.array[idx["Vaud"], :, :, idx["crop-cereal"]] = np.where(
+                    dm.array[idx["Vaud"], :, :, idx["crop-cereal"]] < 1,
+                    1,
+                    dm.array[idx["Vaud"], :, :, idx["crop-cereal"]],
+                )
+
             dm.array = np.where(dm.array < 0, 0, dm.array)
             for lev in range(1, 5):
                 DM_agriculture["fts"][key][lev] = dm.filter({"Years": years_fts})

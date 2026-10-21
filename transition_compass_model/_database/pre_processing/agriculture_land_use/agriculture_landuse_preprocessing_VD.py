@@ -771,6 +771,13 @@ DM_agriculture["ots"]["food-net-import"].append(
 )
 DM_agriculture["ots"]["food-net-import"].sort("Country")
 
+# ensure it stays above 0
+DM_agriculture["ots"]["food-net-import"].array = np.where(
+    DM_agriculture["ots"]["food-net-import"].array < 0,
+    0,
+    DM_agriculture["ots"]["food-net-import"].array,
+)
+
 # Overwrite Vaud calibration ###################################################
 dm_cal_diet.rename_col("lfs_supply", "cal_agr_diet", "Variables")
 
@@ -1418,4 +1425,5 @@ my_pickle_dump(DM_agriculture, f)  # noqa: F821
 #### FTS ####
 
 DM_agriculture = run_bau_fts(DM_agriculture, years_ots, years_fts)
+
 print("Hello")
