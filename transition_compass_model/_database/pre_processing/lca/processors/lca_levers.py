@@ -7,8 +7,9 @@ import pandas as pd
 
 warnings.simplefilter("ignore")
 
-from _database.pre_processing.lca.get_data_functions.data_lca import get_data_lca
-
+from transition_compass_model._database.pre_processing.lca.get_data_functions.data_lca import (
+    get_data_lca,
+)
 from transition_compass_model.model.common.auxiliary_functions import create_years_list
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 

@@ -13,23 +13,23 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
     # SECTION Floor area Renovated ots
     # Number of buildings
     # Bâtiments selon les niveaux géographiques institutionnels, la catégorie de bâtiment et l'époque de construction
-    table_id = "px-x-0902010000_103"
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    file = os.path.join(this_dir, "../data/bld_nb-buildings_2010_2022.pickle")
-    dm_bld = renov.extract_number_of_buildings(table_id, file)
+    agency = "CH1.GWS"
+    dataflow = "DF_GWS_REG1"
+    file = os.path.join(
+        this_dir, "../data/bld_nb-buildings_2010_2025_swiss_stat.pickle"
+    )
+    dm_bld = renov.extract_number_of_buildings_v2(file, agency, dataflow)
 
+    # https://www.leprogrammebatiments.ch/fr/meta/publications-et-photos/rapports-et-statistiques/
     # Programme Bâtiments
-    # file_url = "https://www.leprogrammebatiments.ch/media/filer_public/01/43/01436bb6-8b18-485f-8070-980102b35db5/recueil_de_tableaux_2024_fr.xlsx"
-    # local_filename = os.path.join(this_dir, '../data/programme_batiments.xlsx')
-    # file_extract = os.path.join(this_dir, '../data/bld_prog_bat_renovation_rate.pickle')
-
-    # dm_renov_rate = renov.extract_renovation_rate(file_url, local_filename, file_extract)
+    dm_renovation = renov.extract_nb_renovated_bld(dm_bld)
 
     # Number of renovated-buildings (thermal insulation)
     # https://www.newsd.admin.ch/newsd/message/attachments/82234.pdf
     # "Programme bâtiments" rapports annuels 2014-2022, focus sur isolation thérmique
     nb_buildings_isolated = {
-        # 2023 : 8924,
+        2023: 8924,
         2022: 8148,
         2021: 8400,
         2020: 8050,
@@ -40,7 +40,7 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
         2014: 8303,
     }
     nb_buildings_systemic_renovation = {
-        # 2023 : 2520,
+        2023: 2520,
         2022: 2326,
         2021: 2320,
         2020: 2240,
@@ -57,26 +57,53 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
         )
 
     # For 2014 - 2016 we assume VD share = VD share 2017
-    VD_share = {
-        2014: 0.11,
-        2015: 0.11,
-        2016: 0.11,
-        2017: 0.110,
-        2018: 0.103,
-        2019: 0.154,
-        2020: 0.16,
-        2021: 0.193,
-        2022: 0.15,
-        2023: 0.15,
+    # FIXME : find real values for fribourg and schwyz
+    canton_share = {
+        "Vaud": {
+            2014: 0.11,
+            2015: 0.11,
+            2016: 0.11,
+            2017: 0.110,
+            2018: 0.103,
+            2019: 0.154,
+            2020: 0.16,
+            2021: 0.193,
+            2022: 0.15,
+            2023: 0.15,
+        },
+        "Fribourg": {
+            2014: 0.05,
+            2015: 0.05,
+            2016: 0.05,
+            2017: 0.05,
+            2018: 0.05,
+            2019: 0.05,
+            2020: 0.05,
+            2021: 0.05,
+            2022: 0.05,
+            2023: 0.05,
+        },
+        "Schwyz": {
+            2014: 0.02,
+            2015: 0.02,
+            2016: 0.02,
+            2017: 0.02,
+            2018: 0.02,
+            2019: 0.02,
+            2020: 0.02,
+            2021: 0.02,
+            2022: 0.02,
+            2023: 0.02,
+        },
     }
     share_by_bld = {
         "single-family-households": 0.55,
         "multi-family-households": 0.35,
         "other": 0.1,
     }
-    dm_renovation = renov.compute_renovated_buildings(
-        dm_bld, nb_buildings_renovated, VD_share, share_by_bld
-    )
+    # dm_renovation = renov.compute_renovated_buildings(
+    #     dm_bld, nb_buildings_renovated, canton_share, share_by_bld
+    # )
 
     # Compute renovation-rate
     dm_renovation = renov.compute_renovation_rate(dm_renovation, years_ots)

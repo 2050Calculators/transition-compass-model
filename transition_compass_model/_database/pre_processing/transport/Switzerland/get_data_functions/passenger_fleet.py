@@ -11,6 +11,10 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
     get_data_api_swiss_stats,
 )
+from transition_compass_model._database.pre_processing.params import country_list
+from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
+    utils as utils,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     add_missing_ots_years,
     linear_fitting,
@@ -143,13 +147,14 @@ def extract_passenger_new_fleet_by_tech(dm_new_fleet):
         print(
             f'"Other" category is greater than 1% of the fleet, it cannot be discarded for {dm_pass_new_fleet.col_labels["Variables"]}'
         )
-        # raise ValueError(
-        #     '"Other" category is greater than 1% of the fleet, it cannot be discarded'
-        # )
+        raise ValueError(
+            '"Other" category is greater than 1% of the fleet, it cannot be discarded'
+        )
     else:
         #'"Other" category is greater than 1% of the fleet, it cannot be discarded'
         dm_pass_new_fleet.drop(col_label="Other", dim="Categories2")
 
+    dm_pass_new_fleet.sort("Country")
     return dm_pass_new_fleet, dm_new_tech
 
 
@@ -228,9 +233,7 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
             for fuel in structure["UV_RV_FUEL"]
             if fuel not in ["Total", "No motor"]
         ]
-        car_age_list = [
-            car_age for car_age in structure["UV_RV_VEHICLE_AGE"] if car_age != "Total"
-        ]
+        car_age_list = ["Total"]
 
         filtering = {
             "UV_HGDE_KT": [
@@ -240,7 +243,7 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
                 "Schwyz",
             ],
             "TIME_PERIOD": structure["TIME_PERIOD"],
-            "UV_RV_VEHICLE_AGE": ["Total"],
+            "UV_RV_VEHICLE_AGE": car_age_list,
             "UV_RV_VEHICLE_GROUP_AND_TYPE": passenger_cat,
             "UV_RV_FUEL": fuel_list,
             "UV_RV_OWNER_TYPE": ["Total"],
@@ -301,31 +304,115 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
     }
     dm_fleet.groupby(dict_tech, dim="Categories2", regex=False, inplace=True)
 
-    dm_ratio = dm_fleet.normalise(dim="Categories2", inplace=False)
-
-    dm_missing = dm_ratio.filter({"Categories2": ["Other"]}).copy()
-    if (dm_missing.array > 0.01).any():
-        print(
-            f'"Other" category is greater than 1% of the fleet, it cannot be discarded {dm_missing.col_labels["Variables"]}'
-        )
-        dm_without_other = dm_fleet.copy()
-        dm_without_other.drop(col_label="Other", dim="Categories2")
-        dm_without_other_normalised = dm_without_other.normalise(
-            dim="Categories2", inplace=False
-        )
-
-        dm_without_other.array = (
-            dm_without_other.array
-            + dm_fleet.filter({"Categories2": ["Other"]}).array
-            * dm_without_other_normalised.array
-        )
-        dm_fleet = dm_without_other.copy()
-    else:
-        dm_fleet.drop(col_label="Other", dim="Categories2")
+    dm_fleet = utils.drop_if_smaller_than_0_01(dm_fleet)
 
     dm_fleet.sort("Country")
     dm_fleet.sort("Categories2")
 
+    return dm_fleet
+
+
+def get_passenger_stock_fleet_by_tech_raw_local_archive(table_id, file):
+    # New fleet data are heavy, download them only once
+    try:
+        with open(file + "f", "rb") as handle:
+            dm_fleet = pickle.load(handle)
+    except OSError:
+        translation_fuels = {
+            "Benzin": "Petrol",
+            "Diesel": "Diesel",
+            "Elektrisch": "Electricity",
+            "Anderer": "Other",
+            "Ohne Motor": "Without motor",
+        }
+        translation_date = {
+            "Vor 1960": "Before 1960",
+            "Unbekannt": "Unknown",
+        }
+        translation_country = {
+            "Schweiz": "Switzerland",
+            "Vaud": "Vaud",
+            "Fribourg / Freiburg": "Fribourg",
+        }
+        translation_vehicle_type = {
+            "> Personenwagen": "> Passenger cars",
+            "> Sachentransportfahrzeuge": "> Goods transport vehicles",
+            "> Landwirtschaftsfahrzeuge": "> Agricultural vehicles",
+            "> Anhänger": "> Trailers",
+            "> Motorräder": "> Motorcycles",
+            "> Personentransportfahrzeuge": "> Passenger transport vehicles",
+            "> Industriefahrzeuge": "> Industrial vehicles",
+        }
+
+        df = pd.read_csv(f"data/{table_id}.csv", sep=";", header=1)
+        # Clean dataframe from the csv file
+        df.replace(translation_fuels, inplace=True)
+        df.replace(translation_date, inplace=True)
+        df.replace(translation_country, inplace=True)
+        df.replace(translation_vehicle_type, inplace=True)
+
+        df.rename(
+            columns={
+                "Jahr": "Country",
+                "Unnamed: 1": "Categories1",
+                "Unnamed: 2": "Variables",
+                "Unnamed: 3": "Categories2",
+            },
+            inplace=True,
+        )
+        df.ffill(inplace=True)
+        main_cat = list(set([cat for cat in df["Categories1"] if ">" in cat]))
+        passenger_cat = [
+            cat for cat in main_cat if "Passenger" in cat or "Motorcycles" in cat
+        ]
+
+        df = df[df["Categories1"].isin(passenger_cat)]
+        df = df[df["Country"].isin(country_list)]
+        df_T = pd.melt(
+            df,
+            id_vars=["Variables", "Country", "Categories1", "Categories2"],
+            var_name="Years",
+            value_name="values",
+        )
+        df_T["Variables"] = (
+            df_T["Variables"]
+            + "_"
+            + df_T["Categories1"]
+            + "_"
+            + df_T["Categories2"]
+            + ["[number]"]
+        )
+        df_T.drop(columns=["Categories1", "Categories2"], inplace=True)
+        df_pivot = df_T.pivot_table(
+            index=["Country", "Years"],
+            columns=["Variables"],
+            values="values",
+            aggfunc="sum",
+        )
+
+        df_pivot.reset_index(inplace=True)
+
+        # Create datamatrix
+        dm_fleet = DataMatrix.create_from_df(df_pivot, num_cat=2)
+    # Group all vehicles independently of immatriculation data
+    dm_fleet.groupby(
+        {"tra_passenger_vehicle-fleet": ".*"}, dim="Variables", regex=True, inplace=True
+    )
+    # Group passenger vehicles as LDV and motorcycles as 2W
+    dm_fleet.groupby(
+        {"LDV": ".*Passenger.*", "2W": ".*Motorcycles"},
+        dim="Categories1",
+        regex=True,
+        inplace=True,
+    )
+    # Map fuel technology to transport module category. Other category cannot be removed as it is above 1%
+    dict_tech = {
+        "BEV": ["Electricity"],
+        "ICE-diesel": ["Diesel"],
+        "ICE-gasoline": ["Petrol"],
+    }
+    dm_fleet.groupby(dict_tech, dim="Categories2", regex=False, inplace=True)
+    dm_fleet.drop(dim="Categories2", col_label="Without motor")
     return dm_fleet
 
 
@@ -335,6 +422,7 @@ def get_passenger_stock_fleet_by_tech_raw_ofs_api(table_id, file):
         with open(file, "rb") as handle:
             dm_fleet = pickle.load(handle)
     except OSError:
+        df = pd.read_csv("data/px-x-1103020100_101.csv", sep=";")
         structure, title = get_data_api_CH(table_id, mode="example")
         # Keep only passenger car main categories
         main_cat = [cat for cat in structure["Vehicle group / type"] if ">" in cat]

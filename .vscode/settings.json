@@ -1,5 +1,9 @@
 {
   "chat.tools.terminal.autoApprove": {
     "uv": true
-  }
+  },
+  "jupyter.notebookFileRoot": "${fileDirname}",
+  "python.analysis.extraPaths": [
+        "${workspaceFolder}"
+    ]
 }

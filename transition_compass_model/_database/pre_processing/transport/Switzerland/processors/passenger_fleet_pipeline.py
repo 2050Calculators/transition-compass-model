@@ -6,11 +6,11 @@ import os
 
 import numpy as np
 
+from transition_compass_model._database.pre_processing.params import (
+    country_list,
+)
 from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
     passenger_fleet as get_data,
-)
-from transition_compass_model._database.pre_processing.transport.Switzerland.params import (
-    country_list,
 )
 from transition_compass_model._database.pre_processing.transport.Switzerland.processors.transport_demand_pipeline import (
     run as demand_pkm_vkm_run,
@@ -26,17 +26,20 @@ def downscale_public_fleet_VD(dm_public_fleet, dm_pkm):
     dm_public_pkm = dm_pkm.filter(
         {"Categories1": dm_public_fleet.col_labels["Categories1"]}
     )
-    idx = dm_public_pkm.idx
-    arr_ratio_pkm = (
-        dm_public_pkm.array[idx["Vaud"], :, :, :]
-        / dm_public_pkm.array[idx["Switzerland"], :, :, :]
-    )
-    idx = dm_public_fleet.idx
-    arr_VD = (
-        dm_public_fleet.array[idx["Switzerland"], :, :, :, :]
-        * arr_ratio_pkm[..., np.newaxis]
-    )
-    dm_public_fleet.add(arr_VD, dim="Country", col_label="Vaud")
+    idx_public_pkm = dm_public_pkm.idx
+    cantons_list = [i for i in country_list if i != "Switzerland"]
+    # cantons_idx =
+    for canton in cantons_list:
+        arr_ratio_pkm = (
+            dm_public_pkm.array[idx_public_pkm[canton], :, :, :]
+            / dm_public_pkm.array[idx_public_pkm["Switzerland"], :, :, :]
+        )
+        idx = dm_public_fleet.idx
+        arr_canton = (
+            dm_public_fleet.array[idx["Switzerland"], :, :, :, :]
+            * arr_ratio_pkm[..., np.newaxis]
+        )
+        dm_public_fleet.add(arr_canton, dim="Country", col_label=canton)
     return dm_public_fleet
 
 
@@ -61,16 +64,21 @@ def compute_passenger_new_fleet(
         # Extract the cantonal % of the swiss new vehicles in 2005 and uses it to determine Vaud fleet in 1990-2004
         dm_tmp = dm_tech.group_all(dim="Categories2", inplace=False)
         idx = dm_tmp.idx
-        arr_shares = (
-            dm_tmp.array[idx["Vaud"], 0, :, :]
-            / dm_tmp.array[idx["Switzerland"], 0, :, :]
-        )
-        idx_ch = dm_CH.idx
-        arr_VD = (
-            dm_CH.array[idx_ch["Switzerland"], :, :, :] * arr_shares[np.newaxis, :, :]
-        )
+        cantons_list = [i for i in country_list if i != "Switzerland"]
         dm = dm_CH.copy()
-        dm.add(arr_VD, dim="Country", col_label="Vaud")
+        for canton in cantons_list:
+            arr_shares = (
+                dm_tmp.array[idx[canton], 0, :, :]
+                / dm_tmp.array[idx["Switzerland"], 0, :, :]
+            )
+            idx_ch = dm_CH.idx
+            arr_VD = (
+                dm_CH.array[idx_ch["Switzerland"], :, :, :]
+                * arr_shares[np.newaxis, :, :]
+            )
+
+            dm.add(arr_VD, dim="Country", col_label=canton)
+        dm.sort("Country")
         return dm
 
     ### New Passenger fleet for Switzerland and Vaud from 1990-2023
@@ -268,11 +276,12 @@ def run(dm_pkm, years_ots):
     # SECTION Vehicle fleet and technology share LDV, 2W ots
     #### Passenger fleet by technology (stock) LDV, 2W 1990 -2024
     # https://www.bfs.admin.ch/asset/fr/px-x-1103020100_101
-    # TODO : replace with swissstats api
     table_id_tot_veh = "px-x-1103020100_101"
     file_tot_veh = os.path.join(this_dir, "../data/tra_tot_fleet.pickle")
-    dm_pass_fleet_raw_old = get_data.get_passenger_stock_fleet_by_tech_raw_ofs_api(
-        table_id_tot_veh, file_tot_veh
+    dm_pass_fleet_raw_old = (
+        get_data.get_passenger_stock_fleet_by_tech_raw_local_archive(
+            table_id_tot_veh, file_tot_veh
+        )
     )
 
     #### Passenger fleet by technology (stock) LDV, 2W 2005-2025

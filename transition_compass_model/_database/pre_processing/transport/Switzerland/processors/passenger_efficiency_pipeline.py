@@ -3,11 +3,11 @@
 ###################################
 
 import os
-import pickle
 
 import numpy as np
 
 import transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions.efficiency as get_data
+from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     linear_fitting,
@@ -17,7 +17,8 @@ from transition_compass_model.model.common.auxiliary_functions import (
 def convert_eff_from_gCO2_km_to_MJ_km(
     dm_veh_eff_LDV, cdm_emissions_factors, new_var_name
 ):
-    dm_veh_eff_LDV.drop("Categories2", ["BEV", "FCEV"])
+    if "BEV" in dm_veh_eff_LDV.col_labels["Categories2"]:
+        dm_veh_eff_LDV.drop("Categories2", ["BEV", "FCEV"])
     var_name = dm_veh_eff_LDV.col_labels["Variables"][0]
     dm_veh_eff_LDV.rename_col(var_name, "tmp_name", dim="Variables")
     cdm_emissions_CO2_LDV = cdm_emissions_factors.filter(
@@ -213,36 +214,99 @@ def run(
     local_filename_veh = os.path.join(
         this_dir, "../data/tra_veh_efficiency.pickle"
     )  # The file is created if it doesn't exist
-    dm_veh_eff_LDV = get_data.get_vehicle_efficiency(
+    dm_veh_eff_LDV_ofs = get_data.get_vehicle_efficiency_ofs(
         table_id_veh_eff,
         local_filename_veh,
         var_name="tra_passenger_veh-efficiency_fleet",
         years_ots=years_ots,
     )
+
+    dm_veh_eff_LDV_ofs.filter(
+        {
+            "Country": country_list,
+            "Years": years_ots,
+            "Categories2": [
+                "ICE-diesel",
+                "ICE-gas",
+                "ICE-gasoline",
+                "PHEV-diesel",
+                "PHEV-gasoline",
+            ],
+        },
+        inplace=True,
+    )
     del table_id_veh_eff, local_filename_veh
 
-    #### Vehicle efficiency new - LDV - CO2/km
-    # FCEV data are off, BEV = 25 gCO2/km independently of car power
-    table_id_new_eff = "px-x-1103020200_201"
-    local_filename_new = os.path.join(
-        this_dir, "../data/tra_new-veh_efficiency.pickle"
-    )  # The file is created if it doesn't exist3#
-    dm_veh_new_eff_LDV = get_data.get_new_vehicle_efficiency(
-        table_id_new_eff,
-        local_filename_new,
-        var_name="tra_passenger_veh-efficiency_new",
-        years_ots=years_ots,
+    # Data of the new api available in https://stats.swiss/vis?lc=fr&df[ds]=disseminate&df[id]=DF_MFZ_1_EMISSION&df[ag]=CH1.MFZ_IVS&dq=_T._T._T._T._T%2BPC%2BPH%2BDC%2BDH%2BHP%2BHD%2BEL%2BFC%2BGA%2B_O._T._T.A&lom=LASTNPERIODS&lo=6&to[TIME_PERIOD]=false
+    agency_eff = "CH1.MFZ_IVS"
+    dataflow_eff = "DF_MFZ_1_EMISSION"
+    local_filename_eff = os.path.join(
+        this_dir, "../data/tra_veh_efficiency_swiss_stat_co2.pickle"
     )
-    del table_id_new_eff, local_filename_new
+    dm_veh_eff_LDV_co2 = get_data.get_vehicle_efficiency_co2(
+        local_filename_eff,
+        agency_eff,
+        dataflow_eff,
+        var_name="tra_passenger_veh-efficiency_fleet",
+    )
+
+    dm_veh_eff_LDV_co2.filter(
+        {"Country": country_list, "Years": years_ots}, inplace=True
+    )
+
+    local_filename_eff = os.path.join(
+        this_dir, "../data/tra_veh_efficiency_swiss_stat_elec.pickle"
+    )
+    # dm_veh_eff_LDV_elec = get_data.get_vehicle_electric_efficiency(
+    #     local_filename_eff,
+    #     agency_eff,
+    #     dataflow_eff,
+    #     var_name="tra_passenger_veh-efficiency_fleet",
+    # )
+    # dm_veh_eff_LDV_elec.filter(
+    #     {"Country": country_list, "Years": years_ots}, inplace=True
+    # )
+
+    #### Vehicle efficiency new - LDV - CO2/km -swiss stats version
+    # swiss stats url : https://stats.swiss/vis?lc=fr&df%5bds%5d=disseminate&df%5bid%5d=DF_IVS_1_EMISSION&df%5bag%5d=CH1.MFZ_IVS
+    agency_new_eff = "CH1.MFZ_IVS"
+    dataflow_new_eff = "DF_IVS_1_EMISSION"
+    local_filename_new = os.path.join(
+        this_dir, "../data/tra_new-veh_efficiency_co2.pickle"
+    )  # The file is created if it doesn't exist
+    dm_veh_new_eff_LDV_co2, dm_new_veh_eff_raw = (
+        get_data.get_new_vehicle_efficiency_co2(
+            local_filename_new,
+            agency_new_eff,
+            dataflow_new_eff,
+            var_name="tra_passenger_veh-efficiency_new",
+        )
+    )
+    dm_veh_new_eff_LDV_co2.filter({"Country": country_list}, inplace=True)
+
+    local_filename_new = os.path.join(
+        this_dir, "../data/tra_new-veh_efficiency_elec.pickle"
+    )  # The file is created if it doesn't exist
+
+    # dm_veh_new_eff_LDV_elec = get_data.get_new_vehicle_efficiency_elec(
+    #     local_filename_new,
+    #     agency_new_eff,
+    #     dataflow_new_eff,
+    #     var_name="tra_passenger_veh-efficiency_new",
+    # )
+
+    # dm_veh_new_eff_LDV_elec.filter({"Country": country_list}, inplace=True)
+
+    del agency_new_eff, dataflow_new_eff
 
     # The Swiss efficiency for the fleet is given in gCO2/km. We convert it to MJ/km
     dm_veh_eff_LDV = convert_eff_from_gCO2_km_to_MJ_km(
-        dm_veh_eff_LDV,
+        dm_veh_eff_LDV_co2,
         cdm_emissions_factors,
         new_var_name="tra_passenger_veh-efficiency_fleet",
     )
     dm_veh_new_eff_LDV = convert_eff_from_gCO2_km_to_MJ_km(
-        dm_veh_new_eff_LDV,
+        dm_veh_new_eff_LDV_co2,
         cdm_emissions_factors,
         new_var_name="tra_passenger_veh-efficiency_new",
     )
@@ -289,10 +353,14 @@ def run(
         unit="MJ/km",
         dummy=True,
     )
-    dm_veh_eff.add(np.nan, dim="Country", col_label="Vaud", dummy=True)
-    dm_veh_eff.fill_nans(dim_to_interp="Variables")
-    dm_veh_eff.fill_nans(dim_to_interp="Country")
-    dm_veh_eff.fill_nans("Years")
+    cantons_list = [canton for canton in country_list if canton != "Switzerland"]
+    for i, canton in enumerate(cantons_list):
+        dm_veh_eff.add(np.nan, dim="Country", col_label=canton, dummy=True)
+        if i == 0:
+            dm_veh_eff.fill_nans(dim_to_interp="Variables")
+
+        dm_veh_eff.fill_nans(dim_to_interp="Country")
+        dm_veh_eff.fill_nans("Years")
 
     # If it is all 0 for all years, replace with nans
     arr = dm_veh_eff.array
@@ -401,104 +469,3 @@ def run(
     ]
 
     return dm_veh_eff
-
-
-def run_old(cdm_emissions_factors, years_ots):
-    this_dir = os.path.dirname(os.path.abspath(__file__))  # creates local path variable
-
-    # SECTION Vehicle efficiency LDV, stock and new, ots
-    #### Vehicle efficiency - LDV - CO2/km
-    # FCEV (Hydrogen) data are off - BEV too
-    # !!! Attention: The data are bad before 2016 and after 2020, backcasting to 1990 from 2016 done with linear fitting.
-    table_id_veh_eff = "px-x-1103020100_106"
-    local_filename_veh = os.path.join(
-        this_dir, "../data/tra_veh_efficiency.pickle"
-    )  # The file is created if it doesn't exist
-    dm_veh_eff_LDV = get_data.get_vehicle_efficiency(
-        table_id_veh_eff,
-        local_filename_veh,
-        var_name="tra_passenger_veh-efficiency_fleet",
-        years_ots=years_ots,
-    )
-    del table_id_veh_eff, local_filename_veh
-
-    #### Vehicle efficiency new - LDV - CO2/km
-    # FCEV data are off, BEV = 25 gCO2/km independently of car power
-    table_id_new_eff = "px-x-1103020200_201"
-    local_filename_new = os.path.join(
-        this_dir, "../data/tra_new-veh_efficiency.pickle"
-    )  # The file is created if it doesn't exist3#
-    dm_veh_new_eff_LDV = get_data.get_new_vehicle_efficiency(
-        table_id_new_eff,
-        local_filename_new,
-        var_name="tra_passenger_veh-efficiency_new",
-        years_ots=years_ots,
-    )
-    del table_id_new_eff, local_filename_new
-
-    # The Swiss efficiency for the fleet is given in gCO2/km. We convert it to MJ/km
-    dm_veh_eff_LDV = convert_eff_from_gCO2_km_to_MJ_km(
-        dm_veh_eff_LDV,
-        cdm_emissions_factors,
-        new_var_name="tra_passenger_veh-efficiency_fleet",
-    )
-    dm_veh_new_eff_LDV = convert_eff_from_gCO2_km_to_MJ_km(
-        dm_veh_new_eff_LDV,
-        cdm_emissions_factors,
-        new_var_name="tra_passenger_veh-efficiency_new",
-    )
-
-    ### We should do a separate flow for aviation. from pkm/cap -> pkm -> technology share (applied to pkm) -> emissions/pkm
-    data_file = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "../../../../data/datamatrix/transport.pickle",
-    )
-    with open(data_file, "rb") as handle:
-        DM_transport = pickle.load(handle)
-
-    lev = list(DM_transport["ots"].keys())[0]
-    baseyear_old = DM_transport["ots"][lev].col_labels["Years"][-1]
-
-    # Add to the LDV efficiency the efficiency of other means of transport, taken from EUCalc data
-    print(
-        "You are missing vehicle efficiency for LDV FCEV and BEV, but also 2W, bus, aviation, metrotram, rail."
-        " Bus efficiency looks very wrong"
-    )
-    dm_veh_eff = DM_transport["fxa"]["passenger_tech"].filter(
-        {
-            "Variables": ["tra_passenger_veh-efficiency_fleet"],
-            "Country": ["Switzerland"],
-        }
-    )
-    dm_veh_new_eff = DM_transport["ots"]["passenger_veh-efficiency_new"].filter(
-        {"Variables": ["tra_passenger_veh-efficiency_new"], "Country": ["Switzerland"]}
-    )
-
-    # Adjust efficiency for metrotram and rail
-    idx = dm_veh_eff.idx
-    idx_n = dm_veh_new_eff.idx
-    public_eff = {
-        ("metrotram", "mt"): 3,
-        ("rail", "CEV"): 1,
-        ("rail", "ICE-diesel"): 1 * 0.8 / 0.3,
-        ("rail", "FCEV"): 1 * 0.8 / 0.3,
-    }
-    for key, value in public_eff.items():
-        dm_veh_eff.array[
-            :, :, idx["tra_passenger_veh-efficiency_fleet"], idx[key[0]], idx[key[1]]
-        ] = value
-        dm_veh_new_eff.array[
-            :,
-            :,
-            idx_n["tra_passenger_veh-efficiency_new"],
-            idx_n[key[0]],
-            idx_n[key[1]],
-        ] = value
-
-    # Determine efficiency
-    # It also removes aviation
-    dm_veh_eff, dm_veh_new_eff = replace_LDV_efficiency_with_new(
-        dm_veh_eff, dm_veh_new_eff, dm_veh_eff_LDV, dm_veh_new_eff_LDV, baseyear_old
-    )
-
-    return dm_veh_eff, dm_veh_new_eff

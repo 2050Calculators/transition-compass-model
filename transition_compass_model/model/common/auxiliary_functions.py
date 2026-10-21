@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import pickle
 import re
@@ -1391,8 +1392,6 @@ def my_pickle_dump(
             backup_file_path = os.path.join(
                 backup_folder_path, local_pickle_file.split("/")[-1]
             )
-            with open(backup_file_path, "wb") as handle:
-                pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
             # save the new file in place of the old file
             with open(local_pickle_file, "wb") as handle:
                 pickle.dump(DM_new, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -1810,3 +1809,59 @@ def init_years_lever():
     f = open(os.path.join(current_file_directory, "../../config/lever_position.json"))
     lever_setting = json.load(f)[0]
     return years_setting, lever_setting
+
+
+def compute_diff(dm_og, new_col, old_col):
+    dm = dm_og.copy()
+    dm.array = np.nan_to_num(dm.array)
+    dm.operation(new_col, "-", old_col, out_col="diff_out_col")
+    dm.operation("diff_out_col", "/", old_col, out_col="diff_out_perc")
+    dm.array = np.nan_to_num(dm.array)
+    dm2 = dm.filter({"Variables": ["diff_out_perc"]})
+    arr = dm2.array
+
+    print((arr > 0.01).any())
+    if (arr > 0.01).any():
+        max_val = np.nanmax(arr)
+        max_pos = np.unravel_index(np.nanargmax(arr), arr.shape)
+        print("Max value:", max_val)
+        for dim, pos in zip(dm2.dim_labels, max_pos):
+            print(f"{dim}: {dm2.col_labels[dim][pos]}")
+    dm.flattest().datamatrix_plot()
+    return dm
+
+
+def compare_dm(dm_new: DataMatrix, dm_old: DataMatrix):
+    """Compare 2 datamatrix with identical columns to get the differences between there values.
+    Created for comparing data from the old api with the new one
+
+    Args:
+        dm_new (DataMatrix): dm from new api
+        dm_old (DataMatrix): dm from old api
+
+    Returns:
+        DataMatrix: the two dm merged with new variables corresponding to absolute diff and the relative one
+    """
+
+    new_variable = dm_new.col_labels["Variables"][0]
+    old_variable = dm_old.col_labels["Variables"][0]
+    if new_variable == old_variable:
+        dm_old.rename_col(old_variable, old_variable + "_old", "Variables")
+        old_variable = old_variable + "_old"
+    # Efficiency for BEV
+
+    dm_new.append(dm_old, dim="Variables")
+    return compute_diff(dm_new, new_variable, old_variable)
+
+
+def get_common_values_between_2_list(list_a: list, list_b: list):
+    return list(set(list_a) & set(list_b))
+
+
+def check_filtering_size(filtering, max_size_allowed=5000):
+    """check that the number of combinations is not too big to download at once for the api"""
+    len_filtering = [len(filtering[dim]) for dim in filtering.keys()]
+    len_filtering = math.prod(len_filtering)
+    assert len_filtering <= max_size_allowed, (
+        f"Too many combinations to download at once: {len_filtering}. Please reduce the filtering."
+    )
