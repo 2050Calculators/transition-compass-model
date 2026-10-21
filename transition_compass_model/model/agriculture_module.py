@@ -831,6 +831,8 @@ def agriculture_TPE_interface(
     dm_fertilizer_co,
     DM_manure,
     dm_cropland,
+    dm_land_use,
+    years_setting,
 ):
     kcal_to_TWh = 1.163e-12
 
@@ -1210,16 +1212,19 @@ def agriculture_TPE_interface(
 
     # SSR ------------------------------------------------------
 
-    # Self-sufficiency ratio
-    dm_ssr_food = DM_ssr["food"].flattest()
-    dm_ssr_feed = DM_ssr["feed"].flattest()
-    dm_ssr_bioenergy = DM_ssr["bioenergy"].flattest()
-    dm_ssr_processed = DM_food_demand["food-net-import-pro"].flattest()
-    dm_ssr = dm_ssr_food.copy()
-    dm_ssr.append(dm_ssr_feed, dim="Variables")
-    dm_ssr.append(dm_ssr_processed, dim="Variables")
-    dm_ssr.append(dm_ssr_bioenergy, dim="Variables")
-    # dm_tpe.append(dm_ssr, dim='Variables')
+    # Self-sufficiency ratio for crops, vegetable oil (bioenergy) and processed,
+    # livestock and beverage products. Only agr_food-net-import is taken:
+    # DM_ssr["food"] is the whole crop matrix, whose other variables are already in
+    # dm_tpe. The feed ratio is not charted, so it is left out.
+    dm_ssr = DM_ssr["food"].filter({"Variables": ["agr_food-net-import"]}).flattest()
+    for dm_temp in [DM_ssr["bioenergy"], DM_food_demand["food-net-import-pro"]]:
+        dm_ssr.append(
+            dm_temp.filter({"Variables": ["agr_food-net-import"]}).flattest(),
+            dim="Variables",
+        )
+    # Stored as a fraction under a "%" unit; scale so the charts really show %
+    dm_ssr.array = dm_ssr.array * 100
+    dm_tpe.append(dm_ssr, dim="Variables")
 
     # INPUTS ------------------------------------------------------
 
@@ -1233,23 +1238,187 @@ def agriculture_TPE_interface(
     dm_cropland = dm_cropland.filter({"Variables": ["agr_land_cropland"]})
     dm_tpe.append(dm_cropland.flattest(), dim="Variables")
 
-    # Grassland
-    dm_grassland = DM_livestock["ruminant_density"].filter(
-        {
-            "Variables": [
-                "agr_lus_land_raw_grassland",
-                "agr_climate-smart-livestock_density",
-            ]
-        }
-    )
-    dm_tpe.append(dm_grassland, dim="Variables")
+    # Calibrated agricultural land (cropland, grassland). The uncalibrated
+    # agr_lus_land_raw_grassland is deliberately not published.
+    dm_tpe.append(dm_land_use.flattest(), dim="Variables")
 
-    KPI = []
-    yr = 2050
-    # Land-Use (cropland)
-    dm_cropland.group_all("Categories1", inplace=True)
-    value = dm_cropland[0, yr, "agr_land_cropland"]
-    KPI.append({"title": "Land use: Cropland", "value": value, "unit": "ha"})
+    # Ruminant density
+    dm_density = DM_livestock["ruminant_density"].filter(
+        {"Variables": ["agr_climate-smart-livestock_density"]}
+    )
+    dm_tpe.append(dm_density, dim="Variables")
+
+    # SECTOR SUMMARY (main charts & KPIs) ------------------------------------------
+    # Built from the flat series appended above, so the main charts, the detail
+    # charts and the KPI cards all read the same numbers.
+
+    def _sum(variables, factors):
+        # Sum flat variables, converting each from its own unit via `factors`.
+        # Raises on an unknown variable or unit so upstream renames fail loudly.
+        total = 0
+        for v in variables:
+            total = total + dm_tpe[:, :, v] * factors[dm_tpe.units[v]]
+        return total
+
+    def _with_prefix(prefix):
+        variables = [v for v in dm_tpe.col_labels["Variables"] if v.startswith(prefix)]
+        if not variables:
+            raise ValueError(f"No agriculture TPE variable starts with {prefix}")
+        return variables
+
+    # Emissions [Mt CO2e]. Same GWP100 values as emissions/workflows.py
+    # (make_co2_equivalent), applied here so the sector page is self-contained.
+    gwp = {"CO2": 1, "CH4": 28, "N2O": 265}
+    to_Mt = {"Mt": 1, "t": 1e-6}
+    livestock_families = {
+        "meat-bovine": ["meat-bovine"],
+        "meat-pig": ["meat-pig"],
+        "meat-poultry": ["meat-poultry"],
+        "meat-other": ["meat-sheep", "meat-oth-animals"],
+        "dairy": ["abp-dairy-milk"],
+        "eggs": ["abp-hens-egg"],
+    }
+    crops_soils = {
+        "CO2": [
+            "agr_input-use_emissions-CO2_liming",
+            "agr_input-use_emissions-CO2_urea",
+        ],
+        "CH4": [
+            "agr_emissions-CH4_crop_burnt-residues",
+            "agr_emissions-CH4_crop_rice",
+        ],
+        "N2O": [
+            "agr_emissions-N2O_crop_burnt-residues",
+            "agr_emissions-N2O_crop_soil-residues",
+            "agr_crop_emission_N2O-emission_fertilizer",
+        ],
+    }
+    fuel = {"CO2": ["agr_input-use_emissions-CO2_fuel"]}
+
+    # Livestock series are split by product and by emission pathway (enteric,
+    # treated, applied, pasture); the product prefix excludes the *_raw_* series.
+    ems_product = {}
+    ems_gas = {gas: 0 for gas in gwp}
+    for family, products in livestock_families.items():
+        ems_product[family] = 0
+        for gas in ["CH4", "N2O"]:
+            for p in products:
+                value = gwp[gas] * _sum(
+                    _with_prefix(f"agr_liv_{gas}-emission_{p}_"), to_Mt
+                )
+                ems_product[family] = ems_product[family] + value
+                ems_gas[gas] = ems_gas[gas] + value
+    for family, by_gas in [("crops-soils", crops_soils), ("fuel", fuel)]:
+        ems_product[family] = 0
+        for gas, variables in by_gas.items():
+            value = gwp[gas] * _sum(variables, to_Mt)
+            ems_product[family] = ems_product[family] + value
+            ems_gas[gas] = ems_gas[gas] + value
+
+    for family, value in ems_product.items():
+        dm_tpe.add(value, "Variables", f"agr_emissions-CO2e-product_{family}", "Mt")
+    for gas, value in ems_gas.items():
+        dm_tpe.add(value, "Variables", f"agr_emissions-CO2e-gas_{gas}", "Mt")
+    dm_tpe.add(sum(ems_gas.values()), "Variables", "agr_emissions-CO2e", "Mt")
+
+    # Energy demand [TWh], grouped into main carriers. Every carrier must be
+    # mapped, so a carrier added upstream cannot silently drop out of the total.
+    energy_groups = {
+        "diesel": ["liquid-ff-diesel"],
+        "oil-other": ["liquid-ff-gasoline", "liquid-ff-fuel-oil", "liquid-ff-lpg"],
+        "gas": ["gas-ff-natural"],
+        "coal": ["solid-ff-coal"],
+        "bioenergy": [
+            "bioenergy-gas-biogas",
+            "bioenergy-liquid-biodiesel",
+            "bioenergy-liquid-ethanol",
+            "bioenergy-liquid-oth",
+            "bioenergy-solid-wood",
+        ],
+        "electricity": ["electricity"],
+        "other": ["heat", "oth"],
+    }
+    carriers = [
+        v.removeprefix("agr_energy-demand_") for v in _with_prefix("agr_energy-demand_")
+    ]
+    mapped = [c for group in energy_groups.values() for c in group]
+    if sorted(carriers) != sorted(mapped):
+        raise ValueError(
+            f"Agriculture energy carriers {sorted(carriers)} do not match the "
+            f"main-carrier grouping {sorted(mapped)}"
+        )
+    energy_total = 0
+    for group, group_carriers in energy_groups.items():
+        value = _sum([f"agr_energy-demand_{c}" for c in group_carriers], {"TWh": 1})
+        dm_tpe.add(value, "Variables", f"agr_energy-demand-carrier_{group}", "TWh")
+        energy_total = energy_total + value
+    dm_tpe.add(energy_total, "Variables", "agr_energy-demand_total", "TWh")
+
+    # Domestic food production [Gkcal] by food family
+    production_families = {
+        **livestock_families,
+        "cereals": ["cereal", "rice"],
+        "fruit-veg": ["fruit", "veg"],
+        "oilcrops": ["oilcrop"],
+        "pulses": ["pulse"],
+        "starch": ["starch"],
+        "sugarcrops": ["sugarcrop"],
+    }
+    to_Gkcal = {"kcal": 1e-9}
+    production_total = 0
+    for family, products in production_families.items():
+        value = _sum([f"agr_domestic-production_afw_{p}" for p in products], to_Gkcal)
+        dm_tpe.add(value, "Variables", f"agr_food-production_{family}", "Gkcal")
+        production_total = production_total + value
+    dm_tpe.add(production_total, "Variables", "agr_food-production_total", "Gkcal")
+
+    # KPI gauge bounds are derived from the last historical year, as in transport's
+    # prepare_KPIs: that value is unaffected by lever settings, so the scale stays put
+    # while the needle moves, and it works for both a canton and the country. The
+    # warning/danger fractions are placeholders, not policy targets.
+    base_year = years_setting[1]
+    end_year = years_setting[3]
+
+    def _scaled(title, unit, var, max_f, warning_f, danger_f):
+        base = float(dm_tpe[0, base_year, var])
+        return {
+            "title": title,
+            "value": float(dm_tpe[0, end_year, var]),
+            "unit": unit,
+            "min": 0,
+            "max": max_f * base,
+            "warning": warning_f * base,
+            "danger": danger_f * base,
+        }
+
+    KPI = [
+        _scaled(
+            "Total agriculture emissions",
+            "Mt CO₂eq",
+            "agr_emissions-CO2e",
+            1.2,
+            0.5,
+            0.8,
+        ),
+        _scaled(
+            "Total agriculture energy demand",
+            "TWh",
+            "agr_energy-demand_total",
+            1.2,
+            0.5,
+            0.8,
+        ),
+        # Production is maximised: the gauge is green above `danger` and red below
+        # `warning` (KpiBox.vue), so here warning < danger.
+        _scaled(
+            "Domestic food production",
+            "Gkcal",
+            "agr_food-production_total",
+            1.5,
+            0.8,
+            1.0,
+        ),
+    ]
 
     return dm_tpe, KPI
 
@@ -1478,6 +1647,8 @@ def agriculture(lever_setting, years_setting, DM_input, interface=Interface()):
         dm_fertilizer_co,
         DM_manure,
         dm_cropland,
+        dm_land_use,
+        years_setting,
     )
 
     return results_run, KPI
