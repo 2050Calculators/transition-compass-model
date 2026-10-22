@@ -4,6 +4,7 @@ from processors.electricity_emissions_pipeline import run as electricity_emissio
 from processors.freight_efficiency_tech_share import run as freight_eff_tech_run
 from processors.freight_mode_other_fxa import run as freight_mode_other_run
 from processors.freight_mode_road_fxa import run as freight_mode_road_run
+from processors.freight_road_ots import run as freight_road_run
 from processors.freight_tech_fxa import run as freight_tech_fxa_run
 from processors.freight_tkm_modal_share import run as freight_tkm_run
 from processors.freight_utilization_rate import run as freight_utilization_run
@@ -141,25 +142,33 @@ dm_freight_mode_other = freight_mode_other_run(
     DM_freight_ots, years_ots, years_fts, country_list
 )
 
+## Road freight back-calculated from targets (BFS tkm and fleet, EP2050 vkm and
+## fuel split, FOEN truck CO2): load factor, utilisation, renewal, tech share, efficiency
+print("Freight road OTS (targets)")
+road_freight = freight_road_run(years_ots, cdm_emissions_factors)
+
 ## Freight utilization rate OTS (road: HDVH, HDVL, HDVM)
 print("Freight utilization rate OTS")
-dm_freight_utilization = freight_utilization_run(years_ots, country_list)
+dm_freight_utilization = freight_utilization_run(years_ots, country_list, road_freight)
 
 ## Freight mode road FXA (road: HDVH, HDVL, HDVM lifetime)
 print("Freight mode road FXA")
 dm_freight_mode_road = freight_mode_road_run(
-    dm_freight_utilization, years_ots, years_fts, country_list
+    dm_freight_utilization, road_freight, years_ots, years_fts, country_list
 )
 
 ## Freight efficiency and tech share for new vehicles OTS
 print("Freight efficiency + tech share new vehicles")
-DM_freight_eff_tech = freight_eff_tech_run(years_ots, country_list)
+DM_freight_eff_tech = freight_eff_tech_run(
+    years_ots, country_list, road_freight, DM_freight_ots
+)
 
 ## Freight tech FXA (fleet tech share + fleet efficiency)
 print("Freight tech FXA")
 dm_freight_tech = freight_tech_fxa_run(
     DM_freight_eff_tech["freight_vehicle-efficiency_new"],
     DM_freight_eff_tech["freight_technology-share_new"],
+    road_freight,
     years_ots,
     years_fts,
     country_list,

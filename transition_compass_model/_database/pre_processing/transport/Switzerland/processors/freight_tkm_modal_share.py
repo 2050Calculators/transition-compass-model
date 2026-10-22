@@ -1,31 +1,27 @@
 """
 Swiss freight OTS: total tkm and modal share by mode (1990-2023).
 
-Accounting basis
-----------------
-Road HDV (HDVH, HDVM): **residency-based** — Swiss-registered vehicles only
-  (IMMATRICULATION == "CH"). Foreign transit trucks (~44% of HDVH tkm, ~11% of
-  HDVM tkm) are excluded so that the demand is consistent with Swiss-owned fleet
-  activity and the industry interface (vehicle manufacturing demand for Swiss trucks).
+Accounting basis: territorial
+-----------------------------
+All modes count freight moved on Swiss territory, whatever the vehicle's registration.
+This matches the other targets the preprocessing aligns to (EP2050+ road vkm and
+energy, FOEN inventory CO2), see processors/freight_road_ots.py.
 
-Rail: territorial — BFS T7.2.1 gives total tkm on Swiss rail network with no
-  operator-registration breakdown. Swiss rail freight is dominated by SBB Cargo
-  and BLS (both Swiss-owned), so territorial ≈ residency in practice. No
-  registration-based data available.
+Road HDV (HDVH, HDVM): BFS GTS all registrations (CH + foreign) and all traffic types
+  (domestic, import, export, transit). Foreign trucks are ~44 % of HDVH tkm.
+  The Swiss-registered fleet, which the industry module needs, comes from BFS fleet
+  data in freight_road_ots, not from tkm.
 
-IWW (Rhine navigation): territorial — BFS data gives only total import/export
-  tonnes with no vessel-registration breakdown. Rhine navigation involves Swiss,
-  German and Dutch-flagged vessels; no residency-based split is available. IWW
-  is a small share (~0.5% of total tkm) so the approximation is acceptable.
+Rail: BFS T7.2.1, total tkm on the Swiss rail network.
 
-Aviation (freight): computed as a residual share of total; calibrated to BAZL
-  Swiss airport cargo (territorial). Swiss freight aviation is operated by
-  Swiss carriers so territorial ≈ residency.
+IWW (Rhine navigation): BFS Rhine import/export tonnes (all flags).
+
+Aviation (freight): residual share of total; calibrated to BAZL Swiss airport cargo.
 
 Sources
 -------
 Road HDVH (HAV) + HDVM (LORRY):
-  BFS GTS survey (annual million tkm, 1993-2024, Swiss registrations only).
+  BFS GTS survey (annual million tkm, 1993-2024, all registrations).
   LORRY = rigid trucks ≥ 3.5 t → HDVM; HAV = articulated trucks → HDVH.
   # https://www.bfs.admin.ch/bfs/fr/home/statistiques/mobilite-transports/
   #   transport-marchandises/route/vehicules-lourds.html
@@ -61,10 +57,13 @@ Aviation:
   Calibrated to BAZL Swiss airport cargo (~500 kt/yr at ~2600 km avg haul ≈ 1.3 bn-tkm).
   #TODO : maybe check that the 4.4% makes sense and use other database for getting the aviation bn-tkm
 
-Vaud canton share:
-  BFS GTS canton survey 2016-2020 average. Freight originating from Vaud: 767 635
-  out of 11 013 466 thousand tkm = 6.97 %. Applied to all modes; IWW = 0 for Vaud
-  (Vaud canton has no access to the navigable Rhine).
+Canton share (any canton in country_list):
+  BFS GTS canton survey 2016-2020 average: share = tkm originating from the canton
+  (column "Total") / Swiss total, e.g. 767 635 / 11 013 466 thousand tkm = 6.97 % for
+  Vaud. This survey only covers Swiss-registered trucks; its canton share is applied
+  to the territorial totals of all modes. IWW is 0 for cantons without access to the
+  navigable Rhine (all except _IWW_CANTONS = BS, BL). Aviation is recomputed as the
+  _AVIATION_SHARE residual of the canton subtotal.
   # https://www.bfs.admin.ch/bfs/fr/home/statistiques/mobilite-transports/transport-marchandises/route/vehicules-lourds.assetdetail.18924747.html
   # file: su-f-11.05-GTS16-20-P19.xlsx, sheet FR
 """
@@ -75,6 +74,10 @@ import numpy as np
 import openpyxl
 import pandas as pd
 
+from transition_compass_model._database.pre_processing.constants import CANTONS_NAME
+from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions.freight_data import (
+    read_gts_road_tkm,
+)
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 # ---------------------------------------------------------------------------
@@ -89,9 +92,9 @@ _IWW_HAUL_KM = (
 _AVIATION_SHARE = (
     0.044  # residual share calibrated to BAZL airport cargo data; see module docstring
 )
-_VAUD_ROAD_FREIGHT_SHARE = (
-    767_635 / 11_013_466
-)  # BFS GTS canton survey 2016-2020; see module docstring
+# Cantons with Rhine ports (Basel-Kleinhüningen, Birsfelden, Muttenz-Au), by acronym
+# so the names follow CANTONS_NAME
+_IWW_CANTONS = {CANTONS_NAME["accronym_to_name"][a] for a in ("BS", "BL")}
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.path.join(_THIS_DIR, "../data")
@@ -102,20 +105,17 @@ _MODES = ["HDVH", "HDVL", "HDVM", "IWW", "aviation", "marine", "rail"]
 # ---------------------------------------------------------------------------
 # Private readers
 # ---------------------------------------------------------------------------
-def _read_bfs_gts_road():
-    """Return dict {mode: pd.Series(year→million tkm)} for HDVH and HDVM, CH-registered only."""
-    path = os.path.join(_DATA_DIR, "Freight/ts-x-11.05-GTS-E26.csv")
-    df = pd.read_csv(path, sep=";")
-    # Import immatriculation for switzerland and total but there is information on import
-    # export, domestic and transit
-    # TODO : change from residnetial with immatriculation to residential with demand with only import and domestic and all fleet
-    df = df[(df["IMMATRICULATION"] == "CH") & (df["TRAFFIC_TYPE"] == "_T")]
-    df = df[df["VEH_TYPE"].isin(["LORRY", "HAV"])]
-    piv = df.pivot(index="REF_YEAR", columns="VEH_TYPE", values="OBS_VALUE")
-    piv.index = piv.index.astype(int)
+def road_tkm(years_ots: list) -> dict:
+    """Return {mode: np.ndarray} territorial road tkm in million tkm, on years_ots.
+
+    HDVH/HDVM from BFS GTS; HDVL = EP2050 LCV vkm x _HDVL_PAYLOAD_T_PER_VKM.
+    Single definition, also used by freight_road_ots for the load factor.
+    """
+    gts = read_gts_road_tkm()
     return {
-        "HDVH": piv["HAV"],
-        "HDVM": piv["LORRY"],
+        "HDVH": _fill_series(gts["HDVH"], years_ots),
+        "HDVM": _fill_series(gts["HDVM"], years_ots),
+        "HDVL": _fill_series(_read_ep2050_lcv_vkm(), years_ots),
     }
 
 
@@ -175,6 +175,44 @@ def _read_iww_tkm():
     return df["rhine_Mt"] * _IWW_HAUL_KM
 
 
+def _read_canton_shares() -> dict:
+    """Return {canton name: share of Swiss freight tkm} from BFS GTS 2016-2020.
+
+    Sheet 'FR': column A = origin canton acronym, column B = total tkm from that
+    canton (1000 tkm); the 'Total' row is the Swiss total.
+    """
+    path = os.path.join(_DATA_DIR, "Freight/su-f-11.05-GTS16-20-P19.xlsx")
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    ws = wb["FR"]
+    acronym_to_name = CANTONS_NAME["accronym_to_name"]
+    total_ch = None
+    tkm = {}
+    for row in ws.iter_rows(min_row=5, max_col=2, values_only=True):
+        label, value = row
+        if label == "Total":
+            total_ch = float(value)
+        elif label in acronym_to_name and label != "CH":
+            tkm[acronym_to_name[label]] = float(value)
+    wb.close()
+    if total_ch is None:
+        raise ValueError(f"'Total' row not found in {path}")
+    return {canton: v / total_ch for canton, v in tkm.items()}
+
+
+def _scale_to_canton(ch: dict, share: float, has_iww: bool, n_yr: int):
+    """Scale Swiss tkm by mode to a canton. Return ({mode: tkm}, total tkm)."""
+    canton = {}
+    for m in _MODES:
+        if m == "marine" or (m == "IWW" and not has_iww):
+            canton[m] = np.zeros(n_yr)
+        else:
+            canton[m] = ch[m] * share
+    # Recompute aviation as residual with the same share
+    subtotal = sum(canton[m] for m in canton if m != "aviation")
+    canton["aviation"] = subtotal * (_AVIATION_SHARE / (1.0 - _AVIATION_SHARE))
+    return canton, subtotal + canton["aviation"]
+
+
 def _fill_series(raw: pd.Series, years_ots: list) -> np.ndarray:
     """Reindex to years_ots, interpolate interior gaps, bfill/ffill ends."""
     s = raw.reindex(years_ots, fill_value=np.nan).astype(float)
@@ -194,8 +232,8 @@ def run(years_ots: list, country_list: list) -> dict:
     years_ots : list of int
         Annual years from start (e.g. 1990) to base year (e.g. 2023).
     country_list : list of str
-        Additional countries beyond Switzerland and Vaud to populate
-        by duplicating Switzerland values (e.g. ['Vaud']).
+        Switzerland plus any cantons (e.g. ['Switzerland', 'Vaud', 'Fribourg']).
+        Each canton is computed from Switzerland with its GTS share.
 
     Returns
     -------
@@ -203,48 +241,32 @@ def run(years_ots: list, country_list: list) -> dict:
     """
     n_yr = len(years_ots)
 
-    # --- Load raw series --------------------------------------------------
-    gts = _read_bfs_gts_road()
-    hdvh_raw = gts["HDVH"]
-    hdvm_raw = gts["HDVM"]
-    hdvl_raw = _read_ep2050_lcv_vkm()
-    rail_raw = _read_rail_tkm()
-    iww_raw = _read_iww_tkm()
-
-    # --- Fill to OTS years ------------------------------------------------
-    ch = {
-        "HDVH": _fill_series(hdvh_raw, years_ots),
-        "HDVM": _fill_series(hdvm_raw, years_ots),
-        "HDVL": _fill_series(hdvl_raw, years_ots),
-        "rail": _fill_series(rail_raw, years_ots),
-        "IWW": _fill_series(iww_raw, years_ots),
-        "marine": np.zeros(n_yr),
-    }
+    # --- Load raw series and fill to OTS years ----------------------------
+    ch = road_tkm(years_ots)
+    ch["rail"] = _fill_series(_read_rail_tkm(), years_ots)
+    ch["IWW"] = _fill_series(_read_iww_tkm(), years_ots)
+    ch["marine"] = np.zeros(n_yr)
 
     # Aviation = residual to hold _AVIATION_SHARE of total
     subtotal = sum(ch[m] for m in ch)
     ch["aviation"] = subtotal * (_AVIATION_SHARE / (1.0 - _AVIATION_SHARE))
     total_ch = subtotal + ch["aviation"]
 
-    # --- Vaud: scale by canton share, IWW = 0 ----------------------------
-    vd = {}
-    for m in _MODES:
-        if m in ("IWW", "marine"):
-            vd[m] = np.zeros(n_yr)
-        else:
-            vd[m] = ch[m] * _VAUD_ROAD_FREIGHT_SHARE
-    # Recompute Vaud aviation as residual with the same share
-    vd_subtotal = sum(vd[m] for m in vd if m != "aviation")
-    vd["aviation"] = vd_subtotal * (_AVIATION_SHARE / (1.0 - _AVIATION_SHARE))
-    total_vd = vd_subtotal + vd["aviation"]
+    # --- Cantons: scale by GTS canton share -------------------------------
+    results = {"Switzerland": (ch, total_ch)}
+    cantons = [c for c in country_list if c != "Switzerland"]
+    if cantons:
+        shares = _read_canton_shares()
+        missing = [c for c in cantons if c not in shares]
+        if missing:
+            raise KeyError(f"No GTS freight share for: {missing}")
+        for canton in cantons:
+            results[canton] = _scale_to_canton(
+                ch, shares[canton], canton in _IWW_CANTONS, n_yr
+            )
+    all_countries = list(results)
 
-    # --- DataMatrix: freight_modal-share ---------------------------------
-    all_countries = ["Switzerland", "Vaud"] + [
-        c for c in country_list if c not in ("Switzerland", "Vaud")
-    ]
-    n_c = len(all_countries)
-    n_m = len(_MODES)
-
+    # --- DataMatrix: freight_modal-share and freight_tkm -----------------
     dm_modal = DataMatrix(
         col_labels={
             "Country": all_countries,
@@ -254,23 +276,6 @@ def run(years_ots: list, country_list: list) -> dict:
         },
         units={"tra_freight_modal-share": "%"},
     )
-    idx = dm_modal.idx
-
-    for j, yr in enumerate(years_ots):
-        for m in _MODES:
-            dm_modal.array[idx["Switzerland"], idx[yr], 0, idx[m]] = (
-                ch[m][j] / total_ch[j]
-            )
-            dm_modal.array[idx["Vaud"], idx[yr], 0, idx[m]] = vd[m][j] / total_vd[j]
-
-    # Extra countries duplicate Switzerland
-    for country in all_countries:
-        if country not in ("Switzerland", "Vaud"):
-            dm_modal.array[idx[country], :, :, :] = dm_modal.array[
-                idx["Switzerland"], :, :, :
-            ]
-
-    # --- DataMatrix: freight_tkm -----------------------------------------
     dm_tkm = DataMatrix(
         col_labels={
             "Country": all_countries,
@@ -279,14 +284,20 @@ def run(years_ots: list, country_list: list) -> dict:
         },
         units={"tra_freight_tkm-total-demand": "bn-tkm"},
     )
+    idx = dm_modal.idx
     idx_t = dm_tkm.idx
-
-    dm_tkm.array[idx_t["Switzerland"], :, 0] = total_ch / 1e3
-    dm_tkm.array[idx_t["Vaud"], :, 0] = total_vd / 1e3
-    for country in all_countries:
-        if country not in ("Switzerland", "Vaud"):
-            dm_tkm.array[idx_t[country], :, 0] = dm_tkm.array[
-                idx_t["Switzerland"], :, 0
-            ]
+    for country, (modes, total) in results.items():
+        for m in _MODES:
+            dm_modal.array[idx[country], :, 0, idx[m]] = modes[m] / total
+        dm_tkm.array[idx_t[country], :, 0] = total / 1e3
 
     return {"freight_tkm": dm_tkm, "freight_modal-share": dm_modal}
+
+
+if __name__ == "__main__":
+    from transition_compass_model._database.pre_processing.params import (
+        country_list,
+        years_ots,
+    )
+
+    DM = run(years_ots, country_list)

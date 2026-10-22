@@ -4,33 +4,33 @@ Swiss freight FXA: freight_tech (fleet technology share + fleet efficiency).
 Variables
 ---------
 tra_freight_technology-share_fleet : %
-    Share of each technology in the total vehicle fleet, by mode × technology.
-    OTS: initialised from new-vehicle tech shares (Step 5).  Since ICE-diesel
-    dominated freight through 2023, fleet composition ≈ new-vehicle composition.
-    FTS: extended flat from 2023 then overwritten at runtime by compute_fts_tech_split.
+    Share of each technology in the vehicle fleet, by mode x technology.
+    Road: BFS fleet by fuel (2005+), EP2050+ before (processors/freight_road_ots.py).
+    Non-road: same as the new-vehicle share (literature constants).
 
-tra_freight_vehicle-efficiency_fleet : MJ/km
-    Fleet-average energy intensity per technology, by mode × technology.
-    OTS: initialised equal to new-vehicle efficiency (Step 5).  At fleet
-    initialisation the fleet is homogeneous in each technology bucket, so fleet
-    efficiency = new-vehicle efficiency.  The model evolves this via stock-flow.
-    FTS: extended flat then overwritten by compute_fts_tech_split.
+tra_freight_vehicle-efficiency_fleet : MJ/km (road), MJ/tkm (non-road)
+    Road: back-calculated so that vkm x share x efficiency reproduces the energy
+    targets (processors/freight_road_ots.py). Non-road: as new vehicles.
 
 Notes
 -----
-compute_fts_tech_split (transport/utils.py) overwrites both variables for all
-years ≥ 2010.  Only values for 1990–2009 are used as initial conditions for
-the stock-flow, so the ICE-diesel = ~100% approximation is appropriate.
+The model (model/transport/utils.py, compute_fts_tech_split) keeps these values for
+all historical years and only runs the fleet stock-flow after the base year, so they
+set historical energy directly. FTS years are held flat here and overwritten by the
+model's stock-flow.
 """
 
 import numpy as np
 
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
+_ROAD_MODES = ["HDVH", "HDVL", "HDVM"]
+
 
 def run(
     dm_eff_new: DataMatrix,
     dm_share_new: DataMatrix,
+    road: dict,
     years_ots: list,
     years_fts: list,
     country_list: list,
@@ -40,11 +40,12 @@ def run(
     Parameters
     ----------
     dm_eff_new : DataMatrix
-        Output of freight_efficiency_tech_share.run()['freight_vehicle-efficiency_new'].
+        freight_efficiency_tech_share.run()['freight_vehicle-efficiency_new'].
     dm_share_new : DataMatrix
-        Output of freight_efficiency_tech_share.run()['freight_technology-share_new'].
-    years_ots : list of int
-    years_fts : list of int
+        freight_efficiency_tech_share.run()['freight_technology-share_new'].
+    road : dict
+        Output of freight_road_ots.run() (uses "share_fleet").
+    years_ots, years_fts : list of int
     country_list : list of str
 
     Returns
@@ -52,15 +53,21 @@ def run(
     DataMatrix with Variables=['tra_freight_technology-share_fleet',
     'tra_freight_vehicle-efficiency_fleet'], covering OTS + FTS years.
     """
-    # --- Fleet tech share: copy new-vehicle share and rename ---
+    v_new = "tra_freight_technology-share_new"
+    v_fleet = "tra_freight_technology-share_fleet"
     dm_share_fleet = dm_share_new.copy()
-    dm_share_fleet.rename_col(
-        "tra_freight_technology-share_new",
-        "tra_freight_technology-share_fleet",
-        dim="Variables",
-    )
+    dm_share_fleet.rename_col(v_new, v_fleet, dim="Variables")
+    techs = dm_share_fleet.col_labels["Categories2"]
+    for mode in _ROAD_MODES:
+        share = road["share_fleet"][mode]
+        for country in dm_share_fleet.col_labels["Country"]:
+            dm_share_fleet[country, :, v_fleet, mode, :] = 0.0
+            for tech in share.columns:
+                if tech in techs:
+                    dm_share_fleet[country, :, v_fleet, mode, tech] = share[tech].values
 
-    # --- Fleet efficiency: copy new-vehicle efficiency and rename ---
+    # Road fleet efficiency is what freight_road_ots inverted; the new-vehicle
+    # efficiency was set equal to it, so the copy holds for all modes.
     dm_eff_fleet = dm_eff_new.copy()
     dm_eff_fleet.rename_col(
         "tra_freight_vehicle-efficiency_new",
@@ -68,11 +75,10 @@ def run(
         dim="Variables",
     )
 
-    # --- Combine into one DataMatrix ---
     dm_tech = dm_share_fleet.copy()
     dm_tech.append(dm_eff_fleet, dim="Variables")
 
-    # --- Extend to FTS with flat continuation (model overwrites 2010+ anyway) ---
+    # FTS: flat continuation (the model's stock-flow overwrites these years)
     dm_tech.add(np.nan, dim="Years", col_label=years_fts, dummy=True)
     dm_tech.fill_nans("Years")
 

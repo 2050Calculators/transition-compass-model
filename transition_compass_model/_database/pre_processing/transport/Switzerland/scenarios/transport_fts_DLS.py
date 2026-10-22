@@ -64,13 +64,15 @@ def freight_tkm_dls(DM_transport):
     dm_tkm_3 = DM_transport["fts"]["freight_tkm"][4].copy()
     idx_tkm = dm_tkm_3.idx
     idx_tkm_ots = tkm_ots.idx
-    dm_tkm_3.array[idx_tkm["Vaud"], 1:-1, :] = np.nan
-
-    # Réduction de 16% de la demande de bien et denrées (41% du transport de marchandise)
-    dm_tkm_3.array[idx_tkm["Vaud"], -1, :] = (
-        tkm_ots.array[idx_tkm_ots["Vaud"], idx_tkm_ots[2023], :] * 0.41 * (1 - 0.16)
-        + tkm_ots.array[idx_tkm_ots["Vaud"], idx_tkm_ots[2023], :] * 0.6
-    )
+    base_year = tkm_ots.col_labels["Years"][-1]
+    # Applied to every canton (Switzerland keeps its level-4 values)
+    for canton in [c for c in dm_tkm_3.col_labels["Country"] if c != "Switzerland"]:
+        dm_tkm_3.array[idx_tkm[canton], 1:-1, :] = np.nan
+        # Réduction de 16% de la demande de bien et denrées (41% du transport de marchandise)
+        tkm_base = tkm_ots.array[idx_tkm_ots[canton], idx_tkm_ots[base_year], :]
+        dm_tkm_3.array[idx_tkm[canton], -1, :] = (
+            tkm_base * 0.41 * (1 - 0.16) + tkm_base * 0.6
+        )
 
     dm_tkm_3.fill_nans("Years")
     DM_transport["fts"]["freight_tkm"][4] = dm_tkm_3

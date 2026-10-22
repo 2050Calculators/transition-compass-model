@@ -1,55 +1,54 @@
 """
-Swiss freight OTS: vehicle efficiency and technology share for new vehicles.
+Swiss freight OTS: vehicle efficiency and technology share for new vehicles, plus the
+EP2050+ readers and segment maps shared by the freight preprocessing.
+
+Road classes are defined by body type, not weight: HDVH = articulated trucks
+(EP2050 "TT/AT", BFS GTS "HAV", BFS fleet "Road tractor"), HDVM = rigid trucks
+>= 3.5 t (EP2050 "RigidTruck", BFS "LORRY" / "Goods truck"), HDVL = vans < 3.5 t
+(EP2050 "LCV", BFS "Delivery vehicle"). BFS tkm and the HBEFA consumption ratio only
+exist by body type, so a split by weight would also need tkm and fuel factors by
+weight class, not just new segment maps.
 
 Variables
 ---------
-tra_freight_vehicle-efficiency_new : MJ/km
-    Energy intensity of new vehicles entering the fleet, by mode × technology.
-
-    Road (HDVH, HDVL, HDVM):
-        ICE-diesel = fleet-average ≈ EP2050 HGV/LCV fuel energy (PJ) ÷ VKM (Mkm) × 1000.
-        HDVH and HDVM are split from the HGV aggregate using fleet-proportion weighting
-        and a fixed HDVH/HDVM efficiency ratio (_HDVH_HDVM_EFF_RATIO = 1.38) reflecting
-        the heavier payload of articulated vs rigid trucks.
-        #TODO change for a separation by weight instead of arrticulated/rigid https://publications.jrc.ec.europa.eu/repository/handle/JRC138593
-        #emission factors per weight are here https://www.eea.europa.eu/en/analysis/publications/emep-eea-guidebook-2023?activeTab=13e424cd-5934-4614-92ef-e6be8d05c441
-        in 1.A.b.iv Road Transport Appendix 4 Emission Factors 2025
-        Other technologies: ICE-diesel × fixed ratio from physics/literature.
-
-    Non-road (rail, IWW, marine, aviation): fixed literature constants.
+tra_freight_vehicle-efficiency_new : MJ/km (road), MJ/tkm (non-road)
+    Road: historical values equal the fleet efficiency back-calculated in
+        processors/freight_road_ots.py (energy matched to FOEN CO2). They only drive
+        the future stock-flow and the level-1 trend.
+    Rail: EP2050+ freight rail energy (Abb. 112) / BFS rail tkm, CEV/diesel ratio kept.
+    IWW, marine, aviation: literature constants.
 
 tra_freight_technology-share_new : %
-    Fraction of new vehicles by technology, by mode × technology.
-
-    Road 1990–2017: ICE-diesel = 100 % (diesel dominance).
-    Road 2018–2023: from EP2050 Neuzulassungen (new registrations by segment),
-        mapping segments → model technologies (see _SEG_TO_TECH dicts).
-    Non-road: fixed literature constants (see _NON_ROAD).
+    Road: BFS first registrations by fuel (2005+), fleet split before
+        (processors/freight_road_ots.py).
+    Non-road: literature constants (see _NON_ROAD).
 
 Sources
 -------
 EP2050 Verkehrssektor ZERO-Basis:
   Sheet 04 Energieverbrauch Strasse: HGV/LCV fuel energy (PJ), 1990-2060.
   Sheet 03 Fahrleistung: HGV/LCV total VKM (Mio. km), 1990-2060.
-  Sheet 02 Flottenbestand: fleet counts by segment (ZERO-Basis), 1990-2060.
-  Sheet 05 Neuzulassungen Strasse: new registrations by segment (fractions), 2018-2060.
+  Sheet 02 Flottenbestand: fleet counts by segment, 1990-2060.
+  Sheet 05 Neuzulassungen Strasse: new registrations by segment (used for FTS level 4).
   # https://www.bfe.admin.ch/bfe/en/home/policy/energy-perspectives-2050-plus.html
   # file: EP2050+_Detailergebnisse 2020-2060_Verkehrssektor_alle Szenarien_2022-04-12.xlsx
 
 Non-road efficiency constants:
-  Rail CEV  0.117 MJ/km — SBB freight electric, consistent with IEA/UIC rail energy intensity.
-  Rail ICE  0.316 MJ/km — Swiss diesel freight locomotive, EEA emission inventory reference.
-  IWW       0.429 MJ/km — Rhine barge literature value (CCNR/IWT baseline).
-  Marine    0.160 MJ/km — placeholder (Switzerland landlocked; tkm = 0 in model).
-  Aviation 19.077 MJ/km — cargo aircraft, consistent with IATA fuel efficiency data.
+  Rail CEV  0.117 MJ/tkm (ratio to diesel only; level from EP2050 energy) — SBB freight electric, consistent with IEA/UIC rail energy intensity.
+  Rail ICE  0.316 MJ/tkm — Swiss diesel freight locomotive, EEA emission inventory reference.
+  IWW       0.429 MJ/tkm — Rhine barge literature value (CCNR/IWT baseline).
+  Marine    0.160 MJ/tkm — placeholder (Switzerland landlocked; tkm = 0 in model).
+  Aviation 19.077 MJ/tkm — cargo aircraft, consistent with IATA fuel efficiency data.
 """
 
 import os
 
 import numpy as np
-import openpyxl
 import pandas as pd
 
+from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
+    freight_data as fd,
+)
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 # ---------------------------------------------------------------------------
@@ -161,55 +160,6 @@ _HDVM_SEG = {
 
 # Separation by weights
 
-# # EP2050 Neuzulassungen segment → model technology, for HDVH (TT/AT)
-# _HDVH_SEG = {
-#     "RigidTruck >12-14t": "ICE-diesel",
-#     "RigidTruck >14-20t": "ICE-diesel",
-#     "RigidTruck >20-26t": "ICE-diesel",
-#     "RigidTruck >26-28t": "ICE-diesel",
-#     "RigidTruck >28-32t": "ICE-diesel",
-#     "RigidTruck >32t": "ICE-diesel",
-#     "RigidTruck CNG >12t": "ICE-gas",
-#     "RigidTruck LNG >12t": "ICE-gas",
-#     "RigidTruck BEV >12t": "BEV",
-#     "RigidTruck PHEV >12t": "PHEV-diesel",
-#     "TT/AT >14-20t": "ICE-diesel",
-#     "TT/AT >20-28t": "ICE-diesel",
-#     "TT/AT >28-34t": "ICE-diesel",
-#     "TT/AT >34-40t": "ICE-diesel",
-#     "TT/AT >40-50t": "ICE-diesel",
-#     "TT/AT >50-60t": "ICE-diesel",
-#     "TT/AT >60t": "ICE-diesel",
-#     "TT/AT CNG": "ICE-gas",
-#     "TT/AT LNG": "ICE-gas",
-#     "TT/AT BEV": "BEV",
-#     "TT/AT PHEV": "PHEV-diesel",
-#     "TT/AT FCEV": "FCEV",
-#     "TT/AT <28t EE": "CEV",
-#     "TT/AT 28-34t EE": "CEV",
-#     "RigidTruck FCEV >12t": "FCEV",
-# }
-
-# _HDVM_SEG = {
-#     "RT petrol": "ICE-gasoline",
-#     "TT/AT <=7,5t": "ICE-diesel",
-#     "TT/AT >7,5-14t": "ICE-diesel",
-#     "RigidTruck <7,5t": "ICE-diesel",
-#     "RigidTruck 7,5-12t": "ICE-diesel",
-#     "RigidTruck CNG ≤7,5t": "ICE-gas",
-#     "RigidTruck CNG >7,5-12t": "ICE-gas",
-#     "RigidTruck LNG <=7.5t": "ICE-gas",
-#     "RigidTruck LNG  >7.5-12t": "ICE-gas",
-#     "RigidTruck BEV ≤7.5t": "BEV",
-#     "RigidTruck BEV >7.5-12t": "BEV",
-#     "RigidTruck PHEV <=7,5t": "PHEV-diesel",
-#     "RigidTruck PHEV >7,5-12t": "PHEV-diesel",
-#     "RigidTruck FCEV <=7,5t": "FCEV",
-#     "RigidTruck FCEV >7,5-12t": "FCEV",
-#     "RigidTruck <=7,5t EE": "CEV",
-#         "RigidTruck >7,5-12t EE": "CEV",
-# }
-
 # EP2050 Neuzulassungen segment → model technology, for HDVL (LCV)
 _HDVL_SEG = {
     "LCV petrol M+N1-I": "ICE-gasoline",
@@ -300,10 +250,8 @@ def _read_ep2050_energy(scenario="ZERO-Basis") -> pd.DataFrame:
         Fuel names are normalized to the model terminology, including
         ``ICE-gasoline`` for petrol and ``BEV`` for electricity.
     """
-    if scenario == "ZERO-Basis":
-        header_scenar = 19
-    elif scenario == "ZERO-B":
-        header_scenar = 89
+    # Header row of each scenario sub-table (scenario label row + 4)
+    header_scenar = {"ZERO-Basis": 19, "ZERO-B": 89, "WWB": 159}[scenario]
     df = pd.read_excel(
         _EP2050_PATH, sheet_name="04 Energieverbrauch Strasse", header=header_scenar
     )
@@ -333,12 +281,8 @@ def _read_ep2050_vkm(scenario="ZERO-Basis") -> pd.DataFrame:
         Source technology names are normalized to the model terminology,
         including ``ICE-gasoline`` for petrol and ``BEV`` for electricity.
     """
-    if scenario == "ZERO-Basis":
-        header_scenar = 19
-    elif scenario == "ZERO-B":
-        header_scenar = 105
-    else:
-        print("This scenario isn't found")
+    # Header row of each scenario sub-table (scenario label row + 4)
+    header_scenar = {"ZERO-Basis": 19, "ZERO-B": 105, "WWB": 192}[scenario]
 
     df = pd.read_excel(_EP2050_PATH, sheet_name="03 Fahrleistung", header=header_scenar)
     # Get the vkm For the basis scenario  for LDV and HGV
@@ -411,94 +355,6 @@ def _read_ep2050_fleet_frac(years_list: list) -> dict:
     return frac_per_tech
 
 
-def _read_ep2050_tech_shares_road(years_ots: list) -> dict:
-    """Return {mode: {tech: np.ndarray(len(years_ots))}} from Neuzulassungen 2018+.
-
-    For years before 2018: ICE-diesel = 1.0 for all road modes.
-    """
-    wb = openpyxl.load_workbook(_EP2050_PATH, read_only=True, data_only=True)
-    ws = wb["05 Neuzulassungen Strasse"]
-    rows = list(ws.iter_rows(min_row=20, max_row=200, values_only=True))
-    header = rows[0]
-    years_ep = [int(v) for v in header[4:] if isinstance(v, (int, float))]
-    n_ep = len(years_ep)
-
-    # Accumulate fractions (of HGV or LCV total) by model tech
-    hgv_hdvh = {t: np.zeros(n_ep) for t in set(_HDVH_SEG.values())}
-    hgv_hdvm = {t: np.zeros(n_ep) for t in set(_HDVM_SEG.values())}
-    lcv_hdvl = {t: np.zeros(n_ep) for t in set(_HDVL_SEG.values())}
-
-    for r in rows[1:]:
-        if r[0] is not None and isinstance(r[0], str) and r[0].startswith("ZERO"):
-            break
-        cat, seg = r[1], r[2]
-        if cat == "HGV" and seg != "Total" and seg in _HDVH_SEG:
-            tech = _HDVH_SEG[seg]
-            hgv_hdvh[tech] += np.array(
-                [v if isinstance(v, (int, float)) else 0.0 for v in r[4 : 4 + n_ep]]
-            )
-        elif cat == "HGV" and seg != "Total" and seg in _HDVM_SEG:
-            tech = _HDVM_SEG[seg]
-            hgv_hdvm[tech] += np.array(
-                [v if isinstance(v, (int, float)) else 0.0 for v in r[4 : 4 + n_ep]]
-            )
-        elif cat == "LCV" and seg != "Total" and seg in _HDVL_SEG:
-            tech = _HDVL_SEG[seg]
-            lcv_hdvl[tech] += np.array(
-                [v if isinstance(v, (int, float)) else 0.0 for v in r[4 : 4 + n_ep]]
-            )
-
-    def _normalize(tech_dict):
-        total = sum(tech_dict.values())
-        if np.all(total == 0):
-            return {t: np.zeros(n_ep) for t in tech_dict}
-        return {t: np.where(total > 0, v / total, 0.0) for t, v in tech_dict.items()}
-
-    hdvh_norm = _normalize(hgv_hdvh)
-    hdvm_norm = _normalize(hgv_hdvm)
-    hdvl_norm = _normalize(lcv_hdvl)
-
-    def _fill_to_ots(norm_dict, seg_map):
-        """For each tech, produce an array over years_ots.
-        EP2050 covers 2018+; before 2018 → ICE-diesel = 1.0.
-        """
-        result = {}
-        ep_ser = {t: pd.Series(dict(zip(years_ep, v))) for t, v in norm_dict.items()}
-        for tech in set(seg_map.values()):
-            raw = ep_ser.get(tech, pd.Series(dtype=float))
-            aligned = raw.reindex(years_ots, fill_value=np.nan).astype(float)
-            # Fill pre-2018 with 0 (ICE-diesel gets the residual below)
-            aligned.loc[aligned.index < 2018] = 0.0
-            # Forward-fill post-2023 gaps
-            aligned = aligned.interpolate(method="index").ffill()
-            result[tech] = aligned.values
-
-        # ICE-diesel = 1 − everything else for pre-2018
-        ice_diesel = result.get("ICE-diesel", np.zeros(len(years_ots)))
-        other_sum = sum(v for t, v in result.items() if t != "ICE-diesel")
-        for i, yr in enumerate(years_ots):
-            if yr < 2018:
-                for t in result:
-                    result[t][i] = 1.0 if t == "ICE-diesel" else 0.0
-            else:
-                result["ICE-diesel"][i] = max(
-                    0.0, ice_diesel[i] + (1.0 - other_sum[i] - ice_diesel[i])
-                )
-        return result
-
-    return {
-        "HDVH": _fill_to_ots(hdvh_norm, _HDVH_SEG),
-        "HDVM": _fill_to_ots(hdvm_norm, _HDVM_SEG),
-        "HDVL": _fill_to_ots(hdvl_norm, _HDVL_SEG),
-    }
-
-
-def _fill(raw: pd.Series, years: list) -> np.ndarray:
-    s = raw.reindex(years, fill_value=np.nan).astype(float)
-    s = s.interpolate(method="index")
-    return s.bfill().ffill().values
-
-
 def compute_efficiency(vkm, energy):
     # efficiency(MJ/km) = energy(PJ) × 1000 / VKM(Mkm)
     return np.where(vkm > 0, energy * 1000.0 / vkm, np.nan)
@@ -518,61 +374,23 @@ def compute_hdvm_hdvh_efficiency(hgv_vkm, hgv_energy, frac_hdvh):
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
-def run(years_ots: list, country_list: list) -> dict:
+def run(years_ots: list, country_list: list, road: dict, DM_freight_ots: dict) -> dict:
     """Build freight_vehicle-efficiency_new and freight_technology-share_new DataMatrices.
 
     Parameters
     ----------
     years_ots : list of int
     country_list : list of str
+    road : dict, output of freight_road_ots.run()
+    DM_freight_ots : dict, output of freight_tkm_modal_share.run() (rail tkm)
 
     Returns
     -------
     dict with keys 'freight_vehicle-efficiency_new' and 'freight_technology-share_new',
     each a DataMatrix with Countries, Years=years_ots, Variables, Cat1=modes, Cat2=techs.
     """
-    all_countries = ["Switzerland", "Vaud"] + [
-        c for c in country_list if c not in ("Switzerland", "Vaud")
-    ]
+    all_countries = ["Switzerland"] + [c for c in country_list if c != "Switzerland"]
 
-    # --- Load EP2050 data ---
-    ep_energy = _read_ep2050_energy()
-    ep_vkm = _read_ep2050_vkm()
-    # For now frac hdvh is the same for all type of vehicles maybe extrcat the ratio depending on the type.
-    frac_hdvh = _read_ep2050_fleet_frac(years_ots)
-    road_shares = _read_ep2050_tech_shares_road(years_ots)
-
-    # --- ICE-diesel fleet-avg efficiency per road category (MJ/km) ---
-    # efficiency(MJ/km) = energy(PJ) × 1000 / VKM(Mkm)
-    def get_energy_ots(mode, tech):
-        return ep_energy.loc[
-            (ep_energy["Fahrzeugart"] == mode) & (ep_energy["Treibstoff"] == tech),
-            years_ots,
-        ].values
-
-    def get_vkm_ots(mode, tech):
-        return ep_vkm.loc[
-            (ep_vkm["VehCat"] == mode) & (ep_vkm["Technology"] == tech),
-            years_ots[0] : years_ots[-1],
-        ].values
-
-    hgv_diesel_energy = get_energy_ots("HGV", "ICE-diesel")
-    lcv_diesel_energy = get_energy_ots("LCV", "ICE-diesel")
-
-    hgv_vkm = get_vkm_ots("HGV", "ICE-diesel")
-    lcv_vkm = get_vkm_ots("LCV", "ICE-diesel")
-
-    hgv_avg_eff = np.where(hgv_vkm > 0, hgv_diesel_energy * 1000.0 / hgv_vkm, np.nan)
-    # Split HDVH / HDVM using size ratio
-    R = _HDVH_HDVM_EFF_RATIO
-    denom = frac_hdvh["ICE-diesel"] * R + (1 - frac_hdvh["ICE-diesel"])
-    hdvm_eff = np.where(denom > 0, hgv_avg_eff / denom, np.nan)
-    hdvh_eff = R * hdvm_eff
-    hdvl_eff = np.where(lcv_vkm > 0, lcv_diesel_energy * 1000.0 / lcv_vkm, np.nan)
-
-    road_base_eff = {"HDVH": hdvh_eff, "HDVM": hdvm_eff, "HDVL": hdvl_eff}
-
-    # --- Build DataMatrices ---
     def _make_dm(varname, unit):
         return DataMatrix(
             col_labels={
@@ -587,68 +405,78 @@ def run(years_ots: list, country_list: list) -> dict:
 
     dm_eff = _make_dm("tra_freight_vehicle-efficiency_new", "MJ/km")
     dm_share = _make_dm("tra_freight_technology-share_new", "%")
-    idx_e = dm_eff.idx
-    idx_s = dm_share.idx
+    techs = dm_eff.col_labels["Categories2"]
     ch = "Switzerland"
+    v_eff = "tra_freight_vehicle-efficiency_new"
+    v_share = "tra_freight_technology-share_new"
 
-    # --- Road modes: efficiency ---
+    # --- Road: historical new-vehicle efficiency = fleet efficiency (as passenger);
+    # it only drives the future stock-flow and the level-1 trend.
     for mode in _ROAD_MODES:
-        base_eff = road_base_eff[mode]
-        for tech, ratio in _ROAD_EFF_RATIOS.items():
-            if tech not in idx_e:
-                continue
-            if tech in ep_energy["Treibstoff"].values:
-                if mode == "HDVL":
-                    dm_eff.array[idx_e[ch], :, 0, idx_e[mode], idx_e[tech]] = (
-                        compute_efficiency(
-                            get_vkm_ots("LCV", tech), get_energy_ots("LCV", tech)
-                        )
-                    )
-                elif mode == "HDVH":
-                    # Compute HDVH and HDVM in one row
-                    hdvm, hdvh = compute_hdvm_hdvh_efficiency(
-                        get_vkm_ots("HGV", tech),
-                        get_energy_ots("HGV", tech),
-                        frac_hdvh[tech],
-                    )
-                    dm_eff.array[idx_e[ch], :, 0, idx_e["HDVH"], idx_e[tech]] = hdvh
-                    dm_eff.array[idx_e[ch], :, 0, idx_e["HDVM"], idx_e[tech]] = hdvm
+        for tech in road["eff"][mode].columns:
+            if tech in techs:
+                dm_eff[ch, :, v_eff, mode, tech] = road["eff"][mode][tech].values
+        for tech in road["share_new"][mode].columns:
+            if tech in techs:
+                dm_share[ch, :, v_share, mode, tech] = road["share_new"][mode][
+                    tech
+                ].values
 
-            else:
-                dm_eff.array[idx_e[ch], :, 0, idx_e[mode], idx_e[tech]] = (
-                    base_eff * ratio
-                )
-
-    # --- Road modes: tech share ---
-    for mode in _ROAD_MODES:
-        shares_by_tech = road_shares[mode]
-        for tech, vals in shares_by_tech.items():
-            if tech not in idx_s:
-                continue
-            dm_share.array[idx_s[ch], :, 0, idx_s[mode], idx_s[tech]] = vals
-
-    # --- Non-road modes: efficiency and tech share ---
+    # --- Non-road: literature constants, except rail energy from EP2050+
     for mode, data in _NON_ROAD.items():
-        if mode not in idx_e:
-            continue
         for tech, val in data["eff"].items():
-            if tech in idx_e:
-                dm_eff.array[idx_e[ch], :, 0, idx_e[mode], idx_e[tech]] = val
+            dm_eff[ch, :, v_eff, mode, tech] = val
         for tech, val in data["share"].items():
-            if tech in idx_s:
-                dm_share.array[idx_s[ch], :, 0, idx_s[mode], idx_s[tech]] = val
+            dm_share[ch, :, v_share, mode, tech] = val
+    _rail_efficiency_from_energy(dm_eff, DM_freight_ots, years_ots)
 
     # --- Copy Switzerland to all other countries ---
     for country in all_countries:
         if country != ch:
-            dm_eff.array[idx_e[country], :, :, :, :] = dm_eff.array[
-                idx_e[ch], :, :, :, :
-            ]
-            dm_share.array[idx_s[country], :, :, :, :] = dm_share.array[
-                idx_s[ch], :, :, :, :
-            ]
+            dm_eff[country, :, :, :, :] = dm_eff[ch, :, :, :, :]
+            dm_share[country, :, :, :, :] = dm_share[ch, :, :, :, :]
 
     return {
         "freight_vehicle-efficiency_new": dm_eff,
         "freight_technology-share_new": dm_share,
     }
+
+
+def _rail_efficiency_from_energy(dm_eff, DM_freight_ots, years_ots):
+    """Set rail efficiency [MJ/tkm] so that tkm x share x eff = EP2050 freight rail
+    energy (Abb. 112). The CEV/diesel ratio and tech shares stay as in _NON_ROAD."""
+    ch = "Switzerland"
+    v = "tra_freight_vehicle-efficiency_new"
+    dm_tkm = DM_freight_ots["freight_tkm"]
+    dm_ms = DM_freight_ots["freight_modal-share"]
+    tkm = np.array(
+        [
+            dm_tkm[ch, y, "tra_freight_tkm-total-demand"]
+            * 1e9
+            * dm_ms[ch, y, "tra_freight_modal-share", "rail"]
+            for y in years_ots
+        ]
+    )
+    energy_mj = fd.fill_years(fd.read_ep2050_rail_freight_energy(), years_ots) * 1e9
+    rail = _NON_ROAD["rail"]
+    ratio = rail["eff"]["ICE-diesel"] / rail["eff"]["CEV"]
+    weight = rail["share"]["CEV"] + rail["share"]["ICE-diesel"] * ratio
+    eff_cev = energy_mj / (tkm * weight)
+    dm_eff[ch, :, v, "rail", "CEV"] = eff_cev
+    dm_eff[ch, :, v, "rail", "ICE-diesel"] = eff_cev * ratio
+
+
+if __name__ == "__main__":
+    from processors.freight_road_ots import run as freight_road_run
+    from processors.freight_tkm_modal_share import run as freight_tkm_run
+    from processors.passenger_emission_factors import run as emission_factors_run
+
+    from transition_compass_model._database.pre_processing.params import (
+        country_list,
+        years_ots,
+    )
+
+    road = freight_road_run(years_ots, emission_factors_run())
+    DM_freight_eff_tech = run(
+        years_ots, country_list, road, freight_tkm_run(years_ots, country_list)
+    )

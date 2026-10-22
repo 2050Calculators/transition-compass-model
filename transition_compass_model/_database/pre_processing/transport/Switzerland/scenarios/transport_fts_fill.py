@@ -263,27 +263,28 @@ def freight_modal_share_fts(DM_transport):
         DM_transport, "freight_modal-share", lev_number=1
     )
 
-    # The objectif are for terrestial transport only
-    share_without_aviation_2050 = (
-        1 - dm_freight_fts.array[idx_fts["Vaud"], idx_fts[2050], 0, idx_fts["aviation"]]
-    )
-
+    # Applied to every canton (Switzerland keeps its values)
+    cantons = [c for c in dm_freight_fts.col_labels["Country"] if c != "Switzerland"]
     dm_copy = dm_freight_fts.copy()
     for i, share in enumerate([0.6, 0.7]):
         i += 3
         dm_freight_fts = dm_copy.copy()
-
-        dm_freight_fts.array[idx_fts["Vaud"], 1:-1, :, :] = np.nan
-
-        dm_freight_fts.array[idx_fts["Vaud"], idx_fts[2050], :, idx_fts["rail"]] = (
-            share * share_without_aviation_2050
-        )
-
-        dm_freight_fts.normalise_non_fixed_values(
-            ["rail"],
-            idx_fts[2050],
-            variable_name="tra_freight_modal-share",
-        )
+        for canton in cantons:
+            # The objectif are for terrestial transport only
+            share_without_aviation_2050 = (
+                1
+                - dm_copy.array[idx_fts[canton], idx_fts[2050], 0, idx_fts["aviation"]]
+            )
+            dm_freight_fts.array[idx_fts[canton], 1:-1, :, :] = np.nan
+            dm_freight_fts.array[idx_fts[canton], idx_fts[2050], :, idx_fts["rail"]] = (
+                share * share_without_aviation_2050
+            )
+            dm_freight_fts.normalise_non_fixed_values(
+                ["rail"],
+                idx_fts[2050],
+                variable_name="tra_freight_modal-share",
+                country_name=canton,
+            )
 
         dm_freight_fts.fill_nans("Years")
         dm_freight_fts.normalise(dim="Categories1", inplace=True)
