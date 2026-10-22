@@ -1680,125 +1680,25 @@ def extrapolate_missing_years_based_on_per_capita(dm, dm_pop, years_ots, var_nam
 
 
 def rename_cantons(dm):
+    """Rename BFS canton labels in dm's Country dimension to English names (in place).
+
+    The label sets are defined in _database/pre_processing/constants.py.
+    """
+    # Imported here so the runtime model does not depend on pre_processing at import
+    from transition_compass_model._database.pre_processing.constants import (
+        CANTONS_LABEL_VARIANTS,
+        CANTONS_RENAME_TARGET,
+    )
+
     dm.sort("Country")
     dm.rename_col_regex(" /.*", "", dim="Country")
     dm.rename_col_regex("-", " ", dim="Country")
-    cantons_fr = [
-        "Aargau",
-        "Appenzell Ausserrhoden",
-        "Appenzell Innerrhoden",
-        "Basel Landschaft",
-        "Basel Stadt",
-        "Bern",
-        "Fribourg",
-        "Genève",
-        "Glarus",
-        "Graubünden",
-        "Jura",
-        "Luzern",
-        "Neuchâtel",
-        "Nidwalden",
-        "Obwalden",
-        "Schaffhausen",
-        "Schwyz",
-        "Solothurn",
-        "St. Gallen",
-        "Thurgau",
-        "Ticino",
-        "Uri",
-        "Valais",
-        "Vaud",
-        "Zug",
-        "Zürich",
-    ]
-    if "Canton d'Argovie" in dm.col_labels["Country"]:
-        cantons_fr = [
-            "Canton d'Argovie",
-            "Canton d'Appenzell Rh. E.",
-            "Canton d'Appenzell Rh. I.",
-            "Canton de Bâle Campagne",
-            "Canton de Bâle Ville",
-            "Canton de Berne",
-            "Canton de Fribourg",
-            "Canton de Genève",
-            "Canton de Glaris",
-            "Canton des Grisons",
-            "Canton du Jura",
-            "Canton de Lucerne",
-            "Canton de Neuchâtel",
-            "Canton de Nidwald",
-            "Canton d'Obwald",
-            "Canton de Schaffhouse",
-            "Canton de Schwytz",
-            "Canton de Soleure",
-            "Canton de Saint Gall",
-            "Canton de Thurgovie",
-            "Canton du Tessin",
-            "Canton d'Uri",
-            "Canton du Valais",
-            "Canton de Vaud",
-            "Canton de Zoug",
-            "Canton de Zurich",
-        ]
-    if "Canton d'Argau" in dm.col_labels["Country"]:
-        cantons_fr = [
-            "Canton d'Argau",
-            "Canton d'Appenzell Rh. E.",
-            "Canton d'Appenzell Rh. I.",
-            "Canton de Baselland",
-            "Canton de Basel Stadt",
-            "Canton de Bern",
-            "Canton de Fribourg",
-            "Canton de Genève",
-            "Canton de Glarus",
-            "Canton Graubünden",
-            "Canton du Jura",
-            "Canton de Luzern",
-            "Canton de Neuchâtel",
-            "Canton de Nidwalden",
-            "Canton d'Obwalden",
-            "Canton de Schaffhausen",
-            "Canton de Schwyz",
-            "Canton de Solothurn",
-            "Canton de St. Gallen",
-            "Canton de Thurgau",
-            "Canton du Tessin",
-            "Canton d'Uri",
-            "Canton du Valais",
-            "Canton de Vaud",
-            "Canton de Zug",
-            "Canton de Zürich",
-        ]
-
-    cantons_en = [
-        "Aargau",
-        "Appenzell Ausserrhoden",
-        "Appenzell Innerrhoden",
-        "Basel Landschaft",
-        "Basel Stadt",
-        "Bern",
-        "Fribourg",
-        "Geneva",
-        "Glarus",
-        "Graubünden",
-        "Jura",
-        "Lucerne",
-        "Neuchâtel",
-        "Nidwalden",
-        "Obwalden",
-        "Schaffhausen",
-        "Schwyz",
-        "Solothurn",
-        "St. Gallen",
-        "Thurgau",
-        "Ticino",
-        "Uri",
-        "Valais",
-        "Vaud",
-        "Zug",
-        "Zurich",
-    ]
-    dm.rename_col(cantons_fr, cantons_en, dim="Country")
+    # Detect which label set is used from the first canton (Aargau)
+    variant = "short"
+    for key in ("canton_fr", "canton_de"):
+        if CANTONS_LABEL_VARIANTS[key][0] in dm.col_labels["Country"]:
+            variant = key
+    dm.rename_col(CANTONS_LABEL_VARIANTS[variant], CANTONS_RENAME_TARGET, dim="Country")
 
     return
 
