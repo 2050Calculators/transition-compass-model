@@ -82,12 +82,8 @@ def run(
 
     dm_tkm = DM_freight_ots["freight_tkm"]
     dm_modal = DM_freight_ots["freight_modal-share"]
-    idx_t = dm_tkm.idx
-    idx_m = dm_modal.idx
 
-    all_countries = ["Switzerland", "Vaud"] + [
-        c for c in country_list if c not in ("Switzerland", "Vaud")
-    ]
+    all_countries = ["Switzerland"] + [c for c in country_list if c != "Switzerland"]
 
     dm_fxa = DataMatrix(
         col_labels={
@@ -98,43 +94,50 @@ def run(
         },
         units={"tra_freight_renewal-rate": "%", "tra_freight_tkm-by-veh": "tkm"},
     )
-    idx = dm_fxa.idx
 
     # --- Renewal rate: flat constant for all years and countries ----------
     for country in all_countries:
         for mode in _MODES_OTHER:
-            dm_fxa.array[
-                idx[country], :, idx["tra_freight_renewal-rate"], idx[mode]
-            ] = _RENEWAL_RATE[mode]
+            dm_fxa[country, :, "tra_freight_renewal-rate", mode] = _RENEWAL_RATE[mode]
 
     # --- tkm-by-veh: compute from Switzerland OTS, copy to others --------
     # (vehicle productivity is not canton-specific)
     ch = "Switzerland"
     for j, yr in enumerate(years_ots):
-        total_bn_tkm = dm_tkm.array[idx_t[ch], idx_t[yr], 0]
+        total_bn_tkm = dm_tkm[ch, yr, "tra_freight_tkm-total-demand"]
         for mode in _MODES_OTHER:
-            share = dm_modal.array[idx_m[ch], idx_m[yr], 0, idx_m[mode]]
+            share = dm_modal[ch, yr, "tra_freight_modal-share", mode]
             modal_tkm = total_bn_tkm * share * 1e9  # bn-tkm → tkm
-            dm_fxa.array[idx[ch], idx[yr], idx["tra_freight_tkm-by-veh"], idx[mode]] = (
+            dm_fxa[ch, yr, "tra_freight_tkm-by-veh", mode] = (
                 modal_tkm / _FLEET_SIZE[mode]
             )
 
     # FTS years: hold 2023 value flat
     last_ots = years_ots[-1]
     for mode in _MODES_OTHER:
-        val = dm_fxa.array[
-            idx[ch], idx[last_ots], idx["tra_freight_tkm-by-veh"], idx[mode]
-        ]
+        val = dm_fxa[ch, last_ots, "tra_freight_tkm-by-veh", mode]
         for yr in years_fts:
-            dm_fxa.array[idx[ch], idx[yr], idx["tra_freight_tkm-by-veh"], idx[mode]] = (
-                val
-            )
+            dm_fxa[ch, yr, "tra_freight_tkm-by-veh", mode] = val
 
     # Copy Switzerland tkm-by-veh to all other countries
     for country in all_countries:
         if country != ch:
-            dm_fxa.array[idx[country], :, idx["tra_freight_tkm-by-veh"], :] = (
-                dm_fxa.array[idx[ch], :, idx["tra_freight_tkm-by-veh"], :]
-            )
+            dm_fxa[country, :, "tra_freight_tkm-by-veh", :] = dm_fxa[
+                ch, :, "tra_freight_tkm-by-veh", :
+            ]
 
     return dm_fxa
+
+
+if __name__ == "__main__":
+    from transition_compass_model._database.pre_processing.params import (
+        country_list,
+        years_fts,
+        years_ots,
+    )
+    from transition_compass_model._database.pre_processing.transport.Switzerland.processors.freight_tkm_modal_share import (
+        run as freight_tkm_run,
+    )
+
+    DM_freight_ots = freight_tkm_run(years_ots, country_list)
+    dm_freight_mode_other = run(DM_freight_ots, years_ots, years_fts, country_list)
