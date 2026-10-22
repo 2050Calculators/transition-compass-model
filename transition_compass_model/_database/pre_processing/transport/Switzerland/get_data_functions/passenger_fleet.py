@@ -140,19 +140,12 @@ def extract_passenger_new_fleet_by_tech(dm_new_fleet):
     # Note: unlike the old STAT-TAB source, the new source has no data rows at all for
     # "No motor" fuel under passenger cars/motorcycles, so there's nothing to drop here.
     # Check that other categories are only a small contribution
-    dm_tmp = dm_pass_new_fleet.normalise(dim="Categories2", inplace=False)
-    dm_tmp.filter({"Categories2": ["Other"]}, inplace=True)
+
     # If Other is more than 1% you should account for it
-    if (dm_tmp.array > 0.01).any():
-        print(
-            f'"Other" category is greater than 1% of the fleet, it cannot be discarded for {dm_pass_new_fleet.col_labels["Variables"]}'
-        )
-        raise ValueError(
-            '"Other" category is greater than 1% of the fleet, it cannot be discarded'
-        )
-    else:
-        #'"Other" category is greater than 1% of the fleet, it cannot be discarded'
-        dm_pass_new_fleet.drop(col_label="Other", dim="Categories2")
+
+    dm_pass_new_fleet = utils.drop_if_smaller_than_0_01(
+        dm_pass_new_fleet, cat_to_drop="Categories2", col_to_drop="Other"
+    )
 
     dm_pass_new_fleet.sort("Country")
     return dm_pass_new_fleet, dm_new_tech

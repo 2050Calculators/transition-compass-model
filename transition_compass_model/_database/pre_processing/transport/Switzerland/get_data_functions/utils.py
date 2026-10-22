@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     linear_fitting,
@@ -83,30 +84,64 @@ def drop_if_smaller_than_0_01(
         col_to_drop (str, optional): _description_. Defaults to "Other".
 
     Returns:
-        DataMatrix: _description_
+        DataMatrix: dm with the desired column removed if smaller than 0.15
     """
     dm = dm_og.copy()
-    dm_ratio = dm.normalise(dim=cat_to_drop, inplace=False)
-    idx = dm_ratio.idx
-    dm_missing = dm_ratio.filter({cat_to_drop: [col_to_drop]}).copy()
-    if (dm_missing.array > 0.01).any():
-        print(
-            f'"{col_to_drop}" category is greater than 1% of the fleet, it cannot be discarded {dm_missing.col_labels["Variables"]}'
-        )
-        dm_without_other = dm.copy()
-        dm_without_other.drop(col_label=col_to_drop, dim=cat_to_drop)
-        dm_without_other_normalised = dm_without_other.normalise(
-            dim=cat_to_drop, inplace=False
-        )
+    dm_ratio = dm_og.copy()
 
-        dm_without_other.array = (
-            dm_without_other.array
-            + dm.filter({cat_to_drop: [col_to_drop]}).array
-            * dm_without_other_normalised.array
-        )
-        dm = dm_without_other.copy()
-    else:
-        dm.drop(col_label=col_to_drop, dim=cat_to_drop)
+    if cat_to_drop == "Categories2":
+        # sum all data of categories 1 and collapse categories 1 so categories 2 becomes category 1
+        dm_ratio.group_all("Categories1")
+
+    dm_ratio = dm_ratio.normalise(dim="Categories1", inplace=False)
+    idx = dm_ratio.idx
+
+    for country in country_list:
+        dm_missing = dm_ratio.filter(
+            {"Country": [country], "Categories1": [col_to_drop]}
+        ).copy()
+
+        dm_country = dm.filter({"Country": [country]}).copy()
+
+        if (dm_missing.array > 0.01).any():
+            if (dm_missing.array > 0.15).any():
+                raise ValueError(
+                    f"{col_to_drop} category is greater than 10%  of the fleet for {country}, it cannot be discarded {dm_missing.col_labels['Variables']} it cannot be discarded"
+                )
+
+            print(
+                f'"{col_to_drop}" category is greater than 1% of the fleet for {country}, it cannot be discarded {dm_missing.col_labels["Variables"]}'
+            )
+            dm_without_other = dm_country.copy()
+            dm_without_other.drop(col_label=col_to_drop, dim=cat_to_drop)
+            dm_without_other_normalised = dm_without_other.normalise(
+                dim=cat_to_drop, inplace=False
+            )
+
+            dm_without_other.array = (
+                dm_without_other.array
+                + dm_country.filter({cat_to_drop: [col_to_drop]}).array
+                * dm_without_other_normalised.array
+            )
+            idx_dm = dm.idx
+            keep_idx = [
+                idx_dm[col]
+                for col in dm_country.col_labels[cat_to_drop]
+                if col != col_to_drop
+            ]
+            idx_dm_country = dm_country.idx
+            if cat_to_drop == "Categories1":
+                dm.array[idx_dm[country], :, :, keep_idx] = np.moveaxis(
+                    dm_without_other.array[idx_dm_country[country], :, :, :], -1, 0
+                )
+            elif cat_to_drop == "Categories2":
+                dm.array[idx_dm[country], :, :, :, keep_idx] = np.moveaxis(
+                    dm_without_other.array[idx_dm_country[country], :, :, :, :], -1, 0
+                )
+                # dm.array[idx[country],:,:,:,keep_idx] = dm_without_other.array[idx[country],:,:,:,:]
+
+    # Drop
+    dm.drop(col_label=col_to_drop, dim=cat_to_drop)
     return dm
 
 
