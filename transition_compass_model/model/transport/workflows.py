@@ -542,7 +542,7 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
         "eff_tot": "tra_freight_vehicle-efficiency_fleet",
         "eff_new": "tra_freight_vehicle-efficiency_new",
     }
-    utils.compute_fts_tech_split(dm_mode, dm_tech, cols)
+    utils.compute_fts_tech_split(dm_mode, dm_tech, cols, years_setting)
 
     # Extract freight transport demand vkm for road and tkm for others, join and compute transport demand by technology
     dm_demand_km = dm_mode_road.filter(
