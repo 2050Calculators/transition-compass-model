@@ -248,19 +248,21 @@ def run(dm_pop_ots, years_ots):
     dm_pkm_cap_raw.sort("Years")
     dm_pkm_cap_raw.filter({"Country": country_list}, inplace=True)
 
-    # For Vaud, adjust pkm/cap for 2015 and 2021 with actual values (split unchanged)
-    # !FIXME: This should be adjusted to all cantons!
+    # For every canton, adjust pkm/cap for 2015 and 2021 with actual values (split unchanged)
     # Do this by using tra_pkm_CH_cantons_2015.xlsx and tra_pkm_CH_cantons_2021.xlsx
     # FSO, 2023. Comportement de la population en matière de transport, chiffres clés - par canton. FSO number: su-f-11.04.03-MZ-2021-A2_Kant.
     # https://www.bfs.admin.ch/bfs/fr/home/statistiques/mobilite-transports/transport-personnes/comportements-transports/tableaux-2021/cantons.assetdetail.24025445.html
     # FSO, 2017. Comportement de la population en matière de transport, chiffres clés par canton (MRMT).
     # https://www.bfs.admin.ch/bfs/fr/home/statistiques/mobilite-transports/transport-personnes/comportements-transports/tableaux-2015/cantons.html
 
+    # Extract MRMT data
     local_filename_2021 = os.path.join(
         this_dir, "../data/MRMT/su-f-11.04.03-MZ-2021-A2_Kant.xlsx"
     )
     local_folder_2015 = os.path.join(this_dir, "../data/MRMT/2015/")
     pkm_day = pkm_MRMT(local_folder_2015, local_filename_2021)
+
+    # adjust pkm/cap for every canton
     cantons_list = [x for x in country_list if x != "Switzerland"]
     for canton in cantons_list:
         idx = dm_pkm_cap_raw.idx
