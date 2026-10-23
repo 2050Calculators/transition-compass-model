@@ -40,6 +40,9 @@ from processors.freight_efficiency_tech_share import (
     compute_hdvm_hdvh_efficiency,
 )
 
+from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
+    freight_data as fd,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     linear_fit_ratio,
@@ -301,6 +304,48 @@ def _anchor_ep2050_efficiency(dm_eff_ots, dm_eff_lev1, years_ots, scenario):
     return dm_lev4
 
 
+def _anchor_ep2050_rail_efficiency(
+    dm_eff, dm_eff_ots, dm_tkm_ots, dm_ms_ots, dm_tkm_fts, dm_ms_fts, years_ots
+):
+    """Rail efficiency [MJ/tkm] following EP2050+ freight rail energy (Abb. 112,
+    ZERO Basis) per Swiss rail tkm, relative to the base year. Same definition as the
+    OTS (EP2050 energy / rail tkm), so the level-1 rail energy follows EP2050.
+
+    eff(t) = eff_ots(base) * [E_EP(t) / E_EP(base)] / [tkm(t) / tkm(base)],
+    with tkm the level-1 Swiss rail tkm projection. Edits dm_eff in place.
+    """
+    ch = "Switzerland"
+    base_year = years_ots[-1]
+    years_fts = dm_eff.col_labels["Years"]
+
+    def rail_tkm(dm_tkm, dm_ms, y):
+        return (
+            dm_tkm[ch, y, "tra_freight_tkm-total-demand"]
+            * dm_ms[ch, y, "tra_freight_modal-share", "rail"]
+        )
+
+    tkm_base = rail_tkm(dm_tkm_ots, dm_ms_ots, base_year)
+    tkm_traj = np.array([rail_tkm(dm_tkm_fts, dm_ms_fts, y) for y in years_fts])
+    tkm_traj = tkm_traj / tkm_base
+
+    energy = fd.fill_years(
+        fd.read_ep2050_rail_freight_energy(), [base_year] + years_fts
+    )
+    energy_traj = energy[1:] / energy[0]
+    traj = energy_traj / tkm_traj
+
+    idx = dm_eff.idx
+    var = "tra_freight_vehicle-efficiency_new"
+    for country in dm_eff.col_labels["Country"]:
+        eff_base = dm_eff_ots.array[
+            dm_eff_ots.idx[country], dm_eff_ots.idx[base_year], 0, idx["rail"], :
+        ]
+        dm_eff.array[idx[country], :, idx[var], idx["rail"], :] = (
+            eff_base[np.newaxis, :] * traj[:, np.newaxis]
+        )
+    return dm_eff
+
+
 # ---------------------------------------------------------------------------
 # Midpoint helper
 # ---------------------------------------------------------------------------
@@ -355,8 +400,9 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
 
     # ------------------------------------------------------------------
     # freight_vehicle-efficiency_new
-    # Level 1  : road follows EP2050 WWB (business as usual), non-road linear OTS trend
-    # Level 4  : road follows EP2050 ZERO-B
+    # Level 1  : road follows EP2050 WWB (business as usual), rail follows EP2050
+    #            energy per tkm, other non-road linear OTS trend
+    # Level 4  : road follows EP2050 ZERO-B, rail as level 1
     # Road trajectories are relative to the calibrated base year (see
     # _anchor_ep2050_efficiency). Levels 2-3: midpoints.
     # ------------------------------------------------------------------
@@ -370,6 +416,18 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
     dm_eff_lev4 = _anchor_ep2050_efficiency(
         dm_eff_ots_raw, dm_eff_trend, years_ots, scenario="ZERO-B"
     )
+    # Rail: EP2050 energy per tkm (a linear OTS trend turns negative before 2050).
+    # Abb. 112 is ZERO Basis only, so levels 1 and 4 are the same.
+    for dm_eff in (dm_eff_lev1, dm_eff_lev4):
+        _anchor_ep2050_rail_efficiency(
+            dm_eff,
+            dm_eff_ots_raw,
+            DM_transport["ots"]["freight_tkm"],
+            DM_transport["ots"]["freight_modal-share"],
+            dm_tkm_fts,
+            dm_ms_fts,
+            years_ots,
+        )
 
     dm_eff_lev2 = _midpoint(dm_eff_lev1, dm_eff_lev4, 1 / 3)
     dm_eff_lev3 = _midpoint(dm_eff_lev1, dm_eff_lev4, 2 / 3)
