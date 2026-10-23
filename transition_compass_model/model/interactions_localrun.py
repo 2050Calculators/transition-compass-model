@@ -17,7 +17,7 @@ def local_interactions_run():
     years_setting = [1990, 2023, 2025, 2050, 5]
 
     # country_list = ["Switzerland","EU27","Vaud"]
-    country_list = ["Switzerland"]
+    country_list = ["Schwyz"]
 
     sectors = [
         "climate",

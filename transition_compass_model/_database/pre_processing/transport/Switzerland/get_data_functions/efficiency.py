@@ -274,10 +274,14 @@ def get_vehicle_efficiency_co2(
 
     # Distribute Inconnu on other categories based on their share
     # Remove fuel type "Autre" (there are only very few car in this category)
+    dm_veh_eff.rename_col("Total_Country", "Switzerland", dim="Country")
+    # Flat extrapolation data is bad before 2016 so removeit and then backstage it
+    dm_veh_eff.filter({"Years": list(range(2016, years_ots[-1]))}, inplace=True)
+
+    # remove unknown categories
     dm_veh_eff = utils.drop_if_smaller_than_0_01(
         dm_veh_eff, cat_to_drop="Categories2", col_to_drop="No data/unknown"
     )
-
     dm_veh_eff = utils.drop_if_smaller_than_0_01(
         dm_veh_eff, cat_to_drop="Categories1", col_to_drop="Other"
     )
@@ -302,8 +306,6 @@ def get_vehicle_efficiency_co2(
     mask = dm_veh_eff.array == 0
     dm_veh_eff.array[mask] = np.nan
 
-    # Flat extrapolation data is bad before 2016 so backstage it
-    dm_veh_eff.filter({"Years": list(range(2016, years_ots[-1]))}, inplace=True)
     years_to_add = [
         year for year in years_ots if year not in dm_veh_eff.col_labels["Years"]
     ]
@@ -347,7 +349,6 @@ def get_vehicle_efficiency_co2(
         units=dm_veh_eff.units,
     )
     dm_veh_eff_LDV.switch_categories_order()
-    dm_veh_eff_LDV.rename_col("Total_Country", "Switzerland", dim="Country")
 
     dm_veh_eff_LDV.filter({"Years": years_ots}, inplace=True)
     return dm_veh_eff_LDV

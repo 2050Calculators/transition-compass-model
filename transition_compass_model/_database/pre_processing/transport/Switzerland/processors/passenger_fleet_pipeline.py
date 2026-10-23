@@ -56,11 +56,12 @@ def compute_passenger_new_fleet(
         file_new_veh_ots2 (str): The path to the file containing new vehicle data for the second period.
 
     Returns:
-        DataMatrix: The computed passenger fleet by technology for Switzerland and Vaud.
+        DataMatrix: dm_new_fleet_tech The computed passenger fleet by technology for Switzerland and Vaud.
+        DataMatrix: dm_new_tech is the number of new vehicles for new technologies (used to allocate "Other" category in dm_pass_fleet
     """
 
     ### Add new fleet Vaud 1990 - 2004
-    def compute_new_fleet_vaud(dm_CH, dm_tech):
+    def compute_new_fleet_canton(dm_CH, dm_tech):
         # Extract the cantonal % of the swiss new vehicles in 2005 and uses it to determine Vaud fleet in 1990-2004
         dm_tmp = dm_tech.group_all(dim="Categories2", inplace=False)
         idx = dm_tmp.idx
@@ -134,7 +135,7 @@ def compute_passenger_new_fleet(
     # New fleet Switzerland 1990 - 2004
     dm_pass_new_fleet_CH_ots2 = get_data.get_new_fleet(file_new_veh_ots2, first_year)
     # Add new fleet Vaud 1990 - 2004
-    dm_pass_new_fleet_ots2 = compute_new_fleet_vaud(
+    dm_pass_new_fleet_ots2 = compute_new_fleet_canton(
         dm_pass_new_fleet_CH_ots2, dm_pass_new_fleet_tech_ots1
     )
     # Compute technology shares 1990 - 2004
