@@ -1,6 +1,31 @@
+import io
+import os
+import zipfile
+
 import numpy as np
+import pandas as pd
 
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
+
+# EP2050+ Technischer Bericht data tables (same zip the transport preprocessing reads).
+EP2050_TABLES_ZIP = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "../../../transport/Switzerland/data/EP2050_tables.zip",
+)
+EP2050_KAP8_FILE = "EP2050+_TechnsicherBericht_DatenAbbildungen_Kap 8_2022-04-12.xlsx"
+# Abb. 178: Stromerzeugung neuer erneuerbarer Energien - Szenario ZERO Basis, Strategievariante
+# «ausgeglichene Jahresbilanz 2050», in TWh
+EP2050_RENEWABLES_SHEET = "Abb. 178"
+
+# dm_capacity Category1 -> row label in Abb. 178
+EP2050_RENEWABLE_LABELS = {
+    "WindOn": "Windenergie",
+    "PV-roof": "Photovoltaik",
+}
+
+# Number of last ots years over which the local capacity factor is averaged (smooths out
+# good/bad wind and sun years).
+CAPACITY_FACTOR_N_YEARS = 5
 
 # lever name -> dm_capacity Category1
 lever_categories = {
@@ -57,7 +82,47 @@ def _lever_dm_series(country, years, category, values_mw):
     return dm_lever
 
 
-def run(dm_capacity, reactor_list, years_ots, years_fts):
+def extract_EP2050_production_TWh(label, year):
+    # Read one technology's electricity production (TWh) for one year from EP2050+ Abb. 178
+    # (ZERO Basis). The sheet layout is a figure export, so rows are located by label
+    # rather than by fixed position.
+    with zipfile.ZipFile(EP2050_TABLES_ZIP) as zip_ref:
+        xlsx_bytes = zip_ref.read(EP2050_KAP8_FILE)
+    df = pd.read_excel(
+        io.BytesIO(xlsx_bytes), sheet_name=EP2050_RENEWABLES_SHEET, header=None
+    )
+
+    header_row = next(
+        row for _, row in df.iterrows() if year in row.values and 2000 in row.values
+    )
+    year_col = header_row[header_row == year].index[0]
+    label_col = df.apply(lambda col: (col == label).any())
+    if label_col.sum() != 1:
+        raise ValueError(
+            f"'{label}' not found exactly once in {EP2050_RENEWABLES_SHEET}"
+        )
+    value_row = df[df[label_col.idxmax()] == label].iloc[0]
+    return float(value_row[year_col])
+
+
+def local_capacity_factor(dm_capacity, dm_production, category, years_ots):
+    # Swiss observed capacity factor = production / (mid-year installed capacity * 8760 h),
+    # averaged over the last ots years. Mid-year capacity (mean of the end of the previous
+    # and the current year) matters for fast-growing PV (~35%/yr): dividing by year-end
+    # capacity biases the factor low. Production and capacity are both BFE "Netz+Insel"
+    # totals, so PV self-consumption is included in both.
+    cf = []
+    for year in years_ots[-CAPACITY_FACTOR_N_YEARS:]:
+        cap_mid_mw = 0.5 * (
+            dm_capacity["Switzerland", year - 1, "pow_existing-capacity", category]
+            + dm_capacity["Switzerland", year, "pow_existing-capacity", category]
+        )
+        prod_mwh = dm_production["Switzerland", year, "pow_production", category] * 1e6
+        cf.append(prod_mwh / (cap_mid_mw * 8760))
+    return float(np.mean(cf))
+
+
+def run(dm_capacity, dm_production, reactor_list, years_ots, years_fts):
     # ots/fts structure matching the rest of the codebase (e.g. transport_preprocessing_CH.py):
     # DM["ots"][lever] = real historical value, DM["fts"][lever][level] = one DataMatrix per
     # lever level (1-4). Unlike other sectors, the pyomo energy model only ever produces a
@@ -131,17 +196,30 @@ def run(dm_capacity, reactor_list, years_ots, years_fts):
     }
 
     # Wind/PV: level 1 = today's installed capacity (no further deployment), level 4 =
-    # technical potential (pow_capacity-Pmax), levels 2/3 linearly interpolated. Only endyr
-    # matters here (no decommissioning story to preserve), so a single-point fts DataMatrix
-    # is enough.
-    # TODO: wind Pmax (level 4) is unrealistically high - see the TODO in
-    # processors/renewable_capacity_pipeline_CH.py.
+    # EP2050+ ZERO Basis deployment, levels 2/3 linearly interpolated. The energy model
+    # deploys exactly the chosen level (f_min = f_max, see apply_power_capacity_levers in
+    # model/energy/workflows.py). Only endyr matters here (no decommissioning story to
+    # preserve), so a single-point fts DataMatrix is enough.
+    # EP2050+ publishes wind/PV as production (Abb. 178, TWh), not capacity, so level 4 is
+    # that production divided by the local capacity factor. Nexus-e's Pmax (11.9 GW wind,
+    # 47 GW PV) is far above EP2050+ and is no longer used for the levers.
+    # Note: the model's own capacity factors (c_p_t in ses_main.json: WIND ~0.23, PV ~0.11)
+    # are slightly higher than the local ones (~0.20, ~0.10), so the solved production at
+    # level 4 ends up a bit above EP2050+'s figures.
     for lever_name in ["onshore-wind-capacity", "pv-capacity"]:
         category = lever_categories[lever_name]
         level1_value = dm_capacity[
             "Switzerland", endyr, "pow_existing-capacity", category
         ]
-        level4_value = dm_capacity["Switzerland", endyr, "pow_capacity-Pmax", category]
+        ep2050_twh = extract_EP2050_production_TWh(
+            EP2050_RENEWABLE_LABELS[category], endyr
+        )
+        cf = local_capacity_factor(dm_capacity, dm_production, category, years_ots)
+        level4_value = ep2050_twh * 1e6 / (cf * 8760)
+        print(
+            f"  {lever_name}: EP2050+ {ep2050_twh:.3f} TWh, local CF {cf:.3f} "
+            f"-> level 4 = {level4_value:.0f} MW"
+        )
         DM_fts[lever_name] = {
             level: _lever_dm(
                 "Switzerland",

@@ -15,12 +15,6 @@ def energy(lever_setting, years_setting, country_list, interface=Interface()):
     #   - Hydro capacity factors are scaled by hardcoded 1.3 (dam) / 1.4 (run-of-river)
     #     factors to match historical and forecasted production, although the real
     #     ratio changes meaningfully over time. See energy/interfaces.py.
-    #   - Onshore-wind potential (pow_capacity-Pmax_WindOn) is far higher than what can
-    #     realistically be built in Switzerland. Fix in pre_processing/power/Switzerland/
-    #     processors/renewable_capacity_pipeline_CH.py.
-    #   - PV and wind capacity levers only set the maximum available capacity (f_max);
-    #     they should control actual deployment, as nuclear already does. See
-    #     apply_power_capacity_levers in energy/workflows.py.
     #   - Frontend (speed-to-zero energy.json): show a warning when electricity
     #     net-import exceeds 5 TWh/year.
     #   - Frontend: harmonise graph colours across sectors.
