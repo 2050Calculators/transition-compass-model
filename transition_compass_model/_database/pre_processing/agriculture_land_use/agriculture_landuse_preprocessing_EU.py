@@ -5240,6 +5240,7 @@ def feed_calibration(list_countries):
             "2020",
             "2021",
             "2022",
+            "2023",
         ]
         my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
