@@ -583,10 +583,9 @@ def calibration_rates(
         dm_cal_sub.operation(var_cal, "-", var_raw, out_col="delta", unit="")
         dm_cal_sub.operation("delta", "/", var_raw, out_col="cal_rate", unit="%")
         dm_cal_sub.array = dm_cal_sub.array + 1
-        # dm_cal_sub.datamatrix_plot()
+
         dm_cal_sub.filter({"Variables": ["cal_rate"]}, inplace=True)
         # df_check = dm_cal_sub.write_df()
-        # dm_cal_sub.datamatrix_plot()
 
         # adjust missing years in dm_cal_sub
 
@@ -626,6 +625,24 @@ def calibration_rates(
         dm_cal_sub.sort("Years")
 
     # return
+    if (np.nanmax(dm_cal_sub.array) >= 1.1) | (0.9 >= np.nanmin(dm_cal_sub.array)):
+        print(dm.col_labels["Variables"])
+        dm_cal_sub.flattest().datamatrix_plot()
+
+    # assert (np.nanmax(dm_cal_sub.array) <= 1.01) &  (0.99 <= np.nanmin(dm_cal_sub.array)), "Calibration rates are too far away from 1"
+
+    # idx = dm_cal_sub.idx
+    # arr = dm_cal_sub.array
+    # # Compare consecutive years
+    # increasing = arr[:, 1:, :, :] == arr[:, :-1, :, :]
+
+    # # Check monotonicity separately for each combination
+    # # of the first, third, and fourth dimensions
+    # monotonic_by_series = increasing.all(axis=1)
+    # #check if array is monotically increasing
+    # incr = all(dm_cal_sub.array[:,idx[yr], :,:] <= dm_cal_sub.array[:,idx[yr+1], :,:] for yr in dm_cal_sub.col_labels["Years"])
+
+    # assert incr &  (0.99 < dm_cal_sub.array.max()), "Calibration rates are too far away from 1"
     return dm_cal_sub
 
 
