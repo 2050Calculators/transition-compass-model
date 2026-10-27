@@ -624,27 +624,70 @@ def calibration_rates(
             )
         dm_cal_sub.sort("Years")
 
-    # return
-    if (np.nanmax(dm_cal_sub.array) >= 1.1) | (0.9 >= np.nanmin(dm_cal_sub.array)):
-        print(dm.col_labels["Variables"])
-        dm_cal_sub.filter({"Country": ["Vaud"]}).flattest().datamatrix_plot(
-            title=dm.col_labels["Variables"][0]
+    def compute_slope(dm_cal_sub_vaud):
+        data = dm_cal_sub_vaud.array[0]
+
+        n_years, n_categories = data.shape
+
+        slopes = np.full(n_categories, np.nan)
+
+        for i in range(n_categories):
+            y = data[:, i]
+
+            # False if nan
+            valid = np.isfinite(y)
+
+            if valid.sum() < 2:
+                continue
+
+            y_min = np.min(y[valid])
+            y_max = np.max(y[valid])
+
+            # Skip constant categories
+            if y_max == y_min:
+                continue
+
+            # Normalize the category to [0, 1]
+            y_norm = (y - y_min) / (y_max - y_min)
+
+            # Fit a linear regression
+            slopes[i] = (y_norm[-1] - y_norm[0]) / n_years
+
+        return slopes
+
+    def flag_variables(dm_cal_sub):
+        dm_cal_sub_vaud = dm_cal_sub.filter(
+            {"Country": ["Vaud"], "Years": [yr for yr in range(1990, 2024)]}
+        ).flattest()
+        slope = compute_slope(dm_cal_sub_vaud)
+        # Detect trends if cal rates take s + or - 10.  0.1/30 = 0.003
+        mask_slope = np.abs(slope) >= 0.003
+
+        # Flag with slope
+        if mask_slope.any():
+            print("At least one category exceeds 10% increase or decrease")
+        #     print(dm.col_labels["Variables"])
+        #     indices = np.where(mask_slope)[0].tolist()
+        #     selected_variables = [
+        #         dm_cal_sub_vaud.col_labels["Variables"][i]
+        #         for i in indices
+        #     ]
+        #     print(f"categories exceeding are {selected_variables}")
+        #     dm_cal_sub.filter({"Country": ["Vaud"]}).flattest().datamatrix_plot(
+        #                 title=dm.col_labels["Variables"][0])
+
+        mask_absolute = (np.nanmax(dm_cal_sub.array) >= 1.2) | (
+            0.8 >= np.nanmin(dm_cal_sub.array)
         )
+        if mask_absolute.any():
+            print("At least one category exceeds 0.2 diff with the original array")
 
-    # assert (np.nanmax(dm_cal_sub.array) <= 1.01) &  (0.99 <= np.nanmin(dm_cal_sub.array)), "Calibration rates are too far away from 1"
+        mask_total = mask_absolute | mask_slope
+        return mask_total.any()
 
-    # idx = dm_cal_sub.idx
-    # arr = dm_cal_sub.array
-    # # Compare consecutive years
-    # increasing = arr[:, 1:, :, :] == arr[:, :-1, :, :]
+    if flag_variables(dm_cal_sub):
+        print(dm.col_labels["Variables"])
 
-    # # Check monotonicity separately for each combination
-    # # of the first, third, and fourth dimensions
-    # monotonic_by_series = increasing.all(axis=1)
-    # #check if array is monotically increasing
-    # incr = all(dm_cal_sub.array[:,idx[yr], :,:] <= dm_cal_sub.array[:,idx[yr+1], :,:] for yr in dm_cal_sub.col_labels["Years"])
-
-    # assert incr &  (0.99 < dm_cal_sub.array.max()), "Calibration rates are too far away from 1"
     return dm_cal_sub
 
 
