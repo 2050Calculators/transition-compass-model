@@ -627,7 +627,9 @@ def calibration_rates(
     # return
     if (np.nanmax(dm_cal_sub.array) >= 1.1) | (0.9 >= np.nanmin(dm_cal_sub.array)):
         print(dm.col_labels["Variables"])
-        dm_cal_sub.flattest().datamatrix_plot()
+        dm_cal_sub.filter({"Country": ["Vaud"]}).flattest().datamatrix_plot(
+            title=dm.col_labels["Variables"][0]
+        )
 
     # assert (np.nanmax(dm_cal_sub.array) <= 1.01) &  (0.99 <= np.nanmin(dm_cal_sub.array)), "Calibration rates are too far away from 1"
 
