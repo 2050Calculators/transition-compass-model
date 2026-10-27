@@ -576,9 +576,6 @@ def compute_floor_area_stock_v2(
         return dm_grouped
 
     dm = merge_multi_single(dm_stock_area, cat_map_sfh, cat_map_mfh)
-    # vars = load_construction_period_param()
-    # dm_old = merge_multi_single(dm_stock_area_old,vars["envelope construction sfh old"], vars["envelope construction mfh old"])
-    # compare_dm(dm, dm_old)
 
     # Remove split by envelope category (see Building module Overleaf)
     dm_stock_tot = dm.group_all("Categories2", inplace=False)

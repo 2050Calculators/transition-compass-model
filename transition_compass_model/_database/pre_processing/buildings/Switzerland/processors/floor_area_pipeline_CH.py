@@ -206,8 +206,6 @@ def run(global_vars, country_list, years_ots):
     )
 
     # !FIXME: Find a better option to generalize to all canton
-    backup_stock = dm_stock_tot.copy()
-
     arr_adj_factor = (
         dm_WP[:, 2023, "bld_floor-area_stock", :]
         / dm_stock_tot[:, 2023, "bld_floor-area_stock", :]
