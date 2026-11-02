@@ -1,1206 +1,776 @@
+"""Build simple_industry.pickle and industry_to_energy.pickle for Switzerland.
+
+Energy demand by canton x industry branch x fuel, and the related emissions.
+Method (see PLAN_simple_industry_waste.md next to this file):
+
+1. National energy by branch x fuel: BFE industry statistics give the branch split of
+   each fuel (2013-2023). Each fuel is scaled to GEST T17b so the Swiss total matches
+   the official energy balance. NACE 36-39 (water-waste) own use comes from the FSO
+   energy accounts and is part of the GEST industry total.
+2. Emissions: combustion = energy x emission factor (fossil and biogenic separately);
+   process emissions by branch from EP2050+ (Tab. 02-04).
+3. Cantons: branches with SwissPRTR facilities are allocated point-sources-first
+   (PRTR CO2 per canton, remainder by FTE); everything else by FTE. Hard check: canton x
+   branch CO2 >= PRTR.
+4. Forecast: levers 1-4, level 1 = EP2050+ WWB, level 4 = ZERO Basis, scaled to 2023.
+5. industry_to_energy.pickle: same layout as before (end use x fuel), end-use split
+   from EP2050+ Tab. 02-01 / 02-02.
+
+STAT-TAB API calls (pxweb.bfs.admin.ch) are flagged with "# STAT-TAB API". They only run
+when the cached pickle is missing.
+"""
+
 import os
 import pickle
-import re
-import zipfile
 
 import numpy as np
 import pandas as pd
-import requests
-from _database.pre_processing.api_routines_CH import get_data_api_CH  # type: ignore
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    get_data_api_CH,
+)
+from transition_compass_model._database.pre_processing.constants import (
+    CANTONS_RENAME_TARGET,
+)
+from transition_compass_model._database.pre_processing.simple_industry.Switzerland import (
+    get_data_functions as gd,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
-    linear_fitting,
-    load_pop,
+    rename_cantons,
+)
+from transition_compass_model.model.common.constant_data_matrix_class import (
+    ConstantDataMatrix,
 )
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
+DATAMATRIX_DIR = os.path.join(gd.ROOT_DIR, "_database/data/datamatrix")
+INTERFACE_DIR = os.path.join(gd.ROOT_DIR, "_database/data/interface")
 
-def has_numbers(inputString):
-    return any(char.isdigit() for char in inputString)
+YEARS_OTS = create_years_list(1990, 2023, 1)
+YEARS_FTS = create_years_list(2025, 2050, 5)
+BASE_YEAR = 2023
+CANTONS = sorted(CANTONS_RENAME_TARGET)
+BRANCHES = gd.BRANCHES
+INDUSTRY_BRANCHES = BRANCHES[:12]  # covered by the BFE statistics
+GASES = ["CH4", "CO2", "N2O"]
+
+FUELS = [
+    "electricity",
+    "gas",
+    "heating-oil",  # extra-light heating oil
+    "other-oil",  # all other petroleum products (heavy fuel oil, LPG, petcoke, ...)
+    "coal",
+    "wood",
+    "district-heating",
+    "waste",  # industrial waste used as fuel (mostly cement and chemicals)
+    "renewables",  # solar thermal, biogas, ambient heat
+]
+FOSSIL_FUELS = ["gas", "heating-oil", "other-oil", "coal", "waste"]
+# Fuels burned on site: their energy follows the emission-based canton shares
+COMBUSTION_FUELS = FOSSIL_FUELS + ["wood"]
+
+# Emission factors in Mt per TWh of fuel.
+# CO2: BAFU factors used in buildings (coal 350, heating oil 265, gas 201 kt/TWh,
+# https://www.bafu.admin.ch/dam/fr/sd-web/HnIzzj6OfDUU/EF_CO2_Berichterstattung_Kantone.pdf).
+# Other oil: heavy fuel oil (77.3 t/TJ). Wood and the waste fuel: IPCC 2006 (via
+# industry.pickle). ASSUMPTION: 30% of the industrial waste fuel is biogenic.
+# CH4 / N2O: IPCC 2006 Vol. 2 Tab. 2.3 (industry.pickle 'emission-factor').
+WASTE_BIOGENIC_SHARE = 0.3
+EF_FOSSIL = {
+    "CO2": {
+        "gas": 0.201,
+        "heating-oil": 0.265,
+        "other-oil": 0.278,
+        "coal": 0.350,
+        "waste": 0.3696 * (1 - WASTE_BIOGENIC_SHARE),
+    },
+    "CH4": {
+        "gas": 3.6e-6,
+        "heating-oil": 1.08e-5,
+        "other-oil": 1.08e-5,
+        "coal": 3.6e-5,
+        "waste": 1.08e-4,
+        "wood": 2.367e-4,
+    },
+    "N2O": {
+        "gas": 3.6e-7,
+        "heating-oil": 2.16e-6,
+        "other-oil": 2.16e-6,
+        "coal": 5.4e-6,
+        "waste": 1.44e-5,
+        "wood": 1.26e-5,
+    },
+}
+EF_BIOGENIC_CO2 = {"wood": 0.3774, "waste": 0.3696 * WASTE_BIOGENIC_SHARE}
+
+# STATENT 2-digit NOGA divisions -> branch (cement/glass share C23, steel/NE share C24)
+FTE_NOGA = {
+    "food": ["10", "11", "12"],
+    "textiles": ["13", "14", "15"],
+    "paper": ["17", "18"],
+    "chemicals": ["20", "21"],
+    "cement": ["23"],
+    "glass-ceramics": ["23"],
+    "iron-steel": ["24"],
+    "non-ferrous-metals": ["24"],
+    "metal-products": ["25", "26", "27"],
+    "machinery": ["28"],
+    "other-industries": [
+        "05",
+        "06",
+        "07",
+        "08",
+        "09",
+        "16",
+        "22",
+        "29",
+        "30",
+        "31",
+        "32",
+    ],
+    "construction": ["41", "42", "43"],
+    "water-waste": ["36", "37", "38", "39"],
+}
+
+EP_SHEETS = {1: "02 Industrie WWB", 4: "03 Industrie ZERO Basis"}
+
+# Water-waste fuels that GEST counts outside industry: sewage-plant biogas is in the
+# GEST biogas balance (T34a), not in T17b (T17b 'other renewables' is 0.07 TWh in 1990,
+# below the 0.33 TWh of NACE 36-39 biogas). These are added on top of GEST.
+WW_OUTSIDE_GEST = ["renewables"]
 
 
-def extract_national_energy_demand(table_id, file):
+# ======================================================================================
+# STAT-TAB extractions (cached)
+# ======================================================================================
+def extract_energy_accounts(table_id, file):
+    """FSO energy accounts of the economy, TWh. Cached in `file`."""
     try:
         with open(file, "rb") as handle:
-            dm_energy = pickle.load(handle)
+            return pickle.load(handle)
     except OSError:
-        structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-
-        # Remove freight transport energy demand
-        exclude_list = ["49", "50", "51", "52", "53"]
-        keep_sectors = [
-            s
-            for s in structure["Économie et ménages"]
-            if not any(n in s for n in exclude_list)
-        ]
-        # Remove household energy demand and passenger transport
-        keep_sectors = [s for s in keep_sectors if "énages" not in s]
-        # Drop too detailed split
-        keep_sectors = [s for s in keep_sectors if "---- " not in s]
-
-        filter = {
-            "Économie et ménages": keep_sectors,
-            "Unité de mesure": ["Térajoules"],
-            "Année": structure["Année"],
-            "Agent énergétique": structure["Agent énergétique"],
-        }
-
-        mapping = {
-            "Country": "Unité de mesure",
-            "Years": "Année",
-            "Variables": "Économie et ménages",
-            "Categories1": "Agent énergétique",
-        }
-
-        dm_energy = get_data_api_CH(
-            table_id,
-            mode="extract",
-            mapping_dims=mapping,
-            filter=filter,
-            units=["TJ"] * len(keep_sectors),
-            language="fr",
-        )
-
-        # dm_heating.rename_col('--- Chauffage des ménages', 'bld_heating-demand', dim='Variables')
-        dm_energy.rename_col("Térajoules", "Switzerland", dim="Country")
-
-        # We drop the fuels fro transport
-        dict_rename = {
-            "heating-oil": ["1.1.2. Huile de chauffage extra-légère"],
-            "coal": ["1.2. Charbon"],
-            "gas": ["1.3. Gaz naturel"],
-            "district-heating": ["6. Chaleur à distance"],
-            "nuclear-fuel": ["4. Combustibles nucléaires"],
-            "waste": ["2. Déchets (hors biomasse)"],
-            "biomass": ["3.1. Déchets (biomasse)"],
-            "wood": ["3.2. Bois et charbon de bois"],
-            "biogas": ["3.3. Biogaz et biocarburants"],
-            "renewables": [
-                "3.4. Géothermie, chaleur ambiante et énergie solaire thermique"
-            ],
-            "electricity": ["5. Electricité"],
-        }
-
-        dm_energy = dm_energy.groupby(dict_rename, dim="Categories1", inplace=False)
-
-        for var in dm_energy.col_labels["Variables"]:
-            dm_energy.rename_col(var, "bld_energy-by-sector_" + var, dim="Variables")
-
-        dm_energy.deepen(based_on="Variables")
-        dm_energy.switch_categories_order()
-
-        dm_energy.change_unit(
-            "bld_energy-by-sector", 3600, old_unit="TJ", new_unit="TWh", operator="/"
-        )
-
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, file)
-        with open(f, "wb") as handle:
-            pickle.dump(dm_energy, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    dm_energy.rename_col_regex("-", "", dim="Categories1")
-    dm_energy.drop("Categories1", " 35 Production et distribution d'énergie")
-    # Remove demand of waste for waste management sector because it is computed in EnergyScope
-    # Biomass is also from waste
-    dm_energy[
-        :, :, :, " 3639 Production et distribution d'eau; gestion des déchets", "waste"
-    ] = 0
-    dm_energy[
-        :,
-        :,
-        :,
-        " 3639 Production et distribution d'eau; gestion des déchets",
-        "biomass",
-    ] = 0
-    return dm_energy
+        pass
+    print(f"WARNING: calling the stat-tab API for {table_id} (cache {file} missing)")
+    # STAT-TAB API
+    structure, title = get_data_api_CH(table_id, mode="example", language="fr")
+    keep_sectors = [
+        s
+        for s in structure["Économie et ménages"]
+        if "énages" not in s and "---- " not in s
+    ]
+    filter = {
+        "Économie et ménages": keep_sectors,
+        "Unité de mesure": ["Térajoules"],
+        "Année": structure["Année"],
+        "Agent énergétique": structure["Agent énergétique"],
+    }
+    mapping = {
+        "Country": "Unité de mesure",
+        "Years": "Année",
+        "Variables": "Économie et ménages",
+        "Categories1": "Agent énergétique",
+    }
+    # STAT-TAB API
+    dm = get_data_api_CH(
+        table_id,
+        mode="extract",
+        mapping_dims=mapping,
+        filter=filter,
+        units=["TJ"] * len(keep_sectors),
+        language="fr",
+    )
+    dm.rename_col("Térajoules", "Switzerland", dim="Country")
+    dict_rename = {
+        "heating-oil": ["1.1.2. Huile de chauffage extra-légère"],
+        "coal": ["1.2. Charbon"],
+        "gas": ["1.3. Gaz naturel"],
+        "district-heating": ["6. Chaleur à distance"],
+        "nuclear-fuel": ["4. Combustibles nucléaires"],
+        "waste": ["2. Déchets (hors biomasse)"],
+        "biomass": ["3.1. Déchets (biomasse)"],
+        "wood": ["3.2. Bois et charbon de bois"],
+        "biogas": ["3.3. Biogaz et biocarburants"],
+        "renewables": [
+            "3.4. Géothermie, chaleur ambiante et énergie solaire thermique"
+        ],
+        "electricity": ["5. Electricité"],
+    }
+    dm = dm.groupby(dict_rename, dim="Categories1", inplace=False)
+    for var in dm.col_labels["Variables"]:
+        dm.rename_col(var, "bld_energy-by-sector_" + var, dim="Variables")
+    dm.deepen(based_on="Variables")
+    dm.switch_categories_order()
+    dm.change_unit(
+        "bld_energy-by-sector", 3600, old_unit="TJ", new_unit="TWh", operator="/"
+    )
+    with open(file, "wb") as handle:
+        pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    return dm
 
 
 def extract_employees_per_sector_canton(table_id, file):
+    """STATENT full-time equivalents by canton and NOGA division. Cached in `file`."""
     try:
         with open(file, "rb") as handle:
-            dm_employees = pickle.load(handle)
+            return pickle.load(handle)
     except OSError:
-        structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-
-        filter = {
-            "Division économique": structure["Division économique"],
-            "Unité d'observation": ["Equivalents plein temps"],
-            "Année": structure["Année"],
-            "Canton": structure["Canton"],
-        }
-
-        mapping = {
-            "Country": "Canton",
-            "Years": "Année",
-            "Variables": "Unité d'observation",
-            "Categories1": "Division économique",
-        }
-
-        dm_employees = get_data_api_CH(
-            table_id,
-            mode="extract",
-            mapping_dims=mapping,
-            filter=filter,
-            units=["EPT"],
-            language="fr",
-        )
-
-        # dm_heating.rename_col('--- Chauffage des ménages', 'bld_heating-demand', dim='Variables')
-        dm_employees.rename_col(
-            "Equivalents plein temps", "ind_employees", dim="Variables"
-        )
-        dm_employees.drop(col_label="Division économique - total", dim="Categories1")
-
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, file)
-        with open(f, "wb") as handle:
-            pickle.dump(dm_employees, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    return dm_employees
-
-
-def extract_service_surface_area_by_canton(table_id, file):
-    try:
-        with open(file, "rb") as handle:
-            dm_service_area = pickle.load(handle)
-    except OSError:
-        structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-
-        cantons_list = [
-            c for c in structure["Grande région (<<) / Canton (-)"] if "- " in c
-        ]
-        categories_list = [
-            "<->a.1.1 Aires industrielles et artisanales",
-            "<->a.2.3 Aires de bâtiments publics",
-            "<->a.2.5 Aires de bâtiments non déterminés",
-        ]
-
-        filter = {
-            "Grande région (<<) / Canton (-)": cantons_list + ["Suisse"],
-            "Période": structure["Période"],
-            "Nomenclature standard (NOAS04)": categories_list,
-        }
-
-        mapping = {
-            "Country": "Grande région (<<) / Canton (-)",
-            "Years": "Période",
-            "Variables": "Nomenclature standard (NOAS04)",
-        }
-
-        dm_service_area = get_data_api_CH(
-            table_id,
-            mode="extract",
-            mapping_dims=mapping,
-            filter=filter,
-            units=["ha"] * len(categories_list),
-            language="fr",
-        )
-
-        dm_service_area.groupby(
-            {"bld_service-floor-area": ".*"}, dim="Variables", regex=True, inplace=True
-        )
-
-        dm_service_area.array[dm_service_area.array == 0] = np.nan
-        dm_service_area.rename_col_regex("- ", "", dim="Country")
-
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, file)
-        with open(f, "wb") as handle:
-            pickle.dump(dm_service_area, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    return dm_service_area
-
-
-def map_national_energy_demand_by_sector_to_cantons(dm_energy, dm_employees, years_ots):
-    mapping_dict = {}
-    mapping_sectors = {
-        "agriculture": [],
-        "industry-w-process-heat": [],
-        "services": [],
-        "industry-wo-process-heat": [],
+        pass
+    print(f"WARNING: calling the stat-tab API for {table_id} (cache {file} missing)")
+    # STAT-TAB API
+    structure, title = get_data_api_CH(table_id, mode="example", language="fr")
+    filter = {
+        "Division économique": structure["Division économique"],
+        "Unité d'observation": ["Equivalents plein temps"],
+        "Année": structure["Année"],
+        "Canton": structure["Canton"],
     }
-    for cat in dm_energy.col_labels["Categories1"]:
-        if has_numbers(cat):
-            cat_num = re.findall(r"\d+", cat)[0]
-            if len(cat_num) == 2:
-                matching_cat = [
-                    c for c in dm_employees.col_labels["Categories1"] if cat_num in c
-                ]
-                mapping_dict[cat] = matching_cat
-                if int(cat_num) <= 3:
-                    mapping_sectors["agriculture"].append(cat)
-                elif 3 < int(cat_num) < 41:
-                    mapping_sectors["industry-w-process-heat"].append(cat)
-                elif 41 <= int(cat_num) < 45:
-                    mapping_sectors["industry-wo-process-heat"].append(cat)
-                elif int(cat_num) >= 45:
-                    mapping_sectors["services"].append(cat)
-            elif len(cat_num) == 4:
-                first_num = cat_num[0:2]
-                second_num = cat_num[2:4]
-                matching_cat = []
-                for i in range(int(first_num), int(second_num) + 1):
-                    str_i = f"{i:02}"  # pad with zeros
-                    matching_cat_i = [
-                        c for c in dm_employees.col_labels["Categories1"] if str_i in c
-                    ]
-                    matching_cat.append(matching_cat_i[0])
-                if int(first_num) <= 3:
-                    mapping_sectors["agriculture"].append(cat)
-                elif 3 < int(first_num) < 41:
-                    mapping_sectors["industry-w-process-heat"].append(cat)
-                elif 41 <= int(first_num) < 45:
-                    mapping_sectors["industry-wo-process-heat"].append(cat)
-                elif int(first_num) >= 45:
-                    mapping_sectors["services"].append(cat)
-                mapping_dict[cat] = matching_cat
-
-    dm_employees_mapped = dm_employees.groupby(
-        mapping_dict, dim="Categories1", inplace=False
-    )
-    dm_employees_mapped.drop("Country", "Suisse")
-    dm_employees_mapped.sort("Categories1")
-
-    dm_energy_mapped = dm_energy.filter(
-        {"Categories1": dm_employees_mapped.col_labels["Categories1"]}, inplace=False
-    )
-    dm_energy_mapped.sort("Categories1")
-    dm_employees_mapped.normalise(dim="Country")
-    linear_fitting(
-        dm_employees_mapped, years_ots=dm_energy.col_labels["Years"], min_t0=0
-    )
-    dm_employees_mapped.normalise(dim="Country")
-
-    new_arr = (
-        dm_employees_mapped.array[:, :, :, :, np.newaxis]
-        * dm_energy_mapped.array[:, :, :, :, :]
-    )
-    dm_energy_mapped.add(
-        new_arr, dim="Country", col_label=dm_employees_mapped.col_labels["Country"]
-    )
-
-    dm_energy_mapped.groupby(mapping_sectors, dim="Categories1", inplace=True)
-    dm_employees_mapped.groupby(mapping_sectors, dim="Categories1", inplace=True)
-    dm_employees_mapped.add(
-        np.nan,
-        dummy=True,
-        dim="Years",
-        col_label=list(set(years_ots) - set(dm_employees_mapped.col_labels["Years"])),
-    )
-    dm_employees_mapped.sort("Years")
-    dm_employees_mapped.fill_nans("Years")
-
-    return dm_energy_mapped, dm_employees_mapped
-
-
-def save_url_to_file(file_url, local_filename):
-    if not os.path.exists(local_filename):
-        response = requests.get(file_url, stream=True)
-        # Check if the request was successful
-        if response.status_code == 200:
-            with open(local_filename, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-            print(f"File downloaded successfully as {local_filename}")
-        else:
-            print(f"Error: {response.status_code}, {response.text}")
-    else:
-        print(
-            f"File {local_filename} already exists. If you want to download again delete the file"
-        )
-    return
-
-
-def clean_df_EP2050(df, keep_list):
-    # Set the new header
-    df.drop(columns=["zurück", "Unnamed: 2"], inplace=True)
-    df.columns = df.iloc[10]
-    df = df[11:31].copy()
-
-    def is_valid_number(val):
-        return isinstance(val, (int, float)) and not pd.isna(val)
-
-    # Apply the function to filter out rows with no valid numeric values
-    df = df[df.apply(lambda row: row.map(is_valid_number).any(), axis=1)]
-
-    df_clean = df.loc[df["Verwendungszweck"].isin(keep_list)]
-    df_pivot = df_clean.T.reset_index()
-    df_pivot.columns = df_pivot.iloc[0]
-    df_pivot = df_pivot[1:]  # Drop the first row
-    df_pivot.reset_index(drop=True, inplace=True)
-    df_pivot.rename(columns={"Verwendungszweck": "Years"}, inplace=True)
-    df_pivot.Years = df_pivot.Years.astype(int)
-    df_pivot.set_index("Years", inplace=True)
-    return df_pivot
-
-
-def extract_EP2050_industry_data(file_url, zip_name, keep_years):
-    extract_dir = os.path.splitext(zip_name)[0]  # 'data/EP2050_sectors'
-    if not os.path.exists(extract_dir):
-        save_url_to_file(file_url, zip_name)
-
-        # Extract the file
-        os.makedirs(extract_dir, exist_ok=True)
-        with zipfile.ZipFile(zip_name, "r") as zip_ref:
-            zip_ref.extractall(extract_dir)
-
-    file_industry = (
-        extract_dir
-        + "/EP2050+_Szenarienergebnisse_Details_Nachfragesektoren/EP2050+_Detailergebnisse 2020-2060_Industriessektor_alle Szenarien_2022-04-12.xlsx"
-    )
-    df = pd.read_excel(file_industry, sheet_name="02 Industrie WWB")
-
-    keep_list = [
-        "Raumwärme",
-        "Warmwasser",
-        "Prozesswärme",
-        "Beleuchtung",
-        "Klima, Lüftung und Haustechnik",
-        "Antriebe, Prozesse",
-        "Sonstige Verwendungszwecke",
-    ]
-
-    df_clean = clean_df_EP2050(df, keep_list)
     mapping = {
-        "space-heating": ["Raumwärme"],
-        "hot-water": ["Warmwasser"],
-        "process-heat": ["Prozesswärme", "Sonstige Verwendungszwecke"],
-        "lighting": ["Beleuchtung"],
-        "elec": ["Klima, Lüftung und Haustechnik", "Antriebe, Prozesse"],
+        "Country": "Canton",
+        "Years": "Année",
+        "Variables": "Unité d'observation",
+        "Categories1": "Division économique",
     }
-
-    new_cols = []
-    for col in list(df_clean.columns):
-        new_cols.append("ind_energy-end-use_" + col + "[PJ]")
-    df_clean.columns = new_cols
-    df_clean.reset_index(inplace=True)
-    df_clean["Country"] = "Switzerland"
-    dm = DataMatrix.create_from_df(df_clean, num_cat=1)
-
-    dm.groupby(mapping, dim="Categories1", inplace=True)
-    dm.filter({"Years": keep_years}, inplace=True)
-
+    # STAT-TAB API
+    dm = get_data_api_CH(
+        table_id,
+        mode="extract",
+        mapping_dims=mapping,
+        filter=filter,
+        units=["EPT"],
+        language="fr",
+    )
+    dm.rename_col("Equivalents plein temps", "ind_employees", dim="Variables")
+    dm.drop(col_label="Division économique - total", dim="Categories1")
+    with open(file, "wb") as handle:
+        pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
     return dm
 
 
-def extract_EP2050_industry_data(file_url, zip_name, keep_years):  # noqa: F811
-    extract_dir = os.path.splitext(zip_name)[0]  # 'data/EP2050_sectors'
-    if not os.path.exists(extract_dir):
-        save_url_to_file(file_url, zip_name)
+# ======================================================================================
+# Step 1: national energy by branch x fuel
+# ======================================================================================
+def water_waste_own_use(dm_accounts):
+    """NACE 36-39 own energy use by fuel (TWh), years YEARS_OTS.
 
-        # Extract the file
-        os.makedirs(extract_dir, exist_ok=True)
-        with zipfile.ZipFile(zip_name, "r") as zip_ref:
-            zip_ref.extractall(extract_dir)
-
-    file_industry = (
-        extract_dir
-        + "/EP2050+_Szenarienergebnisse_Details_Nachfragesektoren/EP2050+_Detailergebnisse 2020-2060_Industriessektor_alle Szenarien_2022-04-12.xlsx"
-    )
-    df = pd.read_excel(file_industry, sheet_name="02 Industrie WWB")
-
-    keep_list = [
-        "Raumwärme",
-        "Warmwasser",
-        "Prozesswärme",
-        "Beleuchtung",
-        "Klima, Lüftung und Haustechnik",
-        "Antriebe, Prozesse",
-        "Sonstige Verwendungszwecke",
-    ]
-
-    df_clean = clean_df_EP2050(df, keep_list)
+    Waste and biomass fuels are dropped: they are burned in waste incineration plants,
+    which are in simple_waste. Years outside 2000-2022 are held at the edge value.
+    """
+    cat = [c for c in dm_accounts.col_labels["Categories1"] if "36" in c and "39" in c]
+    if len(cat) != 1:
+        raise ValueError(f"Cannot find NACE 36-39 in energy accounts: {cat}")
+    years = dm_accounts.col_labels["Years"]
     mapping = {
-        "space-heating": ["Raumwärme"],
-        "hot-water": ["Warmwasser"],
-        "process-heat": ["Prozesswärme", "Sonstige Verwendungszwecke"],
-        "lighting": ["Beleuchtung"],
-        "elec": ["Klima, Lüftung und Haustechnik", "Antriebe, Prozesse"],
+        "electricity": ["electricity"],
+        "gas": ["gas"],
+        "heating-oil": ["heating-oil"],
+        "coal": ["coal"],
+        "wood": ["wood"],
+        "district-heating": ["district-heating"],
+        "renewables": ["biogas", "renewables"],
+    }
+    df = pd.DataFrame(0.0, index=years, columns=FUELS)
+    for fuel, srcs in mapping.items():
+        for s in srcs:
+            df[fuel] += np.nan_to_num(
+                dm_accounts["Switzerland", :, "bld_energy-by-sector", cat[0], s]
+            )
+    return df.reindex(YEARS_OTS).ffill().bfill()
+
+
+def national_energy(gest, bfe, ep_comb_wwb, ww):
+    """Energy by year x branch x fuel (TWh), summing to GEST T17b per fuel.
+
+    For each fuel, the industry branches share (GEST - water-waste) using the BFE
+    branch split. Before 2013, the split is held at 2013, and for fossil fuels it is
+    shifted with the EP2050+ combustion-emission trend of each branch.
+    """
+    nb, nf = len(BRANCHES), len(FUELS)
+    E = np.zeros((len(YEARS_OTS), nb, nf))
+    bfe_years = sorted(bfe["electricity"].columns)
+    first = bfe_years[0]
+    # Fuels without their own BFE sheet borrow the split of a similar fuel
+    proxy = {"renewables": None, "other-oil": "heating-oil"}
+    for iy, y in enumerate(YEARS_OTS):
+        yb = min(max(y, first), bfe_years[-1])
+        tot_branch = sum(bfe[f][yb] for f in bfe)  # total energy per branch
+        for jf, f in enumerate(FUELS):
+            if f in bfe and bfe[f][yb].sum() > 0:
+                share = bfe[f][yb].copy()
+            elif proxy.get(f) and bfe[proxy[f]][yb].sum() > 0:
+                share = bfe[proxy[f]][yb].copy()
+            else:
+                share = tot_branch.copy()
+            if y < first and f in FOSSIL_FUELS:
+                trend = (
+                    ep_comb_wwb[y].reindex(INDUSTRY_BRANCHES)
+                    / ep_comb_wwb[first].reindex(INDUSTRY_BRANCHES)
+                ).fillna(1.0)
+                share = share * trend
+            share = share.reindex(INDUSTRY_BRANCHES).fillna(0.0)
+            share = share / share.sum()
+            target = gest.loc[y, f] - (0.0 if f in WW_OUTSIDE_GEST else ww.loc[y, f])
+            if target < 0:
+                raise ValueError(f"Water-waste {f} {y} exceeds GEST industry total")
+            E[iy, :12, jf] = share.values * target
+        E[iy, 12, :] = ww.loc[y, FUELS].values
+    return E
+
+
+# ======================================================================================
+# Step 2: emissions
+# ======================================================================================
+def ef_arrays():
+    """Emission-factor arrays [fuel, gas] (Mt/TWh), fossil and biogenic."""
+    ef_f = np.zeros((len(FUELS), len(GASES)))
+    ef_b = np.zeros((len(FUELS), len(GASES)))
+    for jg, gas in enumerate(GASES):
+        for jf, f in enumerate(FUELS):
+            ef_f[jf, jg] = EF_FOSSIL[gas].get(f, 0.0)
+    for jf, f in enumerate(FUELS):
+        ef_b[jf, GASES.index("CO2")] = EF_BIOGENIC_CO2.get(f, 0.0)
+    return ef_f, ef_b
+
+
+def emissions_from_energy(E, process):
+    """E [..., branch, fuel], process [..., branch] -> dict of arrays [..., branch, gas]."""
+    ef_f, ef_b = ef_arrays()
+    comb = E @ ef_f
+    bio = E @ ef_b
+    proc = np.zeros(comb.shape)
+    proc[..., GASES.index("CO2")] = process  # CO2-eq, see EP2050+ Tab. 02-04
+    return {"combustion": comb, "biogenic": bio, "process": proc}
+
+
+def total_co2(E, process):
+    em = emissions_from_energy(E, process)
+    ico2 = GASES.index("CO2")
+    return em["combustion"][..., ico2] + em["biogenic"][..., ico2] + process
+
+
+# ======================================================================================
+# Step 3: cantonal allocation
+# ======================================================================================
+def fte_shares(dm_employees):
+    """FTE share of each canton in each branch, array [canton, year, branch].
+
+    STATENT covers 2011-2022; shares are held constant outside that range.
+    """
+    dm = dm_employees.copy()
+    dm.drop("Country", "Suisse")
+    rename_cantons(dm)
+    dm.sort("Country")
+    if dm.col_labels["Country"] != sorted(CANTONS):
+        raise ValueError("FTE cantons do not match the canton list")
+    codes = [c[:2] for c in dm.col_labels["Categories1"]]
+    years = dm.col_labels["Years"]
+    arr = np.nan_to_num(dm.array[:, :, 0, :])  # canton, year, noga
+    out = np.zeros((len(CANTONS), len(YEARS_OTS), len(BRANCHES)))
+    for ib, b in enumerate(BRANCHES):
+        idx = [i for i, c in enumerate(codes) if c in FTE_NOGA[b]]
+        fte = arr[:, :, idx].sum(axis=2)
+        share = fte / fte.sum(axis=0, keepdims=True)
+        for iy, y in enumerate(YEARS_OTS):
+            yy = min(max(y, years[0]), years[-1])
+            out[:, iy, ib] = share[:, years.index(yy)]
+    return out
+
+
+def allocate_to_cantons(E_nat, proc_nat, share_fte, prtr):
+    """Split national energy and process emissions to cantons.
+
+    For each branch and year: canton CO2 = PRTR CO2 + remainder x FTE share, and
+    combustion fuels and process emissions follow these canton shares. Electricity,
+    district heat and renewables follow FTE. Before the first PRTR year the shares of
+    the first PRTR year are used. Returns (E_c, proc_c, weights, violations).
+    """
+    nc, ny, nb = share_fte.shape
+    T = total_co2(E_nat, proc_nat)  # [year, branch]
+    w = share_fte.copy()
+    prtr_years = [iy for iy in range(ny) if not np.isnan(prtr[0, iy, 0])]
+    violations = []
+    for iy in prtr_years:
+        for ib in range(nb):
+            P = prtr[:, iy, ib]
+            if P.sum() == 0:
+                continue
+            rem = T[iy, ib] - P.sum()
+            if rem < 0:
+                violations.append((YEARS_OTS[iy], BRANCHES[ib], T[iy, ib], P.sum()))
+            co2_c = P + max(rem, 0.0) * share_fte[:, iy, ib]
+            w[:, iy, ib] = co2_c / co2_c.sum()
+    if prtr_years:
+        first = prtr_years[0]
+        for iy in range(first):
+            w[:, iy, :] = w[:, first, :]
+    E_c = np.zeros((nc,) + E_nat.shape)
+    is_comb = np.array([f in COMBUSTION_FUELS for f in FUELS])
+    E_c[..., is_comb] = w[..., None] * E_nat[None, ..., is_comb]
+    E_c[..., ~is_comb] = share_fte[..., None] * E_nat[None, ..., ~is_comb]
+    proc_c = w * proc_nat[None, ...]
+    return E_c, proc_c, w, violations
+
+
+# ======================================================================================
+# Step 4: forecast
+# ======================================================================================
+def ep2050_ratios(sheet):
+    """EP2050+ trajectories of one scenario relative to the base year."""
+    tot = gd.read_ep2050_table(sheet, 1).loc["Summe"]
+    elec = gd.read_ep2050_table(sheet, 2).loc["Summe"]
+    comb = gd.read_ep2050_branch_table(sheet, 3)
+    proc = gd.read_ep2050_branch_table(sheet, 4)
+
+    def rel(df):
+        base = df[BASE_YEAR]
+        r = df.div(base.replace(0, np.nan), axis=0).fillna(1.0)
+        return r.clip(lower=0.0)  # ZERO nets out CCS: negative -> 0 fuel use
+
+    return {
+        "total": tot / tot[BASE_YEAR],
+        "electricity": elec / elec[BASE_YEAR],
+        "combustion": rel(comb),
+        "process": rel(proc),
     }
 
-    new_cols = []
-    for col in list(df_clean.columns):
-        new_cols.append("ind_energy-end-use_" + col + "[PJ]")
-    df_clean.columns = new_cols
-    df_clean.reset_index(inplace=True)
-    df_clean["Country"] = "Switzerland"
-    dm = DataMatrix.create_from_df(df_clean, num_cat=1)
 
-    dm.groupby(mapping, dim="Categories1", inplace=True)
-    dm.filter({"Years": keep_years}, inplace=True)
-
-    return dm
-
-
-def distribute_fuels_by_end_use(dm_cantons_ind_wo_process, dm_end_use_others):
-    # Electricity first
-    dm_cantons_elec = dm_cantons_ind_wo_process.filter({"Categories2": ["electricity"]})
-    dm_light_elec_end_use = dm_end_use_others.filter(
-        {"Categories1": ["lighting", "elec"]}
-    )
-    dm_light_elec_end_use.normalise("Categories1", inplace=True)
-    arr = (
-        dm_cantons_elec[
-            :,
-            :,
-            "bld_energy-by-sector",
-            "industry-wo-process-heat",
-            np.newaxis,
-            :,
-            np.newaxis,
-        ]
-        * dm_light_elec_end_use[
-            0, np.newaxis, :, "ind_energy-end-use", np.newaxis, np.newaxis, :
-        ]
-    )
-    dm_cantons_end_use_tmp = DataMatrix.based_on(
-        arr[:, :, np.newaxis, ...],
-        format=dm_cantons_elec,
-        change={
-            "Categories3": dm_light_elec_end_use.col_labels["Categories1"],
-            "Variables": ["ind_energy-end-use"],
-        },
-        units={"ind_energy-end-use": "TWh"},
-    )
-
-    # Distribute all other fuels by end-use
-    dm_cantons_ind_wo_process.drop("Categories2", "electricity")
-    dm_end_use_not_elec = dm_end_use_others.filter(
-        {"Categories1": ["hot-water", "space-heating"]}
-    )
-    dm_end_use_not_elec.normalise("Categories1", inplace=True)
-    arr = (
-        dm_cantons_ind_wo_process[
-            :,
-            :,
-            "bld_energy-by-sector",
-            "industry-wo-process-heat",
-            np.newaxis,
-            :,
-            np.newaxis,
-        ]
-        * dm_end_use_not_elec[
-            0, np.newaxis, :, "ind_energy-end-use", np.newaxis, np.newaxis, :
-        ]
-    )
-    dm_cantons_end_use = DataMatrix.based_on(
-        arr[:, :, np.newaxis, ...],
-        format=dm_cantons_ind_wo_process,
-        change={
-            "Categories3": dm_end_use_not_elec.col_labels["Categories1"],
-            "Variables": ["ind_energy-end-use"],
-        },
-        units={"ind_energy-end-use": "TWh"},
-    )
-
-    fuels_list = dm_cantons_end_use.col_labels["Categories2"]
-    dm_cantons_end_use_tmp.add(0, dummy=True, col_label=fuels_list, dim="Categories2")
-    dm_cantons_end_use.add(0, dummy=True, col_label="electricity", dim="Categories2")
-    dm_cantons_end_use.append(dm_cantons_end_use_tmp, dim="Categories3")
-    return dm_cantons_end_use
-
-
-def create_industry_energy_demand_by_canton_fuel_enduse(dm_c_s_f, dm_end_use):
-    # dm_c_f_s contains energy demand by canton, by sector and by fuel type
-    # dm_ind_end_use contains information on the final end-use of energy
-    # (lighting,electricity,hotwater,space-heating,process-heating) for the industrial sector
-    # Here we are going to focus on industry only
-    dm_end_use.filter({"Years": dm_c_s_f.col_labels["Years"]}, inplace=True)
-    dm_cantons_ind_wo_process = dm_c_s_f.filter(
-        {"Categories1": ["industry-wo-process-heat"]}
-    )
-    dm_end_use_process = dm_end_use.filter({"Categories1": ["process-heat"]})  # noqa: F841
-    dm_end_use_others = dm_end_use.copy()
-    dm_end_use_others.drop("Categories1", "process-heat")
-
-    # For OTHERS (non process heat)
-    dm_cantons_end_use_wo_process = distribute_fuels_by_end_use(  # noqa: F841
-        dm_cantons_ind_wo_process, dm_end_use_others
-    )
-
-    # Compute Space-Heating and Hot-water demand by fuel in industry-w-process-heat
-    # using industry-wo-process-heat as a proxy
-    # Ewop_end-use -> Ewp_end-use
-    # I could also then have the split of hot-water and space-heating by fuel
-
-    return
-
-
-def extract_heating_technologies(table_id, file):
-    # Domaine de l'énergie: bâtiments selon le canton, le type de bâtiment, l'époque de construction, le type de chauffage,
-    # la production d'eau chaude, les agents énergétiques utilisés pour le chauffage et l'eau chaude, 1990 et 2000
-    try:
-        with open(file, "rb") as handle:
-            dm_heating = pickle.load(handle)
-    except OSError:
-        structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-        # Extract buildings floor area
-        filter = structure.copy()
-        filter["Catégorie de bâtiment"] = [
-            "Bâtiments partiellement à usage d'habitation",
-            "Bâtiments d'habitation avec usage annexe",
-        ]
-        mapping_dim = {
-            "Country": "Canton",
-            "Years": "Année",
-            "Variables": "Catégorie de bâtiment",
-            "Categories1": "Source d'énergie du chauffage",
-        }
-        unit_all = ["number"] * len(structure["Catégorie de bâtiment"])
-        dm_heating = None
-        tot_bld = 0  # noqa: F841
-        for a in structure["Source d'énergie de l'eau chaude"]:
-            filter["Source d'énergie de l'eau chaude"] = [a]
-            dm_heating_t = get_data_api_CH(
-                table_id,
-                mode="extract",
-                filter=filter,
-                mapping_dims=mapping_dim,
-                units=unit_all,
-                language="fr",
-            )
-            if dm_heating is None:
-                dm_heating = dm_heating_t.copy()
-            else:
-                dm_heating.array += dm_heating_t.array
-
-        dm_heating.rename_col(["Suisse"], ["Switzerland"], dim="Country")
-        dm_heating.groupby(
-            {"bld_households_space-heating": ".*"},
-            regex=True,
-            dim="Variables",
-            inplace=True,
+def project(E_base, proc_base, ratios):
+    """Project base-year canton values [canton, branch, fuel] to YEARS_FTS."""
+    nc, nb, nf = E_base.shape
+    E = np.zeros((nc, len(YEARS_FTS), nb, nf))
+    proc = np.zeros((nc, len(YEARS_FTS), nb))
+    je = FUELS.index("electricity")
+    is_fossil = np.array([f in FOSSIL_FUELS for f in FUELS])
+    is_other = ~is_fossil
+    is_other[je] = False
+    ind = slice(0, 12)
+    for iy, y in enumerate(YEARS_FTS):
+        r_comb = ratios["combustion"][y].reindex(BRANCHES).values  # per branch
+        r_proc = ratios["process"][y].reindex(BRANCHES).values
+        E[:, iy, :, je] = E_base[:, :, je] * ratios["electricity"][y]
+        E[:, iy][..., is_fossil] = E_base[..., is_fossil] * r_comb[None, :, None]
+        # Non-electric, non-fossil fuels of the industry branches take what is left
+        # of the EP2050+ total energy trajectory (one factor for all branches).
+        target = E_base[:, ind].sum() * ratios["total"][y]
+        rest = target - E[:, iy, ind, je].sum() - E[:, iy, ind][..., is_fossil].sum()
+        other_base = E_base[:, ind][..., is_other].sum()
+        k = max(rest, 0.0) / other_base if other_base > 0 else 1.0
+        E[:, iy, ind, :] = np.where(
+            is_other[None, None, :], E_base[:, ind, :] * k, E[:, iy, ind, :]
         )
-
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, file)
-        with open(f, "wb") as handle:
-            pickle.dump(dm_heating, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    dm_heating.groupby({"other": ["Autre", "Aucune"]}, dim="Categories1", inplace=True)
-    dm_heating.rename_col(
-        [
-            "Mazout",
-            "Bois",
-            "Pompe à chaleur",
-            "Electricité",
-            "Gaz",
-            "Chaleur produite à distance",
-            "Soleil (thermique)",
-        ],
-        [
-            "heating-oil",
-            "wood",
-            "heat-pump",
-            "electricity",
-            "gas",
-            "district-heating",
-            "solar",
-        ],
-        dim="Categories1",
-    )
-    # dm_heating.normalise('Categories1', inplace=True)
-    return dm_heating
-
-
-def extract_hotwater_technologies(table_id, file):
-    # Domaine de l'énergie: bâtiments selon le canton, le type de bâtiment, l'époque de construction, le type de chauffage,
-    # la production d'eau chaude, les agents énergétiques utilisés pour le chauffage et l'eau chaude, 1990 et 2000
-    try:
-        with open(file, "rb") as handle:
-            dm_hw = pickle.load(handle)
-    except OSError:
-        structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-        # Extract buildings floor area
-        filter = structure.copy()
-        filter["Catégorie de bâtiment"] = [
-            "Bâtiments partiellement à usage d'habitation",
-            "Bâtiments d'habitation avec usage annexe",
-        ]
-        mapping_dim = {
-            "Country": "Canton",
-            "Years": "Année",
-            "Variables": "Catégorie de bâtiment",
-            "Categories1": "Source d'énergie de l'eau chaude",
-        }
-        unit_all = ["number"] * len(structure["Catégorie de bâtiment"])
-        dm_hw = None
-        tot_bld = 0  # noqa: F841
-        for a in structure["Source d'énergie du chauffage"]:
-            filter["Source d'énergie du chauffage"] = [a]
-            dm_hw_t = get_data_api_CH(
-                table_id,
-                mode="extract",
-                filter=filter,
-                mapping_dims=mapping_dim,
-                units=unit_all,
-                language="fr",
-            )
-            if dm_hw is None:
-                dm_hw = dm_hw_t.copy()
-            else:
-                dm_hw.array += dm_hw_t.array
-
-        dm_hw.rename_col(["Suisse"], ["Switzerland"], dim="Country")
-        dm_hw.groupby(
-            {"bld_households_hot-water": ".*"},
-            regex=True,
-            dim="Variables",
-            inplace=True,
+        # water-waste: only electricity follows EP2050+; other fuels held constant
+        E[:, iy, 12, :] = np.where(
+            is_other | is_fossil, E_base[:, 12, :], E[:, iy, 12, :]
         )
-
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, file)
-        with open(f, "wb") as handle:
-            pickle.dump(dm_hw, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    dm_hw.groupby({"other": ["Autre", "Aucune"]}, dim="Categories1", inplace=True)
-    dm_hw.rename_col(
-        [
-            "Mazout",
-            "Bois",
-            "Pompe à chaleur",
-            "Electricité",
-            "Gaz",
-            "Chaleur produite à distance",
-            "Soleil (thermique)",
-        ],
-        [
-            "heating-oil",
-            "wood",
-            "heat-pump",
-            "electricity",
-            "gas",
-            "district-heating",
-            "solar",
-        ],
-        dim="Categories1",
-    )
-    # dm_hw.normalise('Categories1', inplace=True)
-    return dm_hw
+        proc[:, iy, :] = proc_base * r_proc[None, :]
+    return E, proc
 
 
-def map_eud_by_canton(dm_employees_mapped, dm_industry_energy_end_use):
-    # First map all end-use except process heat
-    dm_employees_ind = dm_employees_mapped.groupby(
-        {"industry": ["industry-w-process-heat", "industry-wo-process-heat"]},
-        inplace=False,
-        dim="Categories1",
-    )
-    dm_employees_ind.normalise("Country")
-    arr = (
-        dm_industry_energy_end_use[
-            "Switzerland", np.newaxis, :, "ind_energy-end-use", :
-        ]
-        * dm_employees_ind[:, :, "ind_employees", "industry", np.newaxis]
-    )
-    dm_industry_eud_canton = DataMatrix.based_on(
-        arr[:, :, np.newaxis, ...],
-        format=dm_industry_energy_end_use,
-        change={"Country": dm_employees_ind.col_labels["Country"]},
-        units={"ind_energy-end-use": "TWh"},
-    )
-    # Drop process heat
-    dm_industry_eud_canton.drop("Categories1", "process-heat")
-    # Secondly map process heat
-    """dm_employees_process = dm_employees_mapped.filter({'Categories1': ['industry-w-process-heat']})
-    dm_employees_process.normalise('Country')
-    arr = dm_industry_energy_end_use['Switzerland', np.newaxis, :, 'ind_energy-end-use', :] \
-          * dm_employees_process[:, :, 'ind_employees', 'industry-w-process-heat', np.newaxis]
-    dm_industry_process_canton = DataMatrix.based_on(arr[:, :, np.newaxis, ...], format=dm_industry_energy_end_use,
-                                                     change={'Country': dm_employees_process.col_labels['Country']},
-                                                     units={'ind_energy-end-use': 'TWh'})
-    dm_industry_process_canton.filter({'Categories1': ['process-heat']}, inplace=True)
-
-    dm_industry_eud_canton.append(dm_industry_process_canton, dim='Categories1')"""
-
-    return dm_industry_eud_canton
-
-
-def map_services_eud_by_canton(dm_employees_mapped, dm_services_end_use):
-    # First map all end-use except process heat
-    dm_employees = dm_employees_mapped.filter(
-        {"Categories1": ["services"]}, inplace=False
-    )
-    dm_employees.normalise("Country")
-    arr = (
-        dm_services_end_use["Switzerland", np.newaxis, :, "enr_services-energy-eud", :]
-        * dm_employees[:, :, "ind_employees", "services", np.newaxis]
-    )
-    dm = DataMatrix.based_on(
-        arr[:, :, np.newaxis, ...],
-        format=dm_services_end_use,
-        change={"Country": dm_employees.col_labels["Country"]},
-        units={"srv_energy-end-use": "TWh"},
-    )
-
-    return dm
-
-
-def split_fuel_demand_by_eud(
-    dm_water, dm_space_heat, dm_industry_eud_canton, cantonal=True
-):
-    dm_fuel_split = dm_water.copy()
-    dm_fuel_split.append(dm_space_heat, dim="Categories1")
-
-    # Electricity and Lighting
-    dm_elec = dm_industry_eud_canton.filter({"Categories1": ["elec", "lighting"]})
-    var = dm_elec.col_labels["Variables"][0]
-    dm_elec.rename_col(var, var + "_electricity", dim="Variables")
-    dm_elec.deepen(based_on="Variables")
-
-    # Space-heat and Hot water
-    if cantonal:
-        dm_fuel_split.drop("Country", "Switzerland")
-    dm_hw_sp = dm_industry_eud_canton.filter(
-        {"Categories1": ["hot-water", "space-heating"]}
-    )
-    var = dm_hw_sp.col_labels["Variables"][0]
-    if dm_fuel_split.col_labels["Country"] == dm_hw_sp.col_labels["Country"]:
-        arr = (
-            dm_hw_sp[:, :, var, :, np.newaxis]
-            * dm_fuel_split[:, :, "bld_households", :, :]
-        )
-        dm_fuel_split.add(arr, dim="Variables", col_label=var, unit="TWh")
-    else:
-        raise ValueError(
-            "dm_water and dm_industry_eud_canton don't have the same country list"
-        )
-
-    dm_fuels_eud_cantons = dm_elec.copy()
-    dummy_cat = list(
-        set(dm_fuel_split.col_labels["Categories2"])
-        - set(dm_fuels_eud_cantons.col_labels["Categories2"])
-    )
-    dm_fuels_eud_cantons.add(0, dim="Categories2", col_label=dummy_cat, dummy=True)
-    dm_fuels_eud_cantons.append(
-        dm_fuel_split.filter({"Variables": [var]}), dim="Categories1"
-    )
-
-    return dm_fuels_eud_cantons
-
-
-def add_process_heat_demand(
-    dm_fuels_eud_cantons, dm_fuels_cantons, years_ots, cantonal=True
-):
-    dm_ind_fuels = dm_fuels_cantons.groupby(
-        {"total": "industry.*"}, regex=True, inplace=False, dim="Categories1"
-    )
-    dm_ind_fuels.rename_col(
-        "bld_energy-by-sector", "ind_energy-end-use", dim="Variables"
-    )
-    missing_fuels = list(
-        set(dm_ind_fuels.col_labels["Categories2"])
-        - set(dm_fuels_eud_cantons.col_labels["Categories2"])
-    )
-    dm_fuels_eud_cantons.add(0, dim="Categories2", dummy=True, col_label=missing_fuels)
-    dm_fuels_eud_cantons.sort("Categories2")
-    missing_fuels = list(
-        set(dm_fuels_eud_cantons.col_labels["Categories2"])
-        - set(dm_ind_fuels.col_labels["Categories2"])
-    )
-    dm_ind_fuels.add(0, dim="Categories2", dummy=True, col_label=missing_fuels)
-    dm_ind_fuels.sort("Categories2")
-    dm_non_proc = dm_fuels_eud_cantons.groupby(
-        {"non-process": ".*"}, dim="Categories1", inplace=False, regex=True
-    )
-    if cantonal:
-        dm_ind_fuels.drop("Country", "Switzerland")
-    dm_ind_fuels.add(
-        np.nan,
-        dim="Years",
-        col_label=list(set(years_ots) - set(dm_ind_fuels.col_labels["Years"])),
-        dummy=True,
-    )
-    dm_ind_fuels.fill_nans("Years")
-    dm_ind_fuels.append(dm_non_proc, dim="Categories1")
-    dm_ind_fuels.operation(
-        "total", "-", "non-process", dim="Categories1", out_col="process-heat"
-    )
-    dm_fuels_eud_cantons.append(
-        dm_ind_fuels.filter({"Categories1": ["process-heat"]}), dim="Categories1"
-    )
-    return dm_fuels_eud_cantons
-
-
-def adjust_based_on_efficiency(dm, dm_eff, years_ots):
-    dm_eff.filter(
-        {"Categories1": dm.col_labels["Categories1"], "Years": years_ots}, inplace=True
-    )
-    dm_eff.sort("Categories1")
-    dm.sort("Categories1")
-    var_name = dm.col_labels["Variables"][0]
-    if dm_eff.col_labels["Categories1"] == dm.col_labels["Categories1"]:
-        arr = dm[:, :, 0, :] / dm_eff[:, :, "bld_efficiency", :]
-        dm.add(arr, dim="Variables", col_label="bld_adj", unit="number")
-        dm.filter({"Variables": ["bld_adj"]}, inplace=True)
-        dm.normalise("Categories1")
-        dm.rename_col("bld_adj", var_name, dim="Variables")
-    else:
-        raise ValueError("dm_eff does not have the same fuel categories")
-    return dm
-
-
-def fix_negative_values(dm_fuels_eud_cantons):
-    err = np.minimum(0, dm_fuels_eud_cantons.array[...])
-    err[np.isnan(err)] = 0
-    dm_fuels_eud_cantons.array[...] = np.maximum(0, dm_fuels_eud_cantons.array[...])
-    dm_fuels_eud_cantons.fill_nans("Years")
-    mask = np.isnan(dm_fuels_eud_cantons.array)
-    dm_fuels_eud_cantons.array[mask] = 0
-    return dm_fuels_eud_cantons
-
-
-def compute_ind_energy_eud_fuels(
-    dm_energy, dm_industry_energy_end_use, dm_water_CH, dm_space_heat_CH, years_ots
-):
-    # Group all industrial energy demand
-    dm_ind_fuels = dm_energy.filter(
-        {
-            "Categories1": [
-                " 0509 Industries extractives",
-                " 1033 Industrie manufacturière",
-                " 3639 Production et distribution d'eau; gestion des déchets",
-                " 4143 Construction",
-            ]
-        }
-    )
-    dm_ind_fuels.groupby(
-        {"industry": ".*"}, regex=True, dim="Categories1", inplace=True
-    )
-
-    dm = split_fuel_demand_by_eud(
-        dm_water_CH, dm_space_heat_CH, dm_industry_energy_end_use, cantonal=False
-    )
-    dm_out = add_process_heat_demand(dm, dm_ind_fuels, years_ots, cantonal=False)
-
-    return dm_out
-
-
-def load_services_energy_demand_eud(dict_services, years_ots):
-    dict_services.pop("Total")
+# ======================================================================================
+# Outputs
+# ======================================================================================
+def make_dm(arr, variables, cat1, cat2, units, countries, years):
+    """arr [country, year, variable, cat1, cat2] -> DataMatrix."""
     dm = DataMatrix(
         col_labels={
-            "Country": ["Switzerland"],
-            "Years": years_ots,
-            "Variables": ["enr_services-energy-eud"],
-            "Categories1": list(dict_services.keys()),
+            "Country": countries,
+            "Years": years,
+            "Variables": variables,
+            "Categories1": cat1,
+            "Categories2": cat2,
         },
-        units={"enr_services-energy-eud": "PJ"},
+        units=units,
     )
-    for key, years_values in dict_services.items():
-        for year, value in years_values.items():
-            dm[:, year, :, key] = value
-
-    dm.fill_nans("Years")
-    dm.groupby(
-        {
-            "elec": [
-                "ICT and entertainment media",
-                "HVAC and building tech",
-                "Drives and processes",
-            ]
-        },
-        inplace=True,
-        dim="Categories1",
-    )
-    dm.drop(dim="Categories1", col_label=["Other", "process-heat"])
-
-    dm.change_unit("enr_services-energy-eud", 3.6, "PJ", "TWh", operator="/")
+    dm.array = arr
+    dm.sort("Country")  # alphabetical, Switzerland included (as in other pickles)
     return dm
 
 
-def adjust_based_on_FSO_energy_consumption(
-    dm_fuels_cantons, dm_services_fuels_eud_cantons, years_ots
-):
-    dm_eud_shares = dm_services_fuels_eud_cantons.normalise(
-        "Categories1", inplace=False
+def with_switzerland(arr):
+    """Append the Swiss total (sum of cantons) as the last country."""
+    return np.concatenate([arr, arr.sum(axis=0, keepdims=True)], axis=0)
+
+
+def build_dms(E, proc, years):
+    """E [canton, year, branch, fuel], proc [canton, year, branch] -> energy, emissions dm."""
+    countries = CANTONS + ["Switzerland"]
+    dm_energy = make_dm(
+        with_switzerland(E)[:, :, None, :, :],
+        ["ind_energy-demand"],
+        BRANCHES,
+        FUELS,
+        {"ind_energy-demand": "TWh"},
+        countries,
+        years,
     )
-    dm_OFS_fuels = dm_fuels_cantons.groupby(
-        {"total": "services"}, regex=True, inplace=False, dim="Categories1"
-    )
-    dm_OFS_fuels.rename_col(
-        "bld_energy-by-sector", "srv_energy-end-use", dim="Variables"
-    )
-    missing_fuels = list(
-        set(dm_OFS_fuels.col_labels["Categories2"])
-        - set(dm_eud_shares.col_labels["Categories2"])
-    )
-    dm_eud_shares.add(0, dim="Categories2", dummy=True, col_label=missing_fuels)
-    # Attribute the missing fuels to space-heat
-    for fuel in missing_fuels:
-        dm_eud_shares[:, :, :, "space-heating", fuel] = 1
-    dm_eud_shares.sort("Categories2")
-    missing_fuels_2 = list(
-        set(dm_eud_shares.col_labels["Categories2"])
-        - set(dm_OFS_fuels.col_labels["Categories2"])
-    )
-    dm_OFS_fuels.add(np.nan, dim="Categories2", dummy=True, col_label=missing_fuels_2)
-    dm_OFS_fuels.sort("Categories2")
-
-    dm_OFS_fuels.filter({"Country": dm_eud_shares.col_labels["Country"]}, inplace=True)
-
-    # Add missing years
-    missing_years = list(set(years_ots) - set(dm_OFS_fuels.col_labels["Years"]))
-    dm_OFS_fuels.add(np.nan, dim="Years", col_label=missing_years, dummy=True)
-    dm_OFS_fuels.fill_nans("Years")
-    dm_OFS_fuels.sort("Years")
-
-    arr = (
-        dm_OFS_fuels[:, :, "srv_energy-end-use", "total", np.newaxis, :]
-        * dm_eud_shares[:, :, "enr_services-energy-eud_share", :, :]
-    )
-
-    dm_eud_shares.add(
-        arr, dim="Variables", col_label="enr_services-energy-eud", unit="TWh"
-    )
-    dm_eud_shares.filter({"Variables": ["enr_services-energy-eud"]}, inplace=True)
-
-    for fuel in missing_fuels_2:
-        dm_eud_shares[:, :, :, :, fuel] = dm_services_fuels_eud_cantons[
-            :, :, :, :, fuel
-        ]
-    return dm_eud_shares
-
-
-def run():
-    # ---------------------------------------------------------------------------------
-    years_ots = create_years_list(1990, 2023, 1)
-    years_fts = create_years_list(2025, 2050, 5)
-
-    ######################################
-    ##   INDUSTRY TO ENERGY INTERFACE   ##
-    ######################################
-
-    # Extract energy demand by sector at national level by fuel
-    table_id = "px-x-0204000000_106"
-    local_filename = "data/energy_accounts_economy_households.pickle"
-    # Industry sectors linked to energy, like energy production and waste management, have been removed or edited
-    # Remove gasoline and diesel which are for transport / machinery
-    dm_energy = extract_national_energy_demand(table_id, local_filename)
-
-    # SECTION: Extract final energy consumption by end use in CH (Prognos)
-    # Industry energy demand by end-use (lighting, electricity, space-heating, process-heat, hot-water)
-    # Energy Perspective 2050 data
-    file_url = "https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA0NDE=.html"
-    zip_name = "data/EP2050_sectors.zip"
-    dm_industry_energy_end_use = extract_EP2050_industry_data(
-        file_url, zip_name, years_ots + years_fts
-    )
-    dm_industry_energy_end_use.change_unit(
-        "ind_energy-end-use", old_unit="PJ", new_unit="TWh", factor=3.6, operator="/"
-    )
-    dm_industry_energy_end_use_fts = dm_industry_energy_end_use.filter(  # noqa: F841
-        {"Years": years_fts}
-    )
-    dm_industry_energy_end_use.filter({"Years": years_ots}, inplace=True)
-
-    # SECTION: Extract number of employees per industry and service sector by canton
-    # This is in order to map the national energy demand to cantons
-    table_id = "px-x-0602010000_101"
-    local_filename = "data/employees_per_sector_canton.pickle"
-    dm_employees = extract_employees_per_sector_canton(table_id, local_filename)
-
-    # Group employees by sector and canton (dm_employees_mapped)
-    dm_fuels_cantons, dm_employees_mapped = (
-        map_national_energy_demand_by_sector_to_cantons(
-            dm_energy, dm_employees, years_ots
-        )
-    )
-
-    # SECTION: Distribute energy by end-use by canton based on number of employees (except for process-heat)
-    dm_industry_eud_canton = map_eud_by_canton(
-        dm_employees_mapped, dm_industry_energy_end_use
-    )
-
-    # SECTION: Get residential Hot water and Space heating fuel split per canton
-    # !FIXME extract also 1990 and 2000
-    table_id = "px-x-0902010000_102"
-    file_sh = "data/bld_heating_technology_2021-2023.pickle"
-    dm_space_heat = extract_heating_technologies(table_id, file_sh)
-    # Add missing years
-    dm_space_heat.add(
-        np.nan,
-        dummy=True,
-        dim="Years",
-        col_label=list(set(years_ots) - set(dm_space_heat.col_labels["Years"])),
-    )
-    dm_space_heat.sort("Years")
-    dm_space_heat.fill_nans("Years")
-
-    file_hw = "data/bld_hotwater_technology_2021-2023.pickle"
-    dm_water = extract_hotwater_technologies(table_id, file_hw)
-    # Add missing years
-    dm_water.add(
-        np.nan,
-        dummy=True,
-        dim="Years",
-        col_label=list(set(years_ots) - set(dm_water.col_labels["Years"])),
-    )
-    dm_water.sort("Years")
-    dm_water.fill_nans("Years")
-
-    # Add efficiencies
-    # data_file = "../../../data/datamatrix/buildings.pickle"
-    # with open(data_file, 'rb') as handle:
-    #    DM_bld = pickle.load(handle)
-
-    # SECTION: Get efficiency of residential space-heating from pickle
-    data_file = "../../../data/interface/buildings_to_energy.pickle"
-    with open(data_file, "rb") as handle:
-        dm_eff = pickle.load(handle)
-    dm_eff = dm_eff["households_heating"]
-    dm_eff.filter({"Country": ["Switzerland"]}, inplace=True)
-    dm_eff.operation(
-        "bld_heating",
-        "/",
-        "bld_energy-demand_heating",
-        out_col="bld_efficiency",
-        unit="%",
-    )
-    dm_eff.filter({"Variables": ["bld_efficiency"]}, inplace=True)
-    dm_eff.fill_nans("Years")
-    dm_eff[:, :, "bld_efficiency", "electricity"] = 1.0
-
-    # It helps going from number of buildings to an estimate of the demand by fuel
-    # The share of number of buildings by heating technology,
-    # is a proxy of the useful energy demand split by heating technology.
-    # By adjusting for efficiency, it is as if we were rather looking at a
-    # final energy consumption split
-    if "other" not in dm_eff.col_labels["Categories1"]:
-        dm_eff.add(0.6, dim="Categories1", col_label="other", dummy=True)
-    dm_space_heat = adjust_based_on_efficiency(dm_space_heat, dm_eff, years_ots)
-    dm_water = adjust_based_on_efficiency(dm_water, dm_eff, years_ots)
-
-    dm_water.deepen(based_on="Variables")
-    dm_water.switch_categories_order()
-    dm_space_heat.deepen(based_on="Variables")
-    dm_space_heat.switch_categories_order()
-
-    # Filter for CH
-    dm_water_CH = dm_water.filter({"Country": ["Switzerland"]})
-    dm_space_heat_CH = dm_space_heat.filter({"Country": ["Switzerland"]})
-
-    # SECTION: Distribute industry energy consumption by end use by fuel for hot-water and space-heating
-    dm_fuels_eud_cantons = split_fuel_demand_by_eud(
-        dm_water, dm_space_heat, dm_industry_eud_canton
-    )
-
-    # SECTION: Add process-heat energy consumption
-    # !FIXME heat-pump and electricity are off, use COP to normalise - Also compute Switzerland
-    dm_fuels_eud_cantons = add_process_heat_demand(
-        dm_fuels_eud_cantons, dm_fuels_cantons, years_ots
-    )
-
-    dm_fuels_eud_cantons = fix_negative_values(dm_fuels_eud_cantons)
-
-    ## Compute for all of CH
-    dm_fuels_eud_CH = compute_ind_energy_eud_fuels(
-        dm_energy, dm_industry_energy_end_use, dm_water_CH, dm_space_heat_CH, years_ots
-    )
-
-    dm_fuels_eud_cantons.append(dm_fuels_eud_CH, dim="Country")
-
-    # SECTION: Adjust canton names
-    dm_fuels_eud_cantons.sort("Country")
-    dm_fuels_eud_cantons.rename_col_regex(" /.*", "", dim="Country")
-    dm_fuels_eud_cantons.rename_col_regex("-", " ", dim="Country")
-    cantons_en = [
-        "Aargau",
-        "Appenzell Ausserrhoden",
-        "Appenzell Innerrhoden",
-        "Basel Landschaft",
-        "Basel Stadt",
-        "Bern",
-        "Fribourg",
-        "Geneva",
-        "Glarus",
-        "Graubünden",
-        "Jura",
-        "Lucerne",
-        "Neuchâtel",
-        "Nidwalden",
-        "Obwalden",
-        "Schaffhausen",
-        "Schwyz",
-        "Solothurn",
-        "St. Gallen",
-        "Thurgau",
-        "Ticino",
-        "Uri",
-        "Valais",
-        "Vaud",
-        "Zug",
-        "Zurich",
-    ]
-    cantons_fr = [
-        "Aargau",
-        "Appenzell Ausserrhoden",
-        "Appenzell Innerrhoden",
-        "Basel Landschaft",
-        "Basel Stadt",
-        "Bern",
-        "Fribourg",
-        "Genève",
-        "Glarus",
-        "Graubünden",
-        "Jura",
-        "Luzern",
-        "Neuchâtel",
-        "Nidwalden",
-        "Obwalden",
-        "Schaffhausen",
-        "Schwyz",
-        "Solothurn",
-        "St. Gallen",
-        "Thurgau",
-        "Ticino",
-        "Uri",
-        "Valais",
-        "Vaud",
-        "Zug",
-        "Zürich",
-    ]
-    dm_fuels_eud_cantons.rename_col(cantons_fr, cantons_en, dim="Country")
-    dm_fuels_eud_cantons.add(np.nan, dummy=True, dim="Years", col_label=years_fts)
-
-    # SECTION: Add forecasting based on population
-    dm_pop = load_pop(
-        country_list=dm_fuels_eud_cantons.col_labels["Country"],
-        years_list=years_ots + years_fts,
-    )
-
-    # Forecast based on linear extrapolation of TWh/cap x population
-    arr = (
-        dm_fuels_eud_cantons[:, :, :, :, :]
-        / dm_pop[:, :, 0, np.newaxis, np.newaxis, np.newaxis]
-    )
-    dm_tmp = DataMatrix.based_on(
+    em = emissions_from_energy(E, proc)
+    names = {
+        "combustion": "ind_emissions-combustion",
+        "biogenic": "ind_emissions-biogenic",
+        "process": "ind_emissions-process",
+    }
+    arr = np.stack([with_switzerland(em[k]) for k in names], axis=2)
+    dm_em = make_dm(
         arr,
-        format=dm_fuels_eud_cantons,
-        change={"Variables": ["ind_cap", "srv_cap"]},
-        units={"ind_cap": "TWh/cap", "srv_cap": "TWh/cap"},
+        list(names.values()),
+        BRANCHES,
+        GASES,
+        {v: "Mt" for v in names.values()},
+        countries,
+        years,
     )
-    # dm_tmp.fill_nans('Years')
-    linear_fitting(dm_tmp, years_fts, based_on=create_years_list(2010, 2023, 1))
-    dm_tmp.array = np.maximum(0, dm_tmp.array)
+    return dm_energy, dm_em
 
-    dm_fuels_eud_cantons[...] = (
-        dm_tmp[...] * dm_pop[:, :, 0, np.newaxis, np.newaxis, np.newaxis]
+
+def ef_constant_dm():
+    ef_f, ef_b = ef_arrays()
+    cdm = ConstantDataMatrix(
+        col_labels={
+            "Variables": ["ind_emission-factor"],
+            "Categories1": ["fossil", "biogenic"],
+            "Categories2": FUELS,
+            "Categories3": GASES,
+        },
+        units={"ind_emission-factor": "Mt/TWh"},
     )
+    cdm.array = np.stack([ef_f, ef_b], axis=0)[None, ...]
+    return cdm
 
-    # dm_fuels_eud_cantons.flattest().datamatrix_plot({'Country': ['Switzerland']})
-    DM = {"ind-serv-energy-demand": dm_fuels_eud_cantons}  # noqa: F841
 
-    # file_industry = '../../../data/interface/industry_to_energy.pickle'
-    # with open(file_industry, 'wb') as handle:
-    #    pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
+def prtr_dm(prtr_full, years):
+    """PRTR CO2 [canton, year, branch] (all PRTR years) as a DataMatrix."""
+    arr = with_switzerland(np.nan_to_num(prtr_full))[:, :, None, :]
+    dm = DataMatrix(
+        col_labels={
+            "Country": CANTONS + ["Switzerland"],
+            "Years": years,
+            "Variables": ["ind_prtr-co2"],
+            "Categories1": BRANCHES,
+        },
+        units={"ind_prtr-co2": "Mt"},
+    )
+    dm.array = arr
+    dm.sort("Country")
+    return dm
 
-    # my_pickle_dump(dm_fuels_eud_cantons, file_industry)
-    # sort_pickle(file_industry)
 
-    return
+def end_use_shares(sheet, years):
+    """EP2050+ end-use shares of industry energy, for electricity and other fuels.
+
+    Returns two DataFrames (year x end use) that sum to 1 per year.
+    """
+    t1 = gd.read_ep2050_table(sheet, 1)
+    t2 = gd.read_ep2050_table(sheet, 2)
+    rows = {
+        "space-heating": ["Raumwärme"],
+        "hot-water": ["Warmwasser"],
+        "process-heat": ["Prozesswärme"],
+        "lighting": ["Beleuchtung"],
+        "elec": [
+            "Klima, Lüftung und Haustechnik",
+            "Antriebe, Prozesse",
+            "Sonstige Verwendungszwecke",
+        ],
+    }
+    elec = pd.DataFrame({k: t2.loc[v].sum() for k, v in rows.items()})
+    other = pd.DataFrame({k: (t1.loc[v] - t2.loc[v]).sum() for k, v in rows.items()})
+    # Non-electric 'Sonstige' (mainly environmental protection) is heat: process heat
+    other["process-heat"] += other["elec"] + other["lighting"]
+    other[["elec", "lighting"]] = 0.0
+    elec = elec.clip(lower=0).div(elec.clip(lower=0).sum(axis=1), axis=0)
+    other = other.clip(lower=0).div(other.clip(lower=0).sum(axis=1), axis=0)
+    return elec.loc[years], other.loc[years]
+
+
+INTERFACE_FUELS = [
+    "biogas",
+    "biomass",
+    "coal",
+    "district-heating",
+    "electricity",
+    "gas",
+    "heat-pump",
+    "heating-oil",
+    "nuclear-fuel",
+    "other",
+    "renewables",
+    "solar",
+    "waste",
+    "wood",
+]
+INTERFACE_END_USES = ["elec", "hot-water", "lighting", "process-heat", "space-heating"]
+
+
+def build_energy_interface(dm_energy_ots, dm_energy_fts_lev1):
+    """industry_to_energy.pickle: {'ind-energy-demand': dm}, end use x fuel, TWh."""
+    dm = dm_energy_ots.copy()
+    dm.append(dm_energy_fts_lev1, dim="Years")
+    years = dm.col_labels["Years"]
+    tot = dm.array[:, :, 0, :, :].sum(axis=2)  # country, year, fuel
+    sh_elec, sh_other = end_use_shares(EP_SHEETS[1], years)
+    out = np.zeros(
+        (len(dm.col_labels["Country"]), len(years), 1, 5, len(INTERFACE_FUELS))
+    )
+    fuel_map = {f: f for f in FUELS}
+    fuel_map["other-oil"] = "heating-oil"
+    for jf, f in enumerate(FUELS):
+        jt = INTERFACE_FUELS.index(fuel_map[f])
+        sh = sh_elec if f == "electricity" else sh_other
+        for je, eu in enumerate(INTERFACE_END_USES):
+            out[:, :, 0, je, jt] += tot[:, :, jf] * sh[eu].values[None, :]
+    dm_out = make_dm(
+        out,
+        ["ind_energy-end-use"],
+        INTERFACE_END_USES,
+        INTERFACE_FUELS,
+        {"ind_energy-end-use": "TWh"},
+        dm.col_labels["Country"],
+        years,
+    )
+    return {"ind-energy-demand": dm_out}
+
+
+# ======================================================================================
+# Checks
+# ======================================================================================
+def check_and_report(E_c, gest, prtr, proc_c, violations, strict):
+    ok = True
+    # Sum of cantons = GEST industry, per fuel
+    E_ch = E_c.sum(axis=0).sum(axis=1)  # year, fuel
+    ww_out = [FUELS.index(f) for f in WW_OUTSIDE_GEST]
+    print(
+        f"[report] water-waste {WW_OUTSIDE_GEST} outside GEST, 2023: "
+        f"{E_c.sum(axis=0)[-1, 12, ww_out].round(3)} TWh"
+    )
+    E_ch[:, ww_out] -= E_c.sum(axis=0)[:, 12, ww_out]
+    gest_f = gest.loc[YEARS_OTS, FUELS].values
+    err = np.abs(E_ch - gest_f).max()
+    print(f"\n[check] max |sum cantons - GEST T17b| over years x fuels: {err:.2e} TWh")
+    if err > 1e-6:
+        ok = False
+    print(
+        "[check] 2023 energy by fuel (TWh), model vs GEST:\n",
+        pd.DataFrame({"model": E_ch[-1], "GEST": gest_f[-1]}, index=FUELS).round(3),
+    )
+    # canton x branch CO2 >= PRTR
+    T_c = total_co2(E_c, proc_c)  # canton, year, branch
+    rows = []
+    for iy, y in enumerate(YEARS_OTS):
+        if np.isnan(prtr[0, iy, 0]):
+            continue
+        for ic, c in enumerate(CANTONS):
+            for ib, b in enumerate(BRANCHES):
+                p = prtr[ic, iy, ib]
+                if p > 0:
+                    rows.append((y, c, b, T_c[ic, iy, ib], p))
+    df = pd.DataFrame(rows, columns=["year", "canton", "branch", "model_Mt", "prtr_Mt"])
+    df["margin_Mt"] = df["model_Mt"] - df["prtr_Mt"]
+    bad = df[df["margin_Mt"] < -1e-9]
+    print(f"\n[check] canton x branch CO2 >= PRTR: {len(df) - len(bad)}/{len(df)} pass")
+    print("[check] 2023 canton x branch vs PRTR (Mt CO2, fossil + biogenic + process):")
+    print(df[df.year == 2023].round(3).to_string(index=False))
+    if violations:
+        print("\n[check] NATIONAL branch total below PRTR sum:")
+        for v in violations:
+            print(f"   {v[0]} {v[1]:20s} model {v[2]:.3f} < PRTR {v[3]:.3f} Mt")
+    if len(bad):
+        ok = False
+        print(bad.round(4).to_string(index=False))
+    if not ok and strict:
+        raise ValueError("simple_industry checks failed (see report above)")
+    return df
+
+
+def report_inventory(E_nat, proc_nat):
+    inv = gd.read_foen_inventory("CO2")
+    em = emissions_from_energy(E_nat, proc_nat)
+    ico2 = GASES.index("CO2")
+    comb = em["combustion"][:, :12, ico2].sum(axis=1)
+    proc = proc_nat.sum(axis=1)
+    df = pd.DataFrame(
+        {
+            "model comb. fossil (12 branches)": comb,
+            "FOEN 1A2": inv["1A2 Manufacturing industries and construction"].reindex(
+                YEARS_OTS
+            ),
+            "model process (CO2eq)": proc,
+            "FOEN 2 IPPU (CO2)": inv["2 Industrial processes and product use"].reindex(
+                YEARS_OTS
+            ),
+        },
+        index=YEARS_OTS,
+    )
+    print("\n[report] national CO2 vs FOEN inventory (Mt):")
+    print(df.loc[[1990, 2000, 2010, 2015, 2020, 2023]].round(2))
+
+
+# ======================================================================================
+def run(strict=True, write=True):
+    # --- data -------------------------------------------------------------------------
+    gest = gd.read_gest_industry()
+    bfe = gd.read_bfe_branch_fuel()
+    ep_comb_wwb = gd.read_ep2050_branch_table(EP_SHEETS[1], 3)
+    ep_proc_wwb = gd.read_ep2050_branch_table(EP_SHEETS[1], 4)
+    dm_accounts = extract_energy_accounts(  # STAT-TAB API (cached)
+        "px-x-0204000000_106",
+        os.path.join(gd.POWER_DATA_DIR, "energy_accounts_economy_households.pickle"),
+    )
+    dm_employees = extract_employees_per_sector_canton(  # STAT-TAB API (cached)
+        "px-x-0602010000_101",
+        os.path.join(gd.POWER_DATA_DIR, "employees_per_sector_canton.pickle"),
+    )
+    df_prtr = gd.read_prtr_co2()
+
+    # --- national ---------------------------------------------------------------------
+    ww = water_waste_own_use(dm_accounts)
+    E_nat = national_energy(gest, bfe, ep_comb_wwb, ww)  # year, branch, fuel
+    proc_nat = ep_proc_wwb[YEARS_OTS].T.values  # year, branch (EP2050+ WWB)
+
+    # --- cantons ----------------------------------------------------------------------
+    share_fte = fte_shares(dm_employees)
+    prtr = gd.prtr_by_canton_branch(df_prtr, CANTONS, YEARS_OTS, BRANCHES)
+    E_c, proc_c, w, violations = allocate_to_cantons(E_nat, proc_nat, share_fte, prtr)
+
+    report_inventory(E_nat, proc_nat)
+    check_and_report(E_c, gest, prtr, proc_c, violations, strict)
+
+    # --- forecast ---------------------------------------------------------------------
+    ib = YEARS_OTS.index(BASE_YEAR)
+    ratios = {lev: ep2050_ratios(sheet) for lev, sheet in EP_SHEETS.items()}
+    proj = {lev: project(E_c[:, ib], proc_c[:, ib], ratios[lev]) for lev in (1, 4)}
+    for lev, a in ((2, 1 / 3), (3, 2 / 3)):
+        proj[lev] = tuple(proj[1][k] + a * (proj[4][k] - proj[1][k]) for k in range(2))
+
+    # --- outputs ----------------------------------------------------------------------
+    dm_energy, dm_em = build_dms(E_c, proc_c, YEARS_OTS)
+    fts = {}
+    for lev in (1, 2, 3, 4):
+        e, m = build_dms(proj[lev][0], proj[lev][1], YEARS_FTS)
+        fts[lev] = {"energy": e, "emissions": m}
+    prtr_years = sorted(df_prtr["year"].unique())
+    DM = {
+        "ots": {"simple-industry": {"energy": dm_energy, "emissions": dm_em}},
+        "fts": {"simple-industry": fts},
+        "fxa": {
+            "prtr-co2": prtr_dm(
+                gd.prtr_by_canton_branch(df_prtr, CANTONS, prtr_years, BRANCHES),
+                prtr_years,
+            )
+        },
+        "constant": {"emission-factors": ef_constant_dm()},
+    }
+    DM_interface = build_energy_interface(dm_energy, fts[1]["energy"])
+
+    if write:
+        f_out = os.path.join(DATAMATRIX_DIR, "simple_industry.pickle")
+        with open(f_out, "wb") as handle:
+            pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        print(f"\nSaved {f_out}")
+        f_int = os.path.join(INTERFACE_DIR, "industry_to_energy.pickle")
+        with open(f_int, "wb") as handle:
+            pickle.dump(DM_interface, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        print(f"Saved {f_int}")
+    return DM, DM_interface
 
 
 if __name__ == "__main__":
