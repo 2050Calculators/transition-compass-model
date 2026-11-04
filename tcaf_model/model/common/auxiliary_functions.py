@@ -1,6 +1,7 @@
 import os
 import pickle
 import re
+import warnings
 from os import listdir
 from os.path import isfile, join
 
@@ -477,12 +478,22 @@ def material_decomposition(dm, cdm):
 
 
 def calibration_rates(
-    dm, dm_cal, years_setting, calibration_start_year=1990, calibration_end_year=2023
+    dm,
+    dm_cal,
+    years_setting,
+    calibration_start_year=1990,
+    calibration_end_year=2023,
+    fts_median_years=None,
 ):
     # dm is the datamatrix with data to be calibrated
     # dm_cal is the datamatrix with the reference data
     # the function returns a datamatrix with the calibration rates
     # all datamartix should have the same shape
+    # fts_median_years: if None, the years after calibration_end_year hold the
+    # rate of calibration_end_year. If n, they hold the median rate of the last
+    # n calibration years (non-finite rates ignored), so that one year (often
+    # an extrapolated one, or one with a large stock change) does not set the
+    # rate up to 2050.
 
     # if dm and dm_cal do not have the same dimension return an error
     if len(dm.dim_labels) != len(dm_cal.dim_labels):
@@ -538,10 +549,23 @@ def calibration_rates(
         for i in years_new_pre:
             dm_cal_sub.add(1, dim="Years", col_label=[i], dummy=True)
 
-    # for missing years post calibration_end_year, add them with value of last available year
+    # for missing years post calibration_end_year, add them with value of last
+    # available year, or the median of the last fts_median_years years
+    if fts_median_years is None:
+        rate_post = dm_cal_sub.array[:, idx[calibration_end_year], ...]
+    else:
+        last_years = range(
+            calibration_end_year - fts_median_years + 1, calibration_end_year + 1
+        )
+        arr = dm_cal_sub.array[:, [idx[y] for y in last_years], ...]
+        arr = np.where(np.isfinite(arr), arr, np.nan)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)  # all-NaN slices
+            rate_post = np.nanmedian(arr, axis=1)
+        rate_post = np.where(np.isfinite(rate_post), rate_post, 1.0)
     for i in years_new_post:
         dm_cal_sub.add(
-            dm_cal_sub.array[:, idx[calibration_end_year], ...],
+            rate_post,
             dim="Years",
             col_label=[i],
         )

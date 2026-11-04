@@ -9,6 +9,7 @@ from tcaf_model.model.common.auxiliary_functions import (
     read_level_data,
 )
 from tcaf_model.model.common.config_loader import load_lever_config
+from tcaf_model.model.common.fbs_trade import finite_or_zero
 from tcaf_model.model.common.interface_class import Interface
 
 
@@ -31,6 +32,8 @@ def read_data(DM_alc_bev_input, lever_setting):
     dm_cal_crop_bev = DM_alc_bev_input["fxa"]["cal_agr_domestic-production_bev"]
     dm_cal_crop_bev_imports = DM_alc_bev_input["fxa"]["cal_agr_imports-bev_total"]
     dm_imports = DM_alc_bev_input["fxa"]["split-import"]
+    dm_exports = DM_alc_bev_input["fxa"]["exports-bev"]
+    dm_stock = DM_alc_bev_input["fxa"]["stock-variation-bev"]
     dm_processing_yield = DM_alc_bev_input["fxa"]["processing-yield"]
 
     # Aggregated Data Matrix - ALCOHOLIC BEVERAGES
@@ -38,6 +41,8 @@ def read_data(DM_alc_bev_input, lever_setting):
         #'biomass_hierarchy': dm_alc_bev,
         "processing-yields": dm_processing_yield,
         "split-import": dm_imports,
+        "exports": dm_exports,
+        "stock-variation": dm_stock,
         "ssr-bev": dm_bev_ssr,
         "cal_bev": dm_cal_crop_bev,
         "cal_bev_imports": dm_cal_crop_bev_imports,
@@ -343,23 +348,64 @@ def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs, years_setting):
         array_temp, dim="Variables", col_label="agr_use_bev_ibp_cereal_feed_t", unit="t"
     )
 
-    # Step Imports -------------------------------------------------------------
-    # Imports processed bev [kcal] = demand bev processed bev[kcal] - domestic production processed bev[kcal]
-    dm_demand_bev.operation(
-        "agr_demand",
-        "-",
-        "agr_domestic_production",
-        out_col="agr_imported_production_raw",
+    # Step Exports -------------------------------------------------------------
+    # Exports bev [kcal] = min(FBS exports [kcal], domestic production bev [kcal])
+    # (a volume, held at its 2014-2023 mean in the future)
+    dm_exports = DM_alc_bev["exports"].filter(
+        {"Years": dm_demand_bev.col_labels["Years"]}
+    )
+    dm_exports.sort(dim="Categories1")
+    dm_demand_bev.add(
+        np.minimum(
+            dm_exports[:, :, "agr_exported_production", :],
+            dm_demand_bev[:, :, "agr_domestic_production", :],
+        ),
+        dim="Variables",
+        col_label="agr_exported_production",
         unit="kcal",
     )
 
-    # Calibration imports (processed beverages)
+    # Step Stock variation ----------------------------------------------------
+    # Stock variation bev [kcal] (+ = stocks built up), with FBS other uses.
+    # Historical from FBS, 0 in the future.
+    dm_stock = DM_alc_bev["stock-variation"].filter(
+        {"Years": dm_demand_bev.col_labels["Years"]}
+    )
+    dm_stock.sort(dim="Categories1")
+    dm_demand_bev.add(
+        dm_stock[:, :, "agr_stock-variation", :],
+        dim="Variables",
+        col_label="agr_stock-variation",
+        unit="kcal",
+    )
+
+    # Step Imports -------------------------------------------------------------
+    # Gross imports bev [kcal] = demand bev [kcal] - domestic production bev [kcal]
+    #                            + exports bev [kcal] + stock variation bev [kcal]
+    # (the FBS balance; the reference is FBS gross imports)
+    array_temp = (
+        dm_demand_bev[:, :, "agr_demand", :]
+        - dm_demand_bev[:, :, "agr_domestic_production", :]
+        + dm_demand_bev[:, :, "agr_exported_production", :]
+        + dm_demand_bev[:, :, "agr_stock-variation", :]
+    )
+    dm_demand_bev.add(
+        array_temp,
+        dim="Variables",
+        col_label="agr_imported_production_raw",
+        unit="kcal",
+    )
+
+    # Calibration imports (processed beverages), against FBS imports.
+    # What is left is the 1 kt rounding of FBS (and the extrapolated 2023
+    # demand), so the future years hold the median rate of 2014-2023.
     dm_cal_rates_bev = calibration_rates(
         dm_demand_bev.filter({"Variables": ["agr_imported_production_raw"]}),
         DM_alc_bev["cal_bev_imports"],
         calibration_start_year=2000,
         calibration_end_year=2023,
         years_setting=years_setting,
+        fts_median_years=10,
     )
     dm_demand_bev.append(dm_cal_rates_bev, dim="Variables")
     dm_demand_bev.operation(
@@ -370,12 +416,28 @@ def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs, years_setting):
         out_col="agr_imported_production",
         unit="kcal",
     )
+    # Balance residual [kcal] = domestic production + imports - exports
+    #                           - stock variation - demand
+    # (what the calibration rate adds or removes: the FBS rounding)
+    array_temp = (
+        dm_demand_bev[:, :, "agr_domestic_production", :]
+        + dm_demand_bev[:, :, "agr_imported_production", :]
+        - dm_demand_bev[:, :, "agr_exported_production", :]
+        - dm_demand_bev[:, :, "agr_stock-variation", :]
+        - dm_demand_bev[:, :, "agr_demand", :]
+    )
+    dm_demand_bev.add(
+        array_temp, dim="Variables", col_label="agr_balance-residual", unit="kcal"
+    )
     dm_demand_bev.filter(
         {
             "Variables": [
                 "agr_demand",
                 "agr_domestic_production",
+                "agr_exported_production",
+                "agr_stock-variation",
                 "agr_imported_production",
+                "agr_balance-residual",
             ]
         },
         inplace=True,
@@ -430,12 +492,21 @@ def alcoholic_beverages_workflow(DM_alc_bev, CDM_const, dm_lfs, years_setting):
     ] = array_temp
 
     # Wine - Crop Grape (fruit)
-    dm_pro_yield_imports = DM_alc_bev["processing-yields"].filter(
-        {"Country": DM_alc_bev["split-import"].col_labels["Country"]}
+    # Imported wine of each country x that country's yield. The yields are
+    # looked up by country name (the two datamatrices are not in the same
+    # country order), and countries without a yield get 0.
+    countries_imports = DM_alc_bev["split-import"].col_labels["Country"]
+    dm_yields = DM_alc_bev["processing-yields"]
+    array_yield = np.stack(
+        [
+            dm_yields[c, :, "fxa_agr_processing-yield", "wine-to-fruit"]
+            for c in countries_imports
+        ]
     )
+    array_yield = finite_or_zero(array_yield)
     array_temp = (
-        dm_bev_wine[:, :, "agr_domestic_production_wine"]
-        * dm_pro_yield_imports[:, :, "fxa_agr_processing-yield", "wine-to-fruit"]
+        DM_alc_bev["split-import"][:, :, "agr_domestic_production", "pro-bev-wine"]
+        * array_yield
     )
     DM_alc_bev["split-import"][
         :, :, "agr_domestic_production_bev_raw", "pro-bev-wine"
