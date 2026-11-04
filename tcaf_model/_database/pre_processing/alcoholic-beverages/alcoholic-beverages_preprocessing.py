@@ -17,6 +17,13 @@ from tcaf_model.model.common.constant_data_matrix_class import (
     ConstantDataMatrix,
 )
 from tcaf_model.model.common.data_matrix_class import DataMatrix
+from tcaf_model.model.common.fbs_trade import (
+    fbs_elements,
+    fbs_exports_kcal,
+    fbs_imports_kcal,
+    fbs_stock_and_other_uses_kcal,
+    trade_matrix_partners,
+)
 from tcaf_model.model.common.io_database import (
     database_to_df,
 )
@@ -546,6 +553,50 @@ def ssr_beverages_processing():
     return dm_ssr_bev
 
 
+# CalculationLeaf FBS IMPORTS AND EXPORTS BEV
+def fbs_trade_processing(file_dict, cdm_kcal, years_ots, years_fts):
+    # Import reference, exports and stock variation from the Food Balance Sheets, the same
+    # source as the SSR and the demand. Uses the file cached by
+    # ssr_beverages_processing.
+    df_fbs = pd.read_csv(file_dict["ssr_bev"])
+    item_to_category = {
+        "Beer": "pro-bev-beer",
+        "Beverages, Alcoholic": "pro-bev-bev-alc",
+        "Beverages, Fermented": "pro-bev-bev-fer",
+        "Wine": "pro-bev-wine",
+    }
+    df_elements = fbs_elements(df_fbs, item_to_category, "Switzerland", years_ots)
+
+    # Calibration reference for imports [kcal] = FBS Import [kt] * 1000 * kcal/t
+    dm_cal_imports_fbs = fbs_imports_kcal(
+        df_elements,
+        cdm_kcal,
+        "Switzerland",
+        "cal_agr_imported_production_total",
+    )
+
+    # Exports [kcal] = FBS Export [kt] * 1000 * kcal/t (fts: mean 2014-2023)
+    dm_exports = fbs_exports_kcal(
+        df_elements,
+        cdm_kcal,
+        "Switzerland",
+        years_ots,
+        years_fts,
+        "agr_exported_production",
+    )
+    # Stock variation + other uses [kcal], the FBS terms the model does not
+    # simulate (FBSH sign harmonised to FBS; fts: 0)
+    dm_stock = fbs_stock_and_other_uses_kcal(
+        df_elements,
+        cdm_kcal,
+        "Switzerland",
+        years_ots,
+        years_fts,
+        "agr_stock-variation",
+    )
+    return dm_cal_imports_fbs, dm_exports, dm_stock
+
+
 # CalculationLeaf TRADE ORIGIN BEV
 def trade_origin_processing(years_ots, list_countries_calc, file_dict):
     # Read data ------------------------------------------------------------------------------------------------------------
@@ -742,62 +793,12 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         df_trade_agg = pd.concat(df_trade_agg_temp, ignore_index=True)
         df_trade_agg.to_csv(file_dict["trade-bev"], index=False)
 
-    # Rename Item as variables
-    df_trade_agg.rename(columns={"Item": "variables"}, inplace=True)
-
-    # Prepend var name and unit
-    df_trade_agg["variables"] = df_trade_agg["variables"].apply(
-        lambda x: f"agr_split-import_{x}[-]"
+    # Imports by partner [t]. A partner-year missing from TM means no trade,
+    # so it is set to 0 (interpolating it inflated the totals, by +135% for
+    # fermented beverages in 2022). Future years hold the 2019-2023 mean.
+    dm_bev_trade_origin = trade_matrix_partners(
+        df_trade_agg, years_ots, years_fts, unit="-"
     )
-
-    # Aggregate countries by region -----------------------------------------------------
-
-    """# Read csv
-  df_countries = pd.read_csv('data/faostat/FAOSTAT_data_partner-countries-regions.csv')
-
-  # Filter the regions
-  clean_regions = [x.replace('-- ', '').replace(' > (List)', '') for x in list_partnerregions]
-  mask = df_countries['Partner Country Group'].str.contains('|'.join(clean_regions),
-                                                  case=False, na=False)
-  df_countries = df_countries[mask].copy()
-  df_countries = df_countries[['Partner Country Group', 'Partner Countries']]
-
-  # Merge
-  df_trade_agg = pd.merge(df_trade_agg, df_countries, on='Partner Countries')
-
-  # Aggregating
-  df_trade_agg = df_trade_agg.groupby(['variables', 'Partner Country Group', 'Year'], as_index=False)['Value'].sum()
-
-  df_trade_agg.rename(columns={'Partner Country Group': 'geoscale',
-                               'Year': 'timescale', 'Value':'value'}, inplace=True)"""
-
-    # Rename and format correctly
-    df_trade_agg = df_trade_agg[["Partner Countries", "variables", "Year", "Value"]]
-    df_trade_agg.rename(
-        columns={
-            "Partner Countries": "geoscale",
-            "Year": "timescale",
-            "Value": "value",
-        },
-        inplace=True,
-    )
-
-    # Extrapolation for missing data
-    lever = "dummy"
-    df_trade_agg["lever"] = lever
-    df_trade_agg["module"] = lever
-    df_trade_agg["level"] = 0.0
-    df_trade_agg = ensure_structure(df_trade_agg)
-    df_trade_agg = linear_fitting_ots_db(df_trade_agg, years_all, countries="all")
-    df_trade_agg["value"] = df_trade_agg["value"].fillna(0.0)
-
-    # Replace negative values by 0.0
-    df_trade_agg["value"] = df_trade_agg["value"].clip(lower=0.0)
-
-    # Format as datamatrix
-    df_ots, df_fts = database_to_df(df_trade_agg, lever, level="all")
-    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
-    dm_bev_trade_origin = DataMatrix.create_from_df(df_ots, num_cat=1)
 
     # Add Switzerland as dummy (because are in losses and other dms)
     dm_bev_trade_origin.add(0.0, dummy=True, col_label=["Switzerland"], dim="Country")
@@ -826,7 +827,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
     )
     dm_cal_imports_countries.drop(dim="Country", col_label=["Switzerland"])
 
-    # Step CALIBRATION IMPORTS TOTAL
+    # Step CALIBRATION IMPORTS TOTAL (TM, kept as a diagnostic only: the
+    # reference used by the model is FBS Import, see fbs_trade_processing)
     dm_cal_imports_tot = dm_bev_trade_origin.copy()
     dm_cal_imports_tot.rename_col(
         "agr_split-import", "cal_agr_imported_production_total", "Variables"
@@ -1604,7 +1606,9 @@ def datamatrix_to_pickle(dm_fts, cdm_bev):
     # CalibrationDataToDatamatrix ------------------------------------------------
 
     dict_fxa["cal_agr_domestic-production_bev"] = dm_cal_dom_prod_bev
-    dict_fxa["cal_agr_imports-bev_total"] = dm_cal_imports_tot
+    dict_fxa["cal_agr_imports-bev_total"] = dm_cal_imports_fbs
+    dict_fxa["exports-bev"] = dm_exports
+    dict_fxa["stock-variation-bev"] = dm_stock
 
     # LeversToDatamatrix OTS -----------------------------------------------------
     dict_ots = {}
@@ -1720,6 +1724,9 @@ dm_ssr_bev = ssr_beverages_processing()
 dm_cal_dom_prod_bev = bev_calibration(list_countries_calc, dm_fxa_pro_yield, cdm_bev)
 dm_bev_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = (
     trade_origin_processing(years_ots, list_countries_calc, file_dict)
+)
+dm_cal_imports_fbs, dm_exports, dm_stock = fbs_trade_processing(
+    file_dict, cdm_kcal, years_ots, years_fts
 )
 
 # Match countries for imports
