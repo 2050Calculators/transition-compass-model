@@ -665,7 +665,7 @@ def calibration_rates(
 
         # Flag with slope
         if mask_slope.any():
-            print("At least one category exceeds 10% increase or decrease")
+            print(f"{mask_slope.sum()} category exceeds 10% increase or decrease")
         #     print(dm.col_labels["Variables"])
         #     indices = np.where(mask_slope)[0].tolist()
         #     selected_variables = [
@@ -680,7 +680,9 @@ def calibration_rates(
             0.8 >= np.nanmin(dm_cal_sub.array)
         )
         if mask_absolute.any():
-            print("At least one category exceeds 0.2 diff with the original array")
+            print(
+                f"{mask_absolute.sum()} category exceeds 0.2 diff with the original array"
+            )
 
         mask_total = mask_absolute | mask_slope
         return mask_total.any()
