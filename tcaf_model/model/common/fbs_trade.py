@@ -179,6 +179,25 @@ def fbs_stock_and_other_uses_kcal(
     return _wide_to_dm(df_wide, variable, "kcal", categories)
 
 
+def kt_to_kcal_dm(df_kt, cdm_kcal, country, years_ots, years_fts, variable, n_years=10):
+    """A (Year x category) table in kt -> a one-country datamatrix in kcal.
+
+    The future years hold the mean of the last n_years historical years. Used
+    for FBS uses that the model does not simulate but that persist (other
+    processing, feed of rice or beet, losses).
+    """
+    df_wide = df_kt.copy() * 1000.0
+    categories = list(df_wide.columns)
+    idx = cdm_kcal.idx
+    for c in categories:
+        df_wide[c] = df_wide[c] * cdm_kcal.array[idx["cp_kcal-per-t"], idx[c]]
+    df_wide["Country"] = country
+    df_wide.index.name = "Years"
+    df_wide = df_wide.set_index("Country", append=True).swaplevel()
+    df_wide = _future_mean(df_wide, years_ots, years_fts, n_years)
+    return _wide_to_dm(df_wide, variable, "kcal", categories)
+
+
 def finite_or_zero(array):
     """Replace inf and NaN by 0 (for yields of countries with no data)."""
     return np.where(np.isfinite(array), array, 0.0)

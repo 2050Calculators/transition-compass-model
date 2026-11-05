@@ -19,6 +19,7 @@ from tcaf_model.model.common.constant_data_matrix_class import (
     ConstantDataMatrix,
 )
 from tcaf_model.model.common.data_matrix_class import DataMatrix
+from tcaf_model.model.common.fbs_trade import kt_to_kcal_dm, trade_matrix_partners
 from tcaf_model.model.common.io_database import (
     database_to_df,
 )
@@ -531,6 +532,16 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
         df_ssr_feed_pro.to_csv(file_dict["feed-pro"], index=False)
 
     # Filtering
+    # FAOSTAT CBH (commodity balances, old) runs to 2013 and SCL (new) starts
+    # in 2010: keep CBH before 2010 only, otherwise 2010-2013 is summed twice
+    # (cake fed in 2010: 386 kt in each file, 773 kt after the sum).
+    if "Domain Code" in df_ssr_cake.columns:
+        df_ssr_cake = df_ssr_cake[
+            ~(
+                (df_ssr_cake["Domain Code"] == "CBH")
+                & (pd.to_numeric(df_ssr_cake["Year"]) >= 2010)
+            )
+        ]
     filtered_df = df_ssr_cake[df_ssr_cake["Item"].str.contains("cake", case=False)]
     # Groupby Area, Year and Element and sum the Value
     grouped_df = (
@@ -1481,111 +1492,81 @@ def trade_origin_feed_processing(years_ots, list_countries_calc, file_dict):
     # Concat dfs
     df_trade_agg = pd.concat([df_trade_molasses, df_trade_cakes])
 
-    # Rename Item as variables
-    df_trade_agg.rename(columns={"Item": "variables"}, inplace=True)
-
-    # Prepend var name and unit
-    df_trade_agg["variables"] = df_trade_agg["variables"].apply(
-        lambda x: f"agr_split-import_{x}[-]"
+    # Imports by partner [t]. A partner-year missing from TM means no trade,
+    # so it is set to 0 (interpolating it inflated the cake total from 36 to
+    # 77 kt in 1990). Future years hold the 2019-2023 mean.
+    dm_feed_trade_origin = trade_matrix_partners(
+        df_trade_agg, years_ots, years_fts, unit="-"
     )
 
-    # Aggregate countries by region -----------------------------------------------------
-
-    """# Read csv
-  df_countries = pd.read_csv('data/faostat/FAOSTAT_data_partner-countries-regions.csv')
-
-  # Filter the regions
-  clean_regions = [x.replace('-- ', '').replace(' > (List)', '') for x in list_partnerregions]
-  mask = df_countries['Partner Country Group'].str.contains('|'.join(clean_regions),
-                                                  case=False, na=False)
-  df_countries = df_countries[mask].copy()
-  df_countries = df_countries[['Partner Country Group', 'Partner Countries']]
-
-  # Merge
-  df_trade_agg = pd.merge(df_trade_agg, df_countries, on='Partner Countries')
-
-  # Aggregating
-  df_trade_agg = df_trade_agg.groupby(['variables', 'Partner Country Group', 'Year'], as_index=False)['Value'].sum()
-
-  df_trade_agg.rename(columns={'Partner Country Group': 'geoscale',
-                               'Year': 'timescale', 'Value':'value'}, inplace=True)"""
-
-    # Rename and format correctly
-    df_trade_agg = df_trade_agg[["Partner Countries", "variables", "Year", "Value"]]
-    df_trade_agg.rename(
-        columns={
-            "Partner Countries": "geoscale",
-            "Year": "timescale",
-            "Value": "value",
-        },
-        inplace=True,
-    )
-
-    # Extrapolation for missing data
-    lever = "dummy"
-    df_trade_agg["lever"] = lever
-    df_trade_agg["module"] = lever
-    df_trade_agg["level"] = 0.0
-    df_trade_agg = ensure_structure(df_trade_agg)
-    df_trade_agg = linear_fitting_ots_db(df_trade_agg, years_all, countries="all")
-    df_trade_agg["value"] = df_trade_agg["value"].fillna(0.0)
-
-    # Replace negative values by 0.0
-    df_trade_agg["value"] = df_trade_agg["value"].clip(lower=0.0)
-
-    # Format as datamatrix
-    df_ots, df_fts = database_to_df(df_trade_agg, lever, level="all")
-    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
-    dm_feed_trade_origin = DataMatrix.create_from_df(df_ots, num_cat=1)
-
-    # Filter years
-    dm_feed_trade_origin.filter({"Years": years_all}, inplace=True)
-
-    # Add Switzerland as dummy (because are in losses and other dms)
-    dm_feed_trade_origin.add(0.0, dummy=True, col_label=["Switzerland"], dim="Country")
-
-    # Unit conversion: [t] => [kcal]
-    cdm_kcal_temp = cdm_kcal.copy()
-    cdm_kcal_temp.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
-    cdm_kcal_temp = cdm_kcal_temp.filter(
-        {"Categories1": dm_feed_trade_origin.col_labels["Categories1"]}
-    )
+    # Origin shares: normalise across partner countries. Only the shares are
+    # used; the import total comes from the commodity balances
+    # (feed_pro_balance_processing), like the FBS totals for crops.
     dm_feed_trade_origin.sort("Categories1")
-    cdm_kcal_temp.sort("Categories1")
-    array_temp = (
-        dm_feed_trade_origin[:, :, "agr_split-import", :]
-        * cdm_kcal_temp[np.newaxis, np.newaxis, "cp_kcal-per-t", :]
-    )
-    dm_feed_trade_origin[:, :, "agr_split-import", :] = array_temp
-
-    # Step CALIBRATION IMPORTS PER COUNTRY
-    dm_cal_imports_feed_countries = dm_feed_trade_origin.copy()
-    dm_cal_imports_feed_countries.rename_col(
-        "agr_split-import", "cal_agr_domestic-production", "Variables"
-    )
-    dm_cal_imports_feed_countries.change_unit(
-        "cal_agr_domestic-production", 1.0, "-", "kcal", "*"
-    )
-    dm_cal_imports_feed_countries.drop(dim="Country", col_label=["Switzerland"])
-
-    # Step CALIBRATION IMPORTS TOTAL
-    dm_cal_imports_feed_tot = dm_feed_trade_origin.copy()
-    dm_cal_imports_feed_tot.rename_col(
-        "agr_split-import", "cal_agr_imported_production_total", "Variables"
-    )
-    dm_cal_imports_feed_tot.change_unit(
-        "cal_agr_imported_production_total", 1.0, "-", "kcal", "*"
-    )
-    dm_cal_imports_feed_tot.groupby(
-        {"Switzerland": ".*"}, dim="Country", regex=True, inplace=True
-    )
-
-    # Normalise across countries for share of imports
-    dm_feed_trade_origin.drop(dim="Country", col_label=["Switzerland"])
     dm_feed_trade_origin.normalise(dim="Country", inplace=True)
     dm_feed_trade_origin.change_unit("agr_split-import", 1.0, "%", "-", "*")
 
-    return dm_feed_trade_origin, dm_cal_imports_feed_tot
+    return dm_feed_trade_origin
+
+
+# CalculationLeaf FXA - PROCESSED FEED IMPORTS AND EXPORTS (BALANCES)
+def feed_pro_balance_processing(file_dict, cdm_kcal, years_ots, years_fts):
+    """Cake and molasses imports (calibration reference) and exports [kcal].
+
+    From the FAOSTAT commodity balances (CBH up to 2009, SCL from 2010), the
+    same source as the processed-feed SSR, where Import = Feed - Production +
+    Export in every year (checked 1990-2023). The Trade Matrix total is not
+    used: it misses the partner-years with no trade. Molasses is only in SCL,
+    so it is 0 before 2010, like its feed demand.
+
+    Returns
+    - dm_cal_imports_feed_tot: cal_agr_imported_production_total, Switzerland,
+      future years = mean of the last 10 years (not used by the calibration)
+    - dm_exports_feed_pro: agr_exported_production, Switzerland, future years
+      = mean of the last 10 years (the model caps it at domestic production)
+    """
+    df = pd.read_csv(file_dict["cake"])
+    df = df[df["Area"] == "Switzerland"]
+    if "Domain Code" in df.columns:
+        # CBH runs to 2013 and SCL starts in 2010: keep CBH before 2010 only
+        df = df[~((df["Domain Code"] == "CBH") & (pd.to_numeric(df["Year"]) >= 2010))]
+    df = df.assign(
+        category=np.where(
+            df["Item"].str.contains("molasses", case=False),
+            "pro-crop-processed-molasse",
+            "pro-crop-processed-cake",
+        )
+    )
+    df_kt = (
+        df.pivot_table(
+            index=["Year", "category"], columns="Element", values="Value", aggfunc="sum"
+        )
+        / 1000.0
+    )  # [t] => [kt]
+    categories = ["pro-crop-processed-cake", "pro-crop-processed-molasse"]
+    df_kt = df_kt.reindex(
+        pd.MultiIndex.from_product([years_ots, categories], names=["Year", "category"])
+    ).fillna(0.0)
+
+    cdm_kcal_temp = cdm_kcal.copy()
+    cdm_kcal_temp.rename_col_regex(str1="pro-liv-", str2="", dim="Categories1")
+    dm_cal_imports_feed_tot = kt_to_kcal_dm(
+        df_kt["Import"].unstack("category"),
+        cdm_kcal_temp,
+        "Switzerland",
+        years_ots,
+        years_fts,
+        "cal_agr_imported_production_total",
+    )
+    dm_exports_feed_pro = kt_to_kcal_dm(
+        df_kt["Export"].unstack("category"),
+        cdm_kcal_temp,
+        "Switzerland",
+        years_ots,
+        years_fts,
+        "agr_exported_production",
+    )
+    return dm_cal_imports_feed_tot, dm_exports_feed_pro
 
 
 # CalculationLeaf SHARE PRODUCTION METHOD
@@ -4678,9 +4659,25 @@ def feed_calibration(list_countries_calc):
     ] = "Rice and products"
 
     # Concatenating all the years together
-    df_feed = pd.concat([df_feed_FBSH, df_feed_FBS])
+    # FBSH runs to 2013 and FBS starts in 2010. Where both have an item-year,
+    # keep FBS (the pivot below averaged them: cereal feed 2010 = (887 + 1000)
+    # / 2 kt, sugar feed 2010 = (0 + 43) / 2 kt).
+    df_feed = pd.concat([df_feed_FBSH.assign(_fbs=0), df_feed_FBS.assign(_fbs=1)])
+    df_feed = (
+        df_feed.sort_values("_fbs")
+        .drop_duplicates(["Area", "Item", "Element", "Year"], keep="last")
+        .drop(columns="_fbs")
+    )
+    # FBS "Sugar & Sweeteners" Feed is the molasses fed to animals (equal to
+    # the SCL molasses Feed in every year 2010-2023; refined sugar has no feed
+    # use), which is already counted from SCL below: set it to 0.
+    df_feed.loc[df_feed["Item"].str.startswith("Sugar & Sweeteners"), "Value"] = 0.0
 
     # Aggregating cakes
+    # FAOSTAT CBH (commodity balances, old) runs to 2013 and SCL (new) starts
+    # in 2010: keep CBH before 2010 only, otherwise 2010-2013 is summed twice
+    # (cake fed in 2010: 386 kt in each file, 773 kt after the sum).
+    df_feed_CBH_cake = df_feed_CBH_cake[pd.to_numeric(df_feed_CBH_cake["Year"]) < 2010]
     df_feed_cake = pd.concat([df_feed_CBH_cake, df_feed_SCL_molasse_cake])
     # Filtering
     filtered_df = df_feed_cake[df_feed_cake["Item"].str.contains("cake", case=False)]
@@ -5004,6 +5001,7 @@ def datamatrix_to_pickle(dm_fts):
     # dict_fxa['cal_agr_liv_N2O-emission'] = dm_cal_liv_emissions.filter({'Variables':['cal_agr_liv_N2O-emission']}, inplace=False)
     dict_fxa["cal_agr_demand_feed"] = dm_cal_feed
     dict_fxa["cal_agr_imports-feed-pro_total"] = dm_cal_imports_feed_tot
+    dict_fxa["exports-feed-pro"] = dm_exports_feed_pro
 
     # LeversToDatamatrix OTS -----------------------------------------------------
     dict_ots = {}
@@ -5355,8 +5353,11 @@ dm_fxa_ffr_milk = fxa_ffr_milk(df_ffr_milk)
 dm_liv_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = (
     trade_origin_asf_processing(years_ots, list_countries_calc, file_dict)
 )
-dm_feed_trade_origin, dm_cal_imports_feed_tot = trade_origin_feed_processing(
+dm_feed_trade_origin = trade_origin_feed_processing(
     years_ots, list_countries_calc, file_dict
+)
+dm_cal_imports_feed_tot, dm_exports_feed_pro = feed_pro_balance_processing(
+    file_dict, cdm_kcal, years_ots, years_fts
 )
 dm_losses = livestock_losses()
 dm_cal_dom_prod, dm_cal_liv_pop, df_liv_pop = livestock_calibration(

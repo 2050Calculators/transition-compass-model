@@ -89,6 +89,7 @@ def read_data(DM_livestock, lever_setting):
     dm_fxa_cal_demand_feed = DM_livestock["fxa"]["cal_agr_demand_feed"]
     dm_cal_import_feed_pro = DM_livestock["fxa"]["cal_agr_imports-feed-pro_total"]
     dm_split_import_feed_pro = DM_livestock["fxa"]["split-import-feed-pro"]
+    dm_exports_feed_pro = DM_livestock["fxa"]["exports-feed-pro"]
     dm_fxa_ratio_weight = DM_livestock["fxa"]["ratio-weight"]
 
     # Aggregate Data Matrix - LIVESTOCK PROD & POP
@@ -129,6 +130,7 @@ def read_data(DM_livestock, lever_setting):
         "ssr-feed-pro": dm_ssr_feed,
         "cal_agr_imports-feed-pro": dm_cal_import_feed_pro,
         "split-import-feed-pro": dm_split_import_feed_pro,
+        "exports-feed-pro": dm_exports_feed_pro,
     }
 
     CDM_const = DM_livestock["constant"]
@@ -1169,7 +1171,11 @@ def feed_workflow(
     #                          inplace=True)
 
     # Step Imports Processed Feed -------------------------------------------------------------
-    # Imports processed feed [kcal] = demand processed feed[kcal] - domestic production processed feed[kcal]
+    # Imports processed feed [kcal] = demand processed feed [kcal]
+    #   - domestic production processed feed [kcal] + exports [kcal]
+    # Exports are the commodity-balance volumes (future: 2014-2023 mean),
+    # capped at domestic production. With them the raw imports equal the
+    # balance import (Import = Feed - Production + Export), the reference.
     dm_feed_processed.operation(
         "agr_demand_feed",
         "-",
@@ -1177,6 +1183,28 @@ def feed_workflow(
         out_col="agr_imported_production_feed_pro_raw",
         unit="kcal",
     )
+    dm_exports = DM_feed["exports-feed-pro"]
+    for cat in dm_exports.col_labels["Categories1"]:
+        cat_feed = cat.replace("pro-", "", 1)
+        exports = np.nan_to_num(
+            dm_exports["Switzerland", :, "agr_exported_production", cat]
+        )
+        domestic = np.nan_to_num(
+            dm_feed_processed[
+                "Switzerland", :, "agr_domestic_production_feed_pro", cat_feed
+            ]
+        )
+        # At least 0: a domestic surplus beyond the exports (SSR above 1 in
+        # the future) is not a negative import
+        dm_feed_processed[
+            "Switzerland", :, "agr_imported_production_feed_pro_raw", cat_feed
+        ] = np.maximum(
+            dm_feed_processed[
+                "Switzerland", :, "agr_imported_production_feed_pro_raw", cat_feed
+            ]
+            + np.minimum(exports, np.maximum(domestic, 0.0)),
+            0.0,
+        )
 
     # Calibration imports (processed feed)
     DM_feed["cal_agr_imports-feed-pro"].add(
@@ -1204,6 +1232,11 @@ def feed_workflow(
         calibration_start_year=1990,
         calibration_end_year=2023,
         years_setting=years_setting,
+        fts_median_years=10,
+    )
+    # No imports and no reference (molasses before 2010: 0 / 0): no calibration
+    dm_cal_rates_feed.array = np.where(
+        np.isfinite(dm_cal_rates_feed.array), dm_cal_rates_feed.array, 1.0
     )
     dm_feed_processed.append(dm_cal_rates_feed, dim="Variables")
     dm_feed_processed.operation(
