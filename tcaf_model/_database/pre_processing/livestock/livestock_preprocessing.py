@@ -3273,6 +3273,15 @@ def yield_slaughter_rate(df_liv_pop, dm_prod_share):
         "dictionaries/dictionnary_livestock.xlsx",
         sheet_name="climate-smart-livestock_slau",
     )
+    # The sheet maps Dairy-milk to the abp-hens-egg variable and Hens-egg to
+    # abp-dairy-milk, which swaps the two slaughter rates. Set the category from
+    # the Item in code, so the result is right whether or not the sheet is fixed.
+    slau_categories = {"Dairy-milk": "abp-dairy-milk", "Hens-egg": "abp-hens-egg"}
+    for item, category in slau_categories.items():
+        mask = df_dict_csl_slau["Item"] == item
+        df_dict_csl_slau.loc[mask, "variables"] = df_dict_csl_slau.loc[
+            mask, "variables"
+        ].str.replace(r"abp-(dairy-milk|hens-egg)", category, regex=True)
 
     # Merge based on 'Item'
     df_yield_liv_pathwaycalc = pd.merge(
