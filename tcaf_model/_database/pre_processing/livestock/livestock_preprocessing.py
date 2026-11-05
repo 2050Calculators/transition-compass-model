@@ -613,18 +613,21 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     columns_to_filter = ["Area", "Year", "Item", "Feed"]
     df_csl_feed = df_csl_feed[columns_to_filter].copy()
 
-    # Create a copy for milk feed food ratio (fxa)
-    df_ffr_milk = pivot_df[pivot_df["Item"] == "Milk - Excluding Butter"]
-    df_ffr_milk = df_ffr_milk.copy()
+    # Create a copy for the supply / food ratio (fxa), all livestock products
+    df_ffr_milk = pivot_df.copy()
 
     # Create a copy to check imports equivalence between FBS & TM
     df_imports = pivot_df[["Area", "Year", "Item", "Import"]].copy()
 
-    # 2: Compute the SSR [%]
-    # (previously with special condition for milk because we
-    # don't account for it as feed & processed. but now fixed with and fxa_ratio)
+    # 2: Compute the SSR [%] on apparent supply (Production + Import - Export).
+    # Apparent supply holds every use (food, feed, processing, other uses,
+    # residuals, losses, stock change), so the SSR does not depend on how
+    # FBSH and FBS book them: FBSH puts ~600 kt of milk in "Other uses" in
+    # 2001-09, FBS has ~400 kt of residuals in 2010-13. The model applies it
+    # to demand x supply/food ratio (fxa_ffr_milk), so domestic production is
+    # P and imports are I.
     pivot_df["SSR[%]"] = pivot_df["Production"] / (
-        pivot_df["Food"] + pivot_df["Feed"] + pivot_df["Processing"]
+        pivot_df["Production"] + pivot_df["Import"] - pivot_df["Export"]
     )
     pivot_df_feed_pro["SSR[%]"] = pivot_df_feed_pro["Production"] / (
         pivot_df_feed_pro["Food"]
@@ -4147,25 +4150,37 @@ def manure_calibration(list_countries_calc, file_dict):
     return dm_cal_liv_emissions, df_liv_emissions
 
 
-# CalculationLeaf FXA - MILK FEED FOOD RATIO---------------------------------------------------------------------------------------------
+# CalculationLeaf FXA - SUPPLY / FOOD RATIO---------------------------------------------------------------------------------------------
 def fxa_ffr_milk(df_ffr_milk):
-    # ffr ratio [-] = (Feed + Food + Processing) / Food
+    # Supply / food ratio [-] = (Production + Import - Export) / Food, for every
+    # livestock product. The model multiplies the food demand by it before the
+    # SSR, so imports and domestic production cover every use, not only food.
     df_ffr_milk["value"] = (
-        df_ffr_milk["Feed"] + df_ffr_milk["Food"] + df_ffr_milk["Processing"]
+        df_ffr_milk["Production"] + df_ffr_milk["Import"] - df_ffr_milk["Export"]
     ) / df_ffr_milk["Food"]
     df_ffr_milk = df_ffr_milk[["Area", "Year", "Item", "value"]]
 
     # Calc Formatting ------------------------------------------------------------
 
-    # Food item name matching with dictionary
-    # Read excel file
-    df_dict = pd.read_excel("dictionaries/dictionnary_livestock.xlsx", sheet_name="fxa")
+    # Food item name matching, in code (the dictionary "fxa" sheet only has milk)
+    supply_ratio_categories = {
+        "Milk - Excluding Butter": "pro-liv-abp-dairy-milk",
+        "Eggs": "pro-liv-abp-hens-egg",
+        "Bovine Meat": "pro-liv-meat-bovine",
+        "Meat, Other": "pro-liv-meat-oth-animal",
+        "Pigmeat": "pro-liv-meat-pig",
+        "Poultry Meat": "pro-liv-meat-poultry",
+        "Mutton & Goat Meat": "pro-liv-meat-sheep",
+    }
+    df_ffr_milk = df_ffr_milk[df_ffr_milk["Item"].isin(supply_ratio_categories)].copy()
+    df_ffr_milk["variables"] = (
+        "fxa_agr_supply-food-ratio_"
+        + df_ffr_milk["Item"].map(supply_ratio_categories)
+        + "[-]"
+    )
 
     # Renaming existing columns (geoscale, timsecale, value)
     df_ffr_milk = df_ffr_milk.rename(columns={"Area": "geoscale", "Year": "timescale"})
-
-    # Merge based on 'Item'
-    df_ffr_milk = pd.merge(df_dict, df_ffr_milk, on="Item")
 
     # Drop the 'Item' column
     df_ffr_milk = df_ffr_milk.drop(columns=["Item"])
@@ -4187,13 +4202,28 @@ def fxa_ffr_milk(df_ffr_milk):
         "Czechia", "Czech Republic"
     )
 
-    # Extrapolation
-    df_ffr_milk = linear_fitting_ots_db(df_ffr_milk, years_all, countries="all")
+    # Extrapolation (ots only)
+    df_ffr_milk = linear_fitting_ots_db(df_ffr_milk, years_ots, countries="all")
 
     # Format as dm
     df_ots, df_fts = database_to_df(df_ffr_milk, lever, level="all")
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_fxa_ffr_milk = DataMatrix.create_from_df(df_ots, num_cat=1)
+    dm_fxa_ffr_milk.filter({"Years": years_ots}, inplace=True)
+
+    # fts: hold the 2014-2023 mean. A linear trend over 1990-2023 crosses the
+    # FBSH/FBS break and drifts (bovine 1.00 -> 1.08, eggs 1.11 -> 1.15 by 2050).
+    years_hold = [y for y in years_ots if y >= 2014]
+    array_hold = np.nanmean(
+        dm_fxa_ffr_milk.filter({"Years": years_hold}, inplace=False).array,
+        axis=1,
+        keepdims=True,
+    )
+    dm_fxa_ffr_milk.add(
+        np.repeat(array_hold, len(years_fts), axis=1),
+        dim="Years",
+        col_label=years_fts,
+    )
 
     return dm_fxa_ffr_milk
 
@@ -4991,7 +5021,7 @@ def datamatrix_to_pickle(dm_fts):
     # dict_fxa['ef_liv_N2O-emission'] = dm_fxa_N2O
     # dict_fxa['ef_liv_CH4-emission_treated'] = dm_fxa_CH4
     # dict_fxa['liv_manure_n-stock'] = dm_fxa_manure_yield
-    dict_fxa["ratio_milk"] = dm_fxa_ffr_milk
+    dict_fxa["ratio_supply-food"] = dm_fxa_ffr_milk
 
     # CalibrationDataToDatamatrix ------------------------------------------------
 

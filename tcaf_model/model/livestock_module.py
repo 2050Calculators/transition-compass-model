@@ -35,7 +35,7 @@ def read_data(DM_livestock, lever_setting):
         dim="Country", col_label=["Switzerland"]
     )  # drop Switzerland for imports
     dm_share_export = DM_livestock["fxa"]["share-export"]
-    dm_fxa_ratio_milk = DM_livestock["fxa"]["ratio_milk"]
+    dm_fxa_ratio_supply = DM_livestock["fxa"]["ratio_supply-food"]
     dm_fxa_cal_liv_prod = DM_livestock["fxa"]["cal_agr_domestic-production-liv"]
     dm_fxa_cal_liv_imports_countries = DM_livestock["fxa"][
         "cal_agr_imports-liv_countries"
@@ -106,7 +106,7 @@ def read_data(DM_livestock, lever_setting):
         "cal_imports-liv_countries": dm_fxa_cal_liv_imports_countries,
         "cal_imports-liv_tot": dm_fxa_cal_liv_imports_tot,
         "cal_liv_population": dm_fxa_cal_liv_pop,
-        "ratio_milk": dm_fxa_ratio_milk,
+        "ratio_supply-food": dm_fxa_ratio_supply,
         "ratio-weight": dm_fxa_ratio_weight,
     }
 
@@ -180,7 +180,21 @@ def trade_livestock_workflow(DM_liv_prod, dm_demand, years_setting):
     dm_ssr_liv.sort(dim="Categories1")
     dm_demand_liv.sort(dim="Categories1")
 
-    # Domestic production [kcal] = agr_demand_(.*) [kcal] * ssr_(.*) [-]
+    # Supply demand [kcal] = food demand [kcal] * supply / food ratio [-]
+    # The SSR is production / apparent supply (production + imports - exports),
+    # so it applies to the whole supply (food, feed, processing, other uses,
+    # residuals), not to food alone. Then domestic production matches FBS
+    # production and imports match FBS imports.
+    dm_ratio = DM_liv_prod["ratio_supply-food"].filter(
+        {"Country": dm_demand_liv.col_labels["Country"]}
+    )
+    dm_ratio.sort(dim="Categories1")
+    dm_demand_liv[:, :, "agr_demand", :] = (
+        dm_demand_liv[:, :, "agr_demand", :]
+        * dm_ratio[:, :, "fxa_agr_supply-food-ratio", :]
+    )
+
+    # Domestic production [kcal] = supply demand [kcal] * ssr_(.*) [-]
     array_temp = dm_demand_liv[:, :, "agr_demand", :] * dm_ssr_liv[:, :, "agr_ssr", :]
     dm_demand_liv.add(
         array_temp, dim="Variables", col_label="agr_domestic_production", unit="kcal"
@@ -287,19 +301,8 @@ def livestock_production_workflow(DM_liv_prod, CDM_const, dm_production, years_s
     )
     DM_liv_prod["losses"].append(dm_production, dim="Variables")
 
-    # (CH only) Account for milk as Feed and Processed
-    # Milk Food & Feed [kcal] = Milk Food [kcal] * fxa_milk_feed_food_ratio [%]
-    array_temp = (
-        DM_liv_prod["losses"][
-            "Switzerland", :, "agr_domestic_production", "abp-dairy-milk"
-        ]
-        * DM_liv_prod["ratio_milk"][
-            "Switzerland", :, "fxa_agr_feed-processing-food-ratio", "abp-dairy-milk"
-        ]
-    )
-    DM_liv_prod["losses"][
-        "Switzerland", :, "agr_domestic_production", "abp-dairy-milk"
-    ] = array_temp
+    # Milk as feed and processed is already in domestic production: the trade
+    # step applies the supply / food ratio to demand before the SSR.
 
     # Livestock domestic prod with losses [kcal] = livestock domestic prod [kcal] * Production losses livestock [%]
     DM_liv_prod["losses"].operation(
