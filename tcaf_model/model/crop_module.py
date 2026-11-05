@@ -13,6 +13,66 @@ from tcaf_model.model.common.config_loader import load_lever_config
 from tcaf_model.model.common.interface_class import Interface
 
 
+def fxa_by_name(dm_fxa, variable, dm):
+    """Values of dm_fxa[variable] for dm's Switzerland years and categories.
+
+    Picked by category name, in dm's order; categories absent from dm_fxa
+    are 0. Shape (years, categories) of dm.
+    """
+    dm_y = dm_fxa.filter({"Years": dm.col_labels["Years"]})
+    cats = dm_y.col_labels["Categories1"]
+    return np.stack(
+        [
+            np.nan_to_num(dm_y["Switzerland", :, variable, c])
+            if c in cats
+            else np.zeros(len(dm.col_labels["Years"]))
+            for c in dm.col_labels["Categories1"]
+        ],
+        axis=-1,
+    )
+
+
+def add_exports_and_stock(dm, DM_crop_prod):
+    """Add agr_exported_production, agr_stock-variation and agr_losses [kcal] to dm.
+
+    Exports are the FBS export volume, not capped at domestic production:
+    FBS includes re-exports (sweeteners: 133 kt exported in 2022, well above
+    what the model produces), and a cap would drop them from the gross imports.
+    The future holds the 2014-2023 mean volume. The stock variation (with FBS
+    other uses and residuals) is historical from FBS and 0 in the future. Both
+    are picked by category name, in dm's order.
+    """
+    years = {"Years": dm.col_labels["Years"]}
+    dm_exports = DM_crop_prod["exports"].filter(years)
+    dm_stock = DM_crop_prod["stock-variation"].filter(years)
+    # by category name, in dm's order (filter keeps the source order)
+    cats = dm.col_labels["Categories1"]
+    exports = np.stack(
+        [dm_exports[:, :, "agr_exported_production", c] for c in cats], axis=-1
+    )
+    stock = np.stack([dm_stock[:, :, "agr_stock-variation", c] for c in cats], axis=-1)
+    dm.add(
+        exports,
+        dim="Variables",
+        col_label="agr_exported_production",
+        unit="kcal",
+    )
+    dm.add(
+        stock,
+        dim="Variables",
+        col_label="agr_stock-variation",
+        unit="kcal",
+    )
+    # FBS losses (raw crops only, 0 for processed products), held at the
+    # 2014-2023 mean in the future
+    dm.add(
+        fxa_by_name(DM_crop_prod["losses"], "agr_losses", dm)[np.newaxis, ...],
+        dim="Variables",
+        col_label="agr_losses",
+        unit="kcal",
+    )
+
+
 def init_years_lever():
     # function that can be used when running the module as standalone to initialise years and levers
     years_setting = [1990, 2023, 2025, 2050, 5]
@@ -112,14 +172,14 @@ def read_data(DM_crop_pickle, lever_setting):
     # dm_hierarchy_residues_cereals = DM_ots_fts['biomass-hierarchy']['biomass-hierarchy_crop_cereal']
     dm_cal_crop = DM_crop_pickle["fxa"]["cal_agr_domestic-production_food"]
     dm_cal_crop_bev = DM_crop_pickle["fxa"]["cal_agr_domestic-production_bev"]
-    dm_fxa_cal_crop_imports_countries = DM_crop_pickle["fxa"][
-        "cal_agr_imports-crop_countries"
-    ]
     dm_fxa_cal_crop_imports_tot = DM_crop_pickle["fxa"]["cal_agr_imports-crop_total"]
     dm_fxa_cal_crop_pro_imports_tot = DM_crop_pickle["fxa"][
         "cal_agr_imports-crop-pro_total"
     ]
-    dm_share_export = DM_crop_pickle["fxa"]["share-export"]
+    dm_exports = DM_crop_pickle["fxa"]["exports-crop"]
+    dm_stock = DM_crop_pickle["fxa"]["stock-variation-crop"]
+    dm_other_uses = DM_crop_pickle["fxa"]["other-uses-crop"]
+    dm_losses_fbs = DM_crop_pickle["fxa"]["losses-crop"]
     # dm_share_export.rename_col_regex('crop-', '', dim='Categories1')
     # dm_crop.append(dm_cal_crop, dim='Variables')
     # dm_ef_residues = DM_crop_pickle['fxa']['ef_burnt-residues']
@@ -139,10 +199,12 @@ def read_data(DM_crop_pickle, lever_setting):
         "crop": dm_crop,
         "split-import-crop": dm_imports,
         "split-import-crop-pro": dm_imports_pro,
-        "share-export": dm_share_export,
+        "exports": dm_exports,
+        "stock-variation": dm_stock,
+        "other-uses": dm_other_uses,
+        "losses": dm_losses_fbs,
         "cal_crop": dm_cal_crop,
         "cal_bev": dm_cal_crop_bev,
-        "cal_imports-crop_countries": dm_fxa_cal_crop_imports_countries,
         "cal_imports-crop_tot": dm_fxa_cal_crop_imports_tot,
         "cal_imports-crop-pro_tot": dm_fxa_cal_crop_pro_imports_tot,
         "ssr-crop": dm_crop_ssr_merged,
@@ -306,6 +368,15 @@ def crop_workflow(
             ],
         }
     )
+    # FBS uses of the processed products that the model does not simulate
+    # (sweeteners fed to animals, vegetable oil used in processing) [kcal],
+    # historical from FBS, 2014-2023 mean in the future. The SSR is
+    # Production / (Food + Feed + Processing), so they belong to the demand
+    # it is applied to.
+    dm_food_processed = dm_food_processed.copy()
+    dm_food_processed["Switzerland", :, "agr_demand", :] = dm_food_processed[
+        "Switzerland", :, "agr_demand", :
+    ] + fxa_by_name(DM_crop_prod["other-uses"], "agr_other-uses", dm_food_processed)
     dm_ssr_food_pro = (
         DM_crop_prod["ssr-pro"]
         .filter(
@@ -357,12 +428,22 @@ def crop_workflow(
     )
 
     # Step Imports Processed Food -------------------------------------------------------------
-    # Imports processed food [kcal] = demand processed food[kcal] - domestic production processed food[kcal]
-    dm_food_processed_imports.operation(
-        "agr_demand",
-        "-",
-        "agr_domestic-production_food_pro",
-        out_col="agr_imported-production_food_pro_raw",
+    # Gross imports processed food [kcal] = demand [kcal] - domestic production [kcal]
+    #                                       + exports [kcal] + stock variation [kcal]
+    #                                       + losses [kcal]
+    # (the FBS balance; the reference is FBS gross imports)
+    add_exports_and_stock(dm_food_processed_imports, DM_crop_prod)
+    array_temp = (
+        dm_food_processed_imports[:, :, "agr_demand", :]
+        - dm_food_processed_imports[:, :, "agr_domestic-production_food_pro", :]
+        + dm_food_processed_imports[:, :, "agr_exported_production", :]
+        + dm_food_processed_imports[:, :, "agr_stock-variation", :]
+        + dm_food_processed_imports[:, :, "agr_losses", :]
+    )
+    dm_food_processed_imports.add(
+        array_temp,
+        dim="Variables",
+        col_label="agr_imported-production_food_pro_raw",
         unit="kcal",
     )
 
@@ -375,6 +456,7 @@ def crop_workflow(
         calibration_start_year=1990,
         calibration_end_year=2023,
         years_setting=years_setting,
+        fts_median_years=10,
     )
     dm_food_processed_imports.append(dm_cal_rates_food_pro, dim="Variables")
     dm_food_processed_imports.operation(
@@ -596,6 +678,74 @@ def crop_workflow(
         out_col="agr_demand_total",
         unit="kcal",
     )
+
+    # (CH only) One crush, two products. Crushing oilseeds gives oil and cake,
+    # processing sugar beet gives sugar and molasses, in fixed proportions.
+    # The Swiss crush is set by its main product, oil (rapeseed, sunflower) and
+    # sugar: its crop equivalent is already in agr_demand_food. Cake and
+    # molasses are co-products of that crush, not a second crush, so their crop
+    # equivalent (in agr_demand_feed_total) is removed from the demand:
+    # Crop demand [kcal] = food + feed - crop equivalent of cake (molasses)
+    # The domestic cake (molasses) is then the co-product of the crush, and the
+    # cake (molasses) imports are the feed demand minus that co-product.
+    for crop, product in [
+        ("crop-oilcrop", "pro-crop-processed-cake"),
+        ("crop-sugarcrop", "pro-crop-processed-molasse"),
+    ]:
+        feed_eq = np.nan_to_num(
+            dm_feed_processed[
+                "Switzerland", :, "agr_domestic_production_feed_pro_raw", crop
+            ]
+        )
+        dm_crop_demand["Switzerland", :, "agr_demand_total", crop] = (
+            dm_crop_demand["Switzerland", :, "agr_demand_total", crop] - feed_eq
+        )
+
+        # Domestic co-product [kcal] = crush [kcal crop] / yield [kcal crop / kcal product]
+        crush = np.nan_to_num(
+            dm_food_processed["Switzerland", :, "agr_demand_food", crop]
+        )
+        yield_coproduct = np.nan_to_num(
+            dm_feed_processed_copy["Switzerland", :, "fxa_agr_processing-yield", crop]
+        )
+        coproduct = np.divide(
+            crush,
+            yield_coproduct,
+            out=np.zeros_like(crush),
+            where=yield_coproduct > 0,
+        )
+        # Imports [kcal] = feed demand - domestic co-product (no surplus exported)
+        feed_demand = np.nan_to_num(
+            dm_feed_processed_copy["Switzerland", :, "agr_demand_feed", crop]
+        )
+        imports = np.maximum(feed_demand - coproduct, 0.0)
+        # Imports per country: same origin shares as the livestock module,
+        # rescaled to these imports
+        assert (
+            dm_feed_processed_imports.col_labels["Years"]
+            == dm_feed_processed_copy.col_labels["Years"]
+        )
+        by_country = np.nan_to_num(
+            dm_feed_processed_imports[:, :, "agr_domestic_production", product]
+        )
+        total = by_country.sum(axis=0)
+        scale = np.divide(imports, total, out=np.zeros_like(imports), where=total > 0)
+        dm_feed_processed_imports[:, :, "agr_domestic_production", product] = (
+            by_country * scale[np.newaxis, :]
+        )
+
+    # (CH only) Crop demand on the FBS definition of use (Food + Feed +
+    # Processing, the SSR denominator):
+    # + crops for domestic beverages (malting barley, grapes for wine...),
+    #   which FBS counts as Processing, not as extra production
+    # + FBS uses not simulated (other processing, raw oilseed and beet feed,
+    #   rice feed), historical, 2014-2023 mean in the future
+    dm_crop_demand["Switzerland", :, "agr_demand_total", :] = (
+        dm_crop_demand["Switzerland", :, "agr_demand_total", :]
+        + fxa_by_name(dm_bev_dom_prod, "agr_domestic-production_bev", dm_crop_demand)
+        + fxa_by_name(DM_crop_prod["other-uses"], "agr_other-uses", dm_crop_demand)
+    )
+
     dm_crop_demand = dm_crop_demand.filter({"Variables": ["agr_demand_total"]})
 
     """# Appending the dms
@@ -632,14 +782,13 @@ def crop_workflow(
         unit="kcal",
     )
 
-    # (CH only) Dom prod [kcal] = Dom prod (without bev) + Dom prod bev (raw crop)
-    dm_crop_demand.append(dm_bev_dom_prod, dim="Variables")
-    dm_crop_demand.operation(
+    # (CH only) Dom prod raw [kcal] = demand x SSR. The crops for domestic
+    # beverages are in the demand, so they are not added to the production
+    # (the reference, FBS Production, already contains them).
+    dm_crop_demand.rename_col(
         "agr_domestic-production_without_bev",
-        "+",
-        "agr_domestic-production_bev",
-        out_col="agr_domestic_production_raw",
-        unit="kcal",
+        "agr_domestic_production_raw",
+        dim="Variables",
     )
 
     # (CH only) CALIBRATION CROP PRODUCTION TOTAL --------------------------------------------------------------------------------------
@@ -653,6 +802,7 @@ def crop_workflow(
         calibration_start_year=1990,
         calibration_end_year=2023,
         years_setting=years_setting,
+        fts_median_years=10,
     )
     # Add dummy with 1.0 for rice (because no rice produced in Switzerland)
     dm_cal_rates_crop.add(
@@ -680,15 +830,9 @@ def crop_workflow(
 
     # Step TOTAL IMPORTS (RAW PRODUCTS)
 
-    # Dom prod for exports [kcal] = Domestic production [kcal] * share exports [exports/production]
-    dm_crop_demand.append(DM_crop_prod["share-export"], dim="Variables")
-    dm_crop_demand.operation(
-        "agr_share-export",
-        "*",
-        "agr_domestic_production",
-        out_col="agr_exported_production",
-        unit="kcal",
-    )
+    # Exports [kcal] (FBS volume, re-exports included) and stock variation
+    # [kcal] (FBS, 0 in the future)
+    add_exports_and_stock(dm_crop_demand, DM_crop_prod)
 
     """# Account for processed food and feed in the demand (raw products)
     # processed imports + raw products for processing imported ?
@@ -702,18 +846,20 @@ def crop_workflow(
                  dm_crop_demand[:,:,'agr_demand_total','oilcrop']
     dm_crop_demand[:, :, 'agr_demand_total', 'oilcrop'] = array_temp"""
 
-    # Imported production total [kcal] = Demand [kcal] - (Domestic production [kcal] - Dom prod for exports [kcal])
-    """dm_crop_demand.operation('agr_domestic_production', '-', 'agr_exported_production',
-                                     out_col='temp', unit='kcal')
-    dm_crop_demand.operation('agr_demand_total', '-', 'temp',
-                                     out_col='agr_imported_production_total_raw', unit='kcal')"""
-
-    # Imported production total [kcal] = Demand [kcal] - Domestic production [kcal]
-    dm_crop_demand.operation(
-        "agr_demand_total",
-        "-",
-        "agr_domestic_production",
-        out_col="agr_imported_production_total_raw",
+    # Gross imports [kcal] = Demand [kcal] - Domestic production [kcal]
+    #                        + Exports [kcal] + Stock variation [kcal] + Losses [kcal]
+    # (FBS Seed is not downloaded, so it is still missing)
+    array_temp = (
+        dm_crop_demand[:, :, "agr_demand_total", :]
+        - dm_crop_demand[:, :, "agr_domestic_production", :]
+        + dm_crop_demand[:, :, "agr_exported_production", :]
+        + dm_crop_demand[:, :, "agr_stock-variation", :]
+        + dm_crop_demand[:, :, "agr_losses", :]
+    )
+    dm_crop_demand.add(
+        array_temp,
+        dim="Variables",
+        col_label="agr_imported_production_total_raw",
         unit="kcal",
     )
 
@@ -731,6 +877,7 @@ def crop_workflow(
         calibration_start_year=1990,
         calibration_end_year=2023,
         years_setting=years_setting,
+        fts_median_years=10,
     )
     dm_crop_demand.append(dm_cal_rates_imports, dim="Variables")
     dm_crop_demand.operation(
@@ -761,25 +908,12 @@ def crop_workflow(
         {"Variables": "agr_domestic_production_raw"}
     )
 
-    # Calibration - Imports per countries
-    dm_cal_imports_countries = DM_crop_prod[
-        "cal_imports-crop_countries"
-    ].filter_w_regex({"Categories1": "crop-"})
-    dm_cal_rates_imports_countries = calibration_rates(
-        dm_production,
-        dm_cal_imports_countries,
-        calibration_start_year=1990,
-        calibration_end_year=2023,
-        years_setting=years_setting,
-    )
-    dm_production.append(dm_cal_rates_imports_countries, dim="Variables")
-    dm_production.operation(
-        "agr_domestic_production_raw",
-        "*",
-        "cal_rate",
-        dim="Variables",
-        out_col="agr_domestic_production",
-        unit="kcal",
+    # No calibration per country: imports by origin are the FBS-calibrated
+    # total x TM origin shares. (A per-country calibration against TM reduced
+    # to one scalar per crop, TM total / FBS total, which only replaced the
+    # FBS level by the TM level: vegetables x7, fruit x0.13.)
+    dm_production.rename_col(
+        "agr_domestic_production_raw", "agr_domestic_production", dim="Variables"
     )
 
     # Total raw imports [kcal] = raw imports + Imports of raw products for processed food, feed and bev
@@ -808,7 +942,7 @@ def crop_workflow(
             :, :, "agr_domestic_production", "pro-crop-processed-molasse"
         ]
     )
-    dm_production[:, :, "agr_domestic_production", "crop-oilcrop"] = array_temp
+    dm_production[:, :, "agr_domestic_production", "crop-sugarcrop"] = array_temp
 
     # fruit (raw + bev)
     array_temp = (

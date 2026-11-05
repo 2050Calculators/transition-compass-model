@@ -18,9 +18,64 @@ from tcaf_model.model.common.constant_data_matrix_class import (
     ConstantDataMatrix,
 )
 from tcaf_model.model.common.data_matrix_class import DataMatrix
+from tcaf_model.model.common.fbs_trade import (
+    fbs_elements,
+    fbs_exports_kcal,
+    fbs_stock_and_other_uses_kcal,
+    kt_to_kcal_dm,
+    trade_matrix_partners,
+)
+
+# FBS item -> model category (the dictionary in dictionaries/dictionary_crop.xlsx
+# maps the same items)
+CROP_FBS_ITEMS = {
+    "Cereals - Excluding Beer": "crop-cereal",
+    "Fruits - Excluding Wine": "crop-fruit",
+    "Oilcrops": "crop-oilcrop",
+    "Pulses": "crop-pulse",
+    "Rice and products": "crop-rice",
+    "Starchy Roots": "crop-starch",
+    "Sugar Crops": "crop-sugarcrop",
+    "Vegetables": "crop-veg",
+    "Sugar (Raw Equivalent)": "pro-crop-processed-sugar",
+    "Sweeteners, Other": "pro-crop-processed-sweet",
+    "Vegetable Oils": "pro-crop-processed-voil",
+}
 from tcaf_model.model.common.io_database import (
     database_to_df,
 )
+
+
+def remove_molasses_from_sweeteners(df_fbs, file_dict):
+    """Take molasses out of the FBS sweeteners [kt].
+
+    From 2010 (FBS), "Sweeteners, Other" and the "Sugar & Sweeteners" group
+    include molasses: its production, its feed use (FBS "Sweeteners, Other"
+    Feed equals the SCL molasses Feed in every year 2010-2023), its exports
+    and imports. The model treats molasses as a co-product of the sugar beet
+    crush, fed to animals from the livestock ration, so here it is removed
+    from the sweeteners, using the SCL molasses balance:
+    - Sweeteners SSR, other uses, exports, import reference: without molasses
+    - sugar processing yield (beet processing / group production): without
+      molasses production, so that (sugar + sweeteners) x yield is still the
+      FBS beet processing
+    FBSH (up to 2009) has no molasses in the sweeteners. Values below 0 after
+    the subtraction (FBS rounds to 1 kt) are set to 0.
+    """
+    df_mol = pd.read_csv(file_dict["molasse"])
+    df_mol = df_mol[df_mol["Item"].str.contains("Molasses", case=False)]
+    mol = (
+        df_mol.groupby(["Area", "Element", "Year"])["Value"].sum() / 1000.0
+    )  # [t] => [kt]
+    df = df_fbs.copy()
+    mask = df["Item"].isin(["Sweeteners, Other", "Sugar & Sweeteners"]) & df[
+        "Element"
+    ].isin(["Production", "Feed", "Export", "Import"])
+    key = pd.MultiIndex.from_frame(df.loc[mask, ["Area", "Element", "Year"]])
+    df.loc[mask, "Value"] = (
+        df.loc[mask, "Value"].to_numpy() - mol.reindex(key).fillna(0.0).to_numpy()
+    ).clip(min=0.0)
+    return df
 
 
 # Ensure structure coherence
@@ -754,21 +809,10 @@ def crop_calibration(list_countries_calc, dm_losses, dm_fxa_pro_yield, cdm_bev):
     dm_cal_dom_prod_bev.groupby(
         {"crop-fruit": "bev-alc|wine"}, dim="Categories1", regex=True, inplace=True
     )
-    # cal_crop total = cal_crop_food (actually also includes feed) + cal_crop_bev
-    array_temp_cereal = (
-        dm_cal_dom_prod_bev[:, :, "cal_agr_domestic-production_bev", "crop-cereal"]
-        + dm_cal_dom_prod_crop[:, :, "cal_agr_domestic-production", "crop-cereal"]
-    )
-    dm_cal_dom_prod_crop[:, :, "cal_agr_domestic-production", "crop-cereal"] = (
-        array_temp_cereal
-    )
-    array_temp_fruit = (
-        dm_cal_dom_prod_bev[:, :, "cal_agr_domestic-production_bev", "crop-fruit"]
-        + dm_cal_dom_prod_crop[:, :, "cal_agr_domestic-production", "crop-fruit"]
-    )
-    dm_cal_dom_prod_crop[:, :, "cal_agr_domestic-production", "crop-fruit"] = (
-        array_temp_fruit
-    )
+    # The production reference is FBS Production only. The crops used for
+    # domestic beverages are already in it (all barley and grapes grown are
+    # counted as production); on the FBS side they are part of Processing,
+    # so the crop module puts them in the demand, not in the production.
 
     return dm_cal_dom_prod_crop, dm_cal_dom_prod_bev
 
@@ -1049,7 +1093,18 @@ def fxa_processing_yield(df_processing_yield_fxa, cdm_kcal):
     df_ots, df_fts = database_to_df(df_calc_processing_yield, lever, level="all")
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm_fxa_pro_yield = DataMatrix.create_from_df(df_ots, num_cat=1)
-    linear_fitting(dm_fxa_pro_yield, years_all)
+    # Fill the historical gaps, then hold the 2014-2023 mean in the future.
+    # A processing yield is a physical ratio: a linear trend over 1990-2023
+    # runs through the FBSH/FBS break of 2010 and took the oil yield below 0
+    # by 2050 (0.62 in 2023, -0.28 in 2050).
+    linear_fitting(dm_fxa_pro_yield, years_ots)
+    years_mean = [y for y in years_ots if y >= years_ots[-1] - 9]
+    array_mean = np.nanmean(
+        dm_fxa_pro_yield.filter({"Years": years_mean}).array, axis=1, keepdims=True
+    )
+    for y in years_fts:
+        dm_fxa_pro_yield.add(array_mean, dim="Years", col_label=[y])
+    dm_fxa_pro_yield.sort("Years")
 
     # The idea is to change unit from t input / t output to kcal input / kcal output
     # because that is what is used in the Calculator
@@ -1476,6 +1531,16 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
         df_ssr_2010_2021_molasse_cake.to_csv(file_dict["molasse"], index=False)
 
     # Filtering
+    # FAOSTAT CBH (commodity balances, old) runs to 2013 and SCL (new) starts
+    # in 2010: keep CBH before 2010 only, otherwise 2010-2013 is summed twice
+    # (cake fed in 2010: 386 kt in each file, 773 kt after the sum).
+    if "Domain Code" in df_ssr_cake.columns:
+        df_ssr_cake = df_ssr_cake[
+            ~(
+                (df_ssr_cake["Domain Code"] == "CBH")
+                & (pd.to_numeric(df_ssr_cake["Year"]) >= 2010)
+            )
+        ]
     filtered_df = df_ssr_cake[df_ssr_cake["Item"].str.contains("cake", case=False)]
     # Groupby Area, Year and Element and sum the Value
     grouped_df = (
@@ -1501,6 +1566,8 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     # Filtering to keep wanted columns
     columns_to_filter = ["Area", "Element", "Item", "Year", "Value"]
     df_ssr = df_ssr[columns_to_filter]
+    # Molasses is a co-product of the sugar beet crush, not a sweetener
+    df_ssr = remove_molasses_from_sweeteners(df_ssr, file_dict)
     df_ssr_feed = df_ssr_feed[columns_to_filter]
 
     # Concat and create copy for processing yield
@@ -1841,6 +1908,104 @@ def exports_processing(list_countries_calc, file_dict):
     return dm_fxa_exports
 
 
+# CalculationLeaf FBS EXPORTS AND STOCK VARIATION
+def fbs_trade_processing(file_dict, cdm_kcal, years_ots, years_fts):
+    # Exports and stock variation (+ other uses, residuals) from the Food
+    # Balance Sheets, the source of the SSR and of the import reference.
+    # Uses the file cached by self_sufficiency_processing.
+    df_fbs = remove_molasses_from_sweeteners(
+        pd.read_csv(file_dict["ssr-crop"]), file_dict
+    )
+    df_elements = fbs_elements(df_fbs, CROP_FBS_ITEMS, "Switzerland", years_ots)
+    # Exports [kcal] (a volume, re-exports included; fts: mean 2014-2023)
+    dm_exports = fbs_exports_kcal(
+        df_elements,
+        cdm_kcal,
+        "Switzerland",
+        years_ots,
+        years_fts,
+        "agr_exported_production",
+    )
+    # Stock variation + other uses + residuals [kcal] (fts: 0)
+    dm_stock = fbs_stock_and_other_uses_kcal(
+        df_elements,
+        cdm_kcal,
+        "Switzerland",
+        years_ots,
+        years_fts,
+        "agr_stock-variation",
+    )
+    return dm_exports, dm_stock
+
+
+# CalculationLeaf FBS USES NOT SIMULATED, LOSSES
+def fbs_other_uses_processing(
+    file_dict, cdm_kcal, dm_cal_dom_prod_bev, years_ots, years_fts
+):
+    # The SSR is Production / (Food + Feed + Processing). The crop module
+    # simulates food (diet), feed (livestock ration), the crush of oilseeds and
+    # sugar beet (from oil, sugar, cake, molasses) and the crops for domestic
+    # beverages. These are the FBS uses it does not simulate, added to its
+    # demand so that the demand is the same use the SSR was computed on
+    # (fts: mean 2014-2023). Per category [kt]:
+    #   cereals, fruit      Processing - crops for domestic beverages
+    #                       (malting barley, grapes for wine are simulated)
+    #   pulses, starchy roots, vegetables   Processing
+    #   oilcrops, sugar crops               Feed (raw oilseeds, beet fed to
+    #                       animals; the crush itself is simulated)
+    #   rice, processed sugar, sweeteners, vegetable oil   Feed + Processing
+    # Fruit can be slightly negative in a few FBSH years, when the beverage
+    # crops computed with the processing yields exceed FBS Processing.
+    df_fbs = remove_molasses_from_sweeteners(
+        pd.read_csv(file_dict["ssr-crop"]), file_dict
+    )
+    df_elements = fbs_elements(df_fbs, CROP_FBS_ITEMS, "Switzerland", years_ots)
+    feed = df_elements["Feed"].unstack("category")
+    processing = df_elements["Processing"].unstack("category")
+    cdm_idx = cdm_kcal.idx
+    dm_bev = dm_cal_dom_prod_bev.filter({"Years": years_ots})
+    bev_kt = {
+        c: pd.Series(
+            dm_bev["Switzerland", :, "cal_agr_domestic-production_bev", c]
+            / cdm_kcal.array[cdm_idx["cp_kcal-per-t"], cdm_idx[c]]
+            / 1000.0,
+            index=years_ots,
+        )
+        for c in dm_bev.col_labels["Categories1"]
+    }
+    other = pd.DataFrame(index=feed.index)
+    for c in feed.columns:
+        if c in ("crop-cereal", "crop-fruit"):
+            other[c] = processing[c] - bev_kt[c]
+        elif c in ("crop-pulse", "crop-starch", "crop-veg"):
+            other[c] = processing[c]
+        elif c in ("crop-oilcrop", "crop-sugarcrop"):
+            other[c] = feed[c]
+        else:
+            other[c] = feed[c] + processing[c]
+    dm_other_uses = kt_to_kcal_dm(
+        other, cdm_kcal, "Switzerland", years_ots, years_fts, "agr_other-uses"
+    )
+
+    # Losses [kcal]: in the FBS balance (Import = uses - Production + Export +
+    # Stock variation + Losses + Seed) but not in the SSR. Seed is not
+    # downloaded. Only for the raw crops (fts: mean 2014-2023).
+    df_dom = pd.read_csv(file_dict["dom-prod-crop"])
+    df_dom = df_dom[(df_dom["Area"] == "Switzerland") & (df_dom["Element"] == "Losses")]
+    df_dom = df_dom[df_dom["Item"].isin(CROP_FBS_ITEMS)]
+    losses = (
+        df_dom.assign(category=df_dom["Item"].map(CROP_FBS_ITEMS))
+        .pivot_table(index="Year", columns="category", values="Value", aggfunc="sum")
+        .reindex(index=years_ots)
+        .fillna(0.0)
+    )
+    losses.index.name = "Year"
+    dm_losses = kt_to_kcal_dm(
+        losses, cdm_kcal, "Switzerland", years_ots, years_fts, "agr_losses"
+    )
+    return dm_other_uses, dm_losses
+
+
 # CalculationLeaf TRADE ORIGIN
 def trade_origin_processing(years_ots, list_countries_calc, file_dict):
     # Read data ------------------------------------------------------------------------------------------------------------
@@ -1888,8 +2053,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_fruit = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Cereals - excluding beer
@@ -1909,8 +2074,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_cereal = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Oilcrops
@@ -1927,8 +2092,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_oilcrop = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Processed voil
@@ -1946,8 +2111,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_pro_voil = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Pulses
@@ -1956,8 +2121,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_pulse = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Rice
@@ -1966,8 +2131,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_rice = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Starchy Roots
@@ -1976,8 +2141,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_starch = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Sugarcrops
@@ -1986,8 +2151,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_sugarcrop = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Vegetables
@@ -2014,8 +2179,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_vegetables = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Beer
@@ -2024,8 +2189,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_beer = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Beverages, alcoholic
@@ -2034,8 +2199,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_bev_alc = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Beverages, fermented
@@ -2044,8 +2209,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_bev_fer = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Wine
@@ -2054,8 +2219,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_wine = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Cocoa and products
@@ -2064,8 +2229,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_cocoa = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Coffee
@@ -2074,8 +2239,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_coffee = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Tea
@@ -2084,8 +2249,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_tea = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Processed sugar
@@ -2098,8 +2263,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_pro_sugar = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         # Create item list for Processed sweeteners
@@ -2108,8 +2273,8 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         list_items_pro_sweet = [
             k
             for k in dict_items_faostat.keys()
-            if any(word in k.lower() for word in keywords)
-            and not any(bad in k.lower() for bad in exclude)
+            if any(word.lower() in k.lower() for word in keywords)
+            and not any(bad.lower() in k.lower() for bad in exclude)
         ]
 
         dict_item_groups = {
@@ -2136,6 +2301,13 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
             "stm-coffee": list_items_coffee,
             "stm-tea": list_items_tea,
         }
+
+        # An empty item list makes FAOSTAT return every item (this is how
+        # "crop-veg" ended up holding all agricultural imports: its keywords
+        # were capitalised and never matched the lower-cased item names).
+        empty = [name for name, items in dict_item_groups.items() if not items]
+        if empty:
+            raise ValueError(f"No FAOSTAT TM item matches the keywords of {empty}")
 
         # 1990 - 2023
         ld = faostat.list_datasets()
@@ -2244,61 +2416,12 @@ def trade_origin_processing(years_ots, list_countries_calc, file_dict):
         df_trade_agg = pd.concat(df_trade_agg_temp, ignore_index=True)
         df_trade_agg.to_csv(file_dict["trade-crop"], index=False)
 
-    # Rename Item as variables
-    df_trade_agg.rename(columns={"Item": "variables"}, inplace=True)
-
-    # Prepend var name and unit
-    df_trade_agg["variables"] = df_trade_agg["variables"].apply(
-        lambda x: f"agr_split-import_{x}[-]"
+    # Imports by partner [t]. A partner-year missing from TM means no trade,
+    # so it is set to 0 (interpolating it inflated the totals by 5-50%).
+    # Future years hold the 2019-2023 mean.
+    dm_crop_trade_origin = trade_matrix_partners(
+        df_trade_agg, years_ots, years_fts, unit="-"
     )
-
-    """# Aggregate by countries -----------------------------------------------------
-
-  # Read csv
-  df_countries = pd.read_csv('data/faostat/FAOSTAT_data_partner-countries-regions.csv')
-
-  # Filter the regions
-  clean_regions = [x.replace('-- ', '').replace(' > (List)', '') for x in list_partnerregions]
-  mask = df_countries['Partner Country Group'].str.contains('|'.join(clean_regions),
-                                                  case=False, na=False)
-  df_countries = df_countries[mask].copy()
-  df_countries = df_countries[['Partner Country Group', 'Partner Countries']]
-
-  # Merge
-  df_trade_agg = pd.merge(df_trade_agg, df_countries, on='Partner Countries')
-
-  # Aggregating
-  df_trade_agg = df_trade_agg.groupby(['variables', 'Partner Country Group', 'Year'], as_index=False)['Value'].sum()
-
-  df_trade_agg.rename(columns={'Partner Country Group': 'geoscale',
-                               'Year': 'timescale', 'Value':'value'}, inplace=True)"""
-
-    # Rename and format correctly
-    df_trade_agg = df_trade_agg[["Partner Countries", "variables", "Year", "Value"]]
-    df_trade_agg.rename(
-        columns={
-            "Partner Countries": "geoscale",
-            "Year": "timescale",
-            "Value": "value",
-        },
-        inplace=True,
-    )
-
-    # Extrapolation for missing data
-    lever = "dummy"
-    df_trade_agg["lever"] = lever
-    df_trade_agg["module"] = lever
-    df_trade_agg["level"] = 0.0
-    df_trade_agg = ensure_structure(df_trade_agg)
-    df_trade_agg = linear_fitting_ots_db(df_trade_agg, years_all, countries="all")
-
-    # Replace negative values by 0.0
-    df_trade_agg["value"] = df_trade_agg["value"].clip(lower=0.0)
-
-    # Format as datamatrix
-    df_ots, df_fts = database_to_df(df_trade_agg, lever, level="all")
-    df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
-    dm_crop_trade_origin = DataMatrix.create_from_df(df_ots, num_cat=1)
 
     # Add Switzerland as dummy (because are in losses and other dms)
     dm_crop_trade_origin.add(0.0, dummy=True, col_label=["Switzerland"], dim="Country")
@@ -2696,12 +2819,17 @@ def datamatrix_to_pickle(dm_fts):
 
     dict_fxa["cal_agr_domestic-production_food"] = dm_cal_dom_prod_crop
     dict_fxa["cal_agr_domestic-production_bev"] = dm_cal_dom_prod_bev
-    dict_fxa["cal_agr_imports-crop_total"] = dm_cal_imports_tot
+    # Import references from FBS (same source as the SSR). The TM totals
+    # (dm_cal_imports_tot, dm_cal_imports_countries) are no longer used: TM
+    # only gives the origin shares.
     dict_fxa["cal_agr_imports-crop_total"] = dm_imports_fbs
-    dict_fxa["cal_agr_imports-crop_countries"] = dm_cal_imports_countries
-    dict_fxa["cal_agr_imports-crop-pro_total"] = dm_cal_imports_tot.filter_w_regex(
+    dict_fxa["cal_agr_imports-crop-pro_total"] = dm_imports_fbs.filter_w_regex(
         {"Categories1": "pro-crop.*"}
     )
+    dict_fxa["exports-crop"] = dm_exports
+    dict_fxa["stock-variation-crop"] = dm_stock
+    dict_fxa["other-uses-crop"] = dm_other_uses
+    dict_fxa["losses-crop"] = dm_losses_fbs
     dict_fxa["cal_crop-share-area"] = dm_cal_crop_area
     dict_fxa["cal_cropland_total"] = dm_cal_cropland
 
@@ -3099,6 +3227,10 @@ dm_cal_dom_prod_crop, dm_cal_dom_prod_bev = crop_calibration(
 )
 dm_crop_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = (
     trade_origin_processing(years_ots, list_countries_calc, file_dict)
+)
+dm_exports, dm_stock = fbs_trade_processing(file_dict, cdm_kcal, years_ots, years_fts)
+dm_other_uses, dm_losses_fbs = fbs_other_uses_processing(
+    file_dict, cdm_kcal, dm_cal_dom_prod_bev, years_ots, years_fts
 )
 dm_cal_crop_area, dm_prod_share = production_share()
 dm_cal_cropland = cropland_calibration(list_countries_calc)
