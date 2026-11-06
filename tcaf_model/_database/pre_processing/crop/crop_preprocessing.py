@@ -13,6 +13,7 @@ from tcaf_model.model.common.auxiliary_functions import (
     flat_fts_level,
     linear_fitting,
     linear_fitting_ots_db,
+    mean_fts_level,
 )
 from tcaf_model.model.common.constant_data_matrix_class import (
     ConstantDataMatrix,
@@ -21,6 +22,7 @@ from tcaf_model.model.common.data_matrix_class import DataMatrix
 from tcaf_model.model.common.fbs_trade import (
     fbs_elements,
     fbs_exports_kcal,
+    fbs_seed_rate,
     fbs_stock_and_other_uses_kcal,
     kt_to_kcal_dm,
     trade_matrix_partners,
@@ -44,6 +46,13 @@ CROP_FBS_ITEMS = {
 from tcaf_model.model.common.io_database import (
     database_to_df,
 )
+
+# Business-as-usual (level 1) SSR: mean of these years, held to 2050
+SSR_BAU_YEARS = list(range(2014, 2024))
+# SSR levers capped at 1 in the BAU: FBS records no exports for them
+SSR_BAU_CAP_1 = ["ssr-crop-sugarcrop"]
+# Crops whose seed (FBS Seed, not downloaded) is a share of their production
+SEED_CATEGORIES = ["crop-cereal", "crop-pulse", "crop-starch"]
 
 
 def remove_molasses_from_sweeteners(df_fbs, file_dict):
@@ -1021,6 +1030,22 @@ def fxa_processing_yield(df_processing_yield_fxa, cdm_kcal):
 
     # Drop the helper column
     df_sugar = df_sugar.drop(columns=["Sugarcrops_processing"])
+
+    # The sugar yield (kept under the dictionary's item "Sugar & Sweeteners")
+    # is beet processed per t of sugar only. The FBS group also holds honey
+    # and the "Sweeteners, Other" (glucose and fructose syrups, made from
+    # maize and wheat starch), which are not made from beet: with the group's
+    # production the crush computed from the domestic sugar was 1-3% short of
+    # FBS Processing, all of the sugar beet import gap.
+    sugar_prod = (
+        pivot_df[pivot_df["Item"] == "Sugar (Raw Equivalent)"]
+        .loc[:, ["Area", "Year", "Production"]]
+        .rename(columns={"Production": "Sugar_production"})
+    )
+    df_sugar = df_sugar.merge(sugar_prod, on=["Area", "Year"], how="left")
+    is_sugar = df_sugar["Item"] == "Sugar & Sweeteners"
+    df_sugar.loc[is_sugar, "Production"] = df_sugar.loc[is_sugar, "Sugar_production"]
+    df_sugar = df_sugar.drop(columns=["Sugar_production"])
 
     # Processing yields [input/output] = Processing / Production
     df_sugar["value"] = df_sugar["Processing"] / df_sugar["Production"]
@@ -2003,7 +2028,21 @@ def fbs_other_uses_processing(
     dm_losses = kt_to_kcal_dm(
         losses, cdm_kcal, "Switzerland", years_ots, years_fts, "agr_losses"
     )
-    return dm_other_uses, dm_losses
+
+    # Seed [-, share of production]: not downloaded, so the residual of the
+    # FBS balance. Only for the crops that are sown from their own harvest
+    # (seed grain, seed potatoes, pulses); elsewhere the residual is 1 kt
+    # rounding, or for fruit the FBSH balance not closing in 1999-2009.
+    dm_seed_rate = fbs_seed_rate(
+        df_elements,
+        losses,
+        SEED_CATEGORIES,
+        "Switzerland",
+        years_ots,
+        years_fts,
+        "agr_seed-rate",
+    )
+    return dm_other_uses, dm_losses, dm_seed_rate
 
 
 # CalculationLeaf TRADE ORIGIN
@@ -2830,6 +2869,7 @@ def datamatrix_to_pickle(dm_fts):
     dict_fxa["stock-variation-crop"] = dm_stock
     dict_fxa["other-uses-crop"] = dm_other_uses
     dict_fxa["losses-crop"] = dm_losses_fbs
+    dict_fxa["seed-rate-crop"] = dm_seed_rate
     dict_fxa["cal_crop-share-area"] = dm_cal_crop_area
     dict_fxa["cal_cropland_total"] = dm_cal_cropland
 
@@ -2945,8 +2985,16 @@ def datamatrix_to_pickle(dm_fts):
         lever: value for lever, value in dict_ots.items() if "ssr-crop" in lever
     }
     for lever in dict_lever_ssr_crop:
-        # Level 1 - business as usual scenario (linear fitting on past data)
-        dm_bau_1 = dict_fts[lever][1]
+        # Level 1 - business as usual: the 2014-2023 mean SSR. A linear trend
+        # over 1990-2023 runs through the FBSH/FBS break and the 2018-2023 beet
+        # stock build (cereals went to 0 in 2050, sugar beet above 1). Capped at
+        # 1 where FBS records no exports (no SSR above 1 without exports).
+        dm_bau_1 = mean_fts_level(
+            dict_ots[lever],
+            SSR_BAU_YEARS,
+            years_fts,
+            max_value=1 if lever in SSR_BAU_CAP_1 else None,
+        )
         dict_fts[lever] = {1: dm_bau_1}
         # Level 2 - hold the last historical value (2023) constant
         dict_fts[lever][2] = flat_fts_level(dict_ots[lever], years_ots, years_fts)
@@ -2981,8 +3029,13 @@ def datamatrix_to_pickle(dm_fts):
         lever: value for lever, value in dict_ots.items() if "ssr-pro" in lever
     }
     for lever in dict_lever_ssr_pro:
-        # Level 1 - business as usual scenario (linear fitting on past data)
-        dm_bau_1 = dict_fts[lever][1]
+        # Level 1 - business as usual: the 2014-2023 mean SSR (see ssr-crop)
+        dm_bau_1 = mean_fts_level(
+            dict_ots[lever],
+            SSR_BAU_YEARS,
+            years_fts,
+            max_value=1 if lever in SSR_BAU_CAP_1 else None,
+        )
         dict_fts[lever] = {1: dm_bau_1}
         # Level 2 - hold the last historical value (2023) constant
         dict_fts[lever][2] = flat_fts_level(dict_ots[lever], years_ots, years_fts)
@@ -3229,7 +3282,7 @@ dm_crop_trade_origin, dm_cal_imports_countries, dm_cal_imports_tot = (
     trade_origin_processing(years_ots, list_countries_calc, file_dict)
 )
 dm_exports, dm_stock = fbs_trade_processing(file_dict, cdm_kcal, years_ots, years_fts)
-dm_other_uses, dm_losses_fbs = fbs_other_uses_processing(
+dm_other_uses, dm_losses_fbs, dm_seed_rate = fbs_other_uses_processing(
     file_dict, cdm_kcal, dm_cal_dom_prod_bev, years_ots, years_fts
 )
 dm_cal_crop_area, dm_prod_share = production_share()
