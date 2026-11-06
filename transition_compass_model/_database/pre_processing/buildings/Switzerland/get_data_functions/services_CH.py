@@ -139,9 +139,17 @@ def extract_services_floor_area_EP2050(this_dir, years_ots):
 
     missing_years = [yr for yr in years_ots if yr not in years_ep2050]
     if missing_years:
-        dm_add_missing_variables(dm_ch, {"Years": missing_years})
+        dm_add_missing_variables(dm_ch, {"Years": missing_years}, fill_nans=False)
         dm_ch.sort("Years")
+
     linear_fitting(dm_ch, years_ots, based_on=list(range(2000, 2010)))
+
+    # The slope between 2000 an 2010 is to steep thus it reaches 0 after 1990 and gets negative after.
+    # We suppose the rate of construction of buildings to be slowlier before 2000 and linear regress between 0 and the value in 2000
+    idx = dm_ch.idx
+    dm_ch.array[:, idx[1990] : idx[2000], :, :, idx["C"]] = np.nan
+    dm_ch.array[:, idx[1990], :, :, idx["C"]] = 0
+    dm_ch.fill_nans("Years")
     return dm_ch.filter({"Years": years_ots})
 
 

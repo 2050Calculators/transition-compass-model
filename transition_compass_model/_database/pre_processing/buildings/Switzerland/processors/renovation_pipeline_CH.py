@@ -25,37 +25,6 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
     # Programme Bâtiments
     dm_renovation = renov.extract_nb_renovated_bld(dm_bld)
 
-    # Number of renovated-buildings (thermal insulation)
-    # https://www.newsd.admin.ch/newsd/message/attachments/82234.pdf
-    # "Programme bâtiments" rapports annuels 2014-2022, focus sur isolation thérmique
-    nb_buildings_isolated = {
-        2023: 8924,
-        2022: 8148,
-        2021: 8400,
-        2020: 8050,
-        2019: 8500,
-        2018: 7500,
-        2017: 8100,
-        2016: 7900,
-        2014: 8303,
-    }
-    nb_buildings_systemic_renovation = {
-        2023: 2520,
-        2022: 2326,
-        2021: 2320,
-        2020: 2240,
-        2019: 1900,
-        2018: 1200,
-        2017: 374,
-        2016: 0,
-        2014: 0,
-    }
-    nb_buildings_renovated = dict()
-    for yr in nb_buildings_isolated.keys():
-        nb_buildings_renovated[yr] = (
-            nb_buildings_isolated[yr] + nb_buildings_systemic_renovation[yr]
-        )
-
     # Compute renovation-rate
     dm_renovation = renov.compute_renovation_rate(dm_renovation, years_ots)
 
