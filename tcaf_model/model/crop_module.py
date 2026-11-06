@@ -180,6 +180,7 @@ def read_data(DM_crop_pickle, lever_setting):
     dm_stock = DM_crop_pickle["fxa"]["stock-variation-crop"]
     dm_other_uses = DM_crop_pickle["fxa"]["other-uses-crop"]
     dm_losses_fbs = DM_crop_pickle["fxa"]["losses-crop"]
+    dm_seed_rate = DM_crop_pickle["fxa"]["seed-rate-crop"]
     # dm_share_export.rename_col_regex('crop-', '', dim='Categories1')
     # dm_crop.append(dm_cal_crop, dim='Variables')
     # dm_ef_residues = DM_crop_pickle['fxa']['ef_burnt-residues']
@@ -203,6 +204,7 @@ def read_data(DM_crop_pickle, lever_setting):
         "stock-variation": dm_stock,
         "other-uses": dm_other_uses,
         "losses": dm_losses_fbs,
+        "seed-rate": dm_seed_rate,
         "cal_crop": dm_cal_crop,
         "cal_bev": dm_cal_crop_bev,
         "cal_imports-crop_tot": dm_fxa_cal_crop_imports_tot,
@@ -399,13 +401,12 @@ def crop_workflow(
     # Create copy for imports
     dm_food_processed_imports = dm_food_processed.copy()
 
-    # Processed Food crop demand [kcal] = processed crops [kcal] * processing yield [%] (only for sweets & processed sugar)
-    # sum processed sugar in one variable : processed sugar : sweets + processed sugar
-    dm_food_processed.groupby(
-        {"pro-crop-processed-sugar": ".*sugar|.*sweet"},
-        dim="Categories1",
-        regex=True,
-        inplace=True,
+    # Processed Food crop demand [kcal] = processed crops [kcal] * processing yield [%]
+    # Sugar beet is crushed for sugar only: "Sweeteners, Other" (glucose and
+    # fructose syrups) are made from maize and wheat starch, so they are not
+    # turned into sugar beet. The sugar yield is beet processed per t of sugar.
+    dm_food_processed = dm_food_processed.filter(
+        {"Categories1": ["pro-crop-processed-sugar", "pro-crop-processed-voil"]}
     )
     dm_food_processed.rename_col(
         "pro-crop-processed-sugar", "crop-sugarcrop", dim="Categories1"
@@ -512,16 +513,7 @@ def crop_workflow(
         :, :, "agr_domestic_production_food-pro_raw", "pro-crop-processed-sugar"
     ] = array_temp
 
-    # Sweet to sugarcrop
-    array_temp = (
-        DM_crop_prod["split-import-crop-pro"][
-            :, :, "agr_domestic_production", "pro-crop-processed-sweet"
-        ]
-        * cdm_food["cp_ibp_processed", "crop-processed-sweet"]
-    )
-    DM_crop_prod["split-import-crop-pro"][
-        :, :, "agr_domestic_production_food-pro_raw", "pro-crop-processed-sweet"
-    ] = array_temp
+    # Sweeteners are not converted: they are made from starch, not from beet
 
     # Voil to oilcrop
     array_temp = (
@@ -846,15 +838,29 @@ def crop_workflow(
                  dm_crop_demand[:,:,'agr_demand_total','oilcrop']
     dm_crop_demand[:, :, 'agr_demand_total', 'oilcrop'] = array_temp"""
 
+    # Seed [kcal] = seed rate [-] x domestic production [kcal] (seed grain,
+    # seed potatoes, pulses; FBS Seed, a use outside the SSR denominator)
+    dm_crop_demand.add(
+        fxa_by_name(DM_crop_prod["seed-rate"], "agr_seed-rate", dm_crop_demand)[
+            np.newaxis, ...
+        ]
+        * dm_crop_demand[:, :, "agr_domestic_production", :],
+        dim="Variables",
+        col_label="agr_seed",
+        unit="kcal",
+    )
+
     # Gross imports [kcal] = Demand [kcal] - Domestic production [kcal]
-    #                        + Exports [kcal] + Stock variation [kcal] + Losses [kcal]
-    # (FBS Seed is not downloaded, so it is still missing)
+    #                        + Exports [kcal] + Stock variation [kcal]
+    #                        + Losses [kcal] + Seed [kcal]
+    # (the FBS balance; the reference is FBS gross imports)
     array_temp = (
         dm_crop_demand[:, :, "agr_demand_total", :]
         - dm_crop_demand[:, :, "agr_domestic_production", :]
         + dm_crop_demand[:, :, "agr_exported_production", :]
         + dm_crop_demand[:, :, "agr_stock-variation", :]
         + dm_crop_demand[:, :, "agr_losses", :]
+        + dm_crop_demand[:, :, "agr_seed", :]
     )
     dm_crop_demand.add(
         array_temp,
@@ -879,6 +885,28 @@ def crop_workflow(
         years_setting=years_setting,
         fts_median_years=10,
     )
+    # No imports in FBS and none in the model (sugar beet before 2001): the
+    # rate is 0/0, or float noise / 0. Nothing to calibrate, rate 1.
+    assert (
+        dm_cal_imports_tot.col_labels["Categories1"]
+        == dm_imports_tot.col_labels["Categories1"]
+        == dm_cal_rates_imports.col_labels["Categories1"]
+    )
+    for i, year in enumerate(dm_cal_rates_imports.col_labels["Years"]):
+        if year not in dm_cal_imports_tot.col_labels["Years"]:
+            continue
+        ref = dm_cal_imports_tot["Switzerland", year, :, :][0]
+        raw = dm_imports_tot["Switzerland", year, :, :][0]
+        scale = np.nanmax(
+            np.abs(dm_cal_imports_tot["Switzerland", :, :, :]), axis=(0, 1)
+        )
+        no_trade = (ref == 0) & (np.abs(raw) <= 1e-9 * scale)
+        dm_cal_rates_imports.array[
+            dm_cal_rates_imports.col_labels["Country"].index("Switzerland"),
+            i,
+            0,
+            no_trade,
+        ] = 1.0
     dm_crop_demand.append(dm_cal_rates_imports, dim="Variables")
     dm_crop_demand.operation(
         "agr_imported_production_total_raw",
@@ -929,14 +957,12 @@ def crop_workflow(
     )
     dm_production[:, :, "agr_domestic_production", "crop-oilcrop"] = array_temp
 
-    # sugarcrop (raw + pro-food + pro-feed)
+    # sugarcrop (raw + pro-food + pro-feed). Imported sweeteners are made
+    # from starch, not from beet, so they are not added here.
     array_temp = (
         dm_production[:, :, "agr_domestic_production", "crop-sugarcrop"]
         + DM_crop_prod["split-import-crop-pro"][
             :, :, "agr_domestic_production_food-pro_raw", "pro-crop-processed-sugar"
-        ]
-        + DM_crop_prod["split-import-crop-pro"][
-            :, :, "agr_domestic_production_food-pro_raw", "pro-crop-processed-sweet"
         ]
         + dm_feed_processed_imports[
             :, :, "agr_domestic_production", "pro-crop-processed-molasse"

@@ -198,6 +198,51 @@ def kt_to_kcal_dm(df_kt, cdm_kcal, country, years_ots, years_fts, variable, n_ye
     return _wide_to_dm(df_wide, variable, "kcal", categories)
 
 
+def fbs_seed_rate(
+    df_elements,
+    losses_kt,
+    categories,
+    country,
+    years_ots,
+    years_fts,
+    variable,
+    n_years=10,
+):
+    """Seed as a share of production [-], one-country datamatrix.
+
+    The cached FBS downloads have every element but Seed, so Seed is what
+    closes the balance: Import = Food + Feed + Processing - Production + Export
+    + Stock Variation + Other uses + Residuals + Losses + Seed. Exact for FBS
+    (2010-); in FBSH (-2009) it is the seed for cereals, pulses and starchy
+    roots (checked: 25-48 kt, against 1 kt of rounding elsewhere). A share of
+    production, because the seed follows what is sown. The future holds the
+    mean of the last n_years.
+    """
+
+    def wide(element):
+        return df_elements[element].unstack("category")
+
+    seed = (
+        wide("Import")
+        - wide("Food")
+        - wide("Feed")
+        - wide("Processing")
+        + wide("Production")
+        - wide("Export")
+        - wide("Stock Variation")
+        - wide("Other uses (non-food)")
+        - wide("Residuals")
+        - losses_kt.reindex(index=years_ots, columns=wide("Import").columns).fillna(0.0)
+    )
+    production = wide("Production")
+    rate = (seed / production.where(production > 0)).fillna(0.0)[categories]
+    rate["Country"] = country
+    rate.index.name = "Years"
+    rate = rate.set_index("Country", append=True).swaplevel()
+    rate = _future_mean(rate, years_ots, years_fts, n_years)
+    return _wide_to_dm(rate, variable, "-", categories)
+
+
 def finite_or_zero(array):
     """Replace inf and NaN by 0 (for yields of countries with no data)."""
     return np.where(np.isfinite(array), array, 0.0)

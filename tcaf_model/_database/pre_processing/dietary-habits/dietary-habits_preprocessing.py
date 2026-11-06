@@ -191,6 +191,9 @@ def diet_processing(list_countries_calc, cdm_kcal, dm_kcal_req):
             "2020",
             "2021",
             "2022",
+            # 2023 too: crop, livestock and beverage calibrations go to 2023,
+            # and a linearly extrapolated 2023 diet sets the current-diet level
+            "2023",
         ]
         my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
@@ -761,6 +764,9 @@ def dietaryhabits_calibration(list_countries_calc, cdm_kcal):
             "2020",
             "2021",
             "2022",
+            # 2023 too: crop, livestock and beverage calibrations go to 2023,
+            # and a linearly extrapolated 2023 diet sets the current-diet level
+            "2023",
         ]
         my_years = [faostat.get_par(code, "year")[y] for y in list_years]
 
