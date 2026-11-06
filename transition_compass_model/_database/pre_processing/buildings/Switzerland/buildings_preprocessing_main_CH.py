@@ -44,7 +44,12 @@ dm_waste_cat = DM_floor["waste cat"]
 
 print("Running renovation pipeline")
 DM_renov = renovation_run(
-    dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots
+    dm_stock_tot,
+    dm_stock_cat,
+    dm_new_cat,
+    dm_waste_cat,
+    years_ots,
+    dm_new_raw=DM_floor["new raw"],
 )
 # Extract renovation output
 dm_all = DM_renov["floor-area-cat"]

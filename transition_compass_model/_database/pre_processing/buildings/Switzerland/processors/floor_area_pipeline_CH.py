@@ -242,6 +242,8 @@ def run(global_vars, country_list, years_ots):
         "stock cat": dm_stock_cat.filter({"Country": country_list}),
         "new cat": dm_new_cat.filter({"Country": country_list}),
         "waste cat": dm_waste_cat.filter({"Country": country_list}),
+        # FSO new dwellings x average floor area (FSO m2), used for new area by class
+        "new raw": dm_new_tot_raw.filter({"Country": country_list}),
     }
 
     return DM

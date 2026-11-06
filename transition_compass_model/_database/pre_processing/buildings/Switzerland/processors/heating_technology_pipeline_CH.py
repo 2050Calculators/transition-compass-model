@@ -393,7 +393,12 @@ if __name__ == "__main__":
 
     print("Running renovation pipeline")
     DM_renov = renovation_run(
-        dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots
+        dm_stock_tot,
+        dm_stock_cat,
+        dm_new_cat,
+        dm_waste_cat,
+        years_ots,
+        dm_new_raw=DM_floor["new raw"],
     )
     dm_all = DM_renov["floor-area-cat"]
     run(global_var, dm_all, country_list, years_ots)

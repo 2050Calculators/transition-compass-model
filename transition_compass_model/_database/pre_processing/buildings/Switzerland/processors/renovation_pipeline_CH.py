@@ -9,7 +9,9 @@ from transition_compass_model.model.common.auxiliary_functions import (
 )
 
 
-def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
+def run(
+    dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots, dm_new_raw=None
+):
     # SECTION Floor area Renovated ots
     # Number of buildings
     # Bâtiments selon les niveaux géographiques institutionnels, la catégorie de bâtiment et l'époque de construction
@@ -156,6 +158,13 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
         dm_stock_tot, dm_renovation, dm_renov_distr
     )
 
+    # SECTION New floor area by envelope cat from FSO new dwellings
+    # Keeps the 2023 split and makes each class empty before its building period
+    if dm_new_raw is not None:
+        dm_new_cat = renov.compute_floor_area_new_cat_from_flows(
+            dm_new_raw, dm_new_cat, dm_stock_cat, dm_renov_cat
+        )
+
     # SECTION Stock by envelope cat
     # s_{c,t}(t-1) &= s_{c,t}(t) - n_{c,t}(t) - r_{c,t}(t) + w_{c,t}(t)
     dm_all = renov.compute_stock_area_by_cat(
@@ -192,4 +201,11 @@ if __name__ == "__main__":
 
     # Run renovation pipeline
     print("Running renovation pipeline")
-    DM_renov = run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots)
+    DM_renov = run(
+        dm_stock_tot,
+        dm_stock_cat,
+        dm_new_cat,
+        dm_waste_cat,
+        years_ots,
+        dm_new_raw=DM["new raw"],
+    )

@@ -394,6 +394,8 @@ def fix_negative_stock(dm_all_cat, dm_stock_tot):
     min_values = np.nanmin(shift, axis=2, keepdims=True)
     # Step 3: Replace NaNs with the corresponding minimum values
     shift = np.where(np.isnan(shift), min_values, shift)
+    # Building types with no negative class at all need no shift
+    shift = np.nan_to_num(shift, nan=0.0)
     dm_tmp.array[:, :, 0, :, :] = (
         dm_tmp.array[:, :, 0, :, :] + shift[:, np.newaxis, :, :]
     )
@@ -452,4 +454,96 @@ def compute_stock_area_by_cat(
             + dm_all_cat.array[:, idx[t], idx["bld_floor-area_waste"], ...]
         )
 
+    # F is what is left of the total stock once B-E are known. New area by class
+    # comes from FSO new dwellings, not from the total stock change, so F also holds
+    # the difference between the two (e.g. buildings reclassified between types).
+    idx_F = idx["F"]
+    others = [idx[c] for c in dm_all_cat.col_labels["Categories2"] if c != "F"]
+    dm_all_cat.array[:, :, idx["bld_floor-area_stock"], :, idx_F] = dm_stock_tot.array[
+        :, :, 0, :
+    ] - np.sum(
+        dm_all_cat.array[:, :, idx["bld_floor-area_stock"], :, :][..., others], axis=-1
+    )
+
     return dm_all_cat
+
+
+def compute_floor_area_new_cat_from_flows(
+    dm_new_raw, dm_new_cat, dm_stock_cat, dm_renov_cat
+):
+    """New floor area by type and class, following the FSO new-dwellings series.
+
+    For each class built only after 1990, the FSO series over the class's building
+    period is scaled so that new + renovated into the class = its 2023 stock. The
+    class is then empty before its building period and the 2023 split is unchanged.
+    Single-family D (also holds houses from 1981-1990) and multi-family E (new built
+    in 1990) use the scaling factor of class C of the same canton and type.
+    """
+    # (building period, scaled to 2023 stock?) per type and class
+    periods = {
+        "single-family-households": {
+            "B": ((2011, 2023), True),
+            "C": ((2001, 2010), True),
+            "D": ((1990, 2000), False),
+        },
+        "multi-family-households": {
+            "B": ((2011, 2023), True),
+            "C": ((2001, 2010), True),
+            "D": ((1991, 2000), True),
+            "E": ((1990, 1990), False),
+        },
+    }
+    years = dm_new_cat.col_labels["Years"]
+    yrs = np.array(years)
+    out = dm_new_cat.copy()
+    out.array[...] = 0.0
+    i_new = out.idx["bld_floor-area_new"]
+    i_stock = dm_stock_cat.idx["bld_floor-area_stock"]
+    i_ren = dm_renov_cat.idx["bld_floor-area_renovated"]
+    i_raw = dm_new_raw.idx["bld_floor-area_new"]
+    # The back-calculation uses flows from 1991 onwards (stock 1990 = stock 1991 - flows 1991)
+    used = yrs > yrs[0]
+
+    print("New area by class from FSO new dwellings, scaling factor k:")
+    for cntr in out.col_labels["Country"]:
+        line = []
+        for typ, classes in periods.items():
+            raw = dm_new_raw.array[dm_new_raw.idx[cntr], :, i_raw, dm_new_raw.idx[typ]]
+            raw = raw[[dm_new_raw.idx[y] for y in years]]
+            k_C = None
+            for cat in ["B", "C", "D", "E"]:
+                if cat not in classes:
+                    continue
+                (start, end), scaled = classes[cat]
+                in_period = (yrs >= start) & (yrs <= end)
+                if scaled:
+                    s23 = dm_stock_cat.array[
+                        dm_stock_cat.idx[cntr],
+                        dm_stock_cat.idx[years[-1]],
+                        i_stock,
+                        dm_stock_cat.idx[typ],
+                        dm_stock_cat.idx[cat],
+                    ]
+                    ren = dm_renov_cat.array[
+                        dm_renov_cat.idx[cntr],
+                        :,
+                        i_ren,
+                        dm_renov_cat.idx[typ],
+                        dm_renov_cat.idx[cat],
+                    ]
+                    k = (s23 - np.nansum(ren[used])) / np.nansum(raw[in_period & used])
+                    if k < 0:
+                        print(
+                            f"  {cntr} {typ} {cat}: more renovated than 2023 stock, k set to 0"
+                        )
+                        k = 0.0
+                    if cat == "C":
+                        k_C = k
+                else:
+                    k = k_C
+                line.append(f"{typ[:3]}-{cat}={k:.2f}")
+                out.array[
+                    out.idx[cntr], in_period, i_new, out.idx[typ], out.idx[cat]
+                ] = k * raw[in_period]
+        print(f"  {cntr}: " + " ".join(line))
+    return out
