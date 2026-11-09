@@ -253,6 +253,38 @@ def crop_yield(dm_prod_share):
     dm_yield_ch = dm_yield.filter({"Country": ["Switzerland"]})
     dm_yield_ch.drop(dim="Categories1", col_label="crop-rice")
 
+    # Swiss oilcrops: oilseed yield. The QCL aggregate "Oilcrops, Oil
+    # Equivalent" gives t of OIL per ha (on the oilseed area), while the
+    # domestic production it divides is in t of OILSEED (FBS Oilcrops): the
+    # area came out 2.5-2.9 times too large and the calibration rate was
+    # 0.35-0.40. Yield = FBS Oilcrops Production / QCL area harvested, at the
+    # same kcal per kg as before (that of the yield item).
+    kcal_per_kg = (
+        df_kcal_g.set_index("Item crop yield").loc[
+            "Oilcrops, Oil Equivalent", "kcal per 100g"
+        ]
+        * 10
+    )
+    df_prod = pd.read_csv(file_dict["dom-prod-crop"])
+    prod_t = (
+        df_prod[
+            (df_prod["Area"] == "Switzerland")
+            & (df_prod["Item"] == "Oilcrops")
+            & (df_prod["Element"] == "Production")
+        ].set_index("Year")["Value"]
+        * 1000.0
+    )
+    df_area = pd.read_csv(file_dict["cropland"])
+    area_ha = df_area[
+        (df_area["Area"] == "Switzerland")
+        & (df_area["Item"] == "Oilcrops, Oil Equivalent")
+    ].set_index("Year")["Value"]
+    for year in dm_yield_ch.col_labels["Years"]:
+        if year in prod_t.index and year in area_ha.index and area_ha[year] > 0:
+            dm_yield_ch["Switzerland", year, "agr_crop_yield", "crop-oilcrop"] = (
+                prod_t[year] * 1000.0 / area_ha[year] * kcal_per_kg
+            )
+
     # Intensive yield_i [kcal/ha] = yield_T / [share_i + evol_o*share_o + evol_e*share_e]
     dm_yield_ch.rename_col("agr_crop_yield", "agr_crop_yield_total", dim="Variables")
     dm_yield_ch.add(
@@ -1742,6 +1774,9 @@ file_dict = {
     "yield": "data/faostat/yield.csv",
     "QCL_yield": "data/faostat/QCL_csv/QCL_yield.csv",
     "cropland": "data/faostat/cropland.csv",
+    # FBS production (cached by the crop pre-processing), for the Swiss
+    # oilseed yield
+    "dom-prod-crop": "../crop/data/faostat/dom-prod-crop.csv",
     "land": "data/faostat/land.csv",
     "RL_land-use": "data/faostat/RL_csv/RL_land.csv",
     "losses-FBS-a": "data/faostat/FBS-H_csv/FBS_losses_Africa-America-Asia.csv",
