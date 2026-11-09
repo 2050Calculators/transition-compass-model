@@ -32,6 +32,24 @@ def fxa_by_name(dm_fxa, variable, dm):
     )
 
 
+def pick_by_country(dm, variable, category, dm_target):
+    """dm[:, :, variable, category] in dm_target's country order (by name).
+
+    Countries absent from dm are 0. The datamatrices of imports by origin do
+    not share one country order (the livestock cake imports have Tokelau and
+    not Switzerland, in another order), so adding their arrays by position
+    put each country's imports on another country.
+    """
+    assert dm.col_labels["Years"] == dm_target.col_labels["Years"]
+    countries = dm.col_labels["Country"]
+    values = np.nan_to_num(dm[:, :, variable, category])
+    out = np.zeros((len(dm_target.col_labels["Country"]), values.shape[1]))
+    for i, country in enumerate(dm_target.col_labels["Country"]):
+        if country in countries:
+            out[i] = values[countries.index(country)]
+    return out
+
+
 def add_exports_and_stock(dm, DM_crop_prod):
     """Add agr_exported_production, agr_stock-variation and agr_losses [kcal] to dm.
 
@@ -838,10 +856,14 @@ def crop_workflow(
                  dm_crop_demand[:,:,'agr_demand_total','oilcrop']
     dm_crop_demand[:, :, 'agr_demand_total', 'oilcrop'] = array_temp"""
 
-    # Seed [kcal] = seed rate [-] x domestic production [kcal] (seed grain,
-    # seed potatoes, pulses; FBS Seed, a use outside the SSR denominator)
+    # Seed [kcal] = seed rate [-] x harvest [kcal], harvest = domestic
+    # production x losses factor (seed grain, seed potatoes, pulses; FBS Seed,
+    # a use outside the SSR denominator, a share of FBS Production)
     dm_crop_demand.add(
         fxa_by_name(DM_crop_prod["seed-rate"], "agr_seed-rate", dm_crop_demand)[
+            np.newaxis, ...
+        ]
+        * fxa_by_name(DM_crop_prod["crop"], "agr_crop_losses", dm_crop_demand)[
             np.newaxis, ...
         ]
         * dm_crop_demand[:, :, "agr_domestic_production", :],
@@ -851,15 +873,15 @@ def crop_workflow(
     )
 
     # Gross imports [kcal] = Demand [kcal] - Domestic production [kcal]
-    #                        + Exports [kcal] + Stock variation [kcal]
-    #                        + Losses [kcal] + Seed [kcal]
-    # (the FBS balance; the reference is FBS gross imports)
+    #                        + Exports [kcal] + Stock variation [kcal] + Seed [kcal]
+    # (the FBS balance; the reference is FBS gross imports). The domestic
+    # production is net of losses (FBS Production - Losses): the losses are
+    # carried by the domestic harvest (x losses factor), not by the imports.
     array_temp = (
         dm_crop_demand[:, :, "agr_demand_total", :]
         - dm_crop_demand[:, :, "agr_domestic_production", :]
         + dm_crop_demand[:, :, "agr_exported_production", :]
         + dm_crop_demand[:, :, "agr_stock-variation", :]
-        + dm_crop_demand[:, :, "agr_losses", :]
         + dm_crop_demand[:, :, "agr_seed", :]
     )
     dm_crop_demand.add(
@@ -945,53 +967,57 @@ def crop_workflow(
     )
 
     # Total raw imports [kcal] = raw imports + Imports of raw products for processed food, feed and bev
+    # (picked by country name, see pick_by_country)
+    pro = DM_crop_prod["split-import-crop-pro"]
+    pro_raw = "agr_domestic_production_food-pro_raw"
+    feed = dm_feed_processed_imports
+    bev = dm_bev_raw_imports
+    bev_raw = "agr_domestic_production_bev_raw"
+    target = dm_production
     # oilcrop (raw + pro-food + pro-feed)
-    array_temp = (
+    dm_production[:, :, "agr_domestic_production", "crop-oilcrop"] = (
         dm_production[:, :, "agr_domestic_production", "crop-oilcrop"]
-        + DM_crop_prod["split-import-crop-pro"][
-            :, :, "agr_domestic_production_food-pro_raw", "pro-crop-processed-voil"
-        ]
-        + dm_feed_processed_imports[
-            :, :, "agr_domestic_production", "pro-crop-processed-cake"
-        ]
+        + pick_by_country(pro, pro_raw, "pro-crop-processed-voil", target)
+        + pick_by_country(
+            feed, "agr_domestic_production", "pro-crop-processed-cake", target
+        )
     )
-    dm_production[:, :, "agr_domestic_production", "crop-oilcrop"] = array_temp
 
     # sugarcrop (raw + pro-food + pro-feed). Imported sweeteners are made
     # from starch, not from beet, so they are not added here.
-    array_temp = (
+    dm_production[:, :, "agr_domestic_production", "crop-sugarcrop"] = (
         dm_production[:, :, "agr_domestic_production", "crop-sugarcrop"]
-        + DM_crop_prod["split-import-crop-pro"][
-            :, :, "agr_domestic_production_food-pro_raw", "pro-crop-processed-sugar"
-        ]
-        + dm_feed_processed_imports[
-            :, :, "agr_domestic_production", "pro-crop-processed-molasse"
-        ]
+        + pick_by_country(pro, pro_raw, "pro-crop-processed-sugar", target)
+        + pick_by_country(
+            feed, "agr_domestic_production", "pro-crop-processed-molasse", target
+        )
     )
-    dm_production[:, :, "agr_domestic_production", "crop-sugarcrop"] = array_temp
 
     # fruit (raw + bev)
-    array_temp = (
+    dm_production[:, :, "agr_domestic_production", "crop-fruit"] = (
         dm_production[:, :, "agr_domestic_production", "crop-fruit"]
-        + dm_bev_raw_imports[:, :, "agr_domestic_production_bev_raw", "pro-bev-bev-alc"]
-        + dm_bev_raw_imports[:, :, "agr_domestic_production_bev_raw", "pro-bev-wine"]
+        + pick_by_country(bev, bev_raw, "pro-bev-bev-alc", target)
+        + pick_by_country(bev, bev_raw, "pro-bev-wine", target)
     )
-    dm_production[:, :, "agr_domestic_production", "crop-fruit"] = array_temp
 
     # cereal (raw + bev)
-    array_temp = (
+    dm_production[:, :, "agr_domestic_production", "crop-cereal"] = (
         dm_production[:, :, "agr_domestic_production", "crop-cereal"]
-        + dm_bev_raw_imports[:, :, "agr_domestic_production_bev_raw", "pro-bev-bev-fer"]
-        + dm_bev_raw_imports[:, :, "agr_domestic_production_bev_raw", "pro-bev-beer"]
+        + pick_by_country(bev, bev_raw, "pro-bev-bev-fer", target)
+        + pick_by_country(bev, bev_raw, "pro-bev-beer", target)
     )
-    dm_production[:, :, "agr_domestic_production", "crop-cereal"] = array_temp
 
     # Append domestic production Switzerland + other countries
     # dm_production.rename_col_regex('crop-', '', dim='Categories1')
     array_temp = dm_crop_demand["Switzerland", :, "agr_domestic_production", :]
     dm_production["Switzerland", :, "agr_domestic_production", :] = array_temp
 
-    # Domestic production with losses [kcal] = domestic prod * food losses [%]
+    # Harvest [kcal] = domestic production [kcal] x losses factor [-]
+    # The domestic production (SSR x demand, calibrated to FBS Production -
+    # Losses) is what reaches the uses; the losses come after it. The losses
+    # factor (lever crop-losses, 1 / (1 - Losses / Production)) gives the
+    # harvest, which is FBS Production in history and sets the cropland. For
+    # the other countries the production is the imports by origin.
     DM_crop_prod["crop"].append(dm_production, dim="Variables")
     DM_crop_prod["crop"].operation(
         "agr_domestic_production",
