@@ -1127,7 +1127,7 @@ def flat_fts_level(dm_ots_lever, years_ots, years_fts, value=None):
     return DataMatrix.based_on(array, dm_last, change={"Years": years_fts})
 
 
-def mean_fts_level(dm_ots_lever, years_mean, years_fts, max_value=None):
+def mean_fts_level(dm_ots_lever, years_mean, years_fts, max_value=None, min_value=None):
     # Build an fts-years DataMatrix that holds the mean of years_mean (non-finite
     # values ignored), optionally capped at max_value. Used instead of a linear
     # trend where the trend runs away (noisy ots, data vintage breaks).
@@ -1137,6 +1137,8 @@ def mean_fts_level(dm_ots_lever, years_mean, years_fts, max_value=None):
     array = np.nanmean(array, axis=years_axis, keepdims=True)
     if max_value is not None:
         array = np.minimum(array, max_value)
+    if min_value is not None:
+        array = np.maximum(array, min_value)
     array = np.repeat(array, len(years_fts), axis=years_axis)
     dm_first = dm_ots_lever.filter({"Years": [years_mean[0]]}, inplace=False)
     return DataMatrix.based_on(array, dm_first, change={"Years": years_fts})

@@ -55,6 +55,18 @@ SSR_BAU_CAP_1 = ["ssr-crop-sugarcrop"]
 SEED_CATEGORIES = ["crop-cereal", "crop-pulse", "crop-starch"]
 
 
+def fbs_losses_kt(file_dict):
+    """FBS Losses of the raw crops [kt] (Area, Year, Item, Losses), from the
+    cached domestic production file."""
+    df = pd.read_csv(file_dict["dom-prod-crop"])
+    df = df[(df["Element"] == "Losses") & df["Item"].isin(CROP_FBS_ITEMS)]
+    return (
+        df.groupby(["Area", "Year", "Item"], as_index=False)["Value"]
+        .sum()
+        .rename(columns={"Value": "Losses"})
+    )
+
+
 def remove_molasses_from_sweeteners(df_fbs, file_dict):
     """Take molasses out of the FBS sweeteners [kt].
 
@@ -247,6 +259,15 @@ def crop_losses():
     ).reset_index()
 
     # 2: Compute the Losses [%] (really it's unit less)
+    # A year with production but no Losses row has no losses (FBS reports
+    # sugar crop losses only from 2014): factor 1, not a value extrapolated
+    # from the other years (it gave 1.00-1.04 for Swiss sugar beet 1990-2013).
+    if "Losses" not in pivot_df.columns:
+        pivot_df["Losses"] = np.nan
+    has_production = pivot_df["Production"].notna()
+    pivot_df.loc[has_production, "Losses"] = pivot_df.loc[
+        has_production, "Losses"
+    ].fillna(0.0)
     pivot_df["Losses[%]"] = 1 / (1 - pivot_df["Losses"] / pivot_df["Production"])
 
     # Drop the columns Production, Import Quantity and Export Quantity
@@ -286,6 +307,12 @@ def crop_losses():
     dm_losses = DataMatrix.create_from_df(df_ots, num_cat=1)
 
     linear_fitting(dm_losses, years_ots)
+    # No valid losses share (no production, losses >= production, or a fit
+    # below 1): factor 1, no gross-up. A factor of 0 or NaN removed the
+    # country's imports from the cropland, an infinite one made it infinite.
+    dm_losses.array = np.where(
+        np.isfinite(dm_losses.array) & (dm_losses.array >= 1.0), dm_losses.array, 1.0
+    )
 
     return dm_losses
 
@@ -674,8 +701,15 @@ def crop_calibration(list_countries_calc, dm_losses, dm_fxa_pro_yield, cdm_bev):
     ).reset_index()
 
     # Unit conversion [kt] => [t]
-    pivot_df_domestic_supply["Production [t]"] = (
-        1000 * pivot_df_domestic_supply["Production"]
+    # Crops: the reference is the production net of losses, FBS Production -
+    # Losses (the harvest is that x losses factor, see crop_losses).
+    # Beverages: Production.
+    is_crop = pivot_df_domestic_supply["Item"].isin(CROP_FBS_ITEMS)
+    losses = pivot_df_domestic_supply.get("Losses")
+    if losses is None:
+        losses = pd.Series(0.0, index=pivot_df_domestic_supply.index)
+    pivot_df_domestic_supply["Production [t]"] = 1000 * (
+        pivot_df_domestic_supply["Production"] - losses.fillna(0.0).where(is_crop, 0.0)
     )
 
     # Unit conversion [t] => [kcal]
@@ -1626,9 +1660,15 @@ def self_sufficiency_processing(years_ots, list_countries_calc, file_dict):
     df_imports = pivot_df[["Area", "Year", "Item", "Import"]].copy()
 
     # 2: Compute the SSR [%]
-    # (previously with special condition for milk because we
-    # don't account for it as feed & processed. but now fixed with and fxa_ratio)
-    pivot_df["SSR[%]"] = pivot_df["Production"] / (
+    # Raw crops: (Production - Losses) / (Food + Feed + Processing). The
+    # domestic production of the crop module is net of losses; the losses
+    # come after it (harvest = production x losses factor, lever crop-losses).
+    # Processed products have no FBS losses here.
+    pivot_df = pivot_df.merge(
+        fbs_losses_kt(file_dict), on=["Area", "Year", "Item"], how="left"
+    )
+    pivot_df["Losses"] = pivot_df["Losses"].fillna(0.0)
+    pivot_df["SSR[%]"] = (pivot_df["Production"] - pivot_df["Losses"]) / (
         pivot_df["Food"] + pivot_df["Feed"] + pivot_df["Processing"]
     )
     df_imports["SSR[%]"] = df_imports["Import"]
@@ -3139,8 +3179,9 @@ def datamatrix_to_pickle(dm_fts):
 
     # Lever - crop-losses
     lever = "crop-losses"
-    # Keep level 1 as the business as usual scenario (linear fitting on past data)
-    dm_bau_1 = dict_fts[lever][1]
+    # Level 1 - business as usual: the 2014-2023 mean losses factor, at least
+    # 1. A linear trend went below 1 (negative losses) for Swiss starchy roots.
+    dm_bau_1 = mean_fts_level(dict_ots[lever], SSR_BAU_YEARS, years_fts, min_value=1.0)
     for level in range(2, 5):
         # Compute the reduction objective in 2050 compared to the last ots value,
         # for each food category. The fts value is the fraction of the ots waste/loss
