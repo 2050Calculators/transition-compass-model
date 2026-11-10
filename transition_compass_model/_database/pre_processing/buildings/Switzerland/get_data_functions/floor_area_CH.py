@@ -35,7 +35,8 @@ def compute_avg_floor_area(dm_floor_area, years_ots):
     dm_avg_floor_area = dm_floor_area.filter({"Variables": ["bld_avg-floor-area-new"]})
     years_to_keep = [
         "1991-1995",
-        "1996-20002001-2005",
+        "1996-2000",
+        "2001-2005",
         "2006-2010",
         "2011-2015",
         "2016-2020",
