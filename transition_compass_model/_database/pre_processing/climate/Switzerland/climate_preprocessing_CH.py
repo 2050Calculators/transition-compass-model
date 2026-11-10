@@ -19,11 +19,24 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 ####################################
 
 
+# Canton names in the cantonal csv files that differ from the names in country_list
+CANTON_NAME_IN_FILE = {
+    "Basel Landschaft": "Basel-Landschaft",
+    "Basel Stadt": "Basel-Stadt",
+    "Geneva": "Genève",
+    "Lucerne": "Luzern",
+    "Zurich": "Zürich",
+}
+
+
 # Data can be found here https://polybox.ethz.ch/index.php/s/UbbrQmssjTkXxY6
 def extract_Yasser_dataset(filename, variable, country):
     df = pd.read_csv(filename)
     if "canton" in df.columns:
-        df = df.loc[df["canton"] == country]
+        name_in_file = CANTON_NAME_IN_FILE.get(country, country)
+        df = df.loc[df["canton"] == name_in_file]
+        if df.empty:
+            raise ValueError(f"Canton '{name_in_file}' not found in {filename}")
         df.drop(columns="canton", inplace=True)
     df = df.T
     df.reset_index(inplace=True)
@@ -78,7 +91,7 @@ def extract_CDD_HDD_from_Yasser_dataset(years_fts, country_list):
         "HDD": {"Switzerland": (swiss_file_HDD, swiss_file_HDD_fts)},
     }
 
-    canton_list = list(set(country_list) - set(["Switzerland"]))
+    canton_list = [c for c in country_list if c != "Switzerland"]
     for canton in canton_list:
         mapping["CDD"][canton] = (canton_file_CDD, canton_file_CDD_fts)
         mapping["HDD"][canton] = (canton_file_HDD, canton_file_HDD_fts)
@@ -131,7 +144,7 @@ def extract_days_Tbase_from_Yasser_dataset(years_fts, country_list):
             "Switzerland": (swiss_file_Nbelow, swiss_file_Nbelow_fts),
         },
     }
-    canton_list = list(set(country_list) - set(["Switzerland"]))
+    canton_list = [c for c in country_list if c != "Switzerland"]
     for canton in canton_list:
         mapping["Nabove"][canton] = (canton_file_Nabove, canton_file_Nabove_fts)
         mapping["Nbelow"][canton] = (canton_file_Nbelow, canton_file_Nbelow_fts)
