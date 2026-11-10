@@ -15,6 +15,7 @@ from transition_compass_model.model.common.auxiliary_functions import (
     filter_DM,
     linear_fitting,
     linear_fitting_ots_db,
+    mean_fts_level,
 )
 from transition_compass_model.model.common.constant_data_matrix_class import (
     ConstantDataMatrix,
@@ -54,6 +55,66 @@ def ensure_structure(df):
 
 
 # CalculationLeaf DIET (LIFESTYLE) ------------------------------------------------------------------------------------
+# FBS items of the livestock products and of the raw crops
+LIVESTOCK_FBS_ITEMS = {
+    "Milk - Excluding Butter": "pro-liv-abp-dairy-milk",
+    "Eggs": "pro-liv-abp-hens-egg",
+    "Bovine Meat": "pro-liv-meat-bovine",
+    "Meat, Other": "pro-liv-meat-oth-animals",
+    "Pigmeat": "pro-liv-meat-pig",
+    "Poultry Meat": "pro-liv-meat-poultry",
+    "Mutton & Goat Meat": "pro-liv-meat-sheep",
+}
+RAW_CROP_FBS_ITEMS = [
+    "Cereals - Excluding Beer",
+    "Fruits - Excluding Wine",
+    "Oilcrops",
+    "Pulses",
+    "Rice and products",
+    "Starchy Roots",
+    "Sugar Crops",
+    "Vegetables",
+]
+
+
+def remove_molasses_from_sweeteners(df_fbs, df_scl):
+    """Take molasses out of the FBS sweeteners [kt].
+
+    From 2010 (FBS), "Sweeteners, Other" and the "Sugar & Sweeteners" group
+    include molasses: its production, its feed use (FBS "Sweeteners, Other"
+    Feed equals the SCL molasses Feed in every year 2010-2023), its exports
+    and imports. The model treats molasses as a co-product of the sugar beet
+    crush, fed to animals from the livestock ration, so it is removed from the
+    sweeteners with the SCL molasses balance (df_scl, in t). FBSH (up to 2009)
+    has no molasses in the sweeteners. Values below 0 after the subtraction
+    (FBS rounds to 1 kt) are set to 0.
+    """
+    df_mol = df_scl[df_scl["Item"].str.contains("Molasses", case=False)]
+    mol = df_mol.groupby(["Area", "Element", "Year"])["Value"].sum() / 1000.0
+    df = df_fbs.copy()
+    mask = df["Item"].isin(["Sweeteners, Other", "Sugar & Sweeteners"]) & df[
+        "Element"
+    ].isin(["Production", "Feed", "Export", "Import"])
+    key = pd.MultiIndex.from_frame(df.loc[mask, ["Area", "Element", "Year"]])
+    df.loc[mask, "Value"] = (
+        df.loc[mask, "Value"].to_numpy() - mol.reindex(key).fillna(0.0).to_numpy()
+    ).clip(min=0.0)
+    return df
+
+
+def fbs_losses_kt(file_losses):
+    """FBS Losses of the raw crops [kt] (Area, Year, Item, Losses), from the
+    losses file of climate_smart_crop_processing (FBSH + FBS)."""
+    df = pd.read_csv(file_losses)
+    df = df[df["Element"] == "Losses"].copy()
+    df["Item"] = df["Item"].replace({"Rice (Milled Equivalent)": "Rice and products"})
+    return (
+        df.groupby(["Area", "Year", "Item"], as_index=False)["Value"]
+        .sum()
+        .rename(columns={"Value": "Losses"})
+    )
+
+
 def diet_processing(list_countries, file):
     # ----------------------------------------------------------------------------------------------------------------------
     # CONSUMER DIET Part 1 - including food waste
@@ -976,6 +1037,8 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
     # Filtering to keep wanted columns
     columns_to_filter = ["Area", "Element", "Item", "Year", "Value"]
     df_ssr = df_ssr[columns_to_filter]
+    # Molasses is a co-product of the sugar beet crush, not a sweetener
+    df_ssr = remove_molasses_from_sweeteners(df_ssr, df_ssr_2010_2021_molasse_cake)
     df_ssr_feed = df_ssr_feed[columns_to_filter]
 
     # Concat and create copy for processing yield
@@ -1011,17 +1074,44 @@ def self_sufficiency_processing(years_ots, list_countries, file_dict):
     columns_to_filter = ["Area", "Year", "Item", "Feed"]
     df_csl_feed = df_csl_feed[columns_to_filter].copy()
 
-    # Create a copy for milk feed food ratio (fxa)
-    pivot_df_milk = pivot_df[pivot_df["Item"] == "Milk - Excluding Butter"].copy()
+    # Create a copy for the supply / food ratio (fxa), all livestock products
+    pivot_df_milk = pivot_df[pivot_df["Item"].isin(LIVESTOCK_FBS_ITEMS)].copy()
 
     # Delete rows where 'Residuals' is <50 or >50 because of inconsistencies
     # pivot_df = pivot_df[(pivot_df['Residuals'] > -50) & (pivot_df['Residuals'] < 50)]
 
     # Step 2: Compute the SSR [%]
-    # (previously with special condition for milk because we
-    # don't account for it as feed & processed. but now fixed with and fxa_ratio)
+    # Default: Production / (Food + Feed + Processing)
     pivot_df["SSR[%]"] = pivot_df["Production"] / (
         pivot_df["Food"] + pivot_df["Feed"] + pivot_df["Processing"]
+    )
+    # Raw crops: (Production - Losses) / (Food + Feed + Processing). The
+    # domestic production of the crop workflow is net of losses; the losses
+    # come after it (harvest = production x losses factor, lever
+    # climate-smart-crop_losses), so the harvest is FBS Production.
+    pivot_df = pivot_df.merge(
+        fbs_losses_kt(file_dict["losses"]), on=["Area", "Year", "Item"], how="left"
+    )
+    pivot_df["Losses"] = pivot_df["Losses"].fillna(0.0)
+    is_crop = pivot_df["Item"].isin(RAW_CROP_FBS_ITEMS)
+    pivot_df.loc[is_crop, "SSR[%]"] = (
+        pivot_df.loc[is_crop, "Production"] - pivot_df.loc[is_crop, "Losses"]
+    ) / (
+        pivot_df.loc[is_crop, "Food"]
+        + pivot_df.loc[is_crop, "Feed"]
+        + pivot_df.loc[is_crop, "Processing"]
+    )
+    # Livestock products: Production / apparent supply (Production + Import -
+    # Export). Apparent supply holds every use (food, feed, processing, other
+    # uses, residuals, stock change), so the SSR does not depend on how FBSH
+    # and FBS book them (FBSH puts ~600 kt of milk in "Other uses" in 2001-09,
+    # FBS has ~400 kt of residuals in 2010-13). The model applies it to the
+    # food demand x supply / food ratio (fxa ratio_supply-food).
+    is_liv = pivot_df["Item"].isin(LIVESTOCK_FBS_ITEMS)
+    pivot_df.loc[is_liv, "SSR[%]"] = pivot_df.loc[is_liv, "Production"] / (
+        pivot_df.loc[is_liv, "Production"]
+        + pivot_df.loc[is_liv, "Import"]
+        - pivot_df.loc[is_liv, "Export"]
     )
     # Fill nan
     pivot_df_feed["SSR[%]"] = pivot_df_feed["Production"] / (pivot_df_feed["Feed"])
@@ -1201,6 +1291,22 @@ def fxa_processing_yield(df_processing_yield_fxa, pivot_df_milk):
     # Drop the helper column
     df_sugar = df_sugar.drop(columns=["Sugarcrops_processing"])
 
+    # The sugar yield (kept under the dictionary's item "Sugar & Sweeteners")
+    # is beet processed per t of sugar only. The FBS group also holds honey,
+    # the "Sweeteners, Other" (glucose and fructose syrups, made from maize and
+    # wheat starch) and, from 2010, molasses, which are not the beet's main
+    # product: with the group's production (19-46% above the sugar from 2010)
+    # the crush computed from the domestic sugar was too small.
+    sugar_prod = (
+        pivot_df[pivot_df["Item"] == "Sugar (Raw Equivalent)"]
+        .loc[:, ["Area", "Year", "Production"]]
+        .rename(columns={"Production": "Sugar_production"})
+    )
+    df_sugar = df_sugar.merge(sugar_prod, on=["Area", "Year"], how="left")
+    is_sugar = df_sugar["Item"] == "Sugar & Sweeteners"
+    df_sugar.loc[is_sugar, "Production"] = df_sugar.loc[is_sugar, "Sugar_production"]
+    df_sugar = df_sugar.drop(columns=["Sugar_production"])
+
     # Processing yields [input/output] = Processing / Production
     df_sugar["value"] = df_sugar["Processing"] / df_sugar["Production"]
 
@@ -1236,18 +1342,29 @@ def fxa_processing_yield(df_processing_yield_fxa, pivot_df_milk):
     # Filter
     df_oil = df_oil[["Area", "Year", "Item", "value"]]
 
-    # MILK FEED FOOD PROCESSING RATIO
+    # SUPPLY / FOOD RATIO of the livestock products
+    # Ratio [-] = (Production + Import - Export) / Food, for every livestock
+    # product (was (Feed + Food + Processing) / Food for milk only, applied
+    # after the SSR). The model multiplies the food demand by it before the
+    # SSR, so the domestic production covers every use, not only food.
     pivot_df_milk["value"] = (
-        pivot_df_milk["Feed"] + pivot_df_milk["Food"] + pivot_df_milk["Processing"]
+        pivot_df_milk["Production"] + pivot_df_milk["Import"] - pivot_df_milk["Export"]
     ) / pivot_df_milk["Food"]
-    pivot_df_milk = pivot_df_milk[["Area", "Year", "Item", "value"]]
+    # Variable names set in code: the dictionary "fxa" sheet only has milk
+    pivot_df_milk["variables"] = (
+        "fxa_agr_supply-food-ratio_"
+        + pivot_df_milk["Item"].map(LIVESTOCK_FBS_ITEMS)
+        + "[-]"
+    )
+    pivot_df_milk = pivot_df_milk[["Area", "Year", "variables", "value"]].rename(
+        columns={"Area": "geoscale", "Year": "timescale"}
+    )
 
     # Calc Formatting ------------------------------------------------------------
 
     # Concat dfs
     df_calc_processing_yield = pd.concat([df_oil, df_sugar])
     df_calc_processing_yield = pd.concat([df_calc_processing_yield, df_wine])
-    df_calc_processing_yield = pd.concat([df_calc_processing_yield, pivot_df_milk])
 
     # Food item name matching with dictionary
     # Read excel file
@@ -1265,6 +1382,7 @@ def fxa_processing_yield(df_processing_yield_fxa, pivot_df_milk):
 
     # Drop the 'Item' column
     df_calc_processing_yield = df_calc_processing_yield.drop(columns=["Item"])
+    df_calc_processing_yield = pd.concat([df_calc_processing_yield, pivot_df_milk])
 
     # Adding the columns module, lever, level and string-pivot at the correct places
     df_calc_processing_yield["module"] = "agriculture"
@@ -2194,16 +2312,32 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
     ).reset_index()
 
     # Step 2: Compute the Losses [%] (really it's unit less)
+    # A year with production but no Losses row has no losses (FBS reports
+    # sugar crop losses only from 2014): factor 1, not a value extrapolated
+    # from the other years (it gave 1.00-1.05 for Swiss sugar beet 1990-2013).
+    if "Losses" not in pivot_df.columns:
+        pivot_df["Losses"] = np.nan
+    has_production = pivot_df["Production"].notna()
+    pivot_df.loc[has_production, "Losses"] = pivot_df.loc[
+        has_production, "Losses"
+    ].fillna(0.0)
     pivot_df["Losses[%]"] = 1 / (1 - pivot_df["Losses"] / pivot_df["Production"])
+    # No valid losses share (no production, losses >= production): factor 1,
+    # no gross-up (a factor of 0 or NaN removed the harvest, an infinite one
+    # made it infinite). The BAU fts holds the 2014-2023 mean, at least 1
+    # (scenarios/agr_fts_BAU_pickle.py).
+    pivot_df["Losses[%]"] = pivot_df["Losses[%]"].where(
+        np.isfinite(pivot_df["Losses[%]"]) & (pivot_df["Losses[%]"] >= 1.0), 1.0
+    )
 
     # Drop the columns Production, Import Quantity and Export Quantity
     pivot_df = pivot_df.drop(columns=["Production", "Losses"])
 
-    # Create a dummy for Rice as no products
+    # Create a dummy for Rice as no products (factor 1: no losses)
     # Create a DataFrame for the new "Rice" rows
     new_rows = pivot_df[["Area", "Year"]].drop_duplicates().copy()
     new_rows["Item"] = "Rice and products"
-    new_rows["Losses[%]"] = 0
+    new_rows["Losses[%]"] = 1.0
 
     # Append the new rows to the original DataFrame
     pivot_df = pd.concat([pivot_df, new_rows], ignore_index=True)
@@ -2358,6 +2492,38 @@ def climate_smart_crop_processing(list_countries, df_agri_land, file_dict):
         left_on=["Item crop yield"],
         right_on=["Item"],
     )
+    # Oilcrops: oilseed yield. The QCL aggregate "Oilcrops, Oil Equivalent"
+    # gives kg of OIL per ha (on the oilseed area), while the domestic
+    # production it divides is in kg of OILSEED (FBS Oilcrops): the Swiss area
+    # came out 2.5-2.9 times too large and the cropland calibration rate was
+    # 0.33-0.40. Yield = FBS Oilcrops Production / QCL area harvested, at the
+    # same kcal per kg as before (that of the yield item).
+    try:
+        df_area = pd.read_csv(file_dict["cropland"])
+    except OSError:
+        # written by cropland_calibration (QCL area harvested)
+        cropland_calibration(list_countries)
+        df_area = pd.read_csv(file_dict["cropland"])
+    df_area = df_area[
+        (df_area["Item"].str.startswith("Oilcrops, Oil Equivalent"))
+        & (df_area["Element"] == "Area harvested")
+    ][["Area", "Year", "Value"]].rename(columns={"Value": "area_ha"})
+    df_prod = df_losses[
+        (df_losses["Item"].str.startswith("Oilcrops"))
+        & (df_losses["Element"].str.startswith("Production"))
+    ][["Area", "Year", "Value"]].rename(columns={"Value": "production_kt"})
+    df_seed = df_prod.merge(df_area, on=["Area", "Year"])
+    df_seed["seed_yield"] = 1e6 * df_seed["production_kt"] / df_seed["area_ha"]
+    merged_df = merged_df.merge(
+        df_seed[["Area", "Year", "seed_yield"]], on=["Area", "Year"], how="left"
+    )
+    is_oil = merged_df["Item"] == "Oilcrops, Oil Equivalent"
+    has_seed = (
+        is_oil & np.isfinite(merged_df["seed_yield"]) & (merged_df["seed_yield"] > 0)
+    )
+    merged_df.loc[has_seed, "Yield"] = merged_df.loc[has_seed, "seed_yield"]
+    merged_df = merged_df.drop(columns=["seed_yield"])
+
     # Operation
     merged_df["Yield"] = merged_df["Yield"] * merged_df["kcal per 100g"] / 0.1
     pivot_df_yield = merged_df[["Area", "Year", "Item", "Yield"]]
@@ -3917,6 +4083,16 @@ def climate_smart_livestock_processing(
         "data/dictionaries/dictionnary_agriculture_landuse.xlsx",
         sheet_name="climate-smart-livestock_slau",
     )
+    # The sheet maps Dairy-milk to the abp-hens-egg variable and Hens-egg to
+    # abp-dairy-milk, which swaps the two slaughter rates (the dairy and egg
+    # population calibration rates were 0.98 and 1.02). Set the category from
+    # the Item in code, so the result is right whether or not the sheet is fixed.
+    slau_categories = {"Dairy-milk": "abp-dairy-milk", "Hens-egg": "abp-hens-egg"}
+    for item, category in slau_categories.items():
+        mask = df_dict_csl_slau["Item"] == item
+        df_dict_csl_slau.loc[mask, "variables"] = df_dict_csl_slau.loc[
+            mask, "variables"
+        ].str.replace(r"abp-(dairy-milk|hens-egg)", category, regex=True)
 
     # Merge based on 'Item'
     df_yield_liv_pathwaycalc = pd.merge(
@@ -6127,6 +6303,11 @@ def livestock_crop_calibration(df_energy_demand_cal, list_countries):
     # ----------------------------------------------------------------------------------------------------------------------
     # Read data ------------------------------------------------------------------------------------------------------------
     try:
+        # Cache written below. The copy used for the pickle of e8dedc6
+        # (2026-09-03) to 2026-11 was not committed and had wrong vegetables
+        # (x6-12) and sugar crops and no starchy roots: delete the cache and
+        # download again if in doubt. The reference must be FBS Production x
+        # the model's kcal per t (cdm_kcal-per-t).
         df_domestic_supply_calibration = pd.read_csv(
             "data/faostat/domestic_supply_calibration.csv"
         )
@@ -7051,6 +7232,10 @@ def feed_calibration(list_countries):
 
         # Concatenating all the years together
         df_feed = pd.concat([df_feed_1990_2013, df_feed_2010_2022])
+        # FBS "Sugar & Sweeteners" Feed is the molasses fed to animals (equal
+        # to the SCL molasses Feed in every year 2010-2023; refined sugar has
+        # no feed use), which is already counted from SCL below: set it to 0.
+        df_feed.loc[df_feed["Item"].str.startswith("Sugar & Sweeteners"), "Value"] = 0.0
 
         # ----------------------------------------------------------------------------------------------------------------------
         # FEED DEMAND PART II (molasse & cake) --------------------------------------------------------------------------------------------
@@ -8161,6 +8346,15 @@ def fxa_preprocessing():
 #  FIXME only Switzerland for now
 
 
+def hold_mean_fts(dm, years_ots, years_fts, first_mean_year=2014):
+    # ots as they are, fts = mean of first_mean_year..last ots year
+    dm_ots = dm.filter({"Years": years_ots})
+    years_mean = [y for y in years_ots if y >= first_mean_year]
+    dm_fts = mean_fts_level(dm_ots, years_mean, years_fts)
+    dm_ots.append(dm_fts, dim="Years")
+    return dm_ots
+
+
 def database_from_csv_to_datamatrix(
     years_ots,
     years_fts,
@@ -8257,15 +8451,25 @@ def database_from_csv_to_datamatrix(
     dm = DataMatrix.create_from_df(df_ots, num_cat=0)
     dm = dm.filter_w_regex({"Variables": "fxa_agr_processing-yield.*"})
     dm.deepen()
-    DM_agriculture_old["fxa"]["processing-yield"] = dm
+    # Future: hold the 2014-2023 mean. A processing yield is a physical
+    # ratio: a linear trend over 1990-2023 runs through the FBSH/FBS break of
+    # 2010 (the Swiss sugar yield fell from 0.75 in 2023 to 0.15 in 2050).
+    DM_agriculture_old["fxa"]["processing-yield"] = hold_mean_fts(
+        dm, years_ots, years_fts
+    )
 
-    # Feed Food Processed ratio (milk)
+    # Supply / food ratio of the livestock products (replaces ratio_milk)
     lever = "food-net-import"
     df_ots, df_fts = database_to_df(df_calc_processing_yield, lever, level="all")
     df_ots = df_ots.drop(columns=[lever])  # Drop column with lever name
     dm = DataMatrix.create_from_df(df_ots, num_cat=0)
-    dm = dm.filter_w_regex({"Variables": "fxa_agr_feed-processing-food-ratio.*"})
-    DM_agriculture_old["fxa"]["ratio_milk"] = dm
+    dm = dm.filter_w_regex({"Variables": "fxa_agr_supply-food-ratio.*"})
+    dm.deepen()
+    # Future: 2014-2023 mean (a linear trend crosses the FBSH/FBS break)
+    DM_agriculture_old["fxa"]["ratio_supply-food"] = hold_mean_fts(
+        dm, years_ots, years_fts
+    )
+    DM_agriculture_old["fxa"].pop("ratio_milk", None)
 
     # Feed
     lever = "diet"
@@ -8951,6 +9155,8 @@ file_dict = {
     "ssr": "data/faostat/ssr.csv",
     "cake": "data/faostat/ssr_cake.csv",
     "molasse": "data/faostat/ssr_2010_2021_molasse_cake.csv",
+    # FBS losses of the raw crops (downloaded by climate_smart_crop_processing)
+    "losses": "data/faostat/losses.csv",
 }
 df_ssr_pathwaycalc, df_csl_feed, df_processing_yield_fxa, pivot_df_milk = (
     self_sufficiency_processing(years_ots, list_countries, file_dict)
@@ -9306,9 +9512,6 @@ dm_losses_liv = DM_agriculture["ots"]["climate-smart-livestock"][
     "climate-smart-livestock_losses"
 ].copy()
 dm_dom_prod_crop = DM_agriculture["fxa"]["cal_agr_domestic-production_food"].copy()
-dm_losses_crop = DM_agriculture["ots"]["climate-smart-crop"][
-    "climate-smart-crop_losses"
-].copy()
 
 
 # Livestock domestic prod with losses [kcal] = livestock domestic prod [kcal] * Production losses livestock [%]
@@ -9329,23 +9532,13 @@ dm_dom_prod_liv.operation(
     unit="kcal",
 )
 
-# Crop domestic prod with losses [kcal] = crop domestic prod [kcal] * Production losses crop [%]
-dm_dom_prod_crop.rename_col(
-    "cal_agr_domestic-production_food",
-    "cal_agr_domestic-production_food_raw",
-    dim="Variables",
-)
+# Crop domestic prod: FBS Production [kcal], NOT multiplied by the losses
+# factor. The crop SSR is (Production - Losses) / (Food + Feed + Processing)
+# and the model's harvest (domestic production x losses factor) is FBS
+# Production: multiplying the reference by the losses factor again counted the
+# losses twice (cereal rates 1.02-1.12).
 if "rice" not in dm_dom_prod_crop.col_labels["Categories1"]:
-    dm_dom_prod_crop.add(np.nan, "Categories1", "rice", dummy=True)
-
-dm_dom_prod_crop.append(dm_losses_crop, dim="Variables")
-dm_dom_prod_crop.operation(
-    "agr_climate-smart-crop_losses",
-    "*",
-    "cal_agr_domestic-production_food_raw",
-    out_col="cal_agr_domestic-production_food",
-    unit="kcal",
-)
+    dm_dom_prod_crop.add(0.0, "Categories1", "rice", dummy=True)
 
 # Overwrite
 DM_agriculture["fxa"]["cal_agr_domestic-production-liv"][
@@ -9877,6 +10070,94 @@ dm_dom_prod_liv.operation(
 DM_agriculture["ots"]["ruminant-feed"]["ruminant-feed"][
     "Switzerland", :, "agr_ruminant-feed_share-grass"
 ] = dm_dom_prod_liv["Switzerland", :, "agr_ruminant-feed_share-grass"]
+
+
+# FBS USES OF THE RAW CROPS NOT SIMULATED (fxa other-uses-crop) ----------------
+# The raw-crop SSR is (Production - Losses) / (Food + Feed + Processing). The
+# crop workflow simulates food (diet), feed (livestock ration), the crush of
+# oilseeds and sugar beet (from cake, oil and sugar) and the crops for domestic
+# beverages. These are the FBS uses it does not simulate, added to its demand
+# so that the demand is the use the SSR was computed on [kcal]:
+#   cereals, fruit           Processing - crops for domestic beverages
+#   pulses, starchy roots, vegetables, rice   Processing
+#   oilcrops, sugar crops    Feed (raw oilseeds and beet fed to animals; the
+#                            crush itself is simulated)
+# Future: 2014-2023 mean. agr_bev-crops-in-ssr = 1 says that the beverage crops
+# are in the SSR denominator (FBS Processing): the crop workflow adds them to
+# the demand before the SSR. The cantons (VD pre-processing) set both to 0.
+df_fbs = pd.read_csv("data/faostat/ssr.csv")
+df_fbs = df_fbs[df_fbs["Area"] == "Switzerland"]
+df_fbs["Item"] = df_fbs["Item"].replace(
+    {"Rice (Milled Equivalent)": "Rice and products"}
+)
+df_fbs = df_fbs.pivot_table(
+    index="Year", columns=["Element", "Item"], values="Value", aggfunc="sum"
+).reindex(years_ots)
+
+
+year_has_fbs = df_fbs.notna().any(axis=1).to_numpy()
+
+
+def fbs_kcal(element, item, cat):
+    # [kt] => [kcal]; years without FBS data are NaN (extrapolated below)
+    if (element, item) not in df_fbs.columns:
+        values = np.zeros(len(years_ots))
+    else:
+        values = df_fbs[(element, item)].fillna(0.0).to_numpy()
+    values = np.where(year_has_fbs, values, np.nan)
+    return values * 1000.0 * cdm_kcal["cp_kcal-per-t", cat]
+
+
+cdm_const = DM_agriculture["constant"]
+dm_yield_wine = DM_agriculture["fxa"]["processing-yield"].filter({"Years": years_ots})[
+    "Switzerland", :, "fxa_agr_processing-yield", "wine-to-fruit"
+]
+bev_cereal = (
+    fbs_kcal("Production", "Beer", "pro-bev-beer")
+    * cdm_const["cdm_cp_ibp_bev_beer"]["cp_ibp_bev_beer_brf_crop_cereal"]
+    + fbs_kcal("Production", "Beverages, Fermented", "pro-bev-bev-fer")
+    * cdm_const["cdm_cp_ibp_bev_fer"]["cp_ibp_bev_bev-fer_brf_crop_cereal"]
+)
+bev_fruit = (
+    fbs_kcal("Production", "Beverages, Alcoholic", "pro-bev-bev-alc")
+    * cdm_const["cdm_cp_ibp_bev_alc"]["cp_ibp_bev_bev-alc_brf_crop_fruit"]
+    + fbs_kcal("Production", "Wine", "pro-bev-wine") * dm_yield_wine
+)
+other_uses = {
+    "cereal": fbs_kcal("Processing", "Cereals - Excluding Beer", "crop-cereal")
+    - bev_cereal,
+    "fruit": fbs_kcal("Processing", "Fruits - Excluding Wine", "crop-fruit")
+    - bev_fruit,
+    "oilcrop": fbs_kcal("Feed", "Oilcrops", "crop-oilcrop"),
+    "pulse": fbs_kcal("Processing", "Pulses", "crop-pulse"),
+    "rice": fbs_kcal("Processing", "Rice and products", "crop-rice"),
+    "starch": fbs_kcal("Processing", "Starchy Roots", "crop-starch"),
+    "sugarcrop": fbs_kcal("Feed", "Sugar Crops", "crop-sugarcrop"),
+    "veg": fbs_kcal("Processing", "Vegetables", "crop-veg"),
+}
+cats = sorted(other_uses)
+dm_other_uses = DataMatrix(
+    col_labels={
+        "Country": ["Switzerland"],
+        "Years": years_ots,
+        "Variables": ["agr_other-uses"],
+        "Categories1": cats,
+    },
+    units={"agr_other-uses": "kcal"},
+)
+dm_other_uses.array = np.stack([other_uses[c] for c in cats], axis=-1)[
+    np.newaxis, :, np.newaxis, :
+]
+linear_fitting(dm_other_uses, years_ots)  # years without FBS data
+dm_other_uses.append(
+    mean_fts_level(dm_other_uses, list(range(2014, 2024)), years_fts), dim="Years"
+)
+dm_bev_in_ssr = dm_other_uses.copy()
+dm_bev_in_ssr.rename_col("agr_other-uses", "agr_bev-crops-in-ssr", "Variables")
+dm_bev_in_ssr.units["agr_bev-crops-in-ssr"] = "-"
+dm_bev_in_ssr.array[...] = 1.0
+dm_other_uses.append(dm_bev_in_ssr, dim="Variables")
+DM_agriculture["fxa"]["other-uses-crop"] = dm_other_uses
 
 
 # ADD DUMMY COUNTRIES ----------------------------------------------------------

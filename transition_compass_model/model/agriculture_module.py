@@ -95,7 +95,8 @@ def read_data(DM_agriculture, lever_setting):
     dm_livestock_density = DM_ots_fts["climate-smart-livestock"][
         "climate-smart-livestock_density"
     ]
-    dm_fxa_ratio_milk = DM_agriculture["fxa"]["ratio_milk"]
+    # Supply / food ratio of the livestock products, (P + I - E) / Food
+    dm_fxa_ratio_supply = DM_agriculture["fxa"]["ratio_supply-food"]
 
     # Sub-matrix for ALCOHOLIC BEVERAGES
     dm_alc_bev = DM_ots_fts["biomass-hierarchy"]["biomass-hierarchy-bev-ibp-use-oth"]
@@ -166,6 +167,8 @@ def read_data(DM_agriculture, lever_setting):
     dm_ef_residues = DM_agriculture["fxa"]["ef_burnt-residues"]
     dm_ssr_feed_crop = DM_ots_fts["climate-smart-crop"]["feed-net-import"]
     dm_processing_yield = DM_agriculture["fxa"]["processing-yield"]
+    # FBS uses of the raw crops that the model does not simulate [kcal]
+    dm_other_uses_crop = DM_agriculture["fxa"]["other-uses-crop"]
 
     # Sub-matrix for LAND
     dm_cal_land = DM_agriculture["fxa"]["cal_agr_lus_land"]
@@ -209,7 +212,10 @@ def read_data(DM_agriculture, lever_setting):
     }
 
     # Aggregated Data Matrix - FOOD DEMAND
-    DM_food_demand = {"food-net-import-pro": dm_food_net_import_pro}
+    DM_food_demand = {
+        "food-net-import-pro": dm_food_net_import_pro,
+        "ratio_supply-food": dm_fxa_ratio_supply,
+    }
 
     # Aggregated Data Matrix - LIVESTOCK
     DM_livestock = {
@@ -219,7 +225,6 @@ def read_data(DM_agriculture, lever_setting):
         "cal_liv_prod": dm_fxa_cal_liv_prod,
         "cal_liv_population": dm_fxa_cal_liv_pop,
         "ruminant_density": dm_livestock_density,
-        "ratio_milk": dm_fxa_ratio_milk,
     }
 
     # Aggregated Data Matrix - ALCOHOLIC BEVERAGES
@@ -271,6 +276,7 @@ def read_data(DM_agriculture, lever_setting):
         "food-net-import-pro": dm_food_net_import_pro,
         "feed-net-import_crop": dm_ssr_feed_crop,
         "processing-yields": dm_processing_yield,
+        "other-uses": dm_other_uses_crop,
     }
 
     # Aggregated Data Matrix - LAND

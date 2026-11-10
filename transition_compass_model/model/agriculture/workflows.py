@@ -377,6 +377,24 @@ def food_demand_workflow(DM_food_demand, dm_lfs):
         * food_net_import_pro.array[:, :, idx_import["agr_food-net-import"], :]
     )
 
+    # Livestock products: Domestic production [kcal] = food demand [kcal]
+    #   * supply / food ratio [-] * SSR [-]
+    # The livestock SSR is production / apparent supply (production + imports
+    # - exports), so it applies to the whole supply (food, feed, processing,
+    # other uses, residuals), not to food alone: the ratio (P + I - E) / Food
+    # turns the food demand into that supply. Then the domestic production
+    # matches FBS production (the milk-only feed-processing-food ratio, applied
+    # after the SSR in livestock_workflow, is replaced by this).
+    dm_ratio = DM_food_demand["ratio_supply-food"].filter(
+        {"Country": dm_lfs_pro.col_labels["Country"]}
+    )
+    for cat in dm_ratio.col_labels["Categories1"]:
+        if cat in dm_lfs_pro.col_labels["Categories1"]:
+            agr_domestic_production[..., idx_lfs[cat]] = (
+                agr_domestic_production[..., idx_lfs[cat]]
+                * dm_ratio[:, :, "fxa_agr_supply-food-ratio", cat]
+            )
+
     # Adding agr_domestic_production to dm_lfs_pro
     dm_lfs_pro.add(
         agr_domestic_production,
@@ -404,17 +422,9 @@ def livestock_workflow(DM_livestock, CDM_const, dm_lfs_pro, years_setting):
     # Append dm_lfs_pro_liv to DM_livestock['losses']
     DM_livestock["losses"].append(dm_lfs_pro_liv, dim="Variables")
 
-    # Account for milk as Feed and Processed
-    # Milk Food & Feed [kcal] = Milk Food [kcal] * fxa_milk_feed_food_ratio [%]
-    array_temp = (
-        DM_livestock["losses"][:, :, "agr_domestic_production", "abp-dairy-milk"]
-        * DM_livestock["ratio_milk"][
-            :, :, "fxa_agr_feed-processing-food-ratio_abp-dairy-milk"
-        ]
-    )
-    DM_livestock["losses"][:, :, "agr_domestic_production", "abp-dairy-milk"] = (
-        array_temp
-    )
+    # Milk (and every livestock product) as feed, processed and other uses is
+    # already in the domestic production: food_demand_workflow applies the
+    # supply / food ratio to the demand before the SSR.
 
     # Livestock domestic prod with losses [kcal] = livestock domestic prod [kcal] * Production losses livestock [%]
     DM_livestock["losses"].operation(
@@ -1995,13 +2005,16 @@ def crop_workflow(
         unit="kcal",
     )
 
-    # Processed Food crop demand [kcal] = processed crops [kcal] * processing yield [%] (only for sweets & processed sugar)
-    # sum processed sugar in one variable : sweets : sweets + processed sugar
-    dm_food_processed.groupby(
-        {"pro-crop-processed-sweet": ".*"}, dim="Categories1", regex=True, inplace=True
+    # Processed Food crop demand [kcal] = processed sugar [kcal] * processing yield [%]
+    # Sugar beet is processed for sugar only: "Sweeteners, Other" (glucose and
+    # fructose syrups) are made from maize and wheat starch, so they are not
+    # turned into sugar beet. The sugar yield is beet processed per t of sugar
+    # (Sugar, Raw Equivalent), not per t of the "Sugar & Sweeteners" group.
+    dm_food_processed = dm_food_processed.filter(
+        {"Categories1": ["pro-crop-processed-sugar"]}
     )
     dm_food_processed.rename_col(
-        "pro-crop-processed-sweet", "crop-sugarcrop", dim="Categories1"
+        "pro-crop-processed-sugar", "crop-sugarcrop", dim="Categories1"
     )
     dm_food_processed.rename_col(
         "agr_domestic-production_food_pro",
@@ -2221,9 +2234,55 @@ def crop_workflow(
     dm_crop_other.rename_col("agr_demand", "agr_demand_afw", dim="Variables")
     # Appending for remaining categories
     dm_crop_demand.drop(dim="Categories1", col_label=list)
+
+    # Crop demand on the definition of use of the SSR. Where the SSR comes from
+    # the FBS (Switzerland), it is (Production - Losses) / (Food + Feed +
+    # Processing), so the demand it applies to takes:
+    # + the crops for domestic beverages (malting barley, grapes for wine...),
+    #   which FBS counts as Processing of the crop, not as extra production
+    # + the FBS uses of the raw crops that the model does not simulate (other
+    #   processing, raw oilseed and beet fed to animals), historical, 2014-2023
+    #   mean in the future
+    # Where the SSR is cantonal production / food supply (cantons), the
+    # beverage crops stay outside the SSR (vineyards are a separate land
+    # category) and are added to the production, and there are no other uses.
+    # fxa agr_bev-crops-in-ssr [-] says which: 1 (FBS) or 0 (cantons).
+    dm_bev_dom_prod.sort(dim="Categories1")
+    dm_fbs_uses = DM_crop["other-uses"].filter(
+        {
+            "Country": dm_crop_demand.col_labels["Country"],
+            "Years": dm_crop_demand.col_labels["Years"],
+        }
+    )
+    dm_bev_after_ssr = dm_crop_demand.copy()
+    dm_bev_after_ssr.rename_col(
+        "agr_demand_total", "agr_domestic-production_bev", dim="Variables"
+    )
+    dm_bev_after_ssr.array[...] = 0.0
+    for cat in dm_crop_demand.col_labels["Categories1"]:
+        if cat not in dm_fbs_uses.col_labels["Categories1"]:
+            continue
+        array_bev = 0.0
+        if cat in dm_bev_dom_prod.col_labels["Categories1"]:
+            array_bev = np.nan_to_num(
+                dm_bev_dom_prod[:, :, "agr_domestic-production_bev", cat]
+            )
+        share_in = dm_fbs_uses[:, :, "agr_bev-crops-in-ssr", cat]
+        array_other = np.nan_to_num(dm_fbs_uses[:, :, "agr_other-uses", cat])
+        dm_crop_demand[:, :, "agr_demand_total", cat] = (
+            dm_crop_demand[:, :, "agr_demand_total", cat]
+            + share_in * array_bev
+            + array_other
+        )
+        dm_bev_after_ssr[:, :, "agr_domestic-production_bev", cat] = (
+            1.0 - share_in
+        ) * array_bev
     DM_crop["crop"].append(dm_crop_demand, dim="Variables")
 
     # Dom prod [kcal] = demand * SSR [%]
+    # The raw-crop SSR is (Production - Losses) / (Food + Feed + Processing):
+    # the domestic production is net of losses, the losses come after it
+    # (harvest = domestic production x losses factor, below).
     DM_crop["crop"].operation(
         "agr_demand_total",
         "*",
@@ -2231,9 +2290,8 @@ def crop_workflow(
         out_col="agr_domestic-production_without_bev",
         unit="kcal",
     )
-
-    # Summing with dom production for Beverages
-    DM_crop["crop"].append(dm_bev_dom_prod, dim="Variables")
+    # + beverage crops outside the SSR (cantons; 0 where they are in the demand)
+    DM_crop["crop"].append(dm_bev_after_ssr, dim="Variables")
     DM_crop["crop"].operation(
         "agr_domestic-production_without_bev",
         "+",
@@ -2242,7 +2300,9 @@ def crop_workflow(
         unit="kcal",
     )
 
-    # Domestic production with losses [kcal] = domestic prod * food losses [%]
+    # Harvest [kcal] = domestic production [kcal] x losses factor [-]
+    # The losses factor (1 / (1 - Losses / Production)) gives the harvest,
+    # which is FBS Production in history and sets the cropland.
     DM_crop["crop"].operation(
         "agr_domestic-production",
         "*",
@@ -2252,39 +2312,24 @@ def crop_workflow(
     )
 
     # Processing for calibration :
-    dm_cal_bev_fruit = DM_crop["cal_bev"].filter({"Categories1": ["wine"]})
-    dm_cal_bev_cereal = DM_crop["cal_bev"].filter(
-        {"Categories1": ["bev-beer", "bev-fer"]}
-    )
-    # Groupby fruits or cereals
-    dm_cal_bev_fruit.groupby(
-        {"fruit": ".*"}, dim="Categories1", regex=True, inplace=True
-    )
-    dm_cal_bev_cereal.groupby(
-        {"cereal": ".*"}, dim="Categories1", regex=True, inplace=True
-    )
-    # cal_crop total = cal_crop_food (actually also includes feed) + cal_crop_bev
+    # The production reference is the stored crop production only. FBS
+    # Production already holds the crops for domestic beverages (all barley and
+    # grapes grown); the cantonal references hold them too (the beverages are
+    # added to them in the pre-processing). So they are not added here.
     dm_cal_crop = DM_crop["cal_crop"].copy()
-    array_temp_cereal = (
-        dm_cal_bev_cereal[:, :, "cal_agr_domestic-production_bev", "cereal"]
-        + dm_cal_crop[:, :, "cal_agr_domestic-production_food", "cereal"]
-    )
-    dm_cal_crop[:, :, "cal_agr_domestic-production_food", "cereal"] = array_temp_cereal
-    array_temp_fruit = (
-        dm_cal_bev_fruit[:, :, "cal_agr_domestic-production_bev", "fruit"]
-        + dm_cal_crop[:, :, "cal_agr_domestic-production_food", "fruit"]
-    )
-    dm_cal_crop[:, :, "cal_agr_domestic-production_food", "fruit"] = array_temp_fruit
 
     # CALIBRATION CROP PRODUCTION --------------------------------------------------------------------------------------
     # dm_cal_crop = DM_crop['cal_crop']
     dm_crop = DM_crop["crop"].filter({"Variables": ["agr_domestic-production_afw_raw"]})
+    # Future: median rate of 2014-2023, not the 2023 rate alone (2022-2023 are
+    # extrapolated years in the reference)
     dm_cal_rates_crop = calibration_rates(
         dm_crop,
         dm_cal_crop,
         calibration_start_year=1990,
         calibration_end_year=2023,
         years_setting=years_setting,
+        fts_median_years=10,
     )
     DM_crop["crop"].append(dm_cal_rates_crop, dim="Variables")
     DM_crop["crop"].operation(

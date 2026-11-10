@@ -3,6 +3,7 @@ import math
 import os
 import pickle
 import re
+import warnings
 from os import listdir
 from os.path import isfile, join
 
@@ -543,12 +544,22 @@ def difference_with_data_graph(dm_model, dm_data, title):
 
 
 def calibration_rates(
-    dm, dm_cal, years_setting, calibration_start_year=1990, calibration_end_year=2023
+    dm,
+    dm_cal,
+    years_setting,
+    calibration_start_year=1990,
+    calibration_end_year=2023,
+    fts_median_years=None,
 ):
     # dm is the datamatrix with data to be calibrated
     # dm_cal is the datamatrix with the reference data
     # the function returns a datamatrix with the calibration rates
     # all datamartix should have the same shape
+    # fts_median_years: if None, the years after calibration_end_year hold the
+    # rate of calibration_end_year. If n, they hold the median rate of the last
+    # n calibration years (non-finite rates ignored), so that one year (often
+    # an extrapolated one, or one with a large stock change) does not set the
+    # rate up to 2050.
 
     if np.all(np.isnan(dm_cal.array)):
         dm_cal_sub = dm_cal.copy()
@@ -616,10 +627,23 @@ def calibration_rates(
             )
         dm_cal_sub.sort("Years")
 
-        # for missing years post calibration_end_year, add them with value of last available year
+        # for missing years post calibration_end_year, add them with value of
+        # last available year, or the median of the last fts_median_years years
+        if fts_median_years is None:
+            rate_post = dm_cal_sub.array[:, idx[calibration_end_year], ...]
+        else:
+            last_years = range(
+                calibration_end_year - fts_median_years + 1, calibration_end_year + 1
+            )
+            arr = dm_cal_sub.array[:, [idx[y] for y in last_years], ...]
+            arr = np.where(np.isfinite(arr), arr, np.nan)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)  # all-NaN
+                rate_post = np.nanmedian(arr, axis=1)
+            rate_post = np.where(np.isfinite(rate_post), rate_post, 1.0)
         for i in years_new_post:
             dm_cal_sub.add(
-                dm_cal_sub.array[:, idx[calibration_end_year], ...],
+                rate_post,
                 dim="Years",
                 col_label=[i],
             )
@@ -1180,6 +1204,26 @@ def linear_fitting_ots_db(df_db, years_ots, countries="all"):
     df_merged = update_database_from_db(db_old=df_db, db_new=df_db_ots)
 
     return df_merged
+
+
+def mean_fts_level(dm_ots_lever, years_mean, years_fts, max_value=None, min_value=None):
+    # Build an fts-years DataMatrix that holds the mean of years_mean (non-finite
+    # values ignored), optionally capped at max_value and floored at min_value.
+    # Used instead of a linear trend where the trend runs away (noisy ots, data
+    # vintage breaks such as FBSH/FBS in 2010).
+    dm_mean = dm_ots_lever.filter({"Years": years_mean}, inplace=False)
+    years_axis = dm_mean.dim_labels.index("Years")
+    array = np.where(np.isfinite(dm_mean.array), dm_mean.array, np.nan)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)  # all-NaN
+        array = np.nanmean(array, axis=years_axis, keepdims=True)
+    if max_value is not None:
+        array = np.minimum(array, max_value)
+    if min_value is not None:
+        array = np.maximum(array, min_value)
+    array = np.repeat(array, len(years_fts), axis=years_axis)
+    dm_first = dm_ots_lever.filter({"Years": [years_mean[0]]}, inplace=False)
+    return DataMatrix.based_on(array, dm_first, change={"Years": years_fts})
 
 
 def linear_forecast_BAU(

@@ -8,18 +8,82 @@ from transition_compass_model.model.common.auxiliary_functions import (
     init_years_lever,
     linear_fit_ratio,
     linear_fitting,
+    mean_fts_level,
     my_pickle_dump,
 )
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
+# Years whose mean is held to 2050 where a linear trend runs away
+YEARS_MEAN_FIRST = 2014
+# SSR capped at 1 in the BAU (no exports recorded)
+SSR_BAU_CAP_1 = ["crop-sugarcrop"]
 
-def run(DM_agriculture: DataMatrix, years_ots: list, years_fts: list) -> DataMatrix:
+
+def ssr_bau_fts(dm, years_ots, years_fts, DM_fxa, liv_ssr_on_food_supply):
+    """BAU fts of the self-sufficiency ratios (lever food-net-import).
+
+    - default: linear trend of the ots (as before), at least 0
+    - crops and processed crops (crop-*, pro-crop-*): the 2014-2023 mean. A
+      linear trend over 1990-2023 runs through the FBSH/FBS break of 2010 and
+      the 2018-2023 beet stock build: Swiss cereal production went to 0 in
+      2050, sugar beet above its 2023 level. Sugar beet capped at 1.
+    - livestock products, when liv_ssr_on_food_supply (cantons): the SSR is
+      production / (food supply x supply-food ratio). The trend is fitted on
+      production / food supply (no FBSH/FBS break) and divided by the held
+      ratio of fxa ratio_supply-food.
+    """
+    years_mean = [y for y in years_ots if y >= YEARS_MEAN_FIRST]
+    dm_fts = dm.copy()
+    linear_fitting(dm_fts, years_fts, based_on=years_ots)
+    dm_fts = dm_fts.filter({"Years": years_fts})
+    dm_fts.array = np.where(dm_fts.array < 0, 0, dm_fts.array)
+
+    crop_cats = [
+        c
+        for c in dm.col_labels["Categories1"]
+        if c.startswith("crop-") or c.startswith("pro-crop-")
+    ]
+    dm_mean = mean_fts_level(
+        dm.filter({"Categories1": crop_cats}), years_mean, years_fts
+    )
+    for c in crop_cats:
+        dm_fts.array[..., dm_fts.idx[c]] = dm_mean.array[..., dm_mean.idx[c]]
+        if c in SSR_BAU_CAP_1:
+            dm_fts.array[..., dm_fts.idx[c]] = np.minimum(
+                dm_fts.array[..., dm_fts.idx[c]], 1.0
+            )
+
+    if liv_ssr_on_food_supply:
+        dm_ratio = DM_fxa["ratio_supply-food"].filter(
+            {"Country": dm.col_labels["Country"]}
+        )
+        for c in dm_ratio.col_labels["Categories1"]:
+            dm_c = dm.filter({"Categories1": [c]})
+            ratio_ots = dm_ratio.filter({"Years": years_ots, "Categories1": [c]})
+            dm_c.array = dm_c.array * ratio_ots.array
+            linear_fitting(dm_c, years_fts, based_on=years_ots)
+            dm_c = dm_c.filter({"Years": years_fts})
+            ratio_fts = dm_ratio.filter({"Years": years_fts, "Categories1": [c]})
+            dm_fts.array[..., dm_fts.idx[c]] = np.maximum(
+                dm_c.array[..., 0] / ratio_fts.array[..., 0], 0
+            )
+    return dm_fts
+
+
+def run(
+    DM_agriculture: DataMatrix,
+    years_ots: list,
+    years_fts: list,
+    liv_ssr_on_food_supply: bool = False,
+) -> DataMatrix:
     """Create fts BAU for agriculture
 
     Args:
         DM_agriculture (DataMatrix)
         years_ots (list)
         years_fts (list)
+        liv_ssr_on_food_supply (bool): True for the cantons, whose livestock
+            SSR is production / (food supply x supply-food ratio)
 
     Returns:
         DataMatrix: DM_agriculture updated with fts BAU for agriculture
@@ -45,6 +109,16 @@ def run(DM_agriculture: DataMatrix, years_ots: list, years_fts: list) -> DataMat
                         dm, years_fts, years_range=[years_ots[0], years_ots[-1]]
                     )
 
+                elif subkey == "climate-smart-crop_losses":
+                    # 2014-2023 mean losses factor, at least 1 (a linear trend
+                    # went below 1, negative losses, for Swiss starchy roots)
+                    dm = mean_fts_level(
+                        dm,
+                        [y for y in years_ots if y >= YEARS_MEAN_FIRST],
+                        years_fts,
+                        min_value=1.0,
+                    )
+
                 elif subkey in list_constant:
                     linear_fitting(dm, years_fts, based_on=years_ots)
                     idx = dm.idx
@@ -62,7 +136,16 @@ def run(DM_agriculture: DataMatrix, years_ots: list, years_fts: list) -> DataMat
 
         else:
             dm = DM_agriculture["ots"][key].copy()
-            linear_fitting(dm, years_fts, based_on=years_ots)
+            if key == "food-net-import":
+                dm = ssr_bau_fts(
+                    dm,
+                    years_ots,
+                    years_fts,
+                    DM_agriculture["fxa"],
+                    liv_ssr_on_food_supply,
+                )
+            else:
+                linear_fitting(dm, years_fts, based_on=years_ots)
             if key == "food-net-import" and "Vaud" in dm.col_labels["Country"]:
                 idx = dm.idx
                 # Ensure cereal production stays above 1 for Vaud

@@ -567,6 +567,13 @@ for canton in cantons_list:
     add_dummy_country_to_DM(DM_agriculture, canton, "Switzerland")
 filter_DM(DM_agriculture, {"Country": cantons_list})
 
+# FBS uses of the raw crops not simulated: none for the cantons. Their SSR is
+# cantonal production / food supply (below), not the FBS (Production -
+# Losses) / (Food + Feed + Processing), so there are no other uses, and the
+# crops for the cantonal beverages are added to the production after the SSR
+# (vineyards and the beer proxy are separate land categories): flag 0.
+DM_agriculture["fxa"]["other-uses-crop"].array[...] = 0.0
+
 # dm_kcal = DM_agriculture['ots']['kcal-req']
 # linear_fitting(dm_kcal, years_ots)
 # linear_fitting(dm_kcal, years_fts)
@@ -777,6 +784,31 @@ DM_agriculture["ots"]["food-net-import"].array = np.where(
     0,
     DM_agriculture["ots"]["food-net-import"].array,
 )
+
+# Livestock products: the model applies the SSR to the food demand x supply /
+# food ratio (fxa ratio_supply-food, (P + I - E) / Food of Switzerland), so
+# SSR = production / (food supply x ratio) gives back the cantonal production
+# (the milk-only ratio was applied after the SSR, so milk came out at
+# production x ratio and its calibration rate was 0.56-0.76).
+dm_netimport = DM_agriculture["ots"]["food-net-import"]
+dm_ratio = DM_agriculture["fxa"]["ratio_supply-food"].filter(
+    {"Country": dm_netimport.col_labels["Country"], "Years": years_ots}
+)
+for cat in dm_ratio.col_labels["Categories1"]:
+    dm_netimport[:, :, "agr_food-net-import", cat] = (
+        dm_netimport[:, :, "agr_food-net-import", cat]
+        / dm_ratio[:, :, "fxa_agr_supply-food-ratio", cat]
+    )
+# Crops: the domestic production of the model is net of losses (harvest =
+# production x losses factor), so SSR = production / losses factor / supply
+dm_losses_factor = DM_agriculture["ots"]["climate-smart-crop"][
+    "climate-smart-crop_losses"
+].filter({"Country": dm_netimport.col_labels["Country"], "Years": years_ots})
+for cat in dm_losses_factor.col_labels["Categories1"]:
+    dm_netimport[:, :, "agr_food-net-import", "crop-" + cat] = (
+        dm_netimport[:, :, "agr_food-net-import", "crop-" + cat]
+        / dm_losses_factor[:, :, "agr_climate-smart-crop_losses", cat]
+    )
 
 # Overwrite Vaud calibration ###################################################
 dm_cal_diet.rename_col("lfs_supply", "cal_agr_diet", "Variables")
@@ -1258,6 +1290,21 @@ dm_alcool.rename_col(
 
 DM_agriculture["fxa"]["cal_agr_domestic-production_bev"] = dm_alcool
 
+# The crop production reference holds the crops for the cantonal beverages,
+# as FBS Production does for Switzerland (the crop workflow no longer adds the
+# beverages to the reference): cereal + beer + fermented, fruit + wine.
+# (After the cropland calibration above, which is on the crop land only.)
+dm_cal_crop = DM_agriculture["fxa"]["cal_agr_domestic-production_food"]
+dm_bev_years = dm_alcool.filter({"Years": dm_cal_crop.col_labels["Years"]})
+dm_cal_crop[:, :, "cal_agr_domestic-production_food", "cereal"] = (
+    dm_cal_crop[:, :, "cal_agr_domestic-production_food", "cereal"]
+    + np.nan_to_num(dm_bev_years[:, :, "cal_agr_domestic-production_bev", "bev-beer"])
+    + np.nan_to_num(dm_bev_years[:, :, "cal_agr_domestic-production_bev", "bev-fer"])
+)
+dm_cal_crop[:, :, "cal_agr_domestic-production_food", "fruit"] = dm_cal_crop[
+    :, :, "cal_agr_domestic-production_food", "fruit"
+] + np.nan_to_num(dm_bev_years[:, :, "cal_agr_domestic-production_bev", "wine"])
+
 # Emissions
 ## CH4: enteric, manure and rice (burnt residues?)
 dm_emission_ch4_manure = dm_manure_ch4.copy()
@@ -1424,6 +1471,8 @@ my_pickle_dump(DM_agriculture, f)  # noqa: F821
 
 #### FTS ####
 
-DM_agriculture = run_bau_fts(DM_agriculture, years_ots, years_fts)
+DM_agriculture = run_bau_fts(
+    DM_agriculture, years_ots, years_fts, liv_ssr_on_food_supply=True
+)
 
 print("Hello")
