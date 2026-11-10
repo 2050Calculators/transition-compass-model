@@ -1,177 +1,22 @@
-import math
 import os
 import pickle
+import time
 
 import numpy as np
-import pandas as pd
-import requests
 
+# Still on the old PX-Web API: neither table is on the Swiss Stats SDMX API yet
+# (STATPOP population starts in 2010; no population scenario dataflow).
 from transition_compass_model._database.pre_processing.api_routines_CH import (
     get_data_api_CH,
 )
 from transition_compass_model._database.pre_processing.params import (
+    country_list,
     years_fts,
     years_ots,
 )
-from transition_compass_model._database.pre_processing.WorldBank_data_extract import (
-    get_WB_data,
-)
 from transition_compass_model.model.common.auxiliary_functions import (
-    linear_fitting,
     my_pickle_dump,
 )
-from transition_compass_model.model.common.data_matrix_class import DataMatrix
-
-
-def create_ots_years_list(years_setting):
-    startyear: int = years_setting[0]  # Start year is argument [0], i.e., 1990
-    baseyear: int = years_setting[1]  # Base/Reference year is argument [1], i.e., 2015
-    lastyear: int = years_setting[2]  # End/Last year is argument [2], i.e., 2050
-    step_fts = years_setting[3]  # Timestep for scenario is argument [3], i.e., 5 years
-    years_ots = list(
-        np.linspace(start=startyear, stop=baseyear, num=(baseyear - startyear) + 1)
-        .astype(int)
-        .astype(str)
-    )
-    return years_ots
-
-
-def create_fts_years_list():
-    years_fts = list(np.linspace(start=2025, stop=2050, num=6).astype(int))
-    return years_fts
-
-
-###############################
-### POPULATION - deprecated ###
-###############################
-def deprecated_extract_lfs_population_total(years_ots, all_cantons):
-    # Demographic balance by institutional units
-    table_id = "px-x-0102020000_201"
-    structure = get_data_api_CH(table_id, mode="example")
-
-    filter = {
-        "Year": years_ots,
-        "Canton (-) / District (>>) / Commune (......)": ["Switzerland", "- Vaud"],
-        "Citizenship (category)": "Citizenship (category) - total",
-        "Sex": "Sex - total",
-        "Demographic component": "Population on 1 January",
-    }
-
-    mapping_dim = {
-        "Country": "Canton (-) / District (>>) / Commune (......)",
-        "Years": "Year",
-        "Variables": "Demographic component",
-    }
-
-    dm_lfs_pop = get_data_api_CH(
-        table_id,
-        mode="extract",
-        filter=filter,
-        mapping_dims=mapping_dim,
-        units=["inhabitants"],
-    )
-
-    dm_lfs_pop.rename_col_regex("- ", "", dim="Country")
-    dm_lfs_pop.rename_col(
-        "Population on 1 January", "lfs_population_total", dim="Variables"
-    )
-
-    return dm_lfs_pop
-
-
-######################################
-### POPULATION by age - deprecated ###
-######################################
-def deprecated_extract_lfs_demography_age():
-    # ! FIXME: this database is missing many years, find another one model the missing years
-    table_id = "px-x-0102010000_103"
-    structure = get_data_api_CH(table_id, mode="example")
-
-    # Extract all age classes
-    filter = {
-        "Year": structure["Year"],
-        "Canton (-) / District (>>) / Commune (......)": ["Switzerland", "- Vaud"],
-        "Population type": [
-            "Permanent resident population",
-            "Non permanent resident population",
-        ],
-        "Sex": ["Male", "Female"],
-        "Marital status": "Marital status - total",
-        "Age class": structure["Age class"],
-    }
-
-    mapping_dim = {
-        "Country": "Canton (-) / District (>>) / Commune (......)",
-        "Years": "Year",
-        "Variables": "Population type",
-        "Categories1": "Sex",
-        "Categories2": "Age class",
-    }
-    # Extract population by age group data
-    dm_lfs_pop_age = get_data_api_CH(
-        table_id,
-        mode="extract",
-        filter=filter,
-        mapping_dims=mapping_dim,
-        units=["inhabitants", "inhabitants"],
-    )
-    # Group age categories
-    dm_lfs_pop_age.groupby(
-        {
-            "below19": ["0-4 years", "5-9 years", "10-14 years", "15-19 years"],
-            "age20-29": ["20-24 years", "25-29 years"],
-            "age30-54": [
-                "30-34 years",
-                "35-39 years",
-                "40-44 years",
-                "45-49 years",
-                "50-54 years",
-            ],
-            "age55-64": ["55-59 years", "60-64 years"],
-            "above65": [
-                "65-69 years",
-                "70-74 years",
-                "75-79 years",
-                "80-84 years",
-                "85-89 years",
-                "90-94 years",
-                "95-99 years",
-                "100 years or older",
-            ],
-        },
-        dim="Categories2",
-        inplace=True,
-        regex=False,
-    )
-    # Rename sex
-    dm_lfs_pop_age.rename_col("Male", "male", dim="Categories1")
-    dm_lfs_pop_age.rename_col("Female", "female", dim="Categories1")
-    # Rename Vaud
-    dm_lfs_pop_age.rename_col_regex("- ", "", "Country")
-    # Group permanent and non-permanent (permis C / citizenship and other)
-    dm_lfs_pop_age.groupby(
-        {
-            "lfs_demography": [
-                "Permanent resident population",
-                "Non permanent resident population",
-            ]
-        },
-        dim="Variables",
-        inplace=True,
-        regex=False,
-    )
-    # Extract age class total to compare with tot population data
-    dm_tot_resident_pop = dm_lfs_pop_age.filter(
-        {"Categories2": ["Age class - total"]}, inplace=False
-    )
-    dm_lfs_pop_age.drop("Categories2", "Age class - total")
-    # Join sex and age group
-    dm_lfs_pop_age = dm_lfs_pop_age.flatten(sep="-")
-
-    # Drop sex
-    dm_tot_resident_pop.group_all("Categories1", inplace=True)
-
-    return dm_lfs_pop_age
 
 
 ########################
@@ -179,6 +24,7 @@ def deprecated_extract_lfs_demography_age():
 ### tot & by age new ###
 ########################
 def extract_lfs_pop(years_ots, table_id, file):
+    file = os.path.join(os.path.dirname(os.path.abspath(__file__)), file)
     try:
         with open(file, "rb") as handle:
             dm_lfs_pop_age = pickle.load(handle)
@@ -206,29 +52,41 @@ def extract_lfs_pop(years_ots, table_id, file):
                 "Categories1": "Sex",
                 "Categories2": "Age",
             }
-            # Extract population by age group data
-            dm_lfs_pop_age_canton = get_data_api_CH(
-                table_id,
-                mode="extract",
-                filter=filter,
-                mapping_dims=mapping_dim,
-                units=["inhabitants"],
-            )
+            # Extract population by age group data. The FSO API rate-limits
+            # requests (HTTP 429): get_data_api_CH then returns None or raises
+            # KeyError, so wait and retry.
+            for attempt in range(5):
+                try:
+                    dm_lfs_pop_age_canton = get_data_api_CH(
+                        table_id,
+                        mode="extract",
+                        filter=filter,
+                        mapping_dims=mapping_dim,
+                        units=["inhabitants"],
+                    )
+                except KeyError:
+                    dm_lfs_pop_age_canton = None
+                if dm_lfs_pop_age_canton is not None:
+                    break
+                time.sleep(30)
+            else:
+                raise RuntimeError(f"FSO API request failed for canton {canton}")
             if dm_lfs_pop_age is None:
                 dm_lfs_pop_age = dm_lfs_pop_age_canton
             else:
                 dm_lfs_pop_age.append(dm_lfs_pop_age_canton, dim="Country")
 
         dm_lfs_pop_age.sort("Country")
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, file)
-        with open(f, "wb") as handle:
+        os.makedirs(os.path.dirname(file), exist_ok=True)
+        with open(file, "wb") as handle:
             pickle.dump(dm_lfs_pop_age, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     dm_lfs_pop_age.rename_col_regex("Confederation", "Switzerland", "Country")
     dm_lfs_pop_age.rename_col_regex(" /.*", "", dim="Country")
     dm_lfs_pop_age.rename_col_regex("-", " ", dim="Country")
-    dm_lfs_pop_age.rename_col(cantons_fr, cantons_en, dim="Country")
+    dm_lfs_pop_age.rename_col(
+        list(cantons_fso_to_en.keys()), list(cantons_fso_to_en.values()), dim="Country"
+    )
     dm_lfs_pop_age.sort("Country")
 
     dm_lfs_pop_age.drop(col_label="No indication", dim="Country")
@@ -284,6 +142,7 @@ def extract_lfs_pop(years_ots, table_id, file):
 
 
 def extract_lfs_pop_fts(years_fts, table_id, file):
+    file = os.path.join(os.path.dirname(os.path.abspath(__file__)), file)
     try:
         with open(file, "rb") as handle:
             dm_pop_fts = pickle.load(handle)
@@ -321,9 +180,8 @@ def extract_lfs_pop_fts(years_fts, table_id, file):
             units=unit_all,
             language="fr",
         )
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, file)
-        with open(f, "wb") as handle:
+        os.makedirs(os.path.dirname(file), exist_ok=True)
+        with open(file, "wb") as handle:
             pickle.dump(dm_pop_fts, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     # Rename
@@ -393,12 +251,13 @@ def extract_lfs_pop_fts(years_fts, table_id, file):
     return dict_dm_pop_fts, dict_dm_pop_fts_tot
 
 
-def add_vaud_fts_pop(
-    dm_lfs_age, dm_lfs_tot_pop, dict_lfs_age_fts, dict_lfs_tot_pop_fts
+def add_cantons_fts_pop(
+    dm_lfs_age, dm_lfs_tot_pop, dict_lfs_age_fts, dict_lfs_tot_pop_fts, cantons
 ):
+    # FSO scenarios exist only for Switzerland: each canton keeps its share of
+    # the Swiss population in the last ots year
     idx = dm_lfs_tot_pop.idx
-    # vaud share for last ots year available
-    for canton in set(dm_lfs_tot_pop.col_labels["Country"]) - {"Switzerland"}:
+    for canton in cantons:
         vaud_share = (
             dm_lfs_tot_pop.array[idx[canton], -1, ...]
             / dm_lfs_tot_pop.array[idx["Switzerland"], -1, ...]
@@ -435,420 +294,8 @@ def add_vaud_fts_pop(
     return
 
 
-########################
-### URBAN POPULATION ###
-########################
-# NOT USED
-def extract_lfs_urban_share(years_ots, table_id):
-    # Suisse urbaine: sélection de variables selon la typologie urbain-rural
-    structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-
-    # Extract all age classes
-    filter = {
-        "Année": structure["Année"],
-        "Résultat": "Valeur",
-        "Variable": "Population résidante permanente, total",  # Swiss and non-Swiss resident
-        "Typologie urbain-rural": structure["Typologie urbain-rural"],
-    }
-
-    mapping_dim = {
-        "Country": "Résultat",
-        "Years": "Année",
-        "Variables": "Typologie urbain-rural",
-    }
-
-    # Extract urban / rural pop
-    dm_lfs_urban = get_data_api_CH(
-        table_id,
-        mode="extract",
-        filter=filter,
-        mapping_dims=mapping_dim,
-        units=["inhabitants", "inhabitants", "inhabitants"],
-        language="fr",
-    )
-
-    dm_lfs_urban.rename_col("Valeur", "Switzerland", dim="Country")
-    dm_lfs_urban.groupby(
-        {
-            "non-urban": [
-                "Intermédiaire (périurbain dense et centres ruraux)",
-                "Rural",
-            ],
-            "urban": ["Urbain"],
-        },
-        dim="Variables",
-        inplace=True,
-        regex=False,
-    )
-
-    # Perform linear extrapolation all the way back to 1990
-    linear_fitting(dm_lfs_urban, years_ots)
-
-    # Compute urban share of total population
-    dm_lfs_urban.operation(
-        "urban", "+", "non-urban", out_col="total", unit="inhabitants", dim="Variables"
-    )
-    dm_lfs_urban.operation(
-        "urban",
-        "/",
-        "total",
-        out_col="lfs_demography_urban-population",
-        unit="%",
-        dim="Variables",
-        div0="error",
-    )
-    dm_lfs_urban.filter(
-        {"Variables": ["lfs_demography_urban-population"]}, inplace=True
-    )
-
-    # Vaud urban pop rate as CH
-    dm_lfs_urban_VD = dm_lfs_urban.copy()
-    dm_lfs_urban_VD.rename_col("Switzerland", "Vaud", "Country")
-
-    dm_lfs_urban.append(dm_lfs_urban_VD, dim="Country")
-
-    return dm_lfs_urban
-
-
-########################
-####   FLOOR-AREA   ####
-########################
-def extract_lfs_floor_space(years_ots, dm_lfs_tot_pop, table_id):
-    structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-
-    # Extract buildings floor area
-    filter = {
-        "Année": structure["Année"],
-        "Canton (-) / District (>>) / Commune (......)": ["Suisse", "- Vaud"],
-        "Catégorie de bâtiment": structure["Catégorie de bâtiment"],
-        "Surface du logement": structure["Surface du logement"],
-        "Époque de construction": structure["Époque de construction"],
-    }
-    mapping_dim = {
-        "Country": "Canton (-) / District (>>) / Commune (......)",
-        "Years": "Année",
-        "Variables": "Catégorie de bâtiment",
-        "Categories1": "Surface du logement",
-        "Categories2": "Époque de construction",
-    }
-    unit_all = ["number"] * len(structure["Catégorie de bâtiment"])
-    # Get api data
-    dm_floor_area = get_data_api_CH(
-        table_id,
-        mode="extract",
-        filter=filter,
-        mapping_dims=mapping_dim,
-        units=unit_all,
-        language="fr",
-    )
-
-    # Pre-processing
-
-    ## Rename & Group
-    dm_floor_area.rename_col(["Suisse"], ["Switzerland"], dim="Country")
-    dm_floor_area.rename_col_regex("- ", "", dim="Country")
-    dm_floor_area.group_all("Categories2")
-    dm_floor_area.groupby(
-        {"lfs_dwellings": ".*"}, dim="Variables", regex=True, inplace=True
-    )
-    dm_num_bld = dm_floor_area.group_all("Categories1", inplace=False)
-
-    ## Compute total floor space
-    dm_floor_area.rename_col_regex(" m2", "", "Categories1")
-    # The average size for less than 30 is a guess, as is the average size for 150+,
-    # we will use the data from bfs to calibrate
-    avg_size = {
-        "<30": 25,
-        "30-49": 39.5,
-        "50-69": 59.5,
-        "70-99": 84.5,
-        "100-149": 124.5,
-        "150+": 175,
-    }
-    idx = dm_floor_area.idx
-    for size in dm_floor_area.col_labels["Categories1"]:
-        dm_floor_area.array[:, :, :, idx[size]] = (
-            avg_size[size] * dm_floor_area.array[:, :, :, idx[size]]
-        )
-    dm_floor_area.rename_col("lfs_dwellings", "lfs_floor-area", "Variables")
-    dm_floor_area.units["lfs_floor-area"] = "m2"
-    dm_floor_area.group_all("Categories1")
-
-    ## Calibrate
-    # From https://www.bfs.admin.ch/bfs/en/home/statistics/construction-housing/dwellings/size.html#accordion1719560162958
-    # In 2022 the average floor space per dwelling was 99m2. The relative stability observed since 2000 (97m2)
-    # can be explained by the fact that dwellings built prior to 1981 (60% of the housing stock) have an average floor space
-    # of less than 100m2. The size of more recent dwellings, however, is larger, and dwellings built between 2001 and 2005
-    # have an average floor space of 131m2.
-    # Compute average size of dwelling
-    avg_floor_space_CH_2022_m2 = 99
-    dm_floor_area.append(dm_num_bld, dim="Variables")
-    dm_floor_area.operation(
-        "lfs_floor-area",
-        "/",
-        "lfs_dwellings",
-        dim="Variables",
-        out_col="lfs_avg-floor-size",
-        unit="m2",
-    )
-    cal_factor = (
-        avg_floor_space_CH_2022_m2
-        / dm_floor_area.array[idx["Switzerland"], idx[2022], idx["lfs_avg-floor-size"]]
-    )
-    dm_floor_area.filter({"Variables": ["lfs_avg-floor-size"]}, inplace=True)
-    dm_floor_area.array = dm_floor_area.array * cal_factor
-
-    # Linear fitting
-    linear_fitting(dm_floor_area, years_ots)
-    linear_fitting(dm_num_bld, years_ots)
-
-    # Recompute total floor-area = avg-floor-size * nb_dwellings
-    dm_floor_area.append(dm_num_bld, dim="Variables")
-    dm_floor_area.operation(
-        "lfs_avg-floor-size", "*", "lfs_dwellings", out_col="lfs_floor-area", unit="m2"
-    )
-
-    # Compute floor-area per capita
-    dm_floor_area.append(dm_lfs_tot_pop, dim="Variables")
-    dm_floor_area.operation(
-        "lfs_floor-area",
-        "/",
-        "lfs_population_total",
-        out_col="lfs_floor-intensity_space-cap",
-        unit="m2/cap",
-    )
-
-    dm_floor_area.filter({"Variables": ["lfs_floor-intensity_space-cap"]}, inplace=True)
-
-    return dm_floor_area
-
-
-#######################
-### COOL-AREA-SHARE ###
-#######################
-def extract_lfs_floor_area_cool_share():
-    warning = "The floor_area_cool_share routine is not complete, temperature data and GDP data are missing"
-    # "Space cooling technology in Europe" by HeatRoadmapEU
-    # https://heatroadmap.eu/wp-content/uploads/2018/11/HRE4_D3.2.pdf
-    # Equation "share of residential floor area cooled" at page 21
-    # Household size as number of people
-    hhd = 2.2
-    # GNI is the average per capita purchasing power parity
-    GNI = 92980
-    # Cooled Days Degrees
-    CDD = 1400
-    # Market saturation = all need covered
-    share_of_residential_floor_area_cooled = (
-        0.815
-        * (1 - math.exp(-0.00225 * CDD))
-        / (1 + 126.8 * math.exp(-0.000069 * GNI / hhd))
-    )
-    # To gather temperature data:
-    # At EPFL you can access MeteoSwiss measurements through CLIMAP app available on Windows or on mac by virtual machine
-    # Visit https://enacserver.epfl.ch/Servers/RemoteDesktop/enacvm-climap for info
-    print(warning)
-    return
-
-
-############################
-### GDP (PPP) per capita ###
-############################
-def extract_per_capita_gdp_ppp():
-    file_url = "https://api.worldbank.org/v2/en/indicator/NY.GDP.PCAP.PP.CD?downloadformat=excel"
-    # Define the local filename to save the downloaded file
-    local_filename = "data/GDP_World.xlsx"
-    var_name = "GDP[USD/cap]"
-    dm_GDP = get_WB_data(file_url, local_filename, var_name, years_ots)
-
-    # In case you want to have simply GDP per capita data in CHF you have
-    read_CH_GDP = False
-    if read_CH_GDP:
-        # URL of the file to be downloaded
-        file_url = "https://dam-api.bfs.admin.ch/hub/api/dam/assets/27065040/master"
-        # Define the local filename to save the downloaded file
-        local_filename = "data/GDP_Switzerland.xlsx"
-
-        if not os.path.exists(local_filename):
-            # Send a GET request to the URL
-            response = requests.get(file_url, stream=True)
-            # Check if the request was successful
-            if response.status_code == 200:
-                # Open the local file in write-binary mode and write the response content to it
-                with open(local_filename, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                print(f"File downloaded successfully as {local_filename}")
-            else:
-                print(f"Error: {response.status_code}, {response.text}")
-
-        df = pd.read_excel(local_filename)
-
-        # Clean df
-        # Rename columns
-        rename_dict = {
-            "PIB par habitant à prix courants": "Years",
-            "Unnamed: 1": "GDP[CHF/cap]",
-        }
-        df.rename(columns=rename_dict, inplace=True)
-        df = df[["Years", "GDP[CHF/cap]"]]
-        # Only keep ots years
-        int_years_ots = [int(year_str) for year_str in years_ots]
-        df_years = df[df["Years"].isin(int_years_ots)]
-        # Add Country column = Switzerland
-        df_years["Country"] = "Switzerland"
-        # Create datamatrix
-        dm_GDP = DataMatrix.create_from_df(df_years, num_cat=0)
-
-    return dm_GDP
-
-
-def dummy_update_DM_module_baseyear(DM_old, years_ots, years_fts):
-    def dummy_update_dm_ots_baseyear(dm_ots, dm_fts, years_ots):
-        years_ots_missing = list(set(years_ots) - set(dm_ots.col_labels["Years"]))
-        dm_ots.add(np.nan, dummy=True, dim="Years", col_label=years_ots_missing)
-        dm_ots.sort("Years")
-        first_fts_year = dm_fts.col_labels["Years"][0]
-        if first_fts_year in years_ots:
-            idx = dm_ots.idx
-            dm_ots.array[:, idx[first_fts_year], ...] = dm_fts.array[:, 0, ...]
-        linear_fitting(dm_ots, dm_ots.col_labels["Years"])
-        return dm_ots
-
-    DM_new = dict()
-    for key, value in DM_old.items():
-        if isinstance(value, dict):
-            DM_new[key] = dict()
-    # key = 'fts', 'ots'
-    # Update ots to new baseyear using old fts value (usually 2020)
-    for lever in DM_old["ots"]:
-        DM_new["ots"][lever] = dict()
-        DM_new["fts"][lever] = dict()
-        var = DM_old["ots"][lever]
-        # If it is a dictionary
-        if isinstance(var, dict):
-            for dm_name in DM_old["ots"][lever]:
-                dm_ots = DM_old["ots"][lever][dm_name].copy()
-                dm_fts = DM_old["fts"][lever][dm_name][1]
-                dm_ots = dummy_update_dm_ots_baseyear(dm_ots, dm_fts, years_ots)
-                DM_new["ots"][lever][dm_name] = dm_ots
-                DM_new["fts"][lever][dm_name] = dict()
-                for level in range(4):
-                    level = level + 1
-                    dm_fts_old = DM_old["fts"][lever][dm_name][level]
-                    DM_new["fts"][lever][dm_name][level] = dm_fts_old.filter(
-                        {"Years": years_fts}
-                    )
-        else:
-            dm_ots = DM_old["ots"][lever].copy()
-            dm_fts = DM_old["fts"][lever][1]
-            dm_ots = dummy_update_dm_ots_baseyear(dm_ots, dm_fts, years_ots)
-            DM_new["ots"][lever] = dm_ots
-            DM_new["fts"][lever] = dict()
-            for level in range(4):
-                level = level + 1
-                dm_fts_old = DM_old["fts"][lever][level]
-                DM_new["fts"][lever][level] = dm_fts_old.filter({"Years": years_fts})
-
-    if "fxa" in DM_old.keys():
-        for name in DM_old["fxa"].keys():
-            dm_new = DM_old["fxa"][name].copy()
-            linear_fitting(dm_new, years_ots + years_fts)
-            DM_new["fxa"][name] = dm_new
-
-    if "constant" in DM_old.keys():
-        DM_new["constant"] = DM_old["constant"]
-
-    return DM_new
-
-
-def filter_country_DM(cntr_list, DM):
-    for lever in DM["ots"].keys():
-        if isinstance(DM["ots"][lever], dict):
-            for dm_name in DM["ots"][lever].keys():
-                dm_ots = DM["ots"][lever][dm_name]
-                dm_ots.filter({"Country": cntr_list}, inplace=True)
-                DM["ots"][lever][dm_name] = dm_ots
-                for level in range(4):
-                    level = level + 1
-                    dm_fts = DM["fts"][lever][dm_name][level]
-                    dm_fts.filter({"Country": cntr_list}, inplace=True)
-                    DM["fts"][lever][dm_name][level] = dm_fts
-        else:
-            dm_ots = DM["ots"][lever]
-            dm_ots.filter({"Country": cntr_list}, inplace=True)
-            DM["ots"][lever] = dm_ots
-            for level in range(4):
-                level = level + 1
-                dm_fts = DM["fts"][lever][level]
-                dm_fts.filter({"Country": cntr_list}, inplace=True)
-                DM["fts"][lever][level] = dm_fts
-
-    if "fxa" in DM.keys():
-        for name in DM["fxa"].keys():
-            dm = DM["fxa"][name]
-            dm.filter({"Country": cntr_list}, inplace=True)
-            DM["fxa"][name] = dm
-
-    return DM
-
-
-cantons_en = [
-    "Aargau",
-    "Appenzell Ausserrhoden",
-    "Appenzell Innerrhoden",
-    "Basel Landschaft",
-    "Basel Stadt",
-    "Bern",
-    "Fribourg",
-    "Geneva",
-    "Glarus",
-    "Graubünden",
-    "Jura",
-    "Lucerne",
-    "Neuchâtel",
-    "Nidwalden",
-    "Obwalden",
-    "Schaffhausen",
-    "Schwyz",
-    "Solothurn",
-    "St. Gallen",
-    "Thurgau",
-    "Ticino",
-    "Uri",
-    "Valais",
-    "Vaud",
-    "Zug",
-    "Zurich",
-]
-cantons_fr = [
-    "Aargau",
-    "Appenzell Ausserrhoden",
-    "Appenzell Innerrhoden",
-    "Basel Landschaft",
-    "Basel Stadt",
-    "Bern",
-    "Fribourg",
-    "Genève",
-    "Glarus",
-    "Graubünden",
-    "Jura",
-    "Luzern",
-    "Neuchâtel",
-    "Nidwalden",
-    "Obwalden",
-    "Schaffhausen",
-    "Schwyz",
-    "Solothurn",
-    "St. Gallen",
-    "Thurgau",
-    "Ticino",
-    "Uri",
-    "Valais",
-    "Vaud",
-    "Zug",
-    "Zürich",
-]
+# FSO canton names that differ from the names used in the model
+cantons_fso_to_en = {"Genève": "Geneva", "Luzern": "Lucerne", "Zürich": "Zurich"}
 
 # Get population total and by age group (ots)
 filename = "data/lfs_pop_ots_all_cantons.pickle"
@@ -860,7 +307,20 @@ filename = "data/lfs_pop_fts.pickle"
 dict_lfs_age_fts, dict_lfs_tot_pop_fts = extract_lfs_pop_fts(
     years_fts, table_id="px-x-0104000000_101", file=filename
 )
-add_vaud_fts_pop(dm_lfs_age, dm_lfs_tot_pop, dict_lfs_age_fts, dict_lfs_tot_pop_fts)
+
+# Keep only the regions in params.country_list
+missing = set(country_list) - set(dm_lfs_tot_pop.col_labels["Country"])
+if missing:
+    raise ValueError(f"Regions in params.country_list not found in FSO data: {missing}")
+cantons = [c for c in country_list if c != "Switzerland"]
+add_cantons_fts_pop(
+    dm_lfs_age, dm_lfs_tot_pop, dict_lfs_age_fts, dict_lfs_tot_pop_fts, cantons
+)
+dm_lfs_age.filter({"Country": country_list}, inplace=True)
+dm_lfs_tot_pop.filter({"Country": country_list}, inplace=True)
+for dict_fts in [dict_lfs_age_fts, dict_lfs_tot_pop_fts]:
+    for dm_fts in dict_fts.values():
+        dm_fts.filter({"Country": country_list}, inplace=True)
 
 # Store
 DM_lfs = {
