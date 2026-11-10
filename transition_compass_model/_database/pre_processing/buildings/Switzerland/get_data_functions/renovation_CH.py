@@ -19,6 +19,13 @@ from transition_compass_model._database.pre_processing.params import (
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
+def canton_to_acronym(country: str) -> str:
+    # CANTONS_NAME spells it "Neuchatel", country_list uses "Neuchâtel"
+    if country == "Neuchâtel":
+        country = "Neuchatel"
+    return CANTONS_NAME["name_to_accronym"][country]
+
+
 def extract_number_of_buildings_v2(
     file: str, agency: str = "CH1.GWS", dataflow: str = "DF_GWS_REG1"
 ) -> DataMatrix:
@@ -87,6 +94,15 @@ def extract_number_of_buildings_v2(
         with open(f, "wb") as handle:
             pickle.dump(dm_nb_bld, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+    # The API uses hyphenated Basel names; align them with country_list
+    dm_nb_bld.rename_col(
+        ["Basel-Landschaft", "Basel-Stadt"],
+        ["Basel Landschaft", "Basel Stadt"],
+        dim="Country",
+    )
+    missing = set(country_list) - set(dm_nb_bld.col_labels["Country"])
+    if missing:
+        raise ValueError(f"Cantons missing from {file}: {sorted(missing)}")
     dm_nb_bld.filter({"Country": country_list, "Years": years_ots}, inplace=True)
     dm_nb_bld.sort("Country")
     dm_nb_bld.rename_col_regex("Total_Variables", "bld_nb-bld", dim="Variables")
@@ -159,9 +175,62 @@ def extract_number_of_buildings(table_id, file):
     return dm_nb_bld
 
 
+RENOVATION_DOMAINS = ("Isolation thermique", "Rénovation du système")
+BLOCK_LABELS = {
+    "single-family-households": "NOMBRE DE MAISONS INDIVIDUELLES",
+    "multi-family-households": "NOMBRE D'IMMEUBLES COLLECTIFS",
+}
+
+
+def _count_renovated(df: pd.DataFrame, block_label: str, canton_acronym: str) -> float:
+    """Sum the buildings renovated in one canton for one block (e.g. single-family).
+
+    Counts measures in the domains "Isolation thermique" (M-01) and
+    "Rénovation du système" (M-10 to M-13). Bonus measures (M-14, M-15) are skipped
+    because they are paid on top of another measure for the same building.
+    Rows are found by their labels, so this works for the 2017-2020 and 2021+ layouts.
+    """
+    total = 0.0
+    found = False
+    in_detail_tables = False
+    block = None
+    header = None
+    for i in range(len(df)):
+        row = df.iloc[i].tolist()
+        first = row[0] if isinstance(row[0], str) else ""
+        if first.startswith("Tableau"):
+            if "Nouvelle construction" in first:
+                break
+            in_detail_tables = "détaillée" in first
+            block = None
+            continue
+        if not in_detail_tables:
+            continue
+        if "CH" in row and "Domaine de mesures" in row:
+            header = row
+            continue
+        if first.startswith(("NOMBRE", "VERSEMENTS", "M2")):
+            block = first
+        if block != block_label or header is None:
+            continue
+        domain = row[header.index("Domaine de mesures")]
+        if domain not in RENOVATION_DOMAINS or first.startswith("Bonus"):
+            continue
+        if canton_acronym not in header:
+            raise ValueError(f"Canton column '{canton_acronym}' not found")
+        value = pd.to_numeric(row[header.index(canton_acronym)], errors="coerce")
+        total += 0.0 if pd.isna(value) else float(value)
+        found = True
+    if not found:
+        raise ValueError(f"No renovation rows found for '{block_label}'")
+    return total
+
+
 def extract_nb_renovated_bld(dm_bld: DataMatrix) -> DataMatrix:
     """From the programme batiments excels that can be downloaded at https://www.leprogrammebatiments.ch/fr/meta/publications-et-photos/rapports-et-statistiques/.
     Extract the number of buildings renovated and add it to dm_bld as a new variable.
+    Counts buildings with payments in the year for thermal insulation (M-01) and
+    whole-building renovation (M-10 to M-13). Only subsidised renovations are included.
 
     Args:
         dm_bld (DataMatrix): DataMatrix with shape (nb_country, 14,1, 2), variables ['bld_nb-bld'] and categories1 ['multi-family-households', 'single-family-households']
@@ -170,7 +239,6 @@ def extract_nb_renovated_bld(dm_bld: DataMatrix) -> DataMatrix:
         DataMatrix: DataMatrix with shape (nb_country, 14,2, 2), variables ['bld_nb-bld', 'bld_nb-bld-renovated'] and categories1 ['multi-family-households', 'single-family-households']
     """
 
-    # Create an empty variable in the dm to
     dm_bld.add(
         np.nan,
         dim="Variables",
@@ -182,71 +250,20 @@ def extract_nb_renovated_bld(dm_bld: DataMatrix) -> DataMatrix:
 
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
 
-    # get renovation data from 2017  to 2020
-    for year in range(2017, 2021):
+    for year in range(2017, years_ots[-1] + 1):
         file_path = current_file_directory + f"/../data/programme_batiment/{year}.xlsx"
-        # 2. Analyse (versements)
+        if year < 2021:
+            sheet = "2. Analyse (versements)"
+        else:
+            sheet = "2.2 Détails (versements)"
+        df = pd.read_excel(file_path, sheet_name=sheet, header=None)
 
-        df = pd.read_excel(file_path, sheet_name="2. Analyse (versements)")
-
-        # get the rows of interest
-        start = df.index[df.iloc[:, 0].str.contains("Tableau 2b", na=False)][0]
-        end = df.index[df.iloc[:, 0].str.contains("Tableau 2c", na=False)][0]
-        df = df.iloc[df.index.get_loc(start) : df.index.get_loc(end) + 1]
-
-        # Get from the excel the number of buildings renovated for single family households for each canton
-        sfh_index = df.index[df.iloc[:, 0] == "NOMBRE DE MAISONS INDIVIDUELLES"][0]
-        mfh_index = df.index[df.iloc[:, 0] == "NOMBRE D'IMMEUBLES COLLECTIFS"][0]
         for country in country_list:
-            canton_acronym = CANTONS_NAME["name_to_accronym"][country]
-            # single-family-households
-            dm_bld.array[
-                idx[country],
-                idx[year],
-                idx["bld_nb-bld-renovated"],
-                idx["single-family-households"],
-            ] = df.loc[
-                sfh_index + 2 : sfh_index + 3,
-                df.loc[sfh_index + 1, :] == canton_acronym,
-            ].sum()
-            # multi-family-households
-            dm_bld.array[
-                idx[country],
-                idx[year],
-                idx["bld_nb-bld-renovated"],
-                idx["multi-family-households"],
-            ] = df.loc[
-                mfh_index + 2 : mfh_index + 3,
-                df.loc[mfh_index + 1, :] == canton_acronym,
-            ].sum()
-
-    # get renovation data from 2021
-    for year in range(2021, years_ots[-1]):
-        file_path = current_file_directory + f"/../data/programme_batiment/{year}.xlsx"
-
-        df = pd.read_excel(file_path, sheet_name="2.2 Détails (versements)")
-        # get the rows of interest
-        end = df.index[df.iloc[:, 0].str.contains("Tableau 2.2b", na=False)][0]
-        df = df.iloc[: df.index.get_loc(end) + 1]
-
-        sfh_index = df.index[df.iloc[:, 0] == "NOMBRE DE MAISONS INDIVIDUELLES"][0]
-        mfh_index = df.index[df.iloc[:, 0] == "NOMBRE D'IMMEUBLES COLLECTIFS"][0]
-        for country in country_list:
-            canton_acronym = CANTONS_NAME["name_to_accronym"][country]
-
-            dm_bld.array[
-                idx[country],
-                idx[year],
-                idx["bld_nb-bld-renovated"],
-                idx["single-family-households"],
-            ] = df.loc[sfh_index, df.loc[1, :] == canton_acronym].item()
-            # multi-family-households
-            dm_bld.array[
-                idx[country],
-                idx[year],
-                idx["bld_nb-bld-renovated"],
-                idx["multi-family-households"],
-            ] = df.loc[mfh_index, df.loc[1, :] == canton_acronym].item()
+            canton_acronym = canton_to_acronym(country)
+            for cat, block_label in BLOCK_LABELS.items():
+                dm_bld.array[
+                    idx[country], idx[year], idx["bld_nb-bld-renovated"], idx[cat]
+                ] = _count_renovated(df, block_label, canton_acronym)
 
     return dm_bld
 
