@@ -15,7 +15,6 @@ from transition_compass_model._database.pre_processing.api_routines_swiss_stats 
 )
 from transition_compass_model._database.pre_processing.constants import CANTONS_NAME
 from transition_compass_model._database.pre_processing.params import (
-    country_list,
     years_ots,
 )
 from transition_compass_model.model.common.auxiliary_functions import (
@@ -577,9 +576,6 @@ def compute_floor_area_stock_v2(
         return dm_grouped
 
     dm = merge_multi_single(dm_stock_area, cat_map_sfh, cat_map_mfh)
-    # vars = load_construction_period_param()
-    # dm_old = merge_multi_single(dm_stock_area_old,vars["envelope construction sfh old"], vars["envelope construction mfh old"])
-    # compare_dm(dm, dm_old)
 
     # Remove split by envelope category (see Building module Overleaf)
     dm_stock_tot = dm.group_all("Categories2", inplace=False)
@@ -724,65 +720,6 @@ def extract_bld_new_buildings_2(table_id, file):
             pickle.dump(dm_new_area, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return dm_new_area
-
-
-def extract_energy_reference_area_regener():
-    """Download data from the regener cadastre"""
-
-    dic_ERA = {}
-    current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    file_path = current_file_directory + "/../data/cadastre_regener.csv"
-
-    df = pd.read_csv(file_path)
-
-    single_multi_code = {
-        "single-family-households": ["Maisons_individuelles"],
-        "multi-family-households": [
-            "Immeubles_a_trois_logements_et_plus",
-            "Maisons_a_deux_logements",
-            "Habitat_communautaire",
-        ],
-    }
-    for keys, values in single_multi_code.items():
-        df_cat = df[df["gklas"].isin(values)]
-        dic_ERA[keys] = df_cat["gebf"].sum()
-        print(df_cat)
-
-    return dic_ERA
-
-
-def extract_energy_reference_area():
-    """Download data from https://www.housing-stat.ch/fr/data/supply/public.html and extract the energy reference area per building category.
-    This is the area used to compute the energy demand of new buildings, as it corresponds to the area that needs to be heated/cooled.
-    It is different from the dwelling area, as it does include staircases, hallways etc ...
-    To get the documentation of the data check https://www.housing-stat.ch/catalog/fr/4.3/final
-    """
-
-    dic_ERA = {}
-
-    for country in country_list:
-        df = dowload_regbl_data(country, file_name="gebaeude_batiment_edificio.csv")
-
-        # 1110 single_family_households
-        # 1122 and 1121 multi_family_households
-        # 1130 multi_family_households Bâtiments résidentiels pour collectivités, y compris les résidences et résidences-services pour les personnes âgées, les étudiants, les enfants et d'autres groupes sociaux: par exemple, maisons de retraite, foyers pour travailleurs, foyers pour étudiants, orphelinats, foyers pour sans-abri etc.
-        single_multi_code = {
-            "single-family-households": [1110.0],
-            "multi-family-households": [1121, 1122, 1130],
-        }
-        # conserve uniquement les batiments existnts
-        df = df[df["GSTAT"] == 1004]
-        # Compute the sum energy reference are per building category as a proxy to the total ERA of the canton
-        dic_ERA[country] = {}
-        for keys, values in single_multi_code.items():
-            df_cat = df[df["GKLAS"].isin(values)]
-            perc_of_data = len(df_cat[df_cat["GEBF"].notnull()]) / len(df_cat)
-            print(
-                f"Percentage of ERA data available for {keys} in {country}: {perc_of_data * 100:.2f}%"
-            )
-            dic_ERA[country][keys] = df_cat["GEBF"].sum()
-
-    return dic_ERA
 
 
 def compute_bld_floor_area_new(
@@ -1021,103 +958,6 @@ def extract_nb_of_apartments_per_building_type_v2(file, agency, dataflow, canton
     dm_nb_bld.filter({"Years": years_ots}, inplace=True)
 
     return dm_nb_bld
-
-
-def extract_nb_of_apartments_per_building_type(table_id, file, cantons_fr, cantons_en):
-    try:
-        with open(file, "rb") as handle:
-            dm = pickle.load(handle)
-    except OSError:
-        structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-        cantons_list = [
-            c
-            for c in structure["Canton (-) / District (>>) / Commune (......)"]
-            if "- " in c
-        ]
-        mapping_dim = {
-            "Country": "Canton (-) / District (>>) / Commune (......)",
-            "Years": "Année",
-            "Variables": "Surface du logement",
-            "Categories1": "Catégorie de bâtiment",
-        }
-        dm = None
-        for e in structure["Époque de construction"]:
-            # Extract buildings floor area
-            filter = {
-                "Année": structure["Année"],
-                "Canton (-) / District (>>) / Commune (......)": ["Suisse"]
-                + cantons_list,
-                "Catégorie de bâtiment": structure["Catégorie de bâtiment"],
-                "Surface du logement": structure["Surface du logement"],
-                "Époque de construction": [e],
-            }
-            unit_all = ["number"] * len(structure["Surface du logement"])
-            # Get api data
-            dm_e = get_data_api_CH(
-                table_id,
-                mode="extract",
-                filter=filter,
-                mapping_dims=mapping_dim,
-                units=unit_all,
-                language="fr",
-            )
-            if dm is None:
-                dm = dm_e
-            else:  # Sum all construction periods
-                dm.array = dm.array + dm_e.array
-        dm.groupby({"bld_apartments": ".*"}, regex=True, dim="Variables", inplace=True)
-        dm.groupby(
-            {
-                "single-family-households": ["Maisons individuelles"],
-                "multi-family-households": [
-                    "Maisons à plusieurs logements",
-                    "Bâtiments d'habitation avec usage annexe",
-                    "Bâtiments partiellement à usage d'habitation",
-                ],
-            },
-            dim="Categories1",
-            inplace=True,
-        )
-        dm.drop(col_label="......5892 Blonay - Saint-Légier", dim="Country")
-        dm.rename_col_regex("- ", "", dim="Country")
-        dm.rename_col_regex(" /.*", "", dim="Country")
-        dm.rename_col_regex("-", " ", dim="Country")
-        cantons_in = [
-            "Aargau",
-            "Appenzell Ausserrhoden",
-            "Appenzell Innerrhoden",
-            "Basel Landschaft",
-            "Basel Stadt",
-            "Bern",
-            "Fribourg",
-            "Genève",
-            "Glarus",
-            "Graubünden",
-            "Jura",
-            "Luzern",
-            "Neuchâtel",
-            "Nidwalden",
-            "Obwalden",
-            "Schaffhausen",
-            "Schwyz",
-            "Solothurn",
-            "St. Gallen",
-            "Thurgau",
-            "Ticino",
-            "Uri",
-            "Valais",
-            "Vaud",
-            "Zug",
-            "Zürich",
-        ]
-
-        dm.rename_col(cantons_in, cantons_en, dim="Country")
-        dm.rename_col("Suisse", "Switzerland", dim="Country")
-        dm.sort("Country")
-        with open(file, "wb") as handle:
-            pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    return dm
 
 
 def extract_EP2050_floor_area_by_type(file_url, zip_name, file_pickle):

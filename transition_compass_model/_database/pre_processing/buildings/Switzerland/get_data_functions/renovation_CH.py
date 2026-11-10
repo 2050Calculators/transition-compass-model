@@ -5,9 +5,6 @@ import numpy as np
 import pandas as pd
 from get_data_functions import utils
 
-from transition_compass_model._database.pre_processing.api_routines_CH import (
-    get_data_api_CH,
-)
 from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
     get_data_api_swiss_stats,
 )
@@ -122,59 +119,6 @@ def extract_number_of_buildings_v2(
     return dm_nb_bld
 
 
-def extract_number_of_buildings(table_id, file):
-    try:
-        with open(file, "rb") as handle:
-            dm_nb_bld = pickle.load(handle)
-    except OSError:
-        structure, title = get_data_api_CH(table_id, "example", language="fr")
-        filter = {
-            "Canton (-) / District (>>) / Commune (......)": ["Suisse", "- Vaud"],
-            "Catégorie de bâtiment": structure["Catégorie de bâtiment"],
-            "Époque de construction": structure["Époque de construction"],
-            "Année": structure["Année"],
-        }
-        mapping = {
-            "Country": "Canton (-) / District (>>) / Commune (......)",
-            "Years": "Année",
-            "Variables": "Époque de construction",
-            "Categories1": "Catégorie de bâtiment",
-        }
-        unit = ["number"] * len(structure["Époque de construction"])
-        dm_nb_bld = get_data_api_CH(
-            table_id,
-            mode="extract",
-            filter=filter,
-            mapping_dims=mapping,
-            language="fr",
-            units=unit,
-        )
-        dm_nb_bld.groupby(
-            {"bld_nb-bld": ".*"}, regex=True, inplace=True, dim="Variables"
-        )
-        dm_nb_bld.groupby(
-            {
-                "single-family-households": ["Maisons individuelles"],
-                "multi-family-households": [
-                    "Maisons à plusieurs logements",
-                    "Bâtiments d'habitation avec usage annexe",
-                    "Bâtiments partiellement à usage d'habitation",
-                ],
-            },
-            dim="Categories1",
-            inplace=True,
-        )
-        dm_nb_bld.rename_col(
-            ["Suisse", "- Vaud"], ["Switzerland", "Vaud"], dim="Country"
-        )
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, file)
-        with open(f, "wb") as handle:
-            pickle.dump(dm_nb_bld, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    return dm_nb_bld
-
-
 RENOVATION_DOMAINS = ("Isolation thermique", "Rénovation du système")
 BLOCK_LABELS = {
     "single-family-households": "NOMBRE DE MAISONS INDIVIDUELLES",
@@ -265,33 +209,6 @@ def extract_nb_renovated_bld(dm_bld: DataMatrix) -> DataMatrix:
                     idx[country], idx[year], idx["bld_nb-bld-renovated"], idx[cat]
                 ] = _count_renovated(df, block_label, canton_acronym)
 
-    return dm_bld
-
-
-def compute_renovated_buildings(
-    dm_bld, nb_buildings_renovated, canton_share, share_by_bld
-):
-    dm_bld.add(
-        np.nan,
-        dim="Variables",
-        dummy=True,
-        col_label="bld_nb-bld-renovated",
-        unit="number",
-    )
-    idx = dm_bld.idx
-    for yr in nb_buildings_renovated.keys():
-        for cat in ["single-family-households", "multi-family-households"]:
-            dm_bld.array[
-                idx["Switzerland"], idx[yr], idx["bld_nb-bld-renovated"], idx[cat]
-            ] = nb_buildings_renovated[yr] * share_by_bld[cat]
-            for canton in canton_share.keys():
-                dm_bld.array[
-                    idx[canton], idx[yr], idx["bld_nb-bld-renovated"], idx[cat]
-                ] = (
-                    nb_buildings_renovated[yr]
-                    * canton_share[canton][yr]
-                    * share_by_bld[cat]
-                )
     return dm_bld
 
 

@@ -12,7 +12,6 @@ from transition_compass_model._database.pre_processing.api_routines_swiss_stats 
 )
 from transition_compass_model._database.pre_processing.params import years_ots
 from transition_compass_model.model.common.auxiliary_functions import (
-    df_excel_to_dm,
     get_common_values_between_2_list,
     save_url_to_file,
 )
@@ -204,87 +203,6 @@ def extract_hotwater_technologies_v2(file, agency, dataflow):
         },
         inplace=True,
     )
-    return dm_hw
-
-
-def extract_hotwater_technologies(table_id, file):
-    # Domaine de l'énergie: bâtiments selon le canton, le type de bâtiment, l'époque de construction, le type de chauffage,
-    # la production d'eau chaude, les agents énergétiques utilisés pour le chauffage et l'eau chaude
-    try:
-        with open(file, "rb") as handle:
-            dm_hw = pickle.load(handle)
-    except OSError:
-        structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-        # Extract buildings floor area
-        filter = structure.copy()
-        # filter['Catégorie de bâtiment'] = ["Bâtiments partiellement à usage d'habitation", "Bâtiments d'habitation avec usage annexe"]
-        mapping_dim = {
-            "Country": "Canton",
-            "Years": "Année",
-            "Variables": "Catégorie de bâtiment",
-            "Categories1": "Source d'énergie de l'eau chaude",
-        }
-        unit_all = ["number"] * len(structure["Catégorie de bâtiment"])
-        dm_hw = None
-        tot_bld = 0
-        for a in structure["Source d'énergie du chauffage"]:
-            filter["Source d'énergie du chauffage"] = [a]
-            dm_hw_t = get_data_api_CH(
-                table_id,
-                mode="extract",
-                filter=filter,
-                mapping_dims=mapping_dim,
-                units=unit_all,
-                language="fr",
-            )
-            if dm_hw is None:
-                dm_hw = dm_hw_t.copy()
-            else:
-                dm_hw.array += dm_hw_t.array
-
-        dm_hw.rename_col(["Suisse"], ["Switzerland"], dim="Country")
-        dm_hw.groupby(
-            {
-                "bld_hot-water_tech_single-family-house": ["Maisons individuelles"],
-                "bld_hot-water_tech_multi-family-house": [
-                    "Maisons à plusieurs logements",
-                    "Bâtiments d'habitation avec usage annexe",
-                    "Bâtiments partiellement à usage d'habitation",
-                ],
-            },
-            dim="Variables",
-            inplace=True,
-        )
-        dm_hw.deepen(based_on="Variables")
-        dm_hw.switch_categories_order()
-
-        with open(file, "wb") as handle:
-            pickle.dump(dm_hw, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    dm_hw.groupby({"other": ["Autre", "Aucune"]}, dim="Categories2", inplace=True)
-    dm_hw.rename_col(
-        [
-            "Mazout",
-            "Bois",
-            "Pompe à chaleur",
-            "Electricité",
-            "Gaz",
-            "Chaleur produite à distance",
-            "Soleil (thermique)",
-        ],
-        [
-            "heating-oil",
-            "wood",
-            "heat-pump",
-            "electricity",
-            "gas",
-            "district-heating",
-            "solar",
-        ],
-        dim="Categories2",
-    )
-    clean_country_names(dm_hw)
-
     return dm_hw
 
 
@@ -534,26 +452,3 @@ def extract_heating_efficiencies_EP2050(file_url, zip_name, file_pickle):
             pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return dm
-
-
-def extract_hot_water_efficiency_JRC(file, sheet_name, years_ots):
-    df = pd.read_excel(file, sheet_name=sheet_name)
-    df = df[15:25].copy()
-    names_map = {
-        "Water heating": "other-tech",
-        "Solids": "coal",
-        "Liquified petroleum gas (LPG)": "remove",
-        "Diesel oil": "heating-oil",
-        "Natural gas": "gas",
-        "Biomass": "wood",
-        "Geothermal": "geothermal",
-        "Distributed heat": "district-heating",
-        "Electricity": "electricity",
-        "Solar": "solar",
-    }
-    dm_heating_eff = df_excel_to_dm(
-        df, names_map, var_name="bld_hot-water-efficiency", unit="%", num_cat=1
-    )
-    dm_heating_eff.drop(col_label="remove", dim="Categories1")
-
-    return dm_heating_eff
