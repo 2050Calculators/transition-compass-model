@@ -188,6 +188,20 @@ The 2023 class shares are then applied to the rescaled stock.
 filled by extrapolating new dwellings per person (fitted on 1995–2002 for the early years
 and 2015–2022 for the recent ones).
 
+The average floor area comes from the register (floor area ÷ number of dwellings, by
+construction period), so it is in register units, not in the units of the rescaled stock.
+To put both in the same units, `new raw` is multiplied by one factor per canton and type:
+
+```
+f = rescaled stock (2023) / register stock (2023)
+```
+
+The register measures dwelling floor space and the rescaled stock is energy reference
+area, so f is mostly a difference in definition. It is about 0.8–1.05 for MFH and
+1.3–1.7 for SFH, and it changes by only about ±2 % between 1990 and 2023. That is why
+a single 2023 value is used: it keeps the year-to-year shape of the FSO series. The
+factors are printed during the run.
+
 Demolition (`waste`) would follow from the stock balance:
 
 ```
@@ -213,7 +227,7 @@ goes to D, C or B depending on the year it was built.
 | `stock cat` | `bld_floor-area_stock` | SFH/MFH × B–F, **2023 only** |
 | `new cat` | `bld_floor-area_new` | SFH/MFH × B–F |
 | `waste cat` | `bld_floor-area_waste` | SFH/MFH × B–F (all in F) |
-| `new raw` | `bld_floor-area_new` | SFH/MFH, before balancing |
+| `new raw` | `bld_floor-area_new` | SFH/MFH, rescaled by f, before balancing |
 
 ---
 
@@ -253,7 +267,8 @@ r_c(t) = (in_c − out_c) × renovation-rate(t−1) × stock(t−1)
 (`new raw`) is scaled so that *everything built or renovated into the class since 1990*
 equals its 2023 stock. Each class is empty before its construction period starts. SFH class D
 and MFH class E also contain older buildings, so they use the scaling factor of class C.
-The factors are printed during the run. A factor below zero (more renovated into the class
+The factors are printed during the run. Because `new raw` is already in the units of
+the stock, they should be close to 1 (about 0.85–1.05). A factor below zero (more renovated into the class
 than its 2023 stock) is set to 0, with a message.
 
 **Stock by class for every year.** Starting from the 2023 split, the stock is rebuilt

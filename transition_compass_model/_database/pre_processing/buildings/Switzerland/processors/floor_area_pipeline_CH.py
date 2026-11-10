@@ -142,6 +142,8 @@ def run(global_vars, country_list, years_ots):
         cat_map_mfh=construction_period_envelope_cat_mfh,
         years_ots=years_ots,
     )
+    # Register stock, kept to convert new floor area to calibrated units (see below)
+    dm_stock_tot_reg = dm_stock_tot.copy()
 
     # SECTION Floor area New ots
     # New residential buildings by sfh, mfh
@@ -229,6 +231,35 @@ def run(global_vars, country_list, years_ots):
         "bld_floor-area_stock", old_unit="%", new_unit="m2", factor=1
     )
 
+    # SECTION Rescale new floor area to the calibrated stock units
+    # The register measures dwelling floor space, the calibrated stock is energy
+    # reference area. Their ratio is nearly constant over time, so one 2023 factor
+    # per canton and type converts new floor area to the same units as the stock.
+    dm_stock_tot_reg.sort("Country")
+    assert dm_stock_tot_reg.col_labels["Country"] == dm_stock_tot.col_labels["Country"]
+    assert dm_new_tot_raw.col_labels["Country"] == dm_stock_tot.col_labels["Country"]
+    assert (
+        dm_stock_tot_reg.col_labels["Categories1"]
+        == dm_stock_tot.col_labels["Categories1"]
+        == dm_new_tot_raw.col_labels["Categories1"]
+    )
+    arr_unit_factor = (
+        dm_stock_tot[:, 2023, "bld_floor-area_stock", :]
+        / dm_stock_tot_reg[:, 2023, "bld_floor-area_stock", :]
+    )
+    dm_new_tot_raw[:, :, "bld_floor-area_new", :] = (
+        dm_new_tot_raw[:, :, "bld_floor-area_new", :]
+        * arr_unit_factor[:, np.newaxis, :]
+    )
+    print("New floor area, register to calibrated units, factor f (2023):")
+    for i, cntr in enumerate(dm_stock_tot.col_labels["Country"]):
+        if cntr in country_list:
+            factors = " ".join(
+                f"{typ[:3]}={arr_unit_factor[i, j]:.2f}"
+                for j, typ in enumerate(dm_stock_tot.col_labels["Categories1"])
+            )
+            print(f"  {cntr}: {factors}")
+
     # SECTION Floor-area Waste + Recompute New
     dm_waste_tot, dm_new_tot = fla.compute_waste(
         dm_stock_tot, dm_new_tot_raw, years_ots
@@ -242,7 +273,8 @@ def run(global_vars, country_list, years_ots):
         "stock cat": dm_stock_cat.filter({"Country": country_list}),
         "new cat": dm_new_cat.filter({"Country": country_list}),
         "waste cat": dm_waste_cat.filter({"Country": country_list}),
-        # FSO new dwellings x average floor area (FSO m2), used for new area by class
+        # FSO new dwellings x average floor area, rescaled to calibrated stock m2,
+        # before stock balancing; used for new area by class
         "new raw": dm_new_tot_raw.filter({"Country": country_list}),
     }
 
