@@ -465,6 +465,7 @@ def compute_floor_area_new_cat_from_flows(
                         dm_renov_cat.idx[typ],
                         dm_renov_cat.idx[cat],
                     ]
+                    # stock 1990 = 0: sum(k * raw) + sum(ren) = stock 2023
                     k = (s23 - np.nansum(ren[used])) / np.nansum(raw[in_period & used])
                     if k < 0:
                         print(

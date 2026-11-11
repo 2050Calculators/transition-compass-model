@@ -267,6 +267,15 @@ r_c(t) = (in_c − out_c) × renovation-rate(t−1) × stock(t−1)
 (`new raw`) is scaled so that *everything built or renovated into the class since 1990*
 equals its 2023 stock. Each class is empty before its construction period starts. SFH class D
 and MFH class E also contain older buildings, so they use the scaling factor of class C.
+Per canton, type and class c:
+
+```
+k_c     = (s_c(2023) − Σ r_c(t)) / Σ n_raw(t)    sums over 1991–2023, n_raw only in c's period
+n_c(t)  = k_c × n_raw(t)                         in c's period, 0 outside
+```
+
+This follows from the backward balance with no demolition in c and s_c(1990) = 0. 1990
+is left out because its flows only affect 1989.
 The factors are printed during the run. Because `new raw` is already in the units of
 the stock, they should be close to 1 (about 0.85–1.05). A factor below zero (more renovated into the class
 than its 2023 stock) is set to 0, with a message.
