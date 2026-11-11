@@ -206,36 +206,6 @@ def run(
     ###############################
     ####  Efficiency for LDV   ####
     ###############################
-    # SECTION Vehicle efficiency LDV, stock and new, ots
-    #### Vehicle efficiency - LDV - CO2/km
-    # FCEV (Hydrogen) data are off - BEV too
-    # !!! Attention: The data are bad before 2016 and after 2020, backcasting to 1990 from 2016 done with linear fitting.
-    table_id_veh_eff = "px-x-1103020100_106"
-    local_filename_veh = os.path.join(
-        this_dir, "../data/tra_veh_efficiency.pickle"
-    )  # The file is created if it doesn't exist
-    dm_veh_eff_LDV_ofs = get_data.get_vehicle_efficiency_ofs(
-        table_id_veh_eff,
-        local_filename_veh,
-        var_name="tra_passenger_veh-efficiency_fleet",
-        years_ots=years_ots,
-    )
-
-    dm_veh_eff_LDV_ofs.filter(
-        {
-            "Country": country_list,
-            "Years": years_ots,
-            "Categories2": [
-                "ICE-diesel",
-                "ICE-gas",
-                "ICE-gasoline",
-                "PHEV-diesel",
-                "PHEV-gasoline",
-            ],
-        },
-        inplace=True,
-    )
-    del table_id_veh_eff, local_filename_veh
 
     # Data of the new api available in https://stats.swiss/vis?lc=fr&df[ds]=disseminate&df[id]=DF_MFZ_1_EMISSION&df[ag]=CH1.MFZ_IVS&dq=_T._T._T._T._T%2BPC%2BPH%2BDC%2BDH%2BHP%2BHD%2BEL%2BFC%2BGA%2B_O._T._T.A&lom=LASTNPERIODS&lo=6&to[TIME_PERIOD]=false
     agency_eff = "CH1.MFZ_IVS"

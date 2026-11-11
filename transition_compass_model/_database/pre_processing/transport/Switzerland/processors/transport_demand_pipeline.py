@@ -210,7 +210,7 @@ def run(dm_pop_ots, years_ots):
     dm_pkm_CH = get_transport_demand_pkm(file_url, local_filename, years_ots)
 
     #### Passenger transport demand vkm - Switzerland only
-    ## Transport de personnes: prestations kilométriques et mouvements des véhicules
+    ## Transport de personnes: prestations kilométriques et mouvements des véhicules. FSO  number je-f-11.04.01.01
     file_url = "https://dam-api.bfs.admin.ch/hub/api/dam/assets/32253171/master"
     local_filename = os.path.join(this_dir, "../data/tra_vkm_CH.xlsx")
     dm_vkm_CH = get_transport_demand_vkm(file_url, local_filename, years_ots)

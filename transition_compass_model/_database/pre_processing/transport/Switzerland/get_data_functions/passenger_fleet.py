@@ -11,7 +11,10 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
     get_data_api_swiss_stats,
 )
-from transition_compass_model._database.pre_processing.params import country_list
+from transition_compass_model._database.pre_processing.params import (
+    country_list,
+    years_ots,
+)
 from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
     utils as utils,
 )
@@ -506,9 +509,9 @@ def get_excel_file_sheets(file_url, local_filename):
         df_index.loc[df_index["Theme"] == "Moyens de transport: véhicules "].Sheet
     )[0]
     sheet_passenger = list(
-        df_index.loc[df_index["Theme"] == "Voyageurs transportés"].Sheet
+        df_index.loc[df_index["Theme"] == "Personnes transportées"].Sheet
     )[0]
-    sheet_pkm = list(df_index.loc[df_index["Theme"] == "Voyageurs-kilomètres"].Sheet)[0]
+    sheet_pkm = list(df_index.loc[df_index["Theme"] == "Personnes-kilomètres"].Sheet)[0]
     sheet_vkm = list(
         df_index.loc[
             df_index["Theme"]
@@ -533,6 +536,86 @@ def get_excel_file_sheets(file_url, local_filename):
     return DF_dict
 
 
+def get_fleet_bus(file, agency="CH1.MFZ_IVS", dataflow="DF_MFZ_2"):
+    """Extract data from the dataset Stock of passenger transport vehicles by technical characteristics
+    Returns:
+        dm_bus_fleet: dm with the bus type  as variable and the fuel as Categories 1
+    """
+    # New fleet data are heavy, download them only once
+    try:
+        with open(file, "rb") as handle:
+            dm_fleet_bus = pickle.load(handle)
+    except OSError:
+        structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
+
+        cantons_list = [country for country in country_list if country != "Switzerland"]
+        vehicle_type_list = ["Coach, bus", "Articulated bus"]
+        fuel_list = [fuel for fuel in structure["UV_RV_FUEL"] if fuel != "Total"]
+        filtering = {
+            "FREQ": "Annual",
+            "UV_RV_VEHICLE_TYPE": vehicle_type_list,
+            "UV_RV_SEATS": ["Total"],
+            "UV_RV_STANDING_PLACES": ["Total"],
+            "UV_RV_BODY_SHAPE": ["Total"],
+            "UV_RV_FUEL": fuel_list,
+            "UV_HGDE_KT": cantons_list + ["Total"],  # "Total" = all of Switzerland
+        }
+
+        mapping_dim = {
+            "Country": "UV_HGDE_KT",
+            "Years": "TIME_PERIOD",
+            "Variables": "UV_RV_VEHICLE_TYPE",
+            "Categories1": "UV_RV_FUEL",
+        }
+
+        # Extract new fleet (already annual, unlike the old STAT-TAB source which was
+        # monthly-only and had to be summed across all 12 months to get yearly totals)
+        dm_fleet_bus = get_data_api_swiss_stats(
+            agency,
+            dataflow,
+            mode="extract",
+            filter=filtering,
+            mapping_dims=mapping_dim,
+            units=["number"] * len(vehicle_type_list),
+        )
+        if dm_fleet_bus is None:
+            raise ValueError(f"API returned None for {agency},{dataflow}")
+        dm_fleet_bus.rename_col("Total_Country", "Switzerland", dim="Country")
+        dm_fleet_bus.sort("Years")
+
+        current_file_directory = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(current_file_directory, file)
+        with open(f, "wb") as handle:
+            pickle.dump(dm_fleet_bus, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    dm_fleet_bus = dm_fleet_bus.groupby(
+        {"tra_fleet_bus": dm_fleet_bus.col_labels["Variables"]},
+        dim="Variables",
+        inplace=False,
+    ).copy()
+    dict_tech = {
+        "FCEV": ["Fuel cell electric vehicle (FCEV)"],
+        "BEV": ["Battery electric vehicle (BEV)"],
+        "ICE-diesel": ["Diesel: conventional", "Diesel: hybrid electric vehicle (HEV)"],
+        "ICE-gasoline": [
+            "Petrol: conventional",
+            "Petrol: hybrid electric vehicle (HEV)",
+        ],
+        "PHEV-gasoline": ["Plug-in hybrid electric vehicle (PHEV): petrol"],
+        "ICE-gas": ["Gas (mono- and bi-fuel)"],
+    }
+
+    dm_fleet_bus.groupby(dict_tech, dim="Categories1", regex=False, inplace=True)
+
+    dm_fleet_bus = utils.drop_if_smaller_than_0_01(
+        dm_fleet_bus, cat_to_drop="Categories1", col_to_drop="Other"
+    )
+    dm_fleet_bus.filter({"Years": years_ots}, inplace=True)
+
+    dm_fleet_bus.sort("Country")
+    return dm_fleet_bus
+
+
 def extract_public_passenger_fleet(df, years_ots):
     # Change headers
     new_header = df.iloc[2]
@@ -552,7 +635,8 @@ def extract_public_passenger_fleet(df, years_ots):
     # Extract only the data we are interested in:
     # Electrique and Diesel here below refers to the engine type of rails
     vehicles_vars = [
-        "Voitures voyageurs (voitures de commande isolées, automotrices et éléments de rames automotrices inclus)",
+        "Voitures personnes (voitures de commande isolées, automotrices et éléments de rames automotrices inclus)",
+        "Voitures personness (voitures de commande isolées, automotrices et éléments de rames automotrices inclus)",
         "Trolleybus",
         "Tram",
         "Autobus",
@@ -590,7 +674,7 @@ def extract_public_passenger_fleet(df, years_ots):
         "bus_CEV": ["Trolleybus"],
         "bus_ICE-diesel": ["Autobus"],
         "metrotram_mt": ["Tram"],
-        "rail_CEV": ["Voitures v"],
+        "rail_CEV": ["Voitures p"],
     }
     dm_fleet.groupby(map_cat, dim="Categories1", inplace=True)
     mask = dm_fleet.array == 0

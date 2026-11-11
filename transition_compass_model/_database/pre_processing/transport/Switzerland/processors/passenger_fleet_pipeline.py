@@ -21,7 +21,7 @@ from transition_compass_model.model.common.auxiliary_functions import (
 )
 
 
-def downscale_public_fleet_VD(dm_public_fleet, dm_pkm):
+def downscale_public_fleet_canton(dm_public_fleet, dm_pkm):
     dm_public_fleet.sort("Categories1")
     dm_public_pkm = dm_pkm.filter(
         {"Categories1": dm_public_fleet.col_labels["Categories1"]}
@@ -237,6 +237,62 @@ def get_public_transport_data(file_url, local_filename, years_ots):
     return DM_public
 
 
+def compute_non_diesel_bus_share(dm_public_fleet, years_ots):
+    """Use the OFS data on bus fleet by fuel type to compute the share of non-diesel buses in the total bus fleet per canton.
+    The data concerns public and private buses but it is assumed that the share of of technology is the same in both cases.
+
+    Args:
+        dm_public_fleet (Datamatrix): number of public vehicles by vehicle type and fuel type for all cantons
+    Returns:
+        Datamatrix: _description_
+    """
+
+    # We have the total number of bus. We know want the distinction between the number of bus by fuel type (electric and diesel)
+    # Get a database with the number of bus by fuel type (electric and diesel) for all cantons
+    file = "../data/tra_fleet_transport_vehicles.pickle"
+    dm_bus_fleet = get_data.get_fleet_bus(
+        file, agency="CH1.MFZ_IVS", dataflow="DF_MFZ_2"
+    )
+    dm_bus_normalised = dm_bus_fleet.normalise(dim="Categories1", inplace=False)
+
+    # add missing years and extrapoalte the missing values with a linear fit
+    year_database = dm_bus_normalised.col_labels["Years"]
+    old_years = [y for y in years_ots if y not in year_database]
+
+    dm_bus_normalised.add(np.nan, dim="Years", col_label=old_years, dummy=True)
+    dm_bus_normalised.sort("Years")
+    idx_normalised = dm_bus_normalised.idx
+    # Almost only diesel bus before 2005
+    dm_bus_normalised.array[:, : idx_normalised[2005], 0, :] = 0
+    dm_bus_normalised.array[
+        :, : idx_normalised[2005], 0, idx_normalised["ICE-diesel"]
+    ] = 1
+    dm_bus_normalised.fill_nans("Years")
+
+    # keep the proportion and multiply it with OFS fleet
+    non_overlapping_tech = [
+        i
+        for i in dm_bus_fleet.col_labels["Categories1"]
+        if i not in dm_public_fleet.col_labels["Categories2"]
+    ]
+    for tech in non_overlapping_tech:
+        dm_public_fleet.add(np.nan, dim="Categories2", col_label=tech, dummy=True)
+
+    idx_fleet = dm_public_fleet.idx
+    for tech in non_overlapping_tech:
+        dm_public_fleet.array[:, :, 0, idx_fleet["bus"], idx_fleet[tech]] = (
+            dm_public_fleet.array[:, :, 0, idx_fleet["bus"], idx_fleet["ICE-diesel"]]
+            * dm_bus_normalised.array[:, :, 0, idx_normalised[tech]]
+        )
+
+    # Update diesel value as well
+    dm_public_fleet.array[:, :, 0, idx_fleet["bus"], idx_fleet["ICE-diesel"]] = (
+        dm_public_fleet.array[:, :, 0, idx_fleet["bus"], idx_fleet["ICE-diesel"]]
+        * dm_bus_normalised.array[:, :, 0, idx_normalised["ICE-diesel"]]
+    )
+    return dm_public_fleet
+
+
 def run(dm_pkm, years_ots):
     """
     Run the passenger fleet pipeline.
@@ -322,15 +378,21 @@ def run(dm_pkm, years_ots):
     # SECTION Vehicle fleet bus, rail, metrotram ots
     #### Passenger fleet by technology (stock) bus, rail, metrotram - Switzerland only
     # Note that this data are better for ots than
-    file_url = "https://dam-api.bfs.admin.ch/hub/api/dam/assets/32253175/master"
+
+    file_url = "https://dam-api.bfs.admin.ch/hub/api/dam/assets/36794628/master"
+    # numéro OFS : su-f-11-TP-ZR
     # https://www.bfs.admin.ch/asset/fr/36202624
     # Transports publics (trafic marchandises rail inclus) - séries chronologiques détaillées
     local_filename = os.path.join(this_dir, "../data/tra_public_transport.xlsx")
     DM_public = get_public_transport_data(file_url, local_filename, years_ots)
     dm_public_fleet = DM_public["public_fleet"].copy()
     dm_public_fleet.filter({"Years": years_ots}, inplace=True)
+    dm_public_fleet.sort("Country")
     #### Passenger fleet by technology (stock) bus, rail, metrotram - Downscale to Vaud
-    dm_public_fleet = downscale_public_fleet_VD(dm_public_fleet, dm_pkm)
+    dm_public_fleet = downscale_public_fleet_canton(dm_public_fleet, dm_pkm)
+    dm_public_fleet.sort("Country")
+
+    dm_public_fleet = compute_non_diesel_bus_share(dm_public_fleet, years_ots)
 
     dm_private_fleet = dm_pass_fleet
     dm_private_fleet.append(dm_pass_new_fleet, dim="Variables")

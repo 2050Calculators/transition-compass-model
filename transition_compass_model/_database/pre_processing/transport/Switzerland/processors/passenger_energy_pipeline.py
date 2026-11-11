@@ -57,6 +57,8 @@ def run(years_ots):
     dm_passenger_energy_all.append(dm_passenger_rail, dim="Categories1")
     dm_passenger_energy_all.filter({"Years": years_ots}, inplace=True)
 
+    dm_energy_public = get_data.get_public_transport_energy_consumption()
+
     return dm_passenger_energy_all
 
 

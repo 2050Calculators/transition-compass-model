@@ -176,3 +176,67 @@ def extract_EP2050_transport_energy_demand_rail(file_url, zip_name, file_pickle)
     )
 
     return dm_rail
+
+
+def get_public_transport_energy_consumption():
+    """Read sheet T1 from the FSO database su-f-11-TP-ZR.
+    Transports publics (trafic marchandises rail inclus) - séries chronologiques détaillées.
+    Tableau T1: Inputs - consommation d'énergie, surface utilisée
+    Returns:
+        pd.DataFrame: Dataframe with energy consumption for switzerland in TJ from 1990 to 2024
+    """
+    # get dir
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    local_filename = os.path.join(this_dir, "../data/tra_public_transport.xlsx")
+    # Total energy consumption per canton in MJ
+    df = pd.read_excel(local_filename, sheet_name="T1", header=3)
+    year_cols = [col for col in df.columns if isinstance(col, int)]
+    df[year_cols] = df[year_cols].apply(pd.to_numeric, errors="coerce")
+    df.reset_index(inplace=True, drop=True)
+    df = df[["Unnamed: 0"] + year_cols]
+    df.fillna(0, inplace=True)
+    df.replace("…", 0, inplace=True)
+    return df
+
+
+# def get_proportion_electric_bus():
+#     """As there is no database separating electric bus vkm and diesel bus vkm. The FSO database su-f-11-TP-ZR is used.
+#     Therewe we can found the energy consumption by type
+
+#     Args:
+#         dm (_type_): _description_
+
+#     Returns:
+#         _type_: _description_
+#     """
+#     #Valeur obtenue de mobitool V3 environ 170.3 kWh/ 100km pour un bus électrique moyenne de de 2020 https://www.suisseenergie.ch/calculateur-environnemental-transport/
+#     avg_electric_car_efficiency = 1.703 * 3.6 *0.000001 #TJ/Vkm
+#     avg_diesel_car_efficiency = 3.8 *3.6*0.000001
+#     # get dir
+#     this_dir = os.path.dirname(os.path.abspath(__file__))
+#     local_filename = os.path.join(this_dir, "../data/tra_public_transport.xlsx")
+#     #Total energy consumption per canton in MJ
+#     df = pd.read_excel(local_filename, sheet_name="T1", header = 3)
+#     year_cols = [col for col in df.columns if isinstance(col, int)]
+#     df[year_cols] = df[year_cols].apply(
+#         pd.to_numeric, errors="coerce"
+#     )
+#     df.reset_index(inplace=True,drop =True)
+#     df = df[['Unnamed: 0'] + year_cols]
+#     df.fillna(0,inplace=True)
+#     df.replace('…',0,inplace=  True)
+
+
+#     # Calculate diesel VKM (consider other have similar energy consumption as diesel)
+#     mask = df["Unnamed: 0"] == "Autobus"
+#     bus_consumption_without_electric = df.loc[mask, year_cols].iloc[0] - df.iloc[23,1:]
+#     diesel_vkm = bus_consumption_without_electric / avg_diesel_car_efficiency
+
+#     # Calculate electric VKM
+#     electric_vkm = df.iloc[23,1:]/ avg_electric_car_efficiency
+
+#     total_vkm = diesel_vkm + electric_vkm
+
+#     electric_veh_prop = electric_vkm/total_vkm
+
+#     return electric_veh_prop
