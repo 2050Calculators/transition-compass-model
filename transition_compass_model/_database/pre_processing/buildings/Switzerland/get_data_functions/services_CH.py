@@ -9,7 +9,6 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 )
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
-    linear_fitting,
     rename_cantons,
 )
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
@@ -44,13 +43,14 @@ def _extract_type_class_shares_from_cadastre(this_dir):
         if pd.isna(yr):
             return None
         yr = int(yr)
-        if yr < 1947:
+        # Same construction periods as multi-family houses
+        if yr <= 1980:
             return "F"
-        elif yr <= 1975:
-            return "E"
         elif yr <= 1990:
+            return "E"
+        elif yr <= 2000:
             return "D"
-        elif yr <= 2019:
+        elif yr <= 2010:
             return "C"
         else:
             return "B"
@@ -87,27 +87,21 @@ def extract_services_floor_area_EP2050(this_dir, years_ots):
     }
     years_ep2050 = sorted(year_cols.keys())
 
-    # Construction period rows map to energy classes (labels in column 1)
-    period_to_class = {
-        "vor 1946": "F",
-        "1947-1975": "E",
-        "1976-1990": "D",
-        "1991-2019": "C",
-        "ab 2020": "B",
-    }
-    energy_classes = ["B", "C", "D", "E", "F"]
-
-    # Extract floor area (Tsd. m²) per class per year
-    class_area = {}  # class → np.array over years_ep2050
-    for period, cls in period_to_class.items():
+    # Floor area (Tsd. m²) per EP2050 construction period (labels in column 1)
+    periods = ["vor 1946", "1947-1975", "1976-1990", "1991-2019", "ab 2020"]
+    period_area = {}  # period → np.array over years_ep2050, in m²
+    for period in periods:
         row_mask = df.iloc[:, 1].astype(str).str.strip() == period
         row_idx = df.index[row_mask][0]
         values = np.array(
             [df.iloc[row_idx, year_cols[yr]] for yr in years_ep2050], dtype=float
         )
-        class_area[cls] = values * 1000  # Tsd. m² → m²
+        period_area[period] = values * 1000  # Tsd. m² → m²
 
-    # Get P(type | class) shares from Vaud cadastre
+    class_area = _ep2050_periods_to_mfh_classes(period_area, years_ep2050)
+    energy_classes = ["B", "C", "D", "E", "F"]
+
+    # Get P(type | class) shares from the RegBL building register
     type_shares = _extract_type_class_shares_from_cadastre(this_dir)
     bld_types = sorted(
         type_shares.index.tolist()
@@ -137,12 +131,89 @@ def extract_services_floor_area_EP2050(this_dir, years_ots):
                     total_cls * share
                 )
 
-    missing_years = [yr for yr in years_ots if yr not in years_ep2050]
+    missing_years = [yr for yr in years_ots if yr < years_ep2050[0]]
     if missing_years:
-        dm_add_missing_variables(dm_ch, {"Years": missing_years})
-        dm_ch.sort("Years")
-    linear_fitting(dm_ch, years_ots, based_on=list(range(2000, 2010)))
+        _backcast_services_floor_area_WP(this_dir, dm_ch, missing_years)
+
+    assert (dm_ch.array >= 0).all(), "Negative services floor area"
     return dm_ch.filter({"Years": years_ots})
+
+
+def _ep2050_periods_to_mfh_classes(period_area, years):
+    """Map EP2050 construction periods to envelope classes with the MFH periods.
+
+    MFH classes: F before 1981, E 1981-1990, D 1991-2000, C 2001-2010, B from 2011.
+    - The 1976-1990 band is split evenly per year: 5/15 to F, 10/15 to E.
+    - The 1991-2019 band is split by the year the floor area was added, assuming
+      no demolition of these recent buildings up to 2019: D is the stock of 2000,
+      C what was added 2001-2010, B what was added 2011-2019. After 2019 the band
+      declines; the decline goes to D and C (the older buildings), B stays constant.
+    """
+    years = list(years)
+    p76 = period_area["1976-1990"]
+    p91 = period_area["1991-2019"]
+    i_2000, i_2010, i_2019 = years.index(2000), years.index(2010), years.index(2019)
+    assert np.all(np.diff(p91[: i_2019 + 1]) >= 0), "1991-2019 band decreases"
+
+    d, c, b = np.zeros(len(years)), np.zeros(len(years)), np.zeros(len(years))
+    for i, yr in enumerate(years):
+        d[i] = p91[min(i, i_2000)]
+        c[i] = p91[min(i, i_2010)] - p91[i_2000] if yr > 2000 else 0
+        b[i] = p91[min(i, i_2019)] - p91[i_2010] if yr > 2010 else 0
+        if yr > 2019:
+            scale = (p91[i] - b[i]) / (p91[i_2019] - b[i])
+            assert scale >= 0, "1991-2019 band falls below its 2011-2019 part"
+            d[i], c[i] = d[i] * scale, c[i] * scale
+
+    return {
+        "F": period_area["vor 1946"] + period_area["1947-1975"] + p76 * 5 / 15,
+        "E": p76 * 10 / 15,
+        "D": d,
+        "C": c,
+        "B": b + period_area["ab 2020"],
+    }
+
+
+def _backcast_services_floor_area_WP(this_dir, dm_ch, missing_years):
+    """Fill the years before EP2050 (1990-1999) from the Wüest & Partner EBF stock.
+
+    W&P for BFE (2004) gives the yearly services floor-area stock for 1990-2003.
+    Agricultural buildings are removed to match EP2050.
+    - Total follows the W&P growth, scaled to the EP2050 total of the first year (2000).
+    - Class D (built 1991-2000) is 0 in 1990 and reaches its EP2050 value in 2000,
+      following the timing of the W&P floor-area additions since 1990.
+    - Classes C and B (built from 2001) are 0.
+    - Classes E and F share the rest, with their split of the first EP2050 year.
+    - The split by building type within each class is the one of the first EP2050 year.
+    """
+    file_path = os.path.join(this_dir, "../data/WP_EBF_services_1990_2003_BFE2004.csv")
+    df_wp = pd.read_csv(file_path, comment="#", index_col="year")
+    wp_srv = df_wp["DLG"] - df_wp["landw"]  # thousand m2, services without agriculture
+
+    yr_ref = dm_ch.col_labels["Years"][0]  # first EP2050 year
+    yr_0 = 1990  # last year before class D buildings exist
+    assert all(yr in wp_srv.index for yr in missing_years + [yr_ref, yr_0])
+
+    classes = dm_ch.col_labels["Categories2"]
+    i_D = classes.index("D")
+    i_old = [classes.index(c) for c in ["E", "F"]]
+
+    arr_ref = dm_ch.array[0, dm_ch.idx[yr_ref], 0, :, :]  # type x class
+    class_ref = arr_ref.sum(axis=0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        type_share = np.nan_to_num(arr_ref / class_ref)
+    old_share = class_ref[i_old] / class_ref[i_old].sum()
+
+    dm_add_missing_variables(dm_ch, {"Years": missing_years})
+    for yr in missing_years:
+        total = class_ref.sum() * wp_srv[yr] / wp_srv[yr_ref]
+        added = (wp_srv[yr] - wp_srv[yr_0]) / (wp_srv[yr_ref] - wp_srv[yr_0])
+        class_yr = np.zeros(len(classes))
+        class_yr[i_D] = class_ref[i_D] * max(added, 0)
+        class_yr[i_old] = (total - class_yr[i_D]) * old_share
+        dm_ch.array[0, dm_ch.idx[yr], 0, :, :] = type_share * class_yr
+
+    return
 
 
 def extract_services_renovation_rate_EP2050(

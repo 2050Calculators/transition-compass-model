@@ -99,8 +99,8 @@ and is different for the two residential types:
 For buildings built since 1990, the same file assigns new floor area by year of
 construction: D for 1990–2000, C for 2001–2010, B for 2011–2023.
 
-Non-residential buildings use the construction periods of the EP2050+ services data instead:
-F before 1946, E 1947–1975, D 1976–1990, C 1991–2019, B from 2020.
+Non-residential buildings use the MFH periods too, since most services are housed in
+MFH-type buildings. Their U-values stay non-residential (see `u-value` below).
 
 **Heating technologies.** coal, district-heating, electricity (direct resistive heating),
 gas, heating-oil, heat-pump, other-tech, solar, wood.
@@ -460,9 +460,22 @@ heating is dropped: the buildings module computes it from physics (floor area ×
 degree days).
 
 **Floor area.** EP2050+ *Dienstleistung* (sheet "04 EBF-Baualter") gives national
-non-residential floor area by construction period, which is mapped to classes. It is split into
+non-residential floor area by construction period (thousand m², 2000–2060). These periods are
+mapped to the MFH classes:
+- F = before 1946 + 1947–1975 + 5/15 of 1976–1990
+- E = 10/15 of 1976–1990 (the band is split evenly per year)
+- The 1991–2019 band is split by when the floor area was added: D is its 2000 stock, C what
+  was added 2001–2010, B what was added 2011–2019 (assuming no demolition before 2020).
+  After 2019 the band declines; the decline goes to D and C, the older buildings.
+- B also takes the whole "from 2020" band.
+
+The floor area is then split into
 the six building types using the type shares of each class in the RegBL building register
 (`data/Regbl/Switzerland/`), and distributed to cantons by their share of service employees.
+EP2050+ starts in 2000. For 1990–1999 the total follows the yearly services floor-area stock
+of Wüest & Partner (BFE 2004), without agricultural buildings, scaled to EP2050+ in 2000.
+Class D (built 1991–2000) grows from 0 in 1990 to its EP2050+ value in 2000, following the
+timing of the floor area added in the W&P series; classes E and F take the rest.
 
 **Output:**
 
@@ -504,9 +517,10 @@ buildings module expects. Most outputs are copied as they are, but a few are der
 - **Building mix**: the share of each building type × class in the stock
   (`bld_building-mix_stock`) and in new construction (`bld_building-mix_new`), across all
   eight types. For non-residential buildings, "new" is the yearly increase in floor area,
-  assigned to class C before 2020 and B from 2020.
+  assigned to the same class per year as residential (D 1990–2000, C 2001–2010, B from 2011).
 - **Demolition rate**: waste ÷ stock for residential buildings. For non-residential
-  buildings it comes from EP2050+ class-F stock dynamics.
+  buildings it follows from the EP2050+ stock balance: new construction is the sum of
+  yearly class increases, and waste = new construction − change in total stock.
 - **Non-residential renovation rate**: EP2050+ *Dienstleistung*, sheet "01 Sanierung",
   total row.
 - **Future values of some `fxa` variables**: hot-water demand and services intensity are
@@ -645,6 +659,7 @@ country already in the pickle). `ots` matrices cover 1990–2023, `fts` matrices
 | SFOE open data `ogd109` | Appliance stock, sales, consumption | Download | `appliances_stock_new_energy_CH_raw.csv` |
 | SFOE *Gesamtenergiestatistik* T17a, T17c | Calibration (unused) | Download | `statistique_globale_suisse_energie.xlsx` |
 | Wüest & Partner, EBF 2023 | Cantonal floor-area anchor | Local file | `WP_EBF_cantons_2023.xlsx` |
+| Wüest & Partner for BFE (2004), *Zukünftige Entwicklung der Energiebezugsflächen*, App. A-8 | Non-residential floor area 1990–1999 | [PDF](https://pubdb.bfe.admin.ch/de/publication/download/1077), transcribed | `WP_EBF_services_1990_2003_BFE2004.csv` |
 | Programme Bâtiments annual reports 2017–2022 | Renovated buildings | Local files | `programme_batiment/` |
 | RegBL building register | Non-residential type shares | Local file | `Regbl/Switzerland/` |
 | OFEV CO₂ factors for cantonal reporting | Fuel emission factors | Hard-coded | – |

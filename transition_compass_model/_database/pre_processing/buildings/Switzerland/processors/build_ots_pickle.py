@@ -3,6 +3,9 @@ import pickle
 
 import numpy as np
 
+from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import (
+    load_construction_period_param,
+)
 from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.services_CH import (
     extract_services_renovation_rate_EP2050,
 )
@@ -144,19 +147,15 @@ def compute_nonres_floor_intensity_CH(dm_srv_floor, dm_pop):
 def compute_nonres_demolition_rate_CH(dm_srv_floor, dm_nonres_rr, years_ots):
     """Derive non-residential demolition rate from EP2050 total stock balance.
 
-    New construction is inferred from the annual change of the current-period energy class
-    (EP2050 "04 EBF-Baualter" maps construction year → energy class B-F):
-      - 1990–2019: newly built → class C; new_const(t) = max(ΔstockC(t), 0)
-      - 2020+:     newly built → class B; new_const(t) = max(ΔstockB(t), 0)
-    waste(t)     = new_const(t) + total_stock(t-1) - total_stock(t)
-    demo_rate(t) = max(waste(t), 0) / total_stock(t-1)
-    Raw (unclipped) class arrays are used so that linear extrapolation back to 1990 still
-    gives correct annual deltas even when absolute stock values go slightly negative.
+    A class can only grow through new construction (classes follow the construction
+    period, same periods as MFH), so new construction is the sum of class increases:
+    new_const(t)  = Σ_class max(Δstock_class(t), 0)
+    waste(t)      = new_const(t) + total_stock(t-1) - total_stock(t)
+    demo_rate(t)  = max(waste(t), 0) / total_stock(t-1)
     """
     nonres_types = dm_srv_floor.col_labels["Categories1"]
 
-    stock_C_raw = dm_srv_floor.array[:, :, 0, :, dm_srv_floor.idx["C"]]
-    stock_B_raw = dm_srv_floor.array[:, :, 0, :, dm_srv_floor.idx["B"]]
+    stock_class = dm_srv_floor.array[:, :, 0, :, :]  # country x year x type x class
     stock_total = np.maximum(dm_srv_floor.array[:, :, 0, :, :].sum(axis=-1), 0.0)
 
     dm_demo = DataMatrix(
@@ -174,18 +173,12 @@ def compute_nonres_demolition_rate_CH(dm_srv_floor, dm_nonres_rr, years_ots):
         s_t = stock_total[:, dm_srv_floor.idx[yr], :]
         s_tm1 = stock_total[:, dm_srv_floor.idx[yr_prev], :]
 
-        if yr <= 2019:
-            delta = (
-                stock_C_raw[:, dm_srv_floor.idx[yr], :]
-                - stock_C_raw[:, dm_srv_floor.idx[yr_prev], :]
-            )
-        else:
-            delta = (
-                stock_B_raw[:, dm_srv_floor.idx[yr], :]
-                - stock_B_raw[:, dm_srv_floor.idx[yr_prev], :]
-            )
+        delta = (
+            stock_class[:, dm_srv_floor.idx[yr]]
+            - stock_class[:, dm_srv_floor.idx[yr_prev]]
+        )
 
-        new_const = np.maximum(delta, 0.0)
+        new_const = np.maximum(delta, 0.0).sum(axis=-1)
         waste = new_const + s_tm1 - s_t
         demo_rate = np.where(s_tm1 > 0, np.maximum(waste, 0.0) / s_tm1, 0.0)
         dm_demo.array[:, dm_demo.idx[yr], 0, :] = demo_rate
@@ -353,8 +346,8 @@ def run(dm_pop, DM_all, years_ots, years_fts):
     )
 
     # SECTION: fxa - bld_type
-    # EP2050 period→class for non-res new: C for 1990-2019, B for 2020+
-    nonres_envelope_cat_new = {"C": (1990, 2019), "B": (2020, 2023)}
+    # Non-res new floor area takes the same class per period as residential
+    nonres_envelope_cat_new = load_construction_period_param()["envelope cat new"]
     if dm_srv_floor is not None:
         res_countries = dm_all.col_labels["Country"]
         dm_building_mix = compute_building_mix(
