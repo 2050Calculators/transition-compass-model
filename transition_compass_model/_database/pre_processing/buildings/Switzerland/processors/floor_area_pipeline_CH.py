@@ -128,15 +128,8 @@ def run(global_vars, country_list, years_ots):
     # Floor area stock
     # Logements selon les niveaux géographiques institutionnels, la catégorie de bâtiment,
     # la surface du logement et l'époque de construction
-    # https://www.pxweb.bfs.admin.ch/pxweb/fr/px-x-0902020200_103/-/px-x-0902020200_103.px/
-    table_id = "px-x-0902020200_103"
-    file = os.path.join(this_dir, "../data/bld_floor-area_stock_all_cantons.pickle")
-    # dm_bld_area_stock, dm_energy_cat = compute_bld_floor_area_stock_tranformed_avg_new_area(table_id, file,
-    #                                                                years_ots, construction_period_envelope_cat_sfh,
-    #                                                                construction_period_envelope_cat_mfh)
+    # Swiss Stats SDMX dataflow CH1.GWS / DF_GWS_REG7 (fetched inside compute_floor_area_stock_v2)
     dm_stock_tot, dm_stock_cat, dm_avg_floor_area = fla.compute_floor_area_stock_v2(
-        table_id,
-        file,
         dm_pop=dm_pop,
         cat_map_sfh=construction_period_envelope_cat_sfh,
         cat_map_mfh=construction_period_envelope_cat_mfh,
