@@ -297,9 +297,15 @@ def extract_national_energy_demand(table_id, file):
         # Drop too detailed split
         keep_sectors = [s for s in keep_sectors if "---- " not in s]
 
+        # The table has a single unit. Its label changed from "Térajoules" to
+        # "Terajoules", so read it from the structure instead of hard-coding it.
+        unit = structure["Unité de mesure"][0]
+        if unit.lower().replace("é", "e") != "terajoules":
+            raise ValueError(f"{table_id}: expected unit Terajoules, got '{unit}'")
+
         filter = {
             "Économie et ménages": keep_sectors,
-            "Unité de mesure": ["Térajoules"],
+            "Unité de mesure": [unit],
             "Année": structure["Année"],
             "Agent énergétique": structure["Agent énergétique"],
         }
@@ -321,7 +327,7 @@ def extract_national_energy_demand(table_id, file):
         )
 
         # dm_heating.rename_col('--- Chauffage des ménages', 'bld_heating-demand', dim='Variables')
-        dm_energy.rename_col("Térajoules", "Switzerland", dim="Country")
+        dm_energy.rename_col(unit, "Switzerland", dim="Country")
 
         # We drop the fuels fro transport
         dict_rename = {
