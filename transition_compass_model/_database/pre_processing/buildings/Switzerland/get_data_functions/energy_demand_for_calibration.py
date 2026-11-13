@@ -1,11 +1,9 @@
-import os
-
 import pandas as pd
-import requests
 
 from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions import (
     utils,
 )
+from transition_compass_model.model.common.auxiliary_functions import save_url_to_file
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
@@ -25,21 +23,7 @@ def extract_energy_statistics_data(
         "cols to drop"
     ]  # None if no need to drop, else string (for dm.drop)
 
-    if not os.path.exists(local_filename):
-        response = requests.get(file_url, stream=True)
-        # Check if the request was successful
-        if response.status_code == 200:
-            with open(local_filename, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-            print(f"File downloaded successfully as {local_filename}")
-        else:
-            print(f"Error: {response.status_code}, {response.text}")
-    else:
-        print(
-            f"File {local_filename} already exists. If you want to download again delete the file"
-        )
+    save_url_to_file(file_url, local_filename)
 
     df = utils.read_excel_with_merged_cells(local_filename, sheet_name)
     combined_headers = []
