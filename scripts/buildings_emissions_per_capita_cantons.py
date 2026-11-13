@@ -9,9 +9,13 @@ and writes two interactive plotly charts over the historical years:
 days above 24 C) with one typical year -- the Swiss mean over TYPICAL_PERIOD -- for
 every canton and every year, removing weather differences across cantons and years.
 
+Set SCOPE = "residential" at the top of the file to plot households only (no services).
+Set CLIMATE = "typical" at the top of the file to get the typical climate without
+passing --climate (handy when running from an IDE); --climate still overrides it.
+
 Usage (from the repo root):
     uv run python scripts/buildings_emissions_per_capita_cantons.py \
-        [--climate actual|typical] [--out DIR]
+        [--climate actual|typical] [--out DIR]   (default DIR: scripts/output/)
 """
 
 import argparse
@@ -34,13 +38,27 @@ from transition_compass_model.model.lifestyles_module import lifestyles
 
 YEARS_SETTING = [1990, 2023, 2025, 2050, 5]
 SECTORS = ["climate", "lifestyles", "buildings"]
-EMI_VAR = "bld_emissions-CO2e"
+# Default weather: "actual" = canton/year weather, "typical" = one Swiss typical year
+# everywhere. The --climate command-line option overrides this.
+CLIMATE = "typical"
+# Which emissions to plot: "all" = residential + services, "residential" = households
+# only (space heating + hot water; appliances/cooking are not in the buildings total).
+SCOPE = "residential"
+EMI_VARS = {
+    "all": ["bld_emissions-CO2e"],
+    "residential": [
+        "bld_CO2-emissions_residential_heating",
+        "bld_CO2-emissions_residential_hot-water",
+    ],
+}
 POP_VAR = "lfs_population_total"
 REFERENCE = "Switzerland"
 # Weather-driven climate variables read by buildings (bld_energy_workflow).
 # clm_AC-uptake is an adoption share, not weather, so it is left as is.
 WEATHER_VARS = ["clm_HDD", "clm_CDD", "clm_days-below-15", "clm_days-above-24"]
 TYPICAL_PERIOD = (1991, 2020)  # climate normal period
+# Default folder for the HTML plots (git-ignored), next to this script.
+OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
 
 
 def available_countries():
@@ -165,12 +183,12 @@ def line_figure(table, title, yaxis_title, ref_line=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "--out", default=".", help="output directory for the HTML plots"
+        "--out", default=OUT_DIR, help="output directory for the HTML plots"
     )
     parser.add_argument(
         "--climate",
         choices=["actual", "typical"],
-        default="actual",
+        default=CLIMATE,
         help="actual: canton/year weather; typical: one Swiss typical year everywhere",
     )
     args = parser.parse_args()
@@ -183,7 +201,7 @@ def main():
     TPE = run_model(countries, args.climate, logger)
 
     hist = range(YEARS_SETTING[0], YEARS_SETTING[1] + 1)
-    emi_mt = to_long(TPE["buildings"], EMI_VAR).loc[hist]
+    emi_mt = sum(to_long(TPE["buildings"], v) for v in EMI_VARS[SCOPE]).loc[hist]
     pop = to_long(TPE["lifestyles"], POP_VAR).loc[hist]
 
     per_cap = emi_mt * 1e6 / pop  # t CO2e per inhabitant
@@ -191,6 +209,9 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
     tag = "" if args.climate == "actual" else "_typical-climate"
+    if SCOPE == "residential":
+        tag = "_residential" + tag
+    label = "Residential buildings" if SCOPE == "residential" else "Buildings"
     note = (
         ""
         if args.climate == "actual"
@@ -200,12 +221,12 @@ def main():
     f2 = os.path.join(args.out, f"buildings_emissions_per_capita_index1990{tag}.html")
     line_figure(
         per_cap,
-        f"Buildings GHG emissions per capita (historical){note}",
+        f"{label} GHG emissions per capita (historical){note}",
         "t CO2e / capita",
     ).write_html(f1)
     line_figure(
         index_1990,
-        f"Buildings GHG emissions per capita, 1990 = 1{note}",
+        f"{label} GHG emissions per capita, 1990 = 1{note}",
         "index (1990 = 1)",
         ref_line=1,
     ).write_html(f2)
