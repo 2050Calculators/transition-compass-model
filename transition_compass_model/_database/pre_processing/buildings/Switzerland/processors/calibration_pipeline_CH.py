@@ -11,7 +11,8 @@ from transition_compass_model.model.common.auxiliary_functions import create_yea
 def run(country_list, years_ots):
     # Extract energy demand of households (incl. hot-water, heating, lighting, appliances)
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    file_url = "https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/gesamtenergiestatistik.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZnIvcHVibGljYX/Rpb24vZG93bmxvYWQvNzUxOQ==.html"
+    # Source page: https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/gesamtenergiestatistik.html
+    file_url = "https://pubdb.bfe.admin.ch/fr/publication/download/7519"
     local_filename = os.path.join(
         this_dir, "../data/statistique_globale_suisse_energie.xlsx"
     )
@@ -49,7 +50,8 @@ def run(country_list, years_ots):
     )
 
     # Extract energy demand of services (incl. hot-water, heating, lighting, appliances)
-    file_url = "https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/gesamtenergiestatistik.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZnIvcHVibGljYX/Rpb24vZG93bmxvYWQvNzUxOQ==.html"
+    # Source page: https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/gesamtenergiestatistik.html
+    file_url = "https://pubdb.bfe.admin.ch/fr/publication/download/7519"
     local_filename = os.path.join(
         this_dir, "../data/statistique_globale_suisse_energie.xlsx"
     )

@@ -91,7 +91,8 @@ def run(dm_pop, country_list, years_ots, years_fts):
     # Adjust oven-stove electricity demand based on EP2050 assessment of cooking electricity demand
     # Cooking energy demand
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    file_url = "https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTE5MzU=.html"
+    # Source page: https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.html
+    file_url = "https://pubdb.bfe.admin.ch/de/publication/download/11935"
     local_filename = os.path.join(this_dir, "../data/EP2050_Households_CH.xlsx")
     save_url_to_file(file_url, local_filename)
     dm_cooking = get_data.extract_EP2050_cooking_energy_consumption(
@@ -241,7 +242,8 @@ def run(dm_pop, country_list, years_ots, years_fts):
 
     # Other electricity energy demand
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    file_url = "https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTE5MzU=.html"
+    # Source page: https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.html
+    file_url = "https://pubdb.bfe.admin.ch/de/publication/download/11935"
     local_filename = os.path.join(this_dir, "../data/EP2050_Households_CH.xlsx")
     save_url_to_file(file_url, local_filename)
     dm_other_elec = get_data.extract_EP2050_other_elec_demand(file_raw=local_filename)

@@ -1,3 +1,4 @@
+import base64
 import json
 import math
 import os
@@ -1573,25 +1574,61 @@ def dm_add_missing_variables(dm, dict_all, fill_nans=False):
     return
 
 
+def _resolve_bfe_exturl(url):
+    """Turn an old BFE wrapper link into the direct pubdb download link.
+
+    BFE pages used to link files as
+    https://www.bfe.admin.ch/.../<page>.exturl.html/<base64>.html, where the base64
+    part (with a "/" inserted in it) encodes the real
+    https://pubdb.bfe.admin.ch/.../publication/download/<id> address. These wrapper
+    links now return 404, the direct pubdb links still work. Other URLs are returned
+    unchanged.
+    """
+    if "exturl.html/" not in url:
+        return url
+    encoded = url.split("exturl.html/", 1)[1]
+    encoded = encoded.split("&", 1)[0].removesuffix(".html")
+    encoded = encoded.replace("%3D", "=").replace("%3d", "=").replace("/", "")
+    encoded += "=" * (-len(encoded) % 4)
+    return base64.b64decode(encoded).decode()
+
+
 def save_url_to_file(file_url, local_filename):
-    # Loop for URL
-    if not os.path.exists(local_filename):
-        response = requests.get(file_url, stream=True)
-        # Check if the request was successful
-        if response.status_code == 200:
-            with open(local_filename, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-            print(f"File downloaded successfully as {local_filename}")
-        else:
-            print(f"Error: {response.status_code}, {response.text}")
-    else:
+    """Download file_url to local_filename, unless local_filename already exists.
+
+    Raises RuntimeError if the download fails (bad status, or an HTML error page
+    instead of a file), so the problem shows up here and not later when the file is
+    read. The file is written to "<local_filename>.part" first and renamed when
+    complete, so an interrupted download is never mistaken for a finished one.
+    """
+    if os.path.exists(local_filename):
         print(
             f"File {local_filename} already exists. If you want to download again delete the file"
         )
+        return
 
-    return
+    url = _resolve_bfe_exturl(file_url)
+    response = requests.get(url, stream=True, timeout=120)
+    content_type = response.headers.get("Content-Type", "")
+    if response.status_code != 200 or content_type.startswith("text/html"):
+        raise RuntimeError(
+            f"Could not download {url} (HTTP {response.status_code}, "
+            f"Content-Type {content_type!r}) to {local_filename}. "
+            "The link may have moved: find the new one on the source website."
+        )
+
+    os.makedirs(os.path.dirname(os.path.abspath(local_filename)), exist_ok=True)
+    tmp_filename = local_filename + ".part"
+    try:
+        with open(tmp_filename, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        os.replace(tmp_filename, local_filename)
+    finally:
+        if os.path.exists(tmp_filename):
+            os.remove(tmp_filename)
+    print(f"File downloaded successfully as {local_filename}")
 
 
 def translate_text(text):

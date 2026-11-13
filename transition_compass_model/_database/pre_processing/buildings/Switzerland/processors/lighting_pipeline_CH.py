@@ -15,7 +15,8 @@ from transition_compass_model.model.common.auxiliary_functions import (
 
 def run(country_list, years_ots):
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    file_url = "https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTE5MzU=.html"
+    # Source page: https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.html
+    file_url = "https://pubdb.bfe.admin.ch/de/publication/download/11935"
     local_filename = os.path.join(this_dir, "../data/EP2050_Households_CH.xlsx")
     save_url_to_file(file_url, local_filename)
     file_pickle = os.path.join(this_dir, "../data/EP2050_lighting_households_CH.pickle")

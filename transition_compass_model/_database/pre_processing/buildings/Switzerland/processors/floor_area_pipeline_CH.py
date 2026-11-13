@@ -173,7 +173,8 @@ def run(global_vars, country_list, years_ots):
     del dm_bld_new_buildings_2, dm_bld_new_buildings_1
 
     # SECTION Adjust Cantonal stock based on National stock by Prognos
-    file_url = "https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA0NDE=.html"
+    # Source page: https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.html
+    file_url = "https://pubdb.bfe.admin.ch/de/publication/download/10441"
     zip_name = os.path.join(this_dir, "../data/EP2050_sectors.zip")
     file_pickle = os.path.join(this_dir, "../data/bld_EP2050_floor_area_type.pickle")
     dm_stock_tot_CH = fla.extract_EP2050_floor_area_by_type(
