@@ -1,70 +1,62 @@
 import os
 import pickle
 
-import deepl
 import numpy as np
 import pandas as pd
-import requests
 
 from transition_compass_model.model.common.auxiliary_functions import linear_fitting
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
-def translate_text(text):
-    # Initialize the Deepl Translator
-    deepl_api_key = "9ecffb3f-5386-4254-a099-8bfc47167661:fx"
-    translator = deepl.Translator(deepl_api_key)
-    if isinstance(text, str):
-        translation = translator.translate_text(text, target_lang="EN-GB")
-        out = translation.text
-    else:
-        out = text
-    return out
-
-
-##########################################################################################################
-# Download of files from URL
-##########################################################################################################
-def save_url_to_file(file_url, local_filename):
-    # Loop for URL
-    if not os.path.exists(local_filename):
-        response = requests.get(file_url, stream=True)
-        # Check if the request was successful
-        if response.status_code == 200:
-            with open(local_filename, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-            print(f"File downloaded successfully as {local_filename}")
-        else:
-            print(f"Error: {response.status_code}, {response.text}")
-    else:
-        print(
-            f"File {local_filename} already exists. If you want to download again delete the file"
-        )
-
-    return
-
-
 def get_appliances_stock_new_energy(raw_filename, clean_filename):
     if not os.path.exists(clean_filename):
-        df = pd.read_csv(raw_filename)
+        # utf-8-sig: the BFE file starts with a byte-order mark before "Jahr"
+        df = pd.read_csv(raw_filename, encoding="utf-8-sig")
 
-        cols_de_clean = [col.replace("_", " ") for col in list(df.columns)]
-        df.columns = cols_de_clean
-        cols_en = [translate_text(col) for col in list(df.columns)]
-        df.columns = cols_en
-        # Use deepl to translate variables from de to en
-        variables_de = list(set(df["Device category"]))
-        variables_en = [
-            translate_text(var.replace("_", " ").replace("(", "").replace(")", ""))
-            for var in variables_de
-        ]
-        var_dict = dict(zip(variables_de, variables_en))
-        df["Categories1"] = df["Device category"].map(var_dict)
-        df.rename(columns={"Year": "Years"}, inplace=True)
-        df.drop(columns="Those", inplace=True)
-        df.drop(columns="Device category", inplace=True)
+        # Fixed German -> model-name mappings. These used to come from DeepL, but
+        # its output changes over time (e.g. "Geraetekategorie" became "Category
+        # of the riddle"), which broke the column lookups. The English device
+        # names reproduce the earlier DeepL output that appliances_pipeline_CH
+        # relies on.
+        var_map = {
+            "Neugeraeteabsatz_Stk": "bld_appliances_new",
+            "Geraetebestand_Stk": "bld_appliances_stock",
+            "Verbrauch_Neugeraete_kWh": "bld_appliances_electricity-demand_new",
+            "Verbrauch_Geraetebestand_kWh": "bld_appliances_electricity-demand_stock",
+        }
+        device_map = {
+            "Beamer": "Beamer",
+            "Drucker": "Printer",
+            "Dunstabzugshauben": "Extractor bonnets",
+            "Elektroherde und Einbaubacköfen": "Electric cookers and built-in ovens",
+            "Fernsehgeräte": "Televisions",
+            "Geschirrspüler": "Dishwasher",
+            "Kaffeemaschinen": "Coffee machines",
+            "Kühlschränke": "Refrigerators",
+            "Laptops": "Laptops",
+            "Monitore": "Monitor",
+            "Personal Computer": "Personal Computer",
+            "Router / Modems": "Routers / Modems",
+            "Server (Small Scale)": "Server Small Scale",
+            "Settop-Boxen": "Set-top boxes",
+            "Slate Computer (Tablets)": "Slate Computer Tablets",
+            "Staubsauger": "Hoover",
+            "Tiefkühlschränke": "Freezers",
+            "USV": "USV",
+            "Video/DVD/Blu-Ray": "Video/DVD/Blu-Ray",
+            "Waschmaschinen": "Washing machines",
+            "Waschtrockner": "Washer-dryer",
+            "Wäschetrockner": "Tumble dryer",
+        }
+        unknown = set(df["Geraetekategorie"]) - set(device_map)
+        if unknown:
+            raise ValueError(
+                f"New device categories in {raw_filename}: {sorted(unknown)}. "
+                "Add them to device_map."
+            )
+        df["Categories1"] = df["Geraetekategorie"].map(device_map)
+        df = df.rename(columns={"Jahr": "Years", **var_map})
+        df = df.drop(columns=["Quelle", "Geraetekategorie"])
         # Step 1: Melt the dataframe to long format
         var_cols = list(set(df.columns) - {"Years", "Categories1"})
         df_melted = df.melt(
@@ -87,25 +79,10 @@ def get_appliances_stock_new_energy(raw_filename, clean_filename):
         df_final["Country"] = "Switzerland"
 
         for col in set(df_final.columns) - {"Years", "Country"}:
-            if "kWh" not in col:
-                df_final.rename(columns={col: col + "[number]"}, inplace=True)
-            else:
-                df_final.rename(columns={col: col + "[kWh]"}, inplace=True)
+            unit = "kWh" if "electricity-demand" in col else "number"
+            df_final.rename(columns={col: f"{col}[{unit}]"}, inplace=True)
 
         dm = DataMatrix.create_from_df(df_final, num_cat=1)
-        vars_in = [
-            "Consumption of appliances kWh",
-            "Geraetebestand Stk",
-            "New appliance consumption kWh",
-            "New product sales pcs",
-        ]
-        vars_out = [
-            "bld_appliances_electricity-demand_stock",
-            "bld_appliances_stock",
-            "bld_appliances_electricity-demand_new",
-            "bld_appliances_new",
-        ]
-        dm.rename_col(vars_in, vars_out, dim="Variables")
         dm.sort("Variables")
 
         with open(clean_filename, "wb") as handle:
@@ -325,7 +302,6 @@ def appliances_fill_missing_years(dm_appliances, dm_households, years_ots, years
 
 
 def extract_EP2050_cooking_energy_consumption(file_raw):
-
     df = pd.read_excel(file_raw, "Tabelle17")
 
     df = df[list(df.columns)[1:-1]]
@@ -367,7 +343,6 @@ def extract_EP2050_cooking_energy_consumption(file_raw):
 
 
 def extract_EP2050_other_elec_demand(file_raw):
-
     df = pd.read_excel(file_raw, "Tabelle1")
 
     df = df[list(df.columns)[1:-1]]
