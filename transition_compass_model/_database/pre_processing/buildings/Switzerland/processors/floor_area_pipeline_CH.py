@@ -153,7 +153,7 @@ def run(global_vars, country_list, years_ots):
     file = os.path.join(
         this_dir, "../data/bld_new_buidlings_2013_2023_all_cantons.pickle"
     )
-    dm_bld_new_buildings_1 = fla.extract_bld_new_buildings_1(table_id, file)
+    dm_bld_new_buildings_1 = fla.extract_bld_new_buildings_1(table_id, file, years_ots)
 
     # TODO : For now this database is still available in stat-tab : move when needed.
     # Nouveaux logements selon le type de bâtiment, 1995-2012
