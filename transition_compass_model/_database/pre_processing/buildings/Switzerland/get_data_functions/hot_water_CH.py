@@ -214,42 +214,27 @@ def extract_hotwater_technologies_old(table_id, file):
             dm_heating_old = pickle.load(handle)
     except OSError:
         structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-        # Extract buildings floor area
-        filter = structure.copy()
+        # One call for all cantons. Construction period, heating type, heating
+        # agent and hot-water production are left out of the filter, so PxWeb
+        # returns totals over them: 27 cantons x 4 bld types x 10 hot-water
+        # agents x 2 years = 2'160 cells.
         mapping_dim = {
             "Country": "Canton",
             "Years": "Année",
             "Variables": "Type de bâtiment",
             "Categories1": "Agent énergétique pour l'eau chaude",
         }
-        dm_heating_old = None
-        tot_bld = 0
-        for t in structure["Type de chauffage"]:
-            for a in structure["Agent énergétique pour le chauffage"]:
-                filter["Type de chauffage"] = [t]
-                filter["Agent énergétique pour le chauffage"] = [a]
-                unit_all = ["number"] * len(structure["Type de bâtiment"])
-                dm_heating_old_t = get_data_api_CH(
-                    table_id,
-                    mode="extract",
-                    filter=filter,
-                    mapping_dims=mapping_dim,
-                    units=unit_all,
-                    language="fr",
-                )
-                if dm_heating_old is None:
-                    dm_heating_old = dm_heating_old_t.copy()
-                else:
-                    assert (
-                        dm_heating_old.col_labels["Country"]
-                        == dm_heating_old_t.col_labels["Country"]
-                    )
-                    assert (
-                        dm_heating_old.col_labels["Categories1"]
-                        == dm_heating_old_t.col_labels["Categories1"]
-                    )
-
-                    dm_heating_old.array = dm_heating_old_t.array + dm_heating_old.array
+        # Select all values of the kept variables; the others are not sent
+        filter = {name: structure[name] for name in mapping_dim.values()}
+        unit_all = ["number"] * len(structure["Type de bâtiment"])
+        dm_heating_old = get_data_api_CH(
+            table_id,
+            mode="extract",
+            filter=filter,
+            mapping_dims=mapping_dim,
+            units=unit_all,
+            language="fr",
+        )
 
         # dm_heating_old.rename_col(['Suisse'], ['Switzerland'], dim='Country')
         dm_heating_old.groupby(
