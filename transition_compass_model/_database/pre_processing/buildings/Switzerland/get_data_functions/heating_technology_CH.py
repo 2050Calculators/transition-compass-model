@@ -1,6 +1,5 @@
 import os
 import pickle
-import time
 import zipfile
 
 import numpy as np
@@ -85,62 +84,40 @@ def extract_heating_technologies_old(table_id, file, cat_sfh, cat_mfh):
             dm_heating_old = pickle.load(handle)
     except OSError:
         structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-        # Extract buildings floor area
-        dm_heating_old = None
-        for cntr in structure["Canton"]:
-            filter = structure.copy()
-            filter["Canton"] = [cntr]
-            mapping_dim = {
-                "Country": "Canton",
-                "Years": "Année",
-                "Variables": "Epoque de construction",
-                "Categories1": "Type de bâtiment",
-                "Categories2": "Agent énergétique pour le chauffage",
-            }
-            dm_heating_old_cntr = None
-            tot_bld = 0
-            for t in structure["Type de chauffage"]:
-                for a in structure["Agent énergétique pour l'eau chaude"]:
-                    filter["Type de chauffage"] = [t]
-                    filter["Agent énergétique pour l'eau chaude"] = [a]
-                    unit_all = ["number"] * len(structure["Epoque de construction"])
-                    dm_heating_old_t = get_data_api_CH(
-                        table_id,
-                        mode="extract",
-                        filter=filter,
-                        mapping_dims=mapping_dim,
-                        units=unit_all,
-                        language="fr",
-                    )
-
-                    if dm_heating_old_cntr is None:
-                        dm_heating_old_cntr = dm_heating_old_t.copy()
-                    else:
-                        dm_heating_old_cntr.array = (
-                            dm_heating_old_t.array + dm_heating_old_cntr.array
-                        )
-                    partial_bld = np.nansum(dm_heating_old_t.array[0, 0, ...])
-                    tot_bld = tot_bld + partial_bld
-                    print(t, a, partial_bld, tot_bld)
-                    time.sleep(1.5)
-            # dm_heating_old_cntr.rename_col(['Suisse'], ['Switzerland'], dim='Country')
-            dm_heating_old_cntr.groupby(
-                {
-                    "single-family-households": ["Maisons individuelles"],
-                    "multi-family-households": [
-                        "Maisons à plusieurs logements",
-                        "Bâtiments d'habitation avec usage annexe",
-                        "Bâtiments partiellement à usage d'habitation",
-                    ],
-                },
-                dim="Categories1",
-                inplace=True,
-            )
-
-            if dm_heating_old is None:
-                dm_heating_old = dm_heating_old_cntr.copy()
-            else:
-                dm_heating_old.append(dm_heating_old_cntr, dim="Country")
+        # One call for all cantons. Heating type, hot-water production and
+        # hot-water agent are left out of the filter, so PxWeb returns totals over
+        # them: 27 cantons x 4 bld types x 8 periods x 10 heating agents x 2 years
+        # = 17'280 cells (limit 100'000 per call).
+        mapping_dim = {
+            "Country": "Canton",
+            "Years": "Année",
+            "Variables": "Epoque de construction",
+            "Categories1": "Type de bâtiment",
+            "Categories2": "Agent énergétique pour le chauffage",
+        }
+        # Select all values of the kept variables; the others are not sent
+        filter = {name: structure[name] for name in mapping_dim.values()}
+        unit_all = ["number"] * len(structure["Epoque de construction"])
+        dm_heating_old = get_data_api_CH(
+            table_id,
+            mode="extract",
+            filter=filter,
+            mapping_dims=mapping_dim,
+            units=unit_all,
+            language="fr",
+        )
+        dm_heating_old.groupby(
+            {
+                "single-family-households": ["Maisons individuelles"],
+                "multi-family-households": [
+                    "Maisons à plusieurs logements",
+                    "Bâtiments d'habitation avec usage annexe",
+                    "Bâtiments partiellement à usage d'habitation",
+                ],
+            },
+            dim="Categories1",
+            inplace=True,
+        )
 
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(current_file_directory, file)
