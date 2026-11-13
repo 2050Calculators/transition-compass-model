@@ -197,7 +197,37 @@ def dowload_regbl_data(country: str, file_name="gebaeude_batiment_edificio.csv")
     return df
 
 
-def get_bld_surface_distribution(dm_floor_area: DataMatrix) -> dict:
+def get_bld_surface_distribution(dm_floor_area: DataMatrix) -> DataMatrix:
+    """Cached wrapper around _compute_bld_surface_distribution.
+
+    The computation reads the two national RegBL csv files (~1 GB) every time,
+    while the result is a handful of numbers. Save it to a pickle and reuse it as
+    long as its size classes / building types match dm_floor_area. Delete the
+    pickle to recompute (e.g. after refreshing data/Regbl/Switzerland).
+    """
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    file = os.path.join(
+        current_file_directory, "../data/bld_regbl_mean_dwelling_area_CH.pickle"
+    )
+    try:
+        with open(file, "rb") as handle:
+            dm_mean_surface_per_cat = pickle.load(handle)
+        for dim in ["Variables", "Categories1"]:
+            if sorted(dm_mean_surface_per_cat.col_labels[dim]) != sorted(
+                dm_floor_area.col_labels[dim]
+            ):
+                raise OSError(f"Cached {file} has different {dim}, recomputing")
+    except OSError as e:
+        print(f"Computing RegBL mean dwelling area from csv ({e})")
+        dm_mean_surface_per_cat = _compute_bld_surface_distribution(dm_floor_area)
+        with open(file, "wb") as handle:
+            pickle.dump(
+                dm_mean_surface_per_cat, handle, protocol=pickle.HIGHEST_PROTOCOL
+            )
+    return dm_mean_surface_per_cat
+
+
+def _compute_bld_surface_distribution(dm_floor_area: DataMatrix) -> DataMatrix:
     """Get distribution of dwellings areas.for single and multi family households from REGBL data
     Args:
         dm_floor_area (DataMatrix) : Dm from which to extract the shape
@@ -404,7 +434,7 @@ def compute_floor_area_stock_v2(dm_pop, cat_map_sfh, cat_map_mfh, years_ots):
     agency = "CH1.GWS"
     dataflow = "DF_GWS_REG7"
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    file_swiss_stat = file = os.path.join(
+    file_swiss_stat = os.path.join(
         this_dir, "../data/bld_floor-area_stock_all_cantons_swiss_stat.pickle"
     )
     dm_stock_area, dm_num_bld = extract_stock_floor_area(
