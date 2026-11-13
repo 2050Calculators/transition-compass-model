@@ -1,6 +1,8 @@
 import numpy as np
-import requests
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    request_with_retry,
+)
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
@@ -99,9 +101,10 @@ def _fetch_structure(agency, dataflow, headers):
         struct_headers = dict(
             headers, Accept="application/vnd.sdmx.structure+json;version=1.0"
         )
-        response = requests.get(
-            url, params={"references": "all"}, headers=struct_headers
+        response = request_with_retry(
+            "GET", url, params={"references": "all"}, headers=struct_headers
         )
+        response.raise_for_status()
         data = response.json()["data"]
         dsd = data["dataStructures"][0]
         dim_list = dsd["dataStructureComponents"]["dimensionList"]
@@ -261,12 +264,13 @@ def get_data_api_swiss_stats(
             query_params["endPeriod"] = filter["endPeriod"]
 
         url = f"{base_url}/{agency},{dataflow}/{key}"
-        response = requests.get(url, params=query_params, headers=headers)
+        response = request_with_retry("GET", url, params=query_params, headers=headers)
         if response.status_code == 200:
             data_json = response.json()
             dm = sdmx_json_to_dm(data_json, mapping_dims, units, filter=filter)
             return dm
         else:
-            print(f"Failed to retrieve data: {response.status_code}")
-            print(response.text)
-            return
+            raise RuntimeError(
+                f"Failed to retrieve data from {url}: HTTP {response.status_code}\n"
+                f"{response.text[:500]}"
+            )
