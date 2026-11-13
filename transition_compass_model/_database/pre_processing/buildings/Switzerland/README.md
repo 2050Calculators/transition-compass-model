@@ -123,7 +123,7 @@ The main script runs in three phases.
 Phase 1: historical pipelines (processors/)
    interfaces ─► population
    floor area ─► renovation ─► space-heating technology
-   fixed assumptions, appliances, hot water, lighting, services, calibration
+   fixed assumptions, appliances, hot water, lighting, services
                                 │
 Phase 2: assemble the historical pickle (build_ots_pickle.py)
                                 │  writes ots, fxa, constant
@@ -500,16 +500,20 @@ timing of the floor area added in the W&P series; classes E and F take the rest.
 
 ---
 
-### 10. Calibration data
+### 10. Checking the results against official data
 
-`processors/calibration_pipeline_CH.py`
+This is no longer a preprocessing step. The comparison of a Swiss buildings run with
+official statistics lives in `scripts/buildings_validation_CH.py` (repo root). It runs
+climate → lifestyles → buildings for Switzerland and compares final energy by fuel with:
 
-This step reads residential (T17a) and services (T17c) final energy by carrier from the Swiss
-overall energy statistics (*Gesamtenergiestatistik*), for Switzerland only. Cantons are added
-as NaN.
+- BFE overall energy statistics (*Gesamtenergiestatistik*): households (T17a) and services
+  (T17c), all uses together;
+- FSO energy accounts (STAT-TAB `px-x-0204000000_106`): household heating, which includes
+  hot water.
 
-> ⚠️ The result (`dm_energy_cal`) is computed but **not used**: it doesn't go into
-> `DM_all` and is not written to the pickle.
+```bash
+uv run python scripts/buildings_validation_CH.py
+```
 
 ---
 
@@ -666,7 +670,7 @@ country already in the pickle). `ots` matrices cover 1990–2023, `fts` matrices
 | EP2050+ / Prognos, *Analyse nach Verwendungszweck* | Hot water, lighting, cooking, other electricity | Download | `EP2050_Households_CH.xlsx` |
 | Prognos/Infras/TEP 2021, Table 26 | Services energy by end use | Hard-coded | – |
 | SFOE open data `ogd109` | Appliance stock, sales, consumption | Download | `appliances_stock_new_energy_CH_raw.csv` |
-| SFOE *Gesamtenergiestatistik* T17a, T17c | Calibration (unused) | Download | `statistique_globale_suisse_energie.xlsx` |
+| SFOE *Gesamtenergiestatistik* T17a, T17c | Validation only (`scripts/buildings_validation_CH.py`) | Download | `scripts/data/statistique_globale_suisse_energie.xlsx` |
 | Wüest & Partner, EBF 2023 | Cantonal floor-area anchor | Local file | `WP_EBF_cantons_2023.xlsx` |
 | Wüest & Partner for BFE (2004), *Zukünftige Entwicklung der Energiebezugsflächen*, App. A-8 | Non-residential floor area 1990–1999 | [PDF](https://pubdb.bfe.admin.ch/de/publication/download/1077), transcribed | `WP_EBF_services_1990_2003_BFE2004.csv` |
 | Programme Bâtiments annual reports 2017–2022 | Renovated buildings | Local files | `programme_batiment/` |
@@ -686,7 +690,6 @@ country already in the pickle). `ots` matrices cover 1990–2023, `fts` matrices
   Programme Bâtiments reports instead.
 - **Demolition** uses a 0.2 % floor rather than measured data.
 - **Services space-heating mix** is a copy of the hot-water mix.
-- **Calibration data** is extracted but not written to the pickle.
 - **Non-residential heating mix** copies MFH.
 - The **main script's printed messages** don't always match which levels a step writes. For
   example, "PCV (level 2) and PCV+ (level 3)" also writes renovation for levels 3 and 4,
