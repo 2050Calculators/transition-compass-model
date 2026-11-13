@@ -456,7 +456,7 @@ def compute_floor_area_stock_v2(dm_pop, cat_map_sfh, cat_map_mfh, years_ots):
     return dm_stock_tot, dm_stock_cat, dm_avg_floor_area
 
 
-def extract_bld_new_buildings_1(table_id, file):
+def extract_bld_new_buildings_1(table_id, file, years_ots):
     try:
         with open(file, "rb") as handle:
             dm_new_area = pickle.load(handle)
@@ -515,7 +515,10 @@ def extract_bld_new_buildings_1(table_id, file):
             pickle.dump(dm_new_area, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     dm_new_area.rename_col("Suisse", "Switzerland", "Country")
-
+    years_keep = sorted(
+        list(set(years_ots).intersection(set(dm_new_area.col_labels["Years"])))
+    )
+    dm_new_area.filter({"Years": years_keep}, inplace=True)
     return dm_new_area
 
 
