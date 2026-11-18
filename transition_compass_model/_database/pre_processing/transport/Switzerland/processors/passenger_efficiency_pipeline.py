@@ -9,7 +9,6 @@ import numpy as np
 import transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions.efficiency as get_data
 from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model.model.common.auxiliary_functions import (
-    compute_diff,
     dm_add_missing_variables,
     linear_fitting,
 )
@@ -227,34 +226,34 @@ def run(
     )
 
     dm_veh_eff_LDV_co2.sort("Years")
-    local_filename_eff = os.path.join(this_dir, "../data/tra_veh_efficiency.pickle")
-    dm_veh_eff_LDV_co2_ofs = get_data.get_vehicle_efficiency_ofs(
-        "px_degxc",
-        local_filename_eff,
-        years_ots,
-        "tra_passenger_veh-efficiency_fleet_ofs",
-    )
-    dm_veh_eff_LDV_co2_ofs.sort("Years")
-    dm_veh_eff_LDV_co2_ofs.sort("Country")
-    dm_veh_eff_LDV_co2_ofs.filter(
-        {
-            "Years": years_ots,
-            "Categories2": [
-                "ICE-diesel",
-                "ICE-gas",
-                "ICE-gasoline",
-                "PHEV-diesel",
-                "PHEV-gasoline",
-            ],
-        },
-        inplace=True,
-    )
-    dm_veh_eff_LDV_co2.append(dm_veh_eff_LDV_co2_ofs, dim="Variables")
-    t = compute_diff(
-        dm_veh_eff_LDV_co2,
-        "tra_passenger_veh-efficiency_fleet",
-        "tra_passenger_veh-efficiency_fleet_ofs",
-    )
+    # local_filename_eff = os.path.join(this_dir, "../data/tra_veh_efficiency.pickle")
+    # dm_veh_eff_LDV_co2_ofs = get_data.get_vehicle_efficiency_ofs(
+    #     "px_degxc",
+    #     local_filename_eff,
+    #     years_ots,
+    #     "tra_passenger_veh-efficiency_fleet_ofs",
+    # )
+    # dm_veh_eff_LDV_co2_ofs.sort("Years")
+    # dm_veh_eff_LDV_co2_ofs.sort("Country")
+    # dm_veh_eff_LDV_co2_ofs.filter(
+    #     {
+    #         "Years": years_ots,
+    #         "Categories2": [
+    #             "ICE-diesel",
+    #             "ICE-gas",
+    #             "ICE-gasoline",
+    #             "PHEV-diesel",
+    #             "PHEV-gasoline",
+    #         ],
+    #     },
+    #     inplace=True,
+    # )
+    # dm_veh_eff_LDV_co2.append(dm_veh_eff_LDV_co2_ofs, dim="Variables")
+    # t = compute_diff(
+    #     dm_veh_eff_LDV_co2,
+    #     "tra_passenger_veh-efficiency_fleet",
+    #     "tra_passenger_veh-efficiency_fleet_ofs",
+    # )
     # local_filename_eff = os.path.join(
     #     this_dir, "../data/tra_veh_efficiency_swiss_stat_elec.pickle"
     # )
