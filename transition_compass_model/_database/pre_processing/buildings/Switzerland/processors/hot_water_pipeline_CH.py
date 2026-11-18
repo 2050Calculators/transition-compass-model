@@ -265,7 +265,8 @@ def run(country_list, years_ots):
     ####        EFFICIENCY       #####
     ##################################
     # I use the space heating efficiency as a proxy for the hot water efficiency
-    file_url = "https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA0NDE=.html"
+    # Source page: https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.html
+    file_url = "https://pubdb.bfe.admin.ch/de/publication/download/10441"
     zip_name = os.path.join(this_dir, "../data/EP2050_sectors.zip")
     file_pickle = os.path.join(this_dir, "../data/bld_heating_efficiencies.pickle")
     dm_efficiencies = hw.extract_heating_efficiencies_EP2050(
@@ -288,7 +289,8 @@ def run(country_list, years_ots):
     ## Get water tech share based on energy consumption
     # Hot water demand in CH - use efficiency to determine useful energy demand
     # From Prognos EP2050 Analysis: https://www.bfe.admin.ch/bfe/fr/home/approvisionnement/statistiques-et-geodonnees/statistiques-de-lenergie/consommation-energetique-en-fonction-de-lapplication.html
-    file_url = "https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTE5MzU=.html"
+    # Source page: https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.html
+    file_url = "https://pubdb.bfe.admin.ch/de/publication/download/11935"
     local_filename = os.path.join(this_dir, "../data/EP2050_Households_CH.xlsx")
     save_url_to_file(file_url, local_filename)
     file_pickle = os.path.join(

@@ -3,8 +3,8 @@ import pickle
 
 import numpy as np
 
-from transition_compass_model._database.pre_processing.api_routines_CH import (
-    get_data_api_CH,
+from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import (
+    load_construction_period_param,
 )
 from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.services_CH import (
     extract_services_renovation_rate_EP2050,
@@ -46,76 +46,6 @@ def recompute_floor_area_per_capita(dm_all, dm_pop):
     )
 
     return dm_floor_stock
-
-
-def extract_lfs_household_size(years_ots, table_id, file):
-    try:
-        with open(file, "rb") as handle:
-            dm_household_size = pickle.load(handle)
-    except OSError:
-        structure, title = get_data_api_CH(table_id, mode="example")
-        # Extract buildings floor area
-        filter = {
-            "Year": structure["Year"],
-            "Canton (-) / District (>>) / Commune (......)": [
-                "Schweiz / Suisse / Svizzera / Switzerland",
-                "- Vaud",
-            ],
-            "Household size": [
-                "1 person",
-                "2 persons",
-                "3 persons",
-                "4 persons",
-                "5 persons",
-                "6 persons or more",
-            ],
-        }
-        mapping_dim = {
-            "Country": "Canton (-) / District (>>) / Commune (......)",
-            "Years": "Year",
-            "Variables": "Household size",
-        }
-        unit_all = ["people"] * len(filter["Household size"])
-        # Get api data
-        dm_household = get_data_api_CH(
-            table_id,
-            mode="extract",
-            filter=filter,
-            mapping_dims=mapping_dim,
-            units=unit_all,
-        )
-
-        dm_household.rename_col(
-            ["Schweiz / Suisse / Svizzera / Switzerland", "- Vaud"],
-            ["Switzerland", "Vaud"],
-            dim="Country",
-        )
-        drop_strings = [" persons or more", " persons", " person"]
-        for drop_str in drop_strings:
-            dm_household.rename_col_regex(drop_str, "", dim="Variables")
-        # dm_household contains the number of household per each household-size
-        # Compute the average household size by doing the weighted average
-        sizes = np.array(
-            [int(num_ppl) for num_ppl in dm_household.col_labels["Variables"]]
-        )
-        arr_weighted_size = dm_household.array * sizes[np.newaxis, np.newaxis, :]
-        arr_avg_size = np.nansum(arr_weighted_size, axis=-1, keepdims=True) / np.nansum(
-            dm_household.array, axis=-1, keepdims=True
-        )
-        # Create new datamatrix
-        dm_household_size = DataMatrix.based_on(
-            arr_avg_size,
-            dm_household,
-            change={"Variables": ["lfs_household-size"]},
-            units={"lfs_household-size": "people"},
-        )
-        linear_fitting(dm_household_size, years_ots)
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, file)
-        with open(f, "wb") as handle:
-            pickle.dump(dm_household_size, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    return dm_household_size
 
 
 def compute_building_mix(dm_all, dm_srv_floor=None, envelope_cat_new=None):
@@ -214,67 +144,18 @@ def compute_nonres_floor_intensity_CH(dm_srv_floor, dm_pop):
     return dm_total
 
 
-def compute_nonres_building_mix_CH(dm_srv_floor, years_ots, envelope_cat_new):
-    """Build non-residential bld_building-mix for CH/Vaud (OTS years only).
-
-    bld_building-mix_stock: energy-class shares per type from EP2050 floor area (sheet 04 EBF-Baualter).
-    bld_building-mix_new: class assignment from EP2050 construction period mapping
-                          (C for 1990-2019, B for 2020+).
-    """
-    nonres_types = dm_srv_floor.col_labels["Categories1"]
-    energy_classes = dm_srv_floor.col_labels["Categories2"]
-    country_list = dm_srv_floor.col_labels["Country"]
-
-    # Stock mix: share of each energy class within each non-res building type
-    dm_stock = dm_srv_floor.filter({"Years": years_ots}, inplace=False)
-    dm_stock.rename_col(
-        "bld_floor-area_services", "bld_building-mix_stock", dim="Variables"
-    )
-    total = dm_stock.array.sum(axis=-1, keepdims=True)
-    total[total == 0] = 1.0
-    dm_stock.array = dm_stock.array / total
-
-    # New-build mix: assign energy class by construction period
-    dm_new = DataMatrix(
-        col_labels={
-            "Country": country_list,
-            "Years": years_ots,
-            "Variables": ["bld_building-mix_new"],
-            "Categories1": nonres_types,
-            "Categories2": energy_classes,
-        },
-        units={"bld_building-mix_new": "%"},
-    )
-    idx = dm_new.idx
-    for cat, (yr_start, yr_end) in envelope_cat_new.items():
-        if cat not in energy_classes:
-            continue
-        idx_cat = energy_classes.index(cat)
-        for yr in range(yr_start, yr_end + 1):
-            if yr in idx:
-                dm_new.array[:, idx[yr], 0, :, idx_cat] = 1.0
-    dm_new.fill_nans("Years")
-
-    dm_stock.append(dm_new, dim="Variables")
-    return dm_stock
-
-
 def compute_nonres_demolition_rate_CH(dm_srv_floor, dm_nonres_rr, years_ots):
     """Derive non-residential demolition rate from EP2050 total stock balance.
 
-    New construction is inferred from the annual change of the current-period energy class
-    (EP2050 "04 EBF-Baualter" maps construction year → energy class B-F):
-      - 1990–2019: newly built → class C; new_const(t) = max(ΔstockC(t), 0)
-      - 2020+:     newly built → class B; new_const(t) = max(ΔstockB(t), 0)
-    waste(t)     = new_const(t) + total_stock(t-1) - total_stock(t)
-    demo_rate(t) = max(waste(t), 0) / total_stock(t-1)
-    Raw (unclipped) class arrays are used so that linear extrapolation back to 1990 still
-    gives correct annual deltas even when absolute stock values go slightly negative.
+    A class can only grow through new construction (classes follow the construction
+    period, same periods as MFH), so new construction is the sum of class increases:
+    new_const(t)  = Σ_class max(Δstock_class(t), 0)
+    waste(t)      = new_const(t) + total_stock(t-1) - total_stock(t)
+    demo_rate(t)  = max(waste(t), 0) / total_stock(t-1)
     """
     nonres_types = dm_srv_floor.col_labels["Categories1"]
 
-    stock_C_raw = dm_srv_floor.array[:, :, 0, :, dm_srv_floor.idx["C"]]
-    stock_B_raw = dm_srv_floor.array[:, :, 0, :, dm_srv_floor.idx["B"]]
+    stock_class = dm_srv_floor.array[:, :, 0, :, :]  # country x year x type x class
     stock_total = np.maximum(dm_srv_floor.array[:, :, 0, :, :].sum(axis=-1), 0.0)
 
     dm_demo = DataMatrix(
@@ -292,18 +173,12 @@ def compute_nonres_demolition_rate_CH(dm_srv_floor, dm_nonres_rr, years_ots):
         s_t = stock_total[:, dm_srv_floor.idx[yr], :]
         s_tm1 = stock_total[:, dm_srv_floor.idx[yr_prev], :]
 
-        if yr <= 2019:
-            delta = (
-                stock_C_raw[:, dm_srv_floor.idx[yr], :]
-                - stock_C_raw[:, dm_srv_floor.idx[yr_prev], :]
-            )
-        else:
-            delta = (
-                stock_B_raw[:, dm_srv_floor.idx[yr], :]
-                - stock_B_raw[:, dm_srv_floor.idx[yr_prev], :]
-            )
+        delta = (
+            stock_class[:, dm_srv_floor.idx[yr]]
+            - stock_class[:, dm_srv_floor.idx[yr_prev]]
+        )
 
-        new_const = np.maximum(delta, 0.0)
+        new_const = np.maximum(delta, 0.0).sum(axis=-1)
         waste = new_const + s_tm1 - s_t
         demo_rate = np.where(s_tm1 > 0, np.maximum(waste, 0.0) / s_tm1, 0.0)
         dm_demo.array[:, dm_demo.idx[yr], 0, :] = demo_rate
@@ -471,8 +346,8 @@ def run(dm_pop, DM_all, years_ots, years_fts):
     )
 
     # SECTION: fxa - bld_type
-    # EP2050 period→class for non-res new: C for 1990-2019, B for 2020+
-    nonres_envelope_cat_new = {"C": (1990, 2019), "B": (2020, 2023)}
+    # Non-res new floor area takes the same class per period as residential
+    nonres_envelope_cat_new = load_construction_period_param()["envelope cat new"]
     if dm_srv_floor is not None:
         res_countries = dm_all.col_labels["Country"]
         dm_building_mix = compute_building_mix(

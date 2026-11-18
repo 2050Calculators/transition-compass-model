@@ -135,8 +135,8 @@ def run(country_list, years_ots, years_fts):
     # SECION: Building age
     first_bld_sfh = {"F": 1900, "E": 1971, "D": 1981, "C": 2001, "B": 2011}
     first_bld_mfh = {"F": 1900, "E": 1981, "D": 1991, "C": 2001, "B": 2011}
-    # Non-residential: EP2050 construction period boundaries (vor 1946→F, 1947-1975→E, etc.)
-    first_bld_nonres = {"F": 1900, "E": 1947, "D": 1976, "C": 1991, "B": 2020}
+    # Non-residential: same construction periods as MFH
+    first_bld_nonres = first_bld_mfh
     col_label = {
         "Country": country_list,
         "Years": years_ots + years_fts,

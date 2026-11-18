@@ -9,7 +9,9 @@ from transition_compass_model.model.common.auxiliary_functions import (
 )
 
 
-def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
+def run(
+    dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots, dm_new_raw=None
+):
     # SECTION Floor area Renovated ots
     # Number of buildings
     # Bâtiments selon les niveaux géographiques institutionnels, la catégorie de bâtiment et l'époque de construction
@@ -24,86 +26,6 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
     # https://www.leprogrammebatiments.ch/fr/meta/publications-et-photos/rapports-et-statistiques/
     # Programme Bâtiments
     dm_renovation = renov.extract_nb_renovated_bld(dm_bld)
-
-    # Number of renovated-buildings (thermal insulation)
-    # https://www.newsd.admin.ch/newsd/message/attachments/82234.pdf
-    # "Programme bâtiments" rapports annuels 2014-2022, focus sur isolation thérmique
-    nb_buildings_isolated = {
-        2023: 8924,
-        2022: 8148,
-        2021: 8400,
-        2020: 8050,
-        2019: 8500,
-        2018: 7500,
-        2017: 8100,
-        2016: 7900,
-        2014: 8303,
-    }
-    nb_buildings_systemic_renovation = {
-        2023: 2520,
-        2022: 2326,
-        2021: 2320,
-        2020: 2240,
-        2019: 1900,
-        2018: 1200,
-        2017: 374,
-        2016: 0,
-        2014: 0,
-    }
-    nb_buildings_renovated = dict()
-    for yr in nb_buildings_isolated.keys():
-        nb_buildings_renovated[yr] = (
-            nb_buildings_isolated[yr] + nb_buildings_systemic_renovation[yr]
-        )
-
-    # For 2014 - 2016 we assume VD share = VD share 2017
-    # FIXME : find real values for fribourg and schwyz
-    canton_share = {
-        "Vaud": {
-            2014: 0.11,
-            2015: 0.11,
-            2016: 0.11,
-            2017: 0.110,
-            2018: 0.103,
-            2019: 0.154,
-            2020: 0.16,
-            2021: 0.193,
-            2022: 0.15,
-            2023: 0.15,
-        },
-        "Fribourg": {
-            2014: 0.05,
-            2015: 0.05,
-            2016: 0.05,
-            2017: 0.05,
-            2018: 0.05,
-            2019: 0.05,
-            2020: 0.05,
-            2021: 0.05,
-            2022: 0.05,
-            2023: 0.05,
-        },
-        "Schwyz": {
-            2014: 0.02,
-            2015: 0.02,
-            2016: 0.02,
-            2017: 0.02,
-            2018: 0.02,
-            2019: 0.02,
-            2020: 0.02,
-            2021: 0.02,
-            2022: 0.02,
-            2023: 0.02,
-        },
-    }
-    share_by_bld = {
-        "single-family-households": 0.55,
-        "multi-family-households": 0.35,
-        "other": 0.1,
-    }
-    # dm_renovation = renov.compute_renovated_buildings(
-    #     dm_bld, nb_buildings_renovated, canton_share, share_by_bld
-    # )
 
     # Compute renovation-rate
     dm_renovation = renov.compute_renovation_rate(dm_renovation, years_ots)
@@ -156,6 +78,13 @@ def run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots):
         dm_stock_tot, dm_renovation, dm_renov_distr
     )
 
+    # SECTION New floor area by envelope cat from FSO new dwellings
+    # Keeps the 2023 split and makes each class empty before its building period
+    if dm_new_raw is not None:
+        dm_new_cat = renov.compute_floor_area_new_cat_from_flows(
+            dm_new_raw, dm_new_cat, dm_stock_cat, dm_renov_cat
+        )
+
     # SECTION Stock by envelope cat
     # s_{c,t}(t-1) &= s_{c,t}(t) - n_{c,t}(t) - r_{c,t}(t) + w_{c,t}(t)
     dm_all = renov.compute_stock_area_by_cat(
@@ -192,4 +121,11 @@ if __name__ == "__main__":
 
     # Run renovation pipeline
     print("Running renovation pipeline")
-    DM_renov = run(dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots)
+    DM_renov = run(
+        dm_stock_tot,
+        dm_stock_cat,
+        dm_new_cat,
+        dm_waste_cat,
+        years_ots,
+        dm_new_raw=DM["new raw"],
+    )
