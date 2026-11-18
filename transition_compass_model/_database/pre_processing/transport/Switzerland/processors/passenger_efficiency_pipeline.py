@@ -9,6 +9,7 @@ import numpy as np
 import transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions.efficiency as get_data
 from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model.model.common.auxiliary_functions import (
+    compute_diff,
     dm_add_missing_variables,
     linear_fitting,
 )
@@ -193,6 +194,7 @@ def add_metrotram_efficiency_from_JRC(dm_veh_eff):
 
 
 def run(
+    dm_energy_ep2050,
     dm_energy,
     dm_vkm,
     dm_private_fleet,
@@ -224,9 +226,38 @@ def run(
         {"Country": country_list, "Years": years_ots}, inplace=True
     )
 
-    local_filename_eff = os.path.join(
-        this_dir, "../data/tra_veh_efficiency_swiss_stat_elec.pickle"
+    dm_veh_eff_LDV_co2.sort("Years")
+    local_filename_eff = os.path.join(this_dir, "../data/tra_veh_efficiency.pickle")
+    dm_veh_eff_LDV_co2_ofs = get_data.get_vehicle_efficiency_ofs(
+        "px_degxc",
+        local_filename_eff,
+        years_ots,
+        "tra_passenger_veh-efficiency_fleet_ofs",
     )
+    dm_veh_eff_LDV_co2_ofs.sort("Years")
+    dm_veh_eff_LDV_co2_ofs.sort("Country")
+    dm_veh_eff_LDV_co2_ofs.filter(
+        {
+            "Years": years_ots,
+            "Categories2": [
+                "ICE-diesel",
+                "ICE-gas",
+                "ICE-gasoline",
+                "PHEV-diesel",
+                "PHEV-gasoline",
+            ],
+        },
+        inplace=True,
+    )
+    dm_veh_eff_LDV_co2.append(dm_veh_eff_LDV_co2_ofs, dim="Variables")
+    t = compute_diff(
+        dm_veh_eff_LDV_co2,
+        "tra_passenger_veh-efficiency_fleet",
+        "tra_passenger_veh-efficiency_fleet_ofs",
+    )
+    # local_filename_eff = os.path.join(
+    #     this_dir, "../data/tra_veh_efficiency_swiss_stat_elec.pickle"
+    # )
     # dm_veh_eff_LDV_elec = get_data.get_vehicle_electric_efficiency(
     #     local_filename_eff,
     #     agency_eff,
@@ -244,19 +275,17 @@ def run(
     local_filename_new = os.path.join(
         this_dir, "../data/tra_new-veh_efficiency_co2.pickle"
     )  # The file is created if it doesn't exist
-    dm_veh_new_eff_LDV_co2, dm_new_veh_eff_raw = (
-        get_data.get_new_vehicle_efficiency_co2(
-            local_filename_new,
-            agency_new_eff,
-            dataflow_new_eff,
-            var_name="tra_passenger_veh-efficiency_new",
-        )
+    dm_veh_new_eff_LDV_co2, _ = get_data.get_new_vehicle_efficiency_co2(
+        local_filename_new,
+        agency_new_eff,
+        dataflow_new_eff,
+        var_name="tra_passenger_veh-efficiency_new",
     )
     dm_veh_new_eff_LDV_co2.filter({"Country": country_list}, inplace=True)
 
-    local_filename_new = os.path.join(
-        this_dir, "../data/tra_new-veh_efficiency_elec.pickle"
-    )  # The file is created if it doesn't exist
+    # local_filename_new = os.path.join(
+    #     this_dir, "../data/tra_new-veh_efficiency_elec.pickle"
+    # )  # The file is created if it doesn't exist
 
     # dm_veh_new_eff_LDV_elec = get_data.get_new_vehicle_efficiency_elec(
     #     local_filename_new,
@@ -374,7 +403,7 @@ def run(
     dm_vkm_ep2050 = dm_data_check_vkm["passenger-and-freight_road_EP-2050"].filter(
         {"Categories1": modes, "Categories2": techs}
     )
-    dm_veh_eff_ep2050 = dm_energy.copy()
+    dm_veh_eff_ep2050 = dm_energy_ep2050.copy()
     dm_veh_eff_ep2050.groupby(
         {"ICE-gasoline": ["biogasoline", "gasoline"]}, "Categories2", inplace=True
     )
@@ -412,12 +441,11 @@ def run(
         "factor",
         "num",
     )
-    # df_temp = dm_veh_eff_ep2050.filter({"Variables" : ["factor"]}).write_df()
-    # dm_veh_eff_ep2050.filter({"Variables" : ['efficiency_fleet_ep2050', 'tra_passenger_veh-efficiency_fleet']}).flatten().datamatrix_plot()
+
     dm_factor = dm_veh_eff_ep2050.filter({"Variables": ["factor"]})
     for y in list(range(1990, 2006 + 1)):
         dm_factor[:, y, :, "LDV", "ICE-gas"] = dm_factor[:, 2007, :, "LDV", "ICE-gas"]
-    # df_temp = dm_factor.filter({"Variables" : ["factor"]}).write_df()
+
     modes_modif = ["2W", "LDV", "LDV", "LDV", "bus"]
     techs_modif = [
         "ICE-gasoline",

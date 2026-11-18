@@ -86,7 +86,7 @@ cdm_emissions_factors = passenger_emission_run()
 
 ## Energy demand
 print("Energy demand")
-dm_energy = passenger_energy_run(years_ots)
+dm_energyep2050, dm_energy = passenger_energy_run(years_ots)
 
 ## Load data check energy demand
 print("Load data check energy demand")
@@ -103,6 +103,7 @@ dm_data_check_vkm = data_check_vkm_run(
 ## Efficiency
 print("Efficiency")
 dm_veh_eff = passenger_efficiency_run(
+    dm_energyep2050,
     dm_energy,
     dm_vkm,
     dm_private_fleet,
