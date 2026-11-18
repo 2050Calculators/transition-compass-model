@@ -8,6 +8,109 @@ from transition_compass_model.model.common.auxiliary_functions import (
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
+def _renovation_with_spillover(s_avail, arr_rr, ren_in, ren_out, classes):
+    """Net renovation flow r_t (sums to 0 over classes).
+
+    Each class gives its planned share arr_rr * ren_out, capped at its available
+    stock. A shortfall spills to the next-better class (e.g. F -> E -> D -> C).
+    Planned m2 land according to ren_in; spilled m2 from class X land only in
+    classes better than X (ren_in restricted to those, renormalised).
+
+    s_avail: (cntr, bld_type, class) stock after demolition
+    arr_rr: (cntr, bld_type, 1) total m2 to renovate
+    ren_in, ren_out: (cntr, 1, class) in/out shares
+    classes: energy-class labels; alphabetical order = best -> worst
+    Returns r_t and the m2 that could not be renovated, shape (cntr, bld_type).
+    """
+    avail = np.maximum(np.nan_to_num(s_avail), 0)
+    planned = arr_rr * ren_out
+    if (planned <= avail).all():
+        # no shortage: skip the class loop
+        return arr_rr * (ren_in - ren_out), np.zeros(avail.shape[:-1])
+    ren_in = np.broadcast_to(ren_in, avail.shape)
+    order = np.argsort(classes)[::-1]  # worst first
+    outflow = np.zeros_like(avail)
+    inflow = np.zeros_like(avail)
+    carry = np.zeros(avail.shape[:-1])
+    for pos, k in enumerate(order):
+        better = order[pos + 1 :]
+        take_plan = np.minimum(planned[..., k], avail[..., k])
+        take_spill = np.zeros_like(carry)
+        if len(better) > 0:
+            take_spill = np.minimum(carry, avail[..., k] - take_plan)
+        carry = carry + planned[..., k] - take_plan - take_spill
+        outflow[..., k] = take_plan + take_spill
+        inflow += take_plan[..., np.newaxis] * ren_in
+        if take_spill.any():
+            w = np.zeros_like(avail)
+            w[..., better] = ren_in[..., better]
+            tot = w.sum(axis=-1, keepdims=True)
+            w = np.divide(w, tot, out=np.zeros_like(w), where=tot > 0)
+            inflow += take_spill[..., np.newaxis] * w
+    return inflow - outflow, carry
+
+
+def _demolition_with_spillover(s_tm1, w_tot, old_mask, classes):
+    """Demolished m2 by class, w_t.
+
+    w_tot is split over buildings older than 50 years, in proportion to their
+    stock. If old stock is missing or too small, the shortfall comes from the
+    worst remaining class (F -> E -> ... -> B).
+
+    s_tm1: (cntr, bld_type, class) stock at t-1
+    w_tot: (cntr, bld_type, 1) total m2 to demolish
+    old_mask: (cntr, bld_type, class) 1 where buildings are older than 50 years
+    classes: energy-class labels; alphabetical order = best -> worst
+    Returns w_t and the m2 that could not be demolished, shape (cntr, bld_type).
+    """
+    avail = np.maximum(np.nan_to_num(s_tm1), 0)
+    old = old_mask * avail
+    old_tot = old.sum(axis=-1, keepdims=True)
+    share = np.divide(old, old_tot, out=np.zeros_like(old), where=old_tot > 0)
+    planned = w_tot * share
+    carry = w_tot[..., 0] - planned.sum(axis=-1)  # all of it if no old stock
+    if not (carry > 0).any() and (planned <= avail).all():
+        return planned, np.zeros_like(carry)  # no shortage: skip the class loop
+    order = np.argsort(classes)[::-1]  # worst first
+    w_t = np.zeros_like(avail)
+    for k in order:
+        take_plan = np.minimum(planned[..., k], avail[..., k])
+        take_spill = np.minimum(carry, avail[..., k] - take_plan)
+        carry = carry + planned[..., k] - take_plan - take_spill
+        w_t[..., k] = take_plan + take_spill
+    return w_t, carry
+
+
+def _allocate_vacancy(s_t, vac_tot, classes):
+    """Vacant m2 by building type and class, v_t.
+
+    Vacancy goes to the worst class first (F -> E -> ... -> B). Within a class
+    it is split across building types in proportion to their stock.
+
+    s_t: (cntr, bld_type, class) physical stock at t
+    vac_tot: (cntr,) total vacant m2 (stock - demand, >= 0)
+    classes: energy-class labels; alphabetical order = best -> worst
+    Returns v_t and the m2 that could not be placed, shape (cntr,).
+    """
+    avail = np.maximum(np.nan_to_num(s_t), 0)
+    v_t = np.zeros_like(avail)
+    carry = np.nan_to_num(vac_tot).astype(float)
+    if not (carry > 0).any():
+        return v_t, carry
+    class_tot = avail.sum(axis=1)  # (cntr, class)
+    for k in np.argsort(classes)[::-1]:  # worst first
+        take = np.minimum(carry, class_tot[:, k])
+        share = np.divide(
+            avail[..., k],
+            class_tot[:, k, np.newaxis],
+            out=np.zeros_like(avail[..., k]),
+            where=class_tot[:, k, np.newaxis] > 0,
+        )
+        v_t[..., k] = take[:, np.newaxis] * share
+        carry = carry - take
+    return v_t, carry
+
+
 def compute_stock_fts(DM, years_ots, years_fts):
     dm = DM["ots"].copy()
     del DM["ots"]
@@ -36,6 +139,8 @@ def compute_stock_fts(DM, years_ots, years_fts):
         },
         inplace=True,
     )
+    # OTS stock = demand x mix, so there is no vacant floor area in OTS
+    dm.add(0, dummy=True, dim="Variables", col_label="bld_floor-area_vacant", unit="m2")
     years_missing = list(set(range(years_ots[0], years_fts[-1] + 1)) - set(years_ots))
     dm.add(np.nan, dummy=True, dim="Years", col_label=years_missing)
 
@@ -51,49 +156,70 @@ def compute_stock_fts(DM, years_ots, years_fts):
     future_years.sort()
     for ti in future_years:
         # ni = n[idx[ti]]
+        # total stock for time t
         s_t_tot = dm_demand[:, ti, "bld_floor-area_total"]
+        # stock at t-1 by category
         s_tm1 = dm[:, ti - 1, "bld_floor-area_stock", ...]
-        dem_tm1 = dm_dem_rate[:, ti - 1, "bld_demolition-rate", ...]
-        dem_distr_tm1 = dm_dem_distr[:, ti - 1, "bld_to-demolish", :, :] * s_tm1
-        dem_distr_tm1 = dem_distr_tm1 / np.nansum(dem_distr_tm1, axis=-1, keepdims=True)
-        w_t = (
-            np.nansum(s_tm1, axis=-1, keepdims=True)
-            * dem_tm1[..., np.newaxis]
-            * dem_distr_tm1
+        dem_rate_tm1 = dm_dem_rate[:, ti - 1, "bld_demolition-rate", ...]
+        # dm_dem_distr[..., "bld_to-demolish", :, :] is a  0/1 mask of buildings older than 50yrs
+        # Demolition goes to old buildings first; if they run out, to the worst class left
+        w_t, not_demolished = _demolition_with_spillover(
+            s_tm1,
+            np.nansum(s_tm1, axis=-1, keepdims=True) * dem_rate_tm1[..., np.newaxis],
+            dm_dem_distr[:, ti - 1, "bld_to-demolish", :, :],
+            dm.col_labels["Categories2"],
         )
+        if (not_demolished > 1).any():
+            print(
+                f"bld demolition {ti}: {not_demolished.sum():,.0f} m2 not demolished "
+                "(no stock left to demolish)"
+            )
         s_tm1_w_t = s_tm1 - w_t
+        # arr_rr = m2 renovated by bld type
         arr_rr = np.nansum(
             s_tm1_w_t * dm_rr[:, ti, "bld_renovation-rate", :, np.newaxis],
             axis=-1,
             keepdims=True,
         )
-        r_t = arr_rr * (
-            dm_renov_distr[:, ti, "bld_renovation-redistribution-in", np.newaxis, :]
-            + -dm_renov_distr[:, ti, "bld_renovation-redistribution-out", np.newaxis, :]
+        # So r_t is a net transfer that sums to zero across classes.
+        # Old classes go down, good classes go up, and the total stock doesn't change
+        # If a class runs out (e.g. all F renovated/demolished), its shortfall
+        # spills to the next-better class, so renovation never makes stock negative
+        r_t, not_renovated = _renovation_with_spillover(
+            s_tm1_w_t,
+            arr_rr,
+            dm_renov_distr[:, ti, "bld_renovation-redistribution-in", np.newaxis, :],
+            dm_renov_distr[:, ti, "bld_renovation-redistribution-out", np.newaxis, :],
+            dm.col_labels["Categories2"],
         )
-        # check for s_tm1 + r_t < 0 ( I'm renovating more building than what is available)
-        mask_negative = np.any(s_tm1_w_t + r_t < 0, axis=2, keepdims=True)
-        if mask_negative.any():
-            mask_negative = mask_negative.repeat(r_t.shape[-1], axis=-1)
-            # this most likely mean that I have renovated/demolished all cat.F buildings
-            ren_distr_in = dm_renov_distr[
-                :, ti, "bld_renovation-redistribution-in", np.newaxis, :
-            ]
-            ren_distr_in = ren_distr_in.repeat(r_t.shape[1], axis=1)
-            arr_rr = arr_rr.repeat(ren_distr_in.shape[-1], axis=-1)
-            r_t[mask_negative] = arr_rr[mask_negative] * (
-                -dem_distr_tm1[mask_negative] + ren_distr_in[mask_negative]
+        if (not_renovated > 1).any():
+            print(
+                f"bld renovation {ti}: {not_renovated.sum():,.0f} m2 not renovated "
+                "(no stock left to renovate)"
             )
 
-        # TOTAL: n_t = s(t) - s(t-1) + w(t) (without cat split)
-        n_t_tot = s_t_tot - np.nansum(s_tm1_w_t, axis=(-1, -2))
+        # TOTAL: n_t = s(t) - s(t-1) + w(t) (without cat split), never negative.
+        # If demand falls below the stock left after demolition, nothing is built
+        # and the extra floor area is vacant (not heated). Vacancy is recomputed
+        # every year, so if demand rises again vacant area is re-occupied first.
+        s_avail_tot = np.nansum(s_tm1_w_t, axis=(-1, -2))
+        n_t_tot = np.maximum(s_t_tot - s_avail_tot, 0)
         n_t = (
             n_t_tot[..., np.newaxis, np.newaxis]
             * dm[:, ti, "bld_building-mix_new", ...]
         )
 
         s_t = s_tm1_w_t + n_t + r_t
+        v_t, not_vacant = _allocate_vacancy(
+            s_t, np.maximum(s_avail_tot - s_t_tot, 0), dm.col_labels["Categories2"]
+        )
+        if (not_vacant > 1).any():
+            print(
+                f"bld vacancy {ti}: {not_vacant.sum():,.0f} m2 vacancy not placed "
+                "(no stock left)"
+            )
         dm[:, ti, "bld_floor-area_stock", ...] = s_t
+        dm[:, ti, "bld_floor-area_vacant", ...] = v_t
         dm[:, ti, "bld_floor-area_renovated", ...] = r_t
         dm[:, ti, "bld_floor-area_new", ...] = n_t
         dm[:, ti, "bld_floor-area_waste", ...] = w_t
@@ -265,6 +391,14 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots, years_f
 
     dm_bld_tot = compute_stock_fts(DM, years_ots, years_fts)
     del DM, dm_bld_ots
+    # Occupied = physical stock - vacant: the area that is heated, cooled and used
+    dm_bld_tot.operation(
+        "bld_floor-area_stock",
+        "-",
+        "bld_floor-area_vacant",
+        out_col="bld_floor-area_occupied",
+        unit="m2",
+    )
 
     res_types = ["multi-family-households", "single-family-households"]
     nonres_types = [
@@ -470,9 +604,9 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
     dm_A = DM_energy["surface-to-floorarea"]
 
     # Power per degree
-    #  Us * A * m2
+    #  Us * A * m2 (occupied area only: vacant floor area is not heated or cooled)
     arr_W_K = (
-        dm_floor_area[:, :, "bld_floor-area_stock", :, :]
+        dm_floor_area[:, :, "bld_floor-area_occupied", :, :]
         * dm_uvalue[:, :, "bld_u-value", :, :]
         * dm_A[:, :, "bld_surface-to-floorarea", :, np.newaxis]
     )
@@ -1789,12 +1923,12 @@ def bld_services_workflow(
     dm_srv_tech_mix.append(dm_srv_hw_tech, dim="Categories1")
     dm_srv_tech_mix.sort("Categories1")
 
-    # Convert intensity (kWh/m²) to total demand (TWh) by multiplying by non-res floor area
+    # Convert intensity (kWh/m²) to total demand (TWh) by multiplying by occupied non-res floor area
     dm_demand = DM_services["services_demand"].copy()
     if dm_bld_floor is not None:
         non_res_cats = ["education", "health", "hotels", "offices", "other", "trade"]
         dm_floor = dm_bld_floor.filter(
-            {"Variables": ["bld_floor-area_stock"], "Categories1": non_res_cats}
+            {"Variables": ["bld_floor-area_occupied"], "Categories1": non_res_cats}
         )
         idx_flo = dm_floor.idx
         idx_dem = dm_demand.idx

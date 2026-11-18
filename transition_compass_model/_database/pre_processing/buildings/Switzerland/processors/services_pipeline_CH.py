@@ -496,6 +496,12 @@ def run(country_list, years_ots):
     # Industry sectors linked to energy, like energy production and waste management, have been removed or edited
     # Remove gasoline and diesel which are for transport / machinery
     dm_energy = fser.extract_national_energy_demand(table_id, local_filename)
+    # The OFS table can have newer years than years_ots (e.g. 2024); keep only
+    # years_ots so its years match the hot-water / space-heating data used below.
+    dm_energy.filter(
+        {"Years": [y for y in dm_energy.col_labels["Years"] if y in years_ots]},
+        inplace=True,
+    )
 
     # Extract number of employees per industry and service sector by canton
     # This is in order to map the national energy demand to cantons
@@ -505,6 +511,10 @@ def run(country_list, years_ots):
         this_dir, "../data/employees_per_sector_canton.pickle"
     )
     dm_employees = fser.extract_employees_per_sector_canton(table_id, local_filename)
+    dm_employees.filter(
+        {"Years": [y for y in dm_employees.col_labels["Years"] if y in years_ots]},
+        inplace=True,
+    )
 
     cat_list_ref = dm_energy.col_labels["Categories1"]
     cat_list_match = dm_employees.col_labels["Categories1"]

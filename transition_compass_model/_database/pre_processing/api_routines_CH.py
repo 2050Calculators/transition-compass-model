@@ -1,11 +1,43 @@
+import time
+
 import numpy as np
 import requests
 
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
+# Both Swiss statistics servers (PxWeb and disseminate.stats.swiss) rate-limit by IP and
+# answer HTTP 429 when too many requests arrive in a short window. The per-canton loops
+# in the pre-processing scripts fire dozens of calls back to back, so every call goes
+# through here: wait a little between calls, and on 429/5xx back off and retry.
+_MIN_SECONDS_BETWEEN_CALLS = 1.0
+_last_call_time = [0.0]
+
+
+def request_with_retry(method, url, max_retries=6, backoff=5.0, **kwargs):
+    for attempt in range(max_retries + 1):
+        wait = _MIN_SECONDS_BETWEEN_CALLS - (time.monotonic() - _last_call_time[0])
+        if wait > 0:
+            time.sleep(wait)
+        response = requests.request(method, url, timeout=120, **kwargs)
+        _last_call_time[0] = time.monotonic()
+        if response.status_code != 429 and response.status_code < 500:
+            return response
+        if attempt == max_retries:
+            break
+        retry_after = response.headers.get("Retry-After", "")
+        delay = float(retry_after) if retry_after.isdigit() else backoff * 2**attempt
+        print(
+            f"HTTP {response.status_code} from {url}, retrying in {delay:.0f}s "
+            f"(attempt {attempt + 1}/{max_retries})"
+        )
+        time.sleep(delay)
+    raise RuntimeError(
+        f"Request to {url} failed with HTTP {response.status_code} after "
+        f"{max_retries} retries: {response.text[:500]}"
+    )
+
 
 def json_to_dm(data_json, mapping_dims, mapping_vars, units):
-
     def get_col_labels_json(json_data):
         # Number of dimensions in the key
         num_dimensions = len(json_data["data"][0]["key"])
@@ -139,7 +171,8 @@ def get_data_api_CH(
     base_url = "https://www.pxweb.bfs.admin.ch/api/v1"
     base_url_lan = f"{base_url}/{language}"
     url = f"{base_url_lan}/{table_id}/{table_id}.px"
-    response_structure = requests.get(url)
+    response_structure = request_with_retry("GET", url)
+    response_structure.raise_for_status()
     data_structure = response_structure.json()
 
     # Give as output the structure
@@ -161,6 +194,15 @@ def get_data_api_CH(
             extract = {}  # Dictionary with key 'code' and 'selection'
             extract["code"] = elem["code"]  # Extract code name
             key = elem["text"]  # Match element with input filter dictionary
+            if key not in filter:
+                # Variables marked "elimination" can be left out of the query:
+                # PxWeb then returns the total over them, which is much smaller
+                # (and faster) than downloading every value and summing locally.
+                if elem.get("elimination"):
+                    continue
+                raise ValueError(
+                    f"filter must include '{key}': this variable can't be left out"
+                )
             valuetext = filter[key]
             if isinstance(valuetext, str):
                 index = elem["valueTexts"].index(valuetext)
@@ -178,13 +220,14 @@ def get_data_api_CH(
             query.append(extract)
         payload = {"query": query, "response": {"format": "json"}}
 
-        response = requests.post(url, json=payload)
+        response = request_with_retry("POST", url, json=payload)
         if response.status_code == 200:
             # Parse and print the JSON response
             data = response.json()
             dm = json_to_dm(data, mapping_dims, mapping_vars=mapping, units=units)
             return dm
         else:
-            print(f"Failed to retrieve data: {response.status_code}")
-            print(response.text)
-            return
+            raise RuntimeError(
+                f"Failed to retrieve data from {url}: HTTP {response.status_code}\n"
+                f"{response.text[:500]}"
+            )

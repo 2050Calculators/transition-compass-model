@@ -2,7 +2,6 @@ from get_data_functions.construction_period_param import load_construction_perio
 from processors.appliances_pipeline_CH import run as appliances_run
 from processors.build_ots_pickle import run as ots_pickle_run
 from processors.buildings_interfaces_CH import run as load_interface_run
-from processors.calibration_pipeline_CH import run as calibration_run
 from processors.floor_area_pipeline_CH import run as floor_area_run
 from processors.heating_technology_pipeline_CH import run as heating_tech_run
 from processors.hot_water_pipeline_CH import run as hotwater_run
@@ -44,7 +43,12 @@ dm_waste_cat = DM_floor["waste cat"]
 
 print("Running renovation pipeline")
 DM_renov = renovation_run(
-    dm_stock_tot, dm_stock_cat, dm_new_cat, dm_waste_cat, years_ots
+    dm_stock_tot,
+    dm_stock_cat,
+    dm_new_cat,
+    dm_waste_cat,
+    years_ots,
+    dm_new_raw=DM_floor["new raw"],
 )
 # Extract renovation output
 dm_all = DM_renov["floor-area-cat"]
@@ -66,9 +70,6 @@ dm_light = lighting_run(country_list, years_ots)
 
 print("Running services / non-residential pipeline")
 DM_services = services_run(country_list, years_ots)
-
-print("Extract Buildings energy demand for Calibration")
-dm_energy_cal = calibration_run(country_list, years_ots)
 
 DM_all = {
     "floor_renov": DM_renov,

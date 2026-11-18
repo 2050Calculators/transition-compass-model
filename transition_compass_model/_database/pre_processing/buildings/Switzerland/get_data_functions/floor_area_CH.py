@@ -15,7 +15,6 @@ from transition_compass_model._database.pre_processing.api_routines_swiss_stats 
 )
 from transition_compass_model._database.pre_processing.constants import CANTONS_NAME
 from transition_compass_model._database.pre_processing.params import (
-    country_list,
     years_ots,
 )
 from transition_compass_model.model.common.auxiliary_functions import (
@@ -35,7 +34,8 @@ def compute_avg_floor_area(dm_floor_area, years_ots):
     dm_avg_floor_area = dm_floor_area.filter({"Variables": ["bld_avg-floor-area-new"]})
     years_to_keep = [
         "1991-1995",
-        "1996-20002001-2005",
+        "1996-2000",
+        "2001-2005",
         "2006-2010",
         "2011-2015",
         "2016-2020",
@@ -197,7 +197,37 @@ def dowload_regbl_data(country: str, file_name="gebaeude_batiment_edificio.csv")
     return df
 
 
-def get_bld_surface_distribution(dm_floor_area: DataMatrix) -> dict:
+def get_bld_surface_distribution(dm_floor_area: DataMatrix) -> DataMatrix:
+    """Cached wrapper around _compute_bld_surface_distribution.
+
+    The computation reads the two national RegBL csv files (~1 GB) every time,
+    while the result is a handful of numbers. Save it to a pickle and reuse it as
+    long as its size classes / building types match dm_floor_area. Delete the
+    pickle to recompute (e.g. after refreshing data/Regbl/Switzerland).
+    """
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+    file = os.path.join(
+        current_file_directory, "../data/bld_regbl_mean_dwelling_area_CH.pickle"
+    )
+    try:
+        with open(file, "rb") as handle:
+            dm_mean_surface_per_cat = pickle.load(handle)
+        for dim in ["Variables", "Categories1"]:
+            if sorted(dm_mean_surface_per_cat.col_labels[dim]) != sorted(
+                dm_floor_area.col_labels[dim]
+            ):
+                raise OSError(f"Cached {file} has different {dim}, recomputing")
+    except OSError as e:
+        print(f"Computing RegBL mean dwelling area from csv ({e})")
+        dm_mean_surface_per_cat = _compute_bld_surface_distribution(dm_floor_area)
+        with open(file, "wb") as handle:
+            pickle.dump(
+                dm_mean_surface_per_cat, handle, protocol=pickle.HIGHEST_PROTOCOL
+            )
+    return dm_mean_surface_per_cat
+
+
+def _compute_bld_surface_distribution(dm_floor_area: DataMatrix) -> DataMatrix:
     """Get distribution of dwellings areas.for single and multi family households from REGBL data
     Args:
         dm_floor_area (DataMatrix) : Dm from which to extract the shape
@@ -396,152 +426,15 @@ def extract_stock_floor_area_num_bld(file, agency, dataflow):
     return dm_floor_area, dm_num_bld, dm_num_bld_per_size_per_type
 
 
-def extract_stock_floor_area_ofs(table_id, file):
-    try:
-        with open(file, "rb") as handle:
-            dm_floor_area = pickle.load(handle)
-    except OSError:
-        dm_floor_area = None
-        structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-        cantons_list = [
-            var
-            for var in structure["Canton (-) / District (>>) / Commune (......)"]
-            if "- " in var
-        ]
-        cantons_list.append("Suisse")
-        for cntr in cantons_list:
-            # Extract buildings floor area
-            filter = {
-                "Année": structure["Année"],
-                "Canton (-) / District (>>) / Commune (......)": cntr,
-                "Catégorie de bâtiment": structure["Catégorie de bâtiment"],
-                "Surface du logement": structure["Surface du logement"],
-                "Époque de construction": structure["Époque de construction"],
-            }
-            mapping_dim = {
-                "Country": "Canton (-) / District (>>) / Commune (......)",
-                "Years": "Année",
-                "Variables": "Surface du logement",
-                "Categories1": "Catégorie de bâtiment",
-                "Categories2": "Époque de construction",
-            }
-            unit_all = ["number"] * len(structure["Surface du logement"])
-            # Get api data
-            dm_floor_area_cntr = get_data_api_CH(
-                table_id,
-                mode="extract",
-                filter=filter,
-                mapping_dims=mapping_dim,
-                units=unit_all,
-                language="fr",
-            )
-            if dm_floor_area is None:
-                dm_floor_area = dm_floor_area_cntr
-            else:
-                dm_floor_area.append(dm_floor_area_cntr, dim="Country")
-
-        dm_floor_area.rename_col_regex("- ", "", dim="Country")
-
-        current_file_directory = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(current_file_directory, file)
-        with open(f, "wb") as handle:
-            pickle.dump(dm_floor_area, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    if "......5892 Blonay Saint-Légier" in dm_floor_area.col_labels["Country"]:
-        dm_floor_area.drop(dim="Country", col_label="......5892 Blonay Saint-Légier")
-    rename_cantons(dm_floor_area)
-    dm_floor_area.rename_col("Suisse", "Switzerland", "Country")
-    dm_floor_area.sort("Country")
-
-    dm_floor_area.groupby(
-        {
-            "single-family-households": ["Maisons individuelles"],
-            "multi-family-households": [
-                "Maisons à plusieurs logements",
-                "Bâtiments d'habitation avec usage annexe",
-                "Bâtiments partiellement à usage d'habitation",
-            ],
-        },
-        dim="Categories1",
-        inplace=True,
-    )
-
-    # There is something weird happening where the number of buildings with less than 30m2 built before
-    # 1919 increases over time. Maybe they are re-arranging the internal space?
-    # Save number of bld (to compute avg size)
-    dm_num_bld = dm_floor_area.groupby(
-        {"bld_stock-number-bld": ".*"}, dim="Variables", regex=True, inplace=False
-    )
-
-    ## Compute total floor space
-    # Drop split by size
-    dm_floor_area.rename_col_regex(" m2", "", "Variables")
-    # The average size for less than 30 is a guess, as is the average size for 150+,
-    # we will use the data from bfs to calibrate
-    avg_size = {
-        "<30": 25,
-        "30-49": 39.5,
-        "50-69": 59.5,
-        "70-99": 84.5,
-        "100-149": 124.5,
-        "150+": 375,
-    }
-    for size in dm_floor_area.col_labels["Variables"]:
-        dm_floor_area[:, :, size, "single-family-households", :] = (
-            avg_size[size] * dm_floor_area[:, :, size, "single-family-households", :]
-        )
-    avg_size = {
-        "<30": 25,
-        "30-49": 39.5,
-        "50-69": 59.5,
-        "70-99": 84.5,
-        "100-149": 124.5,
-        "150+": 160,
-    }
-    for size in dm_floor_area.col_labels["Variables"]:
-        dm_floor_area[:, :, size, "multi-family-households", :] = (
-            avg_size[size] * dm_floor_area[:, :, size, "multi-family-households", :]
-        )
-    dm_floor_area.groupby(
-        {"bld_floor-area_stock": ".*"}, dim="Variables", regex=True, inplace=True
-    )
-    dm_floor_area.change_unit("bld_floor-area_stock", 1, "number", "m2")
-
-    return dm_floor_area, dm_num_bld
-
-
-def compute_floor_area_stock_v2(
-    table_id, file, dm_pop, cat_map_sfh, cat_map_mfh, years_ots
-):
+def compute_floor_area_stock_v2(dm_pop, cat_map_sfh, cat_map_mfh, years_ots):
     # Computes:
     #   floor-area stock in m2 by sfh and mfh,
     #   2023 split also by envelope category
-    dm_stock_area_old, dm_num_bld_old = extract_stock_floor_area_ofs(table_id, file)
-
-    dm_stock_area_old.filter(
-        {
-            "Years": [
-                2012,
-                2013,
-                2014,
-                2015,
-                2016,
-                2017,
-                2018,
-                2019,
-                2020,
-                2021,
-                2022,
-                2023,
-            ]
-        },
-        inplace=True,
-    )
     # https://stats.swiss/vis?lc=fr&df[ds]=disseminate&df[id]=DF_GWS_REG7&df[ag]=CH1.GWS&dq=A....8100&lom=LASTNPERIODS&lo=1&to[TIME_PERIOD]=false
     agency = "CH1.GWS"
     dataflow = "DF_GWS_REG7"
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    file_swiss_stat = file = os.path.join(
+    file_swiss_stat = os.path.join(
         this_dir, "../data/bld_floor-area_stock_all_cantons_swiss_stat.pickle"
     )
     dm_stock_area, dm_num_bld = extract_stock_floor_area(
@@ -576,9 +469,6 @@ def compute_floor_area_stock_v2(
         return dm_grouped
 
     dm = merge_multi_single(dm_stock_area, cat_map_sfh, cat_map_mfh)
-    # vars = load_construction_period_param()
-    # dm_old = merge_multi_single(dm_stock_area_old,vars["envelope construction sfh old"], vars["envelope construction mfh old"])
-    # compare_dm(dm, dm_old)
 
     # Remove split by envelope category (see Building module Overleaf)
     dm_stock_tot = dm.group_all("Categories2", inplace=False)
@@ -596,7 +486,7 @@ def compute_floor_area_stock_v2(
     return dm_stock_tot, dm_stock_cat, dm_avg_floor_area
 
 
-def extract_bld_new_buildings_1(table_id, file):
+def extract_bld_new_buildings_1(table_id, file, years_ots):
     try:
         with open(file, "rb") as handle:
             dm_new_area = pickle.load(handle)
@@ -655,7 +545,10 @@ def extract_bld_new_buildings_1(table_id, file):
             pickle.dump(dm_new_area, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     dm_new_area.rename_col("Suisse", "Switzerland", "Country")
-
+    years_keep = sorted(
+        list(set(years_ots).intersection(set(dm_new_area.col_labels["Years"])))
+    )
+    dm_new_area.filter({"Years": years_keep}, inplace=True)
     return dm_new_area
 
 
@@ -723,65 +616,6 @@ def extract_bld_new_buildings_2(table_id, file):
             pickle.dump(dm_new_area, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return dm_new_area
-
-
-def extract_energy_reference_area_regener():
-    """Download data from the regener cadastre"""
-
-    dic_ERA = {}
-    current_file_directory = os.path.dirname(os.path.abspath(__file__))
-    file_path = current_file_directory + "/../data/cadastre_regener.csv"
-
-    df = pd.read_csv(file_path)
-
-    single_multi_code = {
-        "single-family-households": ["Maisons_individuelles"],
-        "multi-family-households": [
-            "Immeubles_a_trois_logements_et_plus",
-            "Maisons_a_deux_logements",
-            "Habitat_communautaire",
-        ],
-    }
-    for keys, values in single_multi_code.items():
-        df_cat = df[df["gklas"].isin(values)]
-        dic_ERA[keys] = df_cat["gebf"].sum()
-        print(df_cat)
-
-    return dic_ERA
-
-
-def extract_energy_reference_area():
-    """Download data from https://www.housing-stat.ch/fr/data/supply/public.html and extract the energy reference area per building category.
-    This is the area used to compute the energy demand of new buildings, as it corresponds to the area that needs to be heated/cooled.
-    It is different from the dwelling area, as it does include staircases, hallways etc ...
-    To get the documentation of the data check https://www.housing-stat.ch/catalog/fr/4.3/final
-    """
-
-    dic_ERA = {}
-
-    for country in country_list:
-        df = dowload_regbl_data(country, file_name="gebaeude_batiment_edificio.csv")
-
-        # 1110 single_family_households
-        # 1122 and 1121 multi_family_households
-        # 1130 multi_family_households Bâtiments résidentiels pour collectivités, y compris les résidences et résidences-services pour les personnes âgées, les étudiants, les enfants et d'autres groupes sociaux: par exemple, maisons de retraite, foyers pour travailleurs, foyers pour étudiants, orphelinats, foyers pour sans-abri etc.
-        single_multi_code = {
-            "single-family-households": [1110.0],
-            "multi-family-households": [1121, 1122, 1130],
-        }
-        # conserve uniquement les batiments existnts
-        df = df[df["GSTAT"] == 1004]
-        # Compute the sum energy reference are per building category as a proxy to the total ERA of the canton
-        dic_ERA[country] = {}
-        for keys, values in single_multi_code.items():
-            df_cat = df[df["GKLAS"].isin(values)]
-            perc_of_data = len(df_cat[df_cat["GEBF"].notnull()]) / len(df_cat)
-            print(
-                f"Percentage of ERA data available for {keys} in {country}: {perc_of_data * 100:.2f}%"
-            )
-            dic_ERA[country][keys] = df_cat["GEBF"].sum()
-
-    return dic_ERA
 
 
 def compute_bld_floor_area_new(
@@ -1020,103 +854,6 @@ def extract_nb_of_apartments_per_building_type_v2(file, agency, dataflow, canton
     dm_nb_bld.filter({"Years": years_ots}, inplace=True)
 
     return dm_nb_bld
-
-
-def extract_nb_of_apartments_per_building_type(table_id, file, cantons_fr, cantons_en):
-    try:
-        with open(file, "rb") as handle:
-            dm = pickle.load(handle)
-    except OSError:
-        structure, title = get_data_api_CH(table_id, mode="example", language="fr")
-        cantons_list = [
-            c
-            for c in structure["Canton (-) / District (>>) / Commune (......)"]
-            if "- " in c
-        ]
-        mapping_dim = {
-            "Country": "Canton (-) / District (>>) / Commune (......)",
-            "Years": "Année",
-            "Variables": "Surface du logement",
-            "Categories1": "Catégorie de bâtiment",
-        }
-        dm = None
-        for e in structure["Époque de construction"]:
-            # Extract buildings floor area
-            filter = {
-                "Année": structure["Année"],
-                "Canton (-) / District (>>) / Commune (......)": ["Suisse"]
-                + cantons_list,
-                "Catégorie de bâtiment": structure["Catégorie de bâtiment"],
-                "Surface du logement": structure["Surface du logement"],
-                "Époque de construction": [e],
-            }
-            unit_all = ["number"] * len(structure["Surface du logement"])
-            # Get api data
-            dm_e = get_data_api_CH(
-                table_id,
-                mode="extract",
-                filter=filter,
-                mapping_dims=mapping_dim,
-                units=unit_all,
-                language="fr",
-            )
-            if dm is None:
-                dm = dm_e
-            else:  # Sum all construction periods
-                dm.array = dm.array + dm_e.array
-        dm.groupby({"bld_apartments": ".*"}, regex=True, dim="Variables", inplace=True)
-        dm.groupby(
-            {
-                "single-family-households": ["Maisons individuelles"],
-                "multi-family-households": [
-                    "Maisons à plusieurs logements",
-                    "Bâtiments d'habitation avec usage annexe",
-                    "Bâtiments partiellement à usage d'habitation",
-                ],
-            },
-            dim="Categories1",
-            inplace=True,
-        )
-        dm.drop(col_label="......5892 Blonay - Saint-Légier", dim="Country")
-        dm.rename_col_regex("- ", "", dim="Country")
-        dm.rename_col_regex(" /.*", "", dim="Country")
-        dm.rename_col_regex("-", " ", dim="Country")
-        cantons_in = [
-            "Aargau",
-            "Appenzell Ausserrhoden",
-            "Appenzell Innerrhoden",
-            "Basel Landschaft",
-            "Basel Stadt",
-            "Bern",
-            "Fribourg",
-            "Genève",
-            "Glarus",
-            "Graubünden",
-            "Jura",
-            "Luzern",
-            "Neuchâtel",
-            "Nidwalden",
-            "Obwalden",
-            "Schaffhausen",
-            "Schwyz",
-            "Solothurn",
-            "St. Gallen",
-            "Thurgau",
-            "Ticino",
-            "Uri",
-            "Valais",
-            "Vaud",
-            "Zug",
-            "Zürich",
-        ]
-
-        dm.rename_col(cantons_in, cantons_en, dim="Country")
-        dm.rename_col("Suisse", "Switzerland", dim="Country")
-        dm.sort("Country")
-        with open(file, "wb") as handle:
-            pickle.dump(dm, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    return dm
 
 
 def extract_EP2050_floor_area_by_type(file_url, zip_name, file_pickle):
