@@ -116,6 +116,7 @@ def get_vehicle_electric_efficiency(
             "Categories1": "UV_RV_FUEL",
             "Categories2": "UV_RV_ECONSUMPTION_WLTP_PC",
         }
+        utils.assert_len_dimension_for_call_to_api(filtering)
 
         # Extract new fleet
         dm_veh_eff = get_data_api_swiss_stats(
@@ -249,10 +250,8 @@ def get_vehicle_efficiency_co2(
         }
 
         dm_veh_eff = None
-        assert (
-            len(filtering["TIME_PERIOD"]) * len(fuel_list) * len(CO2_emission_list)
-            < 1000
-        )
+
+        utils.assert_len_dimension_for_call_to_api(filtering)
         for country in country_to_call:
             filtering["UV_HGDE_KT"] = [country]
 
@@ -270,7 +269,7 @@ def get_vehicle_efficiency_co2(
 
             dm_veh_eff_country.array = np.nan_to_num(dm_veh_eff_country.array)
             dm_veh_eff_country.rename_col("Total_Variables", var_name, dim="Variables")
-            if dm_veh_eff is None is None:
+            if dm_veh_eff is None:
                 dm_veh_eff = dm_veh_eff_country.copy()
             else:
                 dm_veh_eff.append(dm_veh_eff_country, "Country")
@@ -501,8 +500,6 @@ def get_difference_between_col_label(dm1, dm2, dim):
 
 
 def add_missing_data_for_merging(dm1: DataMatrix, dm2: DataMatrix, dim: str):
-    dm1.col_labels[dim]
-
     only_dm1 = get_difference_between_col_label(dm1, dm2, dim)
     only_dm2 = get_difference_between_col_label(dm2, dm1, dim)
 
@@ -579,6 +576,8 @@ def get_new_vehicle_efficiency_elec(file: str, agency: str, dataflow: str, var_n
                 "UV_RV_CO2_WLTP": CO2_emission_list,
                 "FREQ": ["Annual"],
             }
+
+            utils.assert_len_dimension_for_call_to_api(filtering)
             # Extract new fleet
             dm_veh_eff_canton = get_data_api_swiss_stats(
                 agency,
@@ -719,13 +718,7 @@ def get_new_vehicle_efficiency_co2(file: str, agency: str, dataflow: str, var_na
                 "UV_RV_CO2_WLTP": CO2_emission_list,
                 "FREQ": ["Annual"],
             }
-            assert (
-                len(filtering["TIME_PERIOD"])
-                * len(fuel_list)
-                * len(CO2_emission_list)
-                * len(filtering["UV_RV_ECONSUMPTION_WLTP_PC"])
-                < 1000
-            )
+            utils.assert_len_dimension_for_call_to_api(filtering)
             # Extract new fleet
             dm_veh_eff_canton = get_data_api_swiss_stats(
                 agency,

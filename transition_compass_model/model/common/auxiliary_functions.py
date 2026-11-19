@@ -1566,10 +1566,11 @@ def dm_add_missing_variables(dm, dict_all, fill_nans=False):
     # dict_all is like {'Years': all_years, 'Country': all_countries}
     for dim, full_list in dict_all.items():
         missing_list = list(set(full_list) - set(dm.col_labels[dim]))
-        dm.add(np.nan, dim=dim, col_label=missing_list, dummy=True)
-        dm.sort(dim)
-        if fill_nans:
-            dm.fill_nans(dim)
+        if len(missing_list) > 0:
+            dm.add(np.nan, dim=dim, col_label=missing_list, dummy=True)
+            dm.sort(dim)
+            if fill_nans:
+                dm.fill_nans(dim)
 
     return
 

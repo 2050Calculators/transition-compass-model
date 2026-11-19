@@ -148,7 +148,7 @@ def extract_hotwater_technologies_v2(file, agency, dataflow):
 
             dm_hw_cntr = extract_cntr_heating(cntr_list, structure)
             if dm_hw is None:
-                dm_hw = dm_hw_cntr
+                dm_hw = dm_hw_cntr.copy()
             else:
                 dm_hw.append(dm_hw_cntr, dim="Country")
 

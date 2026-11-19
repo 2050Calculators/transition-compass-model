@@ -407,22 +407,59 @@ def pkm_MRMT(file_folder_2015, file_path_2021):  # ,
 
     cantons_list = [x for x in country_list if x != "Switzerland"]
     # iterate in canton to get the valeu for each one
-    asset_ids_2015 = {"Vaud": "2081714", "Fribourg": "2081306", "Schwyz": "2005567"}
+    asset_ids_2015 = {
+        "Vaud": "2081714",
+        "Fribourg": "2081306",
+        "Schwyz": "2005567",
+        "Aargau": "2081601",
+        "Geneva": "2081828",
+        "Appenzell Ausserrhoden": "2081490",  # TODO : check if the excel is the same as others
+        "Appenzell Innerrhoden": "2081490",
+        "Basel Landschaft": "2081415",
+        "Basel Stadt": "2083881",
+        "Bern": "2005127",
+        "Glarus": "2006050",
+        "Graubünden": "2081564",
+        "Jura": "2081863",
+        "Lucerne": "2005203",
+        "Neuchâtel": "2081788",
+        "Nidwalden": "2006013",
+        "Obwalden": "2005861",
+        "Schaffhausen": "2081450",
+        "Solothurn": "2080001",
+        "St. Gallen": "2101027",
+        "Ticino": "2081677",
+        "Thurgau": "2081637",
+        "Uri": "2005447",
+        "Valais": "2081749",
+        "Zug": "2081267",
+        "Zurich": "2005066",
+    }
     canton_pkm_day = {}
     for canton in cantons_list:
         canton_pkm_day[canton] = {}
-        canton_pkm_day[canton][2021] = pd.read_excel(
-            file_path_2021, sheet_name=CANTONS_NAME["name_to_accronym"][canton]
-        ).iloc[5, 9]
-        file_canton_2015 = (
-            file_folder_2015 + CANTONS_NAME["name_to_accronym"][canton] + ".xlsx"
-        )
-
-        # If the file don't exist, it downloads it and creates it
-        save_url_to_file(
-            f"https://dam-api.bfs.admin.ch/hub/api/dam/assets/{asset_ids_2015[canton]}/master",
-            file_canton_2015,
-        )
+        if canton == "Appenzell Ausserrhoden" or canton == "Appenzell Innerrhoden":
+            canton_pkm_day[canton][2021] = pd.read_excel(
+                file_path_2021, sheet_name="AR et AI"
+            ).iloc[5, 9]
+            file_canton_2015 = file_folder_2015 + "AR_AI" + ".xlsx"
+            # If the file don't exist, it downloads it and creates it
+            save_url_to_file(
+                "https://dam-api.bfs.admin.ch/hub/api/dam/assets/2081490/master",
+                file_canton_2015,
+            )
+        else:
+            canton_pkm_day[canton][2021] = pd.read_excel(
+                file_path_2021, sheet_name=CANTONS_NAME["name_to_accronym"][canton]
+            ).iloc[5, 9]
+            file_canton_2015 = (
+                file_folder_2015 + CANTONS_NAME["name_to_accronym"][canton] + ".xlsx"
+            )
+            # If the file don't exist, it downloads it and creates it
+            save_url_to_file(
+                f"https://dam-api.bfs.admin.ch/hub/api/dam/assets/{asset_ids_2015[canton]}/master",
+                file_canton_2015,
+            )
         canton_pkm_day[canton][2015] = pd.read_excel(file_canton_2015).iloc[4, 9]
 
     return canton_pkm_day

@@ -20,6 +20,7 @@ from transition_compass_model._database.pre_processing.transport.Switzerland.get
 )
 from transition_compass_model.model.common.auxiliary_functions import (
     add_missing_ots_years,
+    dm_add_missing_variables,
     linear_fitting,
 )
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
@@ -36,9 +37,9 @@ def get_new_fleet_by_tech_raw(agency, dataflow, file):
         fuel_types = [f for f in structure["UV_RV_FUEL"] if f != "Total"]
 
         filtering = {
-            "FREQ": "Annual",
-            "UV_RV_OWNER_TYPE": "Total",
-            "UV_RV_REGISTRATION_TYPE": "First registrations of new vehicles",
+            "FREQ": ["Annual"],
+            "UV_RV_OWNER_TYPE": ["Total"],
+            "UV_RV_REGISTRATION_TYPE": ["First registrations of new vehicles"],
             # FIXME: "Passenger vehicles" (buses/coaches/minibuses, SDMX code 200) is only
             # included here to match the old STAT-TAB pipeline's regex-based ".*Passenger.*"
             # grouping, which wrongly folded it into "LDV" alongside "Passenger cars" (code
@@ -52,34 +53,50 @@ def get_new_fleet_by_tech_raw(agency, dataflow, file):
                 "Motorcycles",
             ],
             "UV_RV_FUEL": fuel_types,
-            "UV_HGDE_KT": [
-                "Total",
-                "Vaud",
-                "Fribourg",
-                "Schwyz",
-            ],  # "Total" = all of Switzerland
         }
+        country_to_call = country_list + ["Total"]  # "Total" = all of Switzerland
+        country_to_call.remove("Switzerland")
 
-        mapping_dim = {
-            "Country": "UV_HGDE_KT",
-            "Years": "TIME_PERIOD",
-            "Variables": "UV_RV_REGISTRATION_TYPE",
-            "Categories1": "UV_RV_VEHICLE_GROUP_AND_TYPE",
-            "Categories2": "UV_RV_FUEL",
-        }
+        # in-itiati-ng the val-ue
+        dm_new_fleet = None
 
-        # Extract new fleet (already annual, unlike the old STAT-TAB source which was
-        # monthly-only and had to be summed across all 12 months to get yearly totals)
-        dm_new_fleet = get_data_api_swiss_stats(
-            agency,
-            dataflow,
-            mode="extract",
-            filter=filtering,
-            mapping_dims=mapping_dim,
-            units=["number"],
-        )
-        if dm_new_fleet is None:
-            raise ValueError(f"API returned None for {agency},{dataflow}")
+        for country in country_to_call:
+            filtering["UV_HGDE_KT"] = country
+            mapping_dim = {
+                "Country": "UV_HGDE_KT",
+                "Years": "TIME_PERIOD",
+                "Variables": "UV_RV_REGISTRATION_TYPE",
+                "Categories1": "UV_RV_VEHICLE_GROUP_AND_TYPE",
+                "Categories2": "UV_RV_FUEL",
+            }
+
+            utils.assert_len_dimension_for_call_to_api(filtering)
+
+            # Extract new fleet (already annual, unlike the old STAT-TAB source which was
+            # monthly-only and had to be summed across all 12 months to get yearly totals)
+            dm_new_fleet_country = get_data_api_swiss_stats(
+                agency,
+                dataflow,
+                mode="extract",
+                filter=filtering,
+                mapping_dims=mapping_dim,
+                units=["number"],
+            )
+            if dm_new_fleet_country is None:
+                raise ValueError(f"API returned None for {country} {agency},{dataflow}")
+            if dm_new_fleet is None:
+                dm_new_fleet = dm_new_fleet_country.copy()
+            else:
+                # Some country don't have certain typeof data so the dimension of the dm is different.
+                # To be able to merge we add the mising dimension except for country
+                data_dic = dm_new_fleet.col_labels.copy()
+                data_dic.pop("Country")
+                dm_add_missing_variables(
+                    dm_new_fleet_country, data_dic, fill_nans=False
+                )
+
+                dm_new_fleet.append(dm_new_fleet_country.copy(), "Country")
+
         dm_new_fleet.rename_col("Total_Country", "Switzerland", dim="Country")
         dm_new_fleet.sort("Years")
 
@@ -251,6 +268,8 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
             "Categories1": "UV_RV_VEHICLE_GROUP_AND_TYPE",
             "Categories2": "UV_RV_FUEL",
         }
+
+        utils.assert_len_dimension_for_call_to_api(filtering)
 
         # Extract new fleet (already annual, unlike the old STAT-TAB source which was
         # monthly-only and had to be summed across all 12 months to get yearly totals)
@@ -567,6 +586,8 @@ def get_fleet_bus(file, agency="CH1.MFZ_IVS", dataflow="DF_MFZ_2"):
             "Variables": "UV_RV_VEHICLE_TYPE",
             "Categories1": "UV_RV_FUEL",
         }
+
+        utils.assert_len_dimension_for_call_to_api(filtering)
 
         # Extract new fleet (already annual, unlike the old STAT-TAB source which was
         # monthly-only and had to be summed across all 12 months to get yearly totals)

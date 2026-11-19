@@ -14,7 +14,7 @@ CANTONS_NAME = {
         "GR": "Graubünden",
         "JU": "Jura",
         "LU": "Lucerne",
-        "NE": "Neuchatel",
+        "NE": "Neuchâtel",
         "NW": "Nidwalden",
         "OW": "Obwalden",
         "SH": "Schaffhausen",
@@ -43,7 +43,7 @@ CANTONS_NAME = {
         "Graubünden": "GR",
         "Jura": "JU",
         "Lucerne": "LU",
-        "Neuchatel": "NE",
+        "Neuchâtel": "NE",
         "Nidwalden": "NW",
         "Obwalden": "OW",
         "Schaffhausen": "SH",
@@ -61,7 +61,7 @@ CANTONS_NAME = {
 }
 GRANDE_REGION_CANTONS = {
     "Région lémanique": ["Geneva", "Valais", "Vaud"],
-    "Espace Mittelland": ["Bern", "Fribourg", "Jura", "Neuchatel", "Solothurn"],
+    "Espace Mittelland": ["Bern", "Fribourg", "Jura", "Neuchâtel", "Solothurn"],
     "Suisse du Nord-Ouest": ["Aargau", "Basel Landschaft", "Basel Stadt"],
     "Zurich": ["Zurich"],
     "Suisse orientale": [
