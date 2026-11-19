@@ -1,10 +1,10 @@
 import os
 
 import numpy as np
-from scenarios.transport_fts_PCV1 import (
+
+from transition_compass_model._database.pre_processing.transport.Switzerland.scenarios.Vaud.transport_fts_PCV1 import (
     cat_dict,
 )
-
 from transition_compass_model.model.common.auxiliary_functions import (
     linear_fitting,
     my_pickle_dump,

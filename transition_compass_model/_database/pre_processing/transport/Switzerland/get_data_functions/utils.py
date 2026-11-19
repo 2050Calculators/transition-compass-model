@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 
-from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     linear_fitting,
@@ -96,7 +95,7 @@ def drop_if_smaller_than_0_01(
     dm_ratio = dm_ratio.normalise(dim="Categories1", inplace=False)
     idx = dm_ratio.idx
 
-    for country in country_list:
+    for country in dm_ratio.col_labels["Country"]:
         dm_missing = dm_ratio.filter(
             {"Country": [country], "Categories1": [col_to_drop]}
         ).copy()

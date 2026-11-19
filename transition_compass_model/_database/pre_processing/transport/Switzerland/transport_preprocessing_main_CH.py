@@ -21,11 +21,16 @@ from processors.transport_calib_energy_demand import run as data_check_energy_ru
 from processors.transport_calib_vkm import run as data_check_vkm_run
 from processors.transport_demand_pipeline import run as demand_pkm_vkm_run
 from processors.transport_ots_pickle import run as ots_pickle_run
+
+# Schwyz
+from scenarios.Schwyz.tra_objectif_PCS import run as fts_schwyz_pcs_run
 from scenarios.tra_techchnology_fts import run as tra_techchnology_fts_run
 from scenarios.transport_fts_BAU_pickle import run as fts_bau_pickle_run
 from scenarios.transport_fts_DLS import run as DLS_pickle_run
-from scenarios.transport_fts_PCV1 import run as fts_PCV1_pickle_run
-from scenarios.transport_fts_PCV2 import run as fts_PCV2_pickle_run
+
+# Vaud
+from scenarios.Vaud.transport_fts_PCV1 import run as fts_PCV1_pickle_run
+from scenarios.Vaud.transport_fts_PCV2 import run as fts_PCV2_pickle_run
 
 from transition_compass_model._database.pre_processing.params import (
     country_list,
@@ -210,11 +215,18 @@ print("Compile pickle fts - all BAU")
 DM_transport["fts"] = fts_bau_pickle_run(
     DM_transport_wo_aviation, country_list, years_ots, years_fts, DM_aviation_ots
 )
-
-print("Compile pickle fts PCV1 scenario - all BAU")
+###### VAUD #####
+print("Compile pickle VAUD fts PCV scenarios")
 DM_transport = fts_PCV1_pickle_run(DM_transport, country_list, years_ots, years_fts)
 
 DM_transport = fts_PCV2_pickle_run(DM_transport, country_list, years_ots, years_fts)
+
+
+###### SCHWYZ ######
+print("Compile pickle Schwyz fts PCS scenarios")
+DM_transport = fts_schwyz_pcs_run(DM_transport, lev=2)
+
+###### ALL CANTONS #####
 print("Compile pickle  DLS scenario - Lever 4")
 DM_transport = DLS_pickle_run(DM_transport, lev=4)
 

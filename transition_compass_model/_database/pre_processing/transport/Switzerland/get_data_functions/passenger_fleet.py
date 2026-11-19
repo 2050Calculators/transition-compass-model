@@ -77,7 +77,7 @@ def get_new_fleet_by_tech_raw(agency, dataflow, file):
         )
         if dm_new_fleet is None:
             raise ValueError(f"API returned None for {agency},{dataflow}")
-        dm_new_fleet.rename_col("Total", "Switzerland", dim="Country")
+        dm_new_fleet.rename_col("Total_Country", "Switzerland", dim="Country")
         dm_new_fleet.sort("Years")
 
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
