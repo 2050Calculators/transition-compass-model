@@ -49,6 +49,7 @@ def make_material_efficiency_dm(current_file_directory, lever_file, years_ots):
     variabs = [
         "aluminium",
         "ammonia",
+        "asphalt",
         "cement",
         "chem",
         "copper",
@@ -56,7 +57,9 @@ def make_material_efficiency_dm(current_file_directory, lever_file, years_ots):
         "glass",
         "lime",
         "mae",
-        "ois",
+        "met",
+        "nmm",
+        "ois-modelled",
         "other",
         "paper",
         "steel",

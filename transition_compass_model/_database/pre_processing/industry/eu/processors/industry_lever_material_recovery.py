@@ -202,11 +202,13 @@ def make_material_recovery_dm(current_file_directory, lever_file, years_ots):
     # make dm
     dm_pack = make_dm(df_temp, years_ots)
 
-    # add paper-print and paper-san (assume to be same of paper pack)
+    # add paper-print (same recovery as paper-pack) and paper-san (0%: hygiene paper is
+    # hygienically contaminated and not collectable for recycling)
     dm_temp = dm_pack.filter({"Categories1": ["paper-pack"]})
     dm_temp.rename_col("paper-pack", "paper-print", "Categories1")
     dm_pack.append(dm_temp, "Categories1")
     dm_temp.rename_col("paper-print", "paper-san", "Categories1")
+    dm_temp["EU27", :, :, "paper-san", "paper"] = 0
     dm_pack.append(dm_temp, "Categories1")
     dm_pack.sort("Categories1")
 
@@ -346,6 +348,23 @@ def make_material_recovery_dm(current_file_directory, lever_file, years_ots):
     dm.append(dm_bld, "Categories1")
     dm.append(dm_infra, "Categories1")
     dm.sort("Categories1")
+
+    # Asphalt RAP (Reclaimed Asphalt Pavement) recovery for road infrastructure.
+    # EU RAP utilisation rate ~88% in 2023 (https://eapa.org/asphalt-industry/statistics/);
+    # 85% used as conservative EU-wide average across all road types.
+    # All other product categories get 0 (asphalt is not a material in vehicles, buildings, etc.).
+    dm.add(0, "Categories2", "asphalt", dummy=True)
+    dm["EU27", :, :, "road", "asphalt"] = 0.85
+
+    # nmm (aggregate), met (critical metals), ois-modelled (construction ceramics): 0 recovery.
+    # nmm: recycled concrete aggregate is downcycled to road sub-base, not recovered as primary
+    # aggregate for new concrete — no closed-loop recycling pathway in current model.
+    # met: critical metals (Li, Co, Ni, Mn) in EoL products have no sec-tech in current model;
+    # battery recycling is a known gap, flagged as future work.
+    # ois-modelled: broken ceramics/tiles go to inert waste, not re-fired into new ceramics.
+    dm.add(0, "Categories2", "nmm", dummy=True)
+    dm.add(0, "Categories2", "met", dummy=True)
+    dm.add(0, "Categories2", "ois-modelled", dummy=True)
 
     # dm.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
 

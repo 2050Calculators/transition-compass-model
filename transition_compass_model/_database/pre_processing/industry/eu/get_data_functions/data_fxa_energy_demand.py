@@ -4,6 +4,11 @@ import re
 import numpy as np
 import pandas as pd
 
+from transition_compass_model._database.pre_processing.industry.eu.get_data_functions.data_material_net_import import (
+    get_faostat_sawnwood_data,
+    get_prodcom_data,
+)
+
 
 def get_fxa_energy_demand_df(current_file_directory):
     # Returns (df_final, df_final_feedstock) with columns:
@@ -111,12 +116,81 @@ def get_fxa_energy_demand_df(current_file_directory):
 
     del waste_municipal, waste_industrial, waste, solid_biomass, tot
 
+    # Load PRODCOM production for non-modelled sectors.
+    # These sectors use a value-added index (M€) as "Physical output" in JRC IDEES,
+    # not tonnes. We replace it with actual PRODCOM production (kg→Mt) so the stored
+    # FXA intensity is correctly in TWh/Mt.
+    _dm_prodcom = get_prodcom_data("ds-056120", current_file_directory)
+    _faostat_sawnwood = get_faostat_sawnwood_data(current_file_directory)
+    _TECHS_CODE_TO_MAT = {
+        "FBT": "fbt",
+        "MAE": "mae",
+        "OIS": [
+            "ois",
+            "asphalt",
+        ],  # asphalt (C23.99.13) was remapped out of OIS PRODCOM; keep in denominator
+        "TEL": "textiles",
+        "TRE": "tra-equip",
+        "WWP": "wwp",
+    }
+
+    def _prod_override_df(mat, techs_calc, jrc_years):
+        """Return DataFrame[tech, year, production (Mt), unit_production] from PRODCOM.
+
+        mat may be a string or list of strings (summed across materials).
+        Fills NaN early years via backward fill from the first available year.
+        """
+        idx = _dm_prodcom.idx
+        prodcom_years = _dm_prodcom.col_labels["Years"]
+        mats = [mat] if isinstance(mat, str) else mat
+        prod_by_year = {}
+        for m in mats:
+            for yr in prodcom_years:
+                val = _dm_prodcom.array[
+                    idx["EU27"], idx[yr], idx["material-demand"], idx[m]
+                ]
+                prod_by_year[yr] = prod_by_year.get(yr, 0) + (
+                    0 if np.isnan(val) else val
+                )
+        available = {yr: v for yr, v in prod_by_year.items() if v > 0}
+        if not available:
+            raise ValueError(
+                f"No PRODCOM production data available for material '{mat}'"
+            )
+        avail_years = sorted(available.keys())
+        avail_vals = [available[y] for y in avail_years]
+        rows = []
+        for yr in jrc_years:
+            if yr in available:
+                prod_kg = available[yr]
+            elif yr < avail_years[0]:
+                prod_kg = avail_vals[0]
+            elif yr > avail_years[-1]:
+                prod_kg = avail_vals[-1]
+            else:
+                prod_kg = float(np.interp(yr, avail_years, avail_vals))
+            rows.append(
+                {
+                    "tech": techs_calc[0],
+                    "year": yr,
+                    "production": prod_kg / 1e9,  # kg → Mt
+                    "unit_production": "Mt",
+                }
+            )
+        return pd.DataFrame(rows)
+
     ###########################################################
     ##### INNER FUNCTION: get_energy_intensity (year-aware) ###
     ###########################################################
 
     def get_energy_intensity(
-        filepath, techs_code, techs, techs_calc, dict_subtechs_elec, years
+        filepath,
+        techs_code,
+        techs,
+        techs_calc,
+        dict_subtechs_elec,
+        years,
+        df_po_override=None,
     ):
         # get energy consumption aggregated across techs (toe)
         df = pd.read_excel(filepath, techs_code)
@@ -362,10 +436,14 @@ def get_fxa_energy_demand_df(current_file_directory):
         df = pd.concat([df_fec, df_ued])
 
         # normalize by production per year (objective: TWh/Mt)
-        df_po_norm = df_po.copy()
-        df_po_norm["value"] = df_po_norm["value"] / 1000  # Kt → Mt
-        df_po_norm = df_po_norm.rename(columns={"value": "production"})
-        df_po_norm["unit_production"] = "Mt"
+        if df_po_override is not None:
+            # PRODCOM production in Mt, per year — replaces JRC value-added index
+            df_po_norm = df_po_override
+        else:
+            df_po_norm = df_po.copy()
+            df_po_norm["value"] = df_po_norm["value"] / 1000  # Kt → Mt
+            df_po_norm = df_po_norm.rename(columns={"value": "production"})
+            df_po_norm["unit_production"] = "Mt"
 
         df["value"] = df["value"] * ktoe_to_twh  # ktoe → TWh
         df["unit"] = "TWh"
@@ -392,8 +470,10 @@ def get_fxa_energy_demand_df(current_file_directory):
 
         DF_out = {
             "tot": df_fec,
+            "tot-ued": df_ued,
             "energy-intensity-check": df_energyint_check,
             "energy-intensity": df,
+            "production": df_po,
         }
         return DF_out
 
@@ -499,7 +579,15 @@ def get_fxa_energy_demand_df(current_file_directory):
     )
     df = DF["energy-intensity"].copy()
 
-    # drop ceramics
+    # save ceramics absolute energy (ktoe) to fold into OIS intensity below:
+    # ceramics PRODCOM codes (bricks, tiles, refractories) are mapped to OIS,
+    # but their JRC energy comes from the NMM sheet. Use absolute ktoe (not intensity)
+    # because JRC ceramics production is in "kt bricks-eq." — a virtual unit incompatible
+    # with PRODCOM mass-based production used for OIS normalisation.
+    df_ceramics_fec_abs = DF["tot"].loc[DF["tot"]["tech"] == "ceramics"].copy()
+    df_ceramics_ued_abs = DF["tot-ued"].loc[DF["tot-ued"]["tech"] == "ceramics"].copy()
+
+    # drop ceramics from NMM output (cement + glass only)
     df = df.loc[df["tech"] != "ceramics", :]
 
     # add zero solid-waste and solid-bio for glass (not present in JRC for glass)
@@ -1137,7 +1225,7 @@ def get_fxa_energy_demand_df(current_file_directory):
 
     techs_code = "PPA"
     techs = ["Pulp production", "Paper production", "Printing and media reproduction"]
-    techs_calc = ["pulp-tech", "paper-tech", "printing-media-tech"]
+    techs_calc = ["paper-sec", "paper-tech", "printing-media-tech"]
     dict_subtechs_elec = {
         "Pulp production": electric_usual
         + [
@@ -1163,9 +1251,67 @@ def get_fxa_energy_demand_df(current_file_directory):
         years=years,
     )
     df = DF["energy-intensity"].copy()
-    df = df.loc[df["tech"] != "printing-media-tech", :]
+    df_po = DF["production"].copy()
+    df = df.loc[df["tech"] != "printing-media-tech", :].copy()
+
+    # Combined paper+pulp intensity: model tracks only final paper tonnes, so total energy
+    # (JRC pulp step + JRC paper step) must be divided by paper production, not pulp production.
+    # combined_intensity = pulp_int × (pulp_prod/paper_prod) + paper_int (per carrier, per year)
+    df_pulp_prod = df_po.loc[df_po["tech"] == "paper-sec", ["year", "value"]].rename(
+        columns={"value": "pulp_prod"}
+    )
+    df_paper_prod = df_po.loc[df_po["tech"] == "paper-tech", ["year", "value"]].rename(
+        columns={"value": "paper_prod"}
+    )
+    df_prod_ratio = pd.merge(df_pulp_prod, df_paper_prod, on="year")
+    df_prod_ratio["ratio"] = df_prod_ratio["pulp_prod"] / df_prod_ratio[
+        "paper_prod"
+    ].replace(0, np.nan)
+
+    df["carrier_unit"] = df["variable"].str.replace(r"^[^_]+_", "", regex=True)
+    df_pulp = df.loc[
+        df["tech"] == "paper-sec",
+        ["year", "carrier_unit", "value", "energy_demand_type"],
+    ].rename(columns={"value": "pulp_int"})
+    df_paper = df.loc[
+        df["tech"] == "paper-tech",
+        ["year", "carrier_unit", "value", "energy_demand_type"],
+    ].rename(columns={"value": "paper_int"})
+    df_merged = pd.merge(
+        df_pulp, df_paper, on=["year", "carrier_unit", "energy_demand_type"]
+    )
+    df_merged = pd.merge(df_merged, df_prod_ratio[["year", "ratio"]], on="year")
+    df_merged["combined"] = (
+        df_merged["pulp_int"] * df_merged["ratio"] + df_merged["paper_int"]
+    )
+
+    rows = []
+    for tech in ["paper-sec", "paper-tech"]:
+        df_out = df_merged[
+            ["year", "carrier_unit", "combined", "energy_demand_type"]
+        ].copy()
+        df_out["tech"] = tech
+        df_out["variable"] = tech + "_" + df_out["carrier_unit"]
+        df_out["value"] = df_out["combined"]
+        rows.append(df_out[["year", "variable", "value", "tech", "energy_demand_type"]])
+    df = pd.concat(rows)
+
     df_final = pd.concat([df_final, df])
-    del DF, df, techs, techs_calc, techs_code
+    del (
+        DF,
+        df,
+        df_po,
+        df_pulp_prod,
+        df_paper_prod,
+        df_prod_ratio,
+        df_pulp,
+        df_paper,
+        df_merged,
+        rows,
+        techs,
+        techs_calc,
+        techs_code,
+    )
 
     ###########################################################
     ################### ALUMINIUM AND COPPER ##################
@@ -1406,8 +1552,8 @@ def get_fxa_energy_demand_df(current_file_directory):
                     "Wood: Finishing Electric",
                 ]
             },
-            "wwp-tech",
-            "wwp-sec",
+            None,
+            None,
         ),
     ]
 
@@ -1419,6 +1565,21 @@ def get_fxa_energy_demand_df(current_file_directory):
         sec_src,
         sec_name,
     ) in sector_specs:
+        df_po_override = None
+        if techs_code in _TECHS_CODE_TO_MAT:
+            df_po_override = _prod_override_df(
+                _TECHS_CODE_TO_MAT[techs_code], techs_calc, years
+            )
+        if techs_code == "WWP":
+            # Add full FAOSTAT total sawnwood to PRODCOM chips+boards to get C16 total
+            # production as intensity denominator. FAOSTAT covers both construction (~50%)
+            # and non-construction (~50%) sawnwood. timber-tech gets the same intensity, so:
+            # model_energy = (timber_prod + wwp_prod) × intensity ≈ C16_total_energy.
+            # Source: https://www.fao.org/faostat/en/#data/FO
+            _fao_avg = np.mean(list(_faostat_sawnwood.values()))
+            df_po_override["production"] += df_po_override["year"].map(
+                lambda yr: _faostat_sawnwood.get(yr, _fao_avg)
+            )
         DF = get_energy_intensity(
             filepath=filepath,
             techs_code=techs_code,
@@ -1426,8 +1587,35 @@ def get_fxa_energy_demand_df(current_file_directory):
             techs_calc=techs_calc,
             dict_subtechs_elec=dict_subtechs_elec,
             years=years,
+            df_po_override=df_po_override,
         )
         df = DF["energy-intensity"].copy()
+        if techs_code == "OIS":
+            # fold ceramics (bricks, tiles, refractories) JRC energy into OIS.
+            # ceramics PRODCOM codes are in OIS; their JRC energy comes from the NMM sheet.
+            # addendum[TWh/Mt] = ceramics_abs_energy[ktoe] × ktoe_to_twh / PRODCOM_OIS_production[Mt]
+            # (cannot use intensity × production-ratio: JRC ceramics production is in "kt bricks-eq.",
+            # a virtual unit incompatible with PRODCOM mass-based Mt)
+            df_ois_prod = df_po_override[["year", "production"]].copy()  # Mt
+            for df_cer_abs, etype in [
+                (df_ceramics_fec_abs, "fec"),
+                (df_ceramics_ued_abs, "ued"),
+            ]:
+                df_add = df_cer_abs.copy()
+                df_add = pd.merge(df_add, df_ois_prod, on="year")
+                df_add["value"] = df_add["value"] * ktoe_to_twh / df_add["production"]
+                df_add["production"] = None
+                df_add = df_add.drop(columns=["production"])
+                df_add["tech"] = "ois-tech"
+                df_add["energy_demand_type"] = etype
+                df_add["variable"] = "ois-tech_" + df_add["energy_carrier"] + "[TWh/Mt]"
+                df_add = df_add[
+                    ["year", "variable", "value", "tech", "energy_demand_type"]
+                ]
+                df = pd.concat([df, df_add])
+            df = df.groupby(
+                ["year", "variable", "tech", "energy_demand_type"], as_index=False
+            )["value"].sum()
         if sec_src is not None and sec_name is not None:
             df_temp = df.loc[df["tech"] == sec_src, :].copy()
             df_temp["tech"] = sec_name
@@ -1437,6 +1625,68 @@ def get_fxa_energy_demand_df(current_file_directory):
             df = pd.concat([df, df_temp])
         df_final = pd.concat([df_final, df])
 
+    # timber-tech: same C16 intensity as wwp-tech (JRC WWP sheet covers all C16 output;
+    # both use the same C16-total denominator so timber + wwp energy sums to C16 energy).
+    df_temp = df_final.loc[df_final["tech"] == "wwp-tech", :].copy()
+    df_temp["tech"] = "timber-tech"
+    df_temp["variable"] = [
+        i.replace("wwp-tech", "timber-tech") for i in df_temp["variable"]
+    ]
+    df_final = pd.concat([df_final, df_temp])
+
+    # timber-sec: same intensity as timber-tech (secondary timber from building demolition)
+    df_temp2 = df_temp.copy()
+    df_temp2["tech"] = "timber-sec"
+    df_temp2["variable"] = [
+        i.replace("timber-tech", "timber-sec") for i in df_temp2["variable"]
+    ]
+    df_final = pd.concat([df_final, df_temp2])
+
+    df_final = df_final.sort_values(["tech", "energy_demand_type", "variable", "year"])
+
+    # Asphalt — hot-mix asphalt (HMA) plant energy intensity.
+    # Total intensity: 0.075 TWh/Mt (aggregate dryer + bitumen heating + electricity + other).
+    # Source: EAPA annual statistics https://eapa.org/asphalt-industry/statistics/
+    # Carrier split derived from EAPA HMA plant audit data:
+    #   gas-ff-natural  0.048 TWh/Mt  (aggregate dryer, ~64% of total)
+    #   https://eapa.org/asphalt-industry/statistics/
+    #   liquid-ff-diesel  0.010 TWh/Mt  (mobile plant machinery, ~13%)
+    #   https://eapa.org/asphalt-industry/statistics/
+    #   electricity  0.009 TWh/Mt  (conveyors, controls, ~12%)
+    #   https://eapa.org/asphalt-industry/statistics/
+    #   liquid-ff-oil  0.006 TWh/Mt  (fuel oil burners in older EU plants, ~8%)
+    #   https://eapa.org/asphalt-industry/statistics/
+    #   solid-ff-coal  0.002 TWh/Mt  (coal-fired plants in some EU member states, ~3%)
+    #   https://eapa.org/asphalt-industry/statistics/
+    # asphalt-sec (RAP) uses the same intensity: RAP still requires aggregate heating;
+    # virgin bitumen saving does not significantly reduce total thermal energy demand.
+    # Source: EAPA annual statistics https://eapa.org/asphalt-industry/statistics/
+    _asphalt_carriers = {
+        "gas-ff-natural": 0.048,
+        "liquid-ff-diesel": 0.010,
+        "electricity": 0.009,
+        "liquid-ff-oil": 0.006,
+        "solid-ff-coal": 0.002,
+    }
+    _asphalt_rows = []
+    for yr in years:
+        for carrier, intensity in _asphalt_carriers.items():
+            _asphalt_rows.append(
+                {
+                    "year": yr,
+                    "variable": f"asphalt-tech_{carrier}[TWh/Mt]",
+                    "tech": "asphalt-tech",
+                    "energy_demand_type": "fec",
+                    "value": intensity,
+                }
+            )
+    df_asphalt = pd.DataFrame(_asphalt_rows)
+    df_asphalt_sec = df_asphalt.copy()
+    df_asphalt_sec["tech"] = "asphalt-sec"
+    df_asphalt_sec["variable"] = df_asphalt_sec["variable"].str.replace(
+        "asphalt-tech", "asphalt-sec", regex=False
+    )
+    df_final = pd.concat([df_final, df_asphalt, df_asphalt_sec], ignore_index=True)
     df_final = df_final.sort_values(["tech", "energy_demand_type", "variable", "year"])
 
     return df_final, df_final_feedstock

@@ -192,6 +192,9 @@ def make_product_net_import_dm(current_file_directory, years_ots):
         "product-import_rail_CEV": None,
         "product-import_tv": None,
         "product-import_wmachine": None,
+        "product-demand_2W_ICE-gasoline": None,
+        "product-export_2W_ICE-gasoline": None,
+        "product-import_2W_ICE-gasoline": None,
     }
 
     for key in dict_call.keys():
@@ -253,6 +256,9 @@ def make_product_net_import_dm(current_file_directory, years_ots):
                 "product-import_bus_ICE-diesel",
                 "product-import_marine_ICE-diesel",
                 "product-import_rail_CEV",
+                "product-demand_2W_ICE-gasoline",
+                "product-export_2W_ICE-gasoline",
+                "product-import_2W_ICE-gasoline",
             ]
         }
     )
@@ -729,6 +735,8 @@ def make_product_net_import_dm(current_file_directory, years_ots):
             "rail_FCEV",
             "rail_ICE-gas",
             "marine_ICE-gas",
+            "2W_FCEV",
+            "2W_ICE-gas",
         ],
     )
 
@@ -827,6 +835,14 @@ def make_product_net_import_dm(current_file_directory, years_ots):
     # For freezer, fridge, phone, we have values well above 1.
     # Let's cap everything to max 1
     dm_trade_netshare.array[dm_trade_netshare.array > 1] = 1
+
+    # 2W_BEV: same net import as 2W_ICE-gasoline (no PRODCOM data for electric 2W)
+    idx = dm_trade_netshare.idx
+    arr_2w = dm_trade_netshare.array[:, :, :, idx["2W_ICE-gasoline"]]
+    if "2W_BEV" in dm_trade_netshare.col_labels["Categories1"]:
+        dm_trade_netshare.array[:, :, :, idx["2W_BEV"]] = arr_2w
+    else:
+        dm_trade_netshare.add(arr_2w, "Categories1", "2W_BEV", unit="%")
 
     # add HDV_PHEV-gasoline and LDV_PHEV-diesel
     idx = dm_trade_netshare.idx

@@ -27,6 +27,12 @@ def get_prodcom_data(file_name, current_file_directory):
     )
     df_map = pd.read_csv(filepath)
     df_map = df_map.rename(columns={"PRODCOM2024_KEY": "prccode"})
+    # Remap PRODCOM C23.99.13 (bituminous mixtures) from "ois" to "asphalt".
+    # The CSV maps code 23991310 to "ois"; override here to avoid editing the shared CSV.
+    df_map.loc[
+        df_map["prccode"].astype(str).str.startswith("23991310"),
+        "calc_industry_material",
+    ] = "asphalt"
     df_map_sub = df_map.filter(
         items=["prccode", "calc_industry_material", "primary_material_flag"]
     )
@@ -35,11 +41,14 @@ def get_prodcom_data(file_name, current_file_directory):
     materials = [
         "aluminium",
         "ammonia",
+        "asphalt",
         "cement",
         "chem",
         "copper",
         "glass",
         "lime",
+        "met",
+        "nmm",
         "paper",
         "steel",
         "timber",
@@ -252,11 +261,13 @@ def get_prodcom_data(file_name, current_file_directory):
     units_dict = {
         "aluminium": ["kg"],
         "ammonia": ["kg N"],
+        "asphalt": ["kg"],  # PRODCOM C23.99.13 Bituminous mixtures reported in kg
         "cement": ["kg"],
         "copper": ["kg"],
         "glass": ["kg"],
         "lime": ["kg"],
         "mae": ["kg"],
+        "met": ["kg"],  # NACE B07 metal ore concentrates reported in kg
         "ois": ["kg"],
         "other": ["kg"],
         "steel": ["kg"],
@@ -342,6 +353,14 @@ def get_prodcom_data(file_name, current_file_directory):
     df_sub_temp = pd.concat([df_sub_temp, df_sub_fbt])
 
     # wwp
+    # PRODCOM primary_material_flag=True codes for wwp are: coniferous/non-coniferous wood chips
+    # (C16.10.25.03/05, ~40 Mt EU27 2019) plus MDF, particle board, fibreboard, OSB (~3.6 Mt).
+    # Construction sawn timber (C16.10.11-12) and builders' carpentry (C16.23) are already
+    # primary_material_flag=False — they are tracked separately under 'timber'.
+    # Wood chips are sawmill by-products; their energy is embedded in the sawmilling process
+    # and is NOT separately attributed to wwp — the energy intensity denominator for wwp
+    # uses FAOSTAT total C16 production (sawnwood + chips + boards) to avoid inflating the
+    # per-tonne intensity. See data_fxa_energy_demand.py wwp section.
     # assumption: 1 m3 of wood weights 600 kg/m3 (between 0.55 t/m3 to 0.65 t/m3: https://www.fao.org/4/w4095e/w4095e06.htm#3.1.4%20examples%20of%20calculations%20of%20biomass%20density)
     df_sub_wwp = df_sub.loc[df_sub["calc_industry_material"].isin(["wwp"]), :]
     df_sub_wwp["unit"].unique()
@@ -353,6 +372,19 @@ def get_prodcom_data(file_name, current_file_directory):
     indexes = ["country", "variable", "calc_industry_material", "year", "unit"]
     df_sub_wwp = df_sub_wwp.groupby(indexes, as_index=False)["value"].agg(sum)
     df_sub_temp = pd.concat([df_sub_temp, df_sub_wwp])
+
+    # nmm (non-metallic minerals: aggregate — NACE B08 sand/gravel/crushed stone)
+    # PRODCOM B08 codes may report in kg or m3; convert m3 using bulk density 1500 kg/m3.
+    # Source bulk density: typical loose aggregate 1400–1600 kg/m3 (EN 1097-3).
+    df_sub_nmm = df_sub.loc[df_sub["calc_industry_material"].isin(["nmm"]), :]
+    df_sub_nmm.loc[df_sub_nmm["unit"] == "m3", "value"] = (
+        df_sub_nmm.loc[df_sub_nmm["unit"] == "m3", "value"] * 1500
+    )
+    df_sub_nmm = df_sub_nmm.loc[df_sub_nmm["unit"].isin(["kg", "m3"]), :]
+    df_sub_nmm.loc[df_sub_nmm["unit"] == "m3", "unit"] = "kg"
+    indexes = ["country", "variable", "calc_industry_material", "year", "unit"]
+    df_sub_nmm = df_sub_nmm.groupby(indexes, as_index=False)["value"].agg(sum)
+    df_sub_temp = pd.concat([df_sub_temp, df_sub_nmm])
 
     # paper
     df_sub_paper = df_sub.loc[df_sub["calc_industry_material"].isin(["paper"]), :]
@@ -467,3 +499,49 @@ def get_prodcom_data(file_name, current_file_directory):
     # dm_mat.filter({"Country" : ["EU27"]}).flatten().datamatrix_plot()
 
     return dm_mat
+
+
+def get_prodcom_cement_production(current_file_directory):
+    """Return dict {year: total_cement_kt} for EU27 from PRODCOM.
+
+    Uses CPA 23511210 (Portland cement) + 23511290 (other hydraulic cements).
+    Excludes clinker (23511100, intermediate product) and concrete products (C23.6x).
+    Source: https://ec.europa.eu/eurostat/web/prodcom
+    """
+    filepath = os.path.join(current_file_directory, "../data/eurostat/ds-056120.csv")
+    df = pd.read_csv(filepath, low_memory=False)
+    cement_codes = ["23511210", "23511290"]
+    df_eu = df[
+        (df["decl"] == 2027)
+        & (df["indicators\\TIME_PERIOD"] == "PRODQNT")
+        & (df["prccode"].astype(str).isin(cement_codes))
+    ].copy()
+    result = {}
+    for col in df_eu.columns:
+        try:
+            yr = int(col)
+        except ValueError:
+            continue
+        val_kg = pd.to_numeric(df_eu[col], errors="coerce").sum()
+        if pd.notna(val_kg) and val_kg > 0:
+            result[yr] = val_kg / 1e6  # kg → kt
+    return result
+
+
+def get_faostat_sawnwood_data(current_file_directory):
+    """Return dict {year: total_sawnwood_Mt} for European Union (27).
+
+    Sums coniferous and non-coniferous sawnwood from FAOSTAT FO.
+    Source: https://www.fao.org/faostat/en/#data/FO (Forestry Production and Trade)
+    Unit conversion: m3 × 600 kg/m3 → Mt
+    https://www.fao.org/4/w4095e/w4095e06.htm#3.1.4%20examples%20of%20calculations%20of%20biomass%20density
+    """
+    filepath = os.path.join(
+        current_file_directory, "../data/FAO/FAOSTAT_data_en_11-12-2026.csv"
+    )
+    df = pd.read_csv(filepath)
+    df = df.loc[df["Area"] == "European Union (27)", ["Year", "Value"]]
+    sawnwood_by_year = df.groupby("Year")["Value"].sum()  # m3
+    return {
+        int(yr): float(val) * 600 / 1e9 for yr, val in sawnwood_by_year.items()
+    }  # Mt

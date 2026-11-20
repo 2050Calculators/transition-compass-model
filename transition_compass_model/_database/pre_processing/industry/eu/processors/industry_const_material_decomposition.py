@@ -86,6 +86,11 @@ def make_material_decomposition_dm(current_file_directory, lever_file):
         ],
     )
     cdm_domapp = ConstantDataMatrix.create_from_constant(tmp, 1)
+    # Dishwasher: literature review has 6.089 kg bitumen/unit from EUCalc D3.1; this is a
+    # rubber-bitumen damping pad, not asphalt. Zero it so appliance EOL does not generate
+    # spurious asphalt waste once "bitumen" is tracked as "asphalt".
+    idx_app = cdm_domapp.idx
+    cdm_domapp.array[idx_app["dishwasher"], idx_app["asphalt"]] = 0.0
     cdm_check = cdm_domapp.group_all("Categories1", inplace=False)
     df_check = pd.melt(cdm_check.write_df())
 
@@ -212,6 +217,33 @@ def make_material_decomposition_dm(current_file_directory, lever_file):
         elif var.startswith("bus_"):
             cdm_tra_veh.array[idx[var], idx_cu] = 0.030
 
+    # 2W vehicles: manual mass-based composition (no literature review entry).
+    # Average ICE motorcycle/scooter ~150 kg curb weight; BEV ~150 kg including battery pack.
+    # ICE: ACEM European Motorcycle Manufacturers Association, "Motorcycle Industry in Europe" (2022)
+    # https://acem.eu/images/publications/ACEM_Motorcycle_Industry_in_Europe.pdf
+    # BEV: JRC "Life Cycle Assessment of Electric Vehicles" (2021); battery cathode metals from
+    # Eurostat "Critical raw materials in EVs" (2020), scaled to ~1.5 kWh e-scooter battery.
+    _arr_2w_ice = np.zeros(len(mat_labels))
+    _arr_2w_ice[mat_idx_map["steel"]] = 0.055  # frame, engine block, exhaust
+    _arr_2w_ice[mat_idx_map["aluminium"]] = 0.025  # wheels, fork, engine casings
+    _arr_2w_ice[mat_idx_map["chem"]] = 0.020  # tyres, body plastics, rubber hoses
+    _arr_2w_ice[mat_idx_map["copper"]] = 0.003  # wiring harness
+    _arr_2w_ice[mat_idx_map["other"]] = 0.047  # zinc coatings, misc.
+
+    _arr_2w_bev = np.zeros(len(mat_labels))
+    _arr_2w_bev[mat_idx_map["steel"]] = 0.040  # lighter frame, no ICE engine block
+    _arr_2w_bev[mat_idx_map["aluminium"]] = 0.025  # same wheels/fork
+    _arr_2w_bev[mat_idx_map["chem"]] = 0.020  # same tyres/plastics
+    _arr_2w_bev[mat_idx_map["copper"]] = 0.005  # motor + wiring
+    _arr_2w_bev[mat_idx_map["met"]] = (
+        0.015  # Li-ion battery cathode metals (Li, Co, Ni, Mn)
+    )
+    _arr_2w_bev[mat_idx_map["other"]] = 0.045  # remaining
+
+    idx = cdm_tra_veh.idx  # refresh after copper fix
+    cdm_tra_veh.add(_arr_2w_ice, "Variables", "2W_ICE-gasoline", unit="t/num")
+    cdm_tra_veh.add(_arr_2w_bev, "Variables", "2W_BEV", unit="t/num")
+
     cdm_tra_veh.sort("Variables")
     cdm_tra_veh.deepen(based_on="Variables")
     cdm_tra_veh.switch_categories_order("Categories1", "Categories2")
@@ -264,6 +296,13 @@ def make_material_decomposition_dm(current_file_directory, lever_file):
     # Corrected value: 0.060 t/m × 1000 m/km × 2 rails = 120 t/km.
     idx = cdm_tra_infra.idx
     cdm_tra_infra.array[idx["rail"], idx["steel"]] = 120.0
+    # Road: literature review has only concrete-and-inert from EUCalc D3.1 (1,108.8 t/km);
+    # cement fraction is not applicable to road resurfacing, so cement is set to 0.
+    # Asphalt mix for road wearing course: 5 cm depth × 7 m lane width × 2.4 t/m³ × 1000 m/km
+    # = 840 t/km (physical derivation); EAPA statistics report ~915 t/km as EU average
+    # (https://eapa.org/asphalt-industry/statistics/); 840 t/km used as conservative estimate.
+    cdm_tra_infra.array[idx["road"], idx["cement"]] = 0.0
+    cdm_tra_infra.array[idx["road"], idx["asphalt"]] = 840.0
     cdm_check = cdm_tra_infra.group_all("Categories1", inplace=False)
     df_check = pd.melt(cdm_check.write_df())
 

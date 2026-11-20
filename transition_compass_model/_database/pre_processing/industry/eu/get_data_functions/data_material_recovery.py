@@ -1,10 +1,15 @@
+import os
+
 import numpy as np
 import pandas as pd
 
 
 def get_material_recovery_data():
     # get data
-    filepath = "../data/literature/literature_review_material_recovery.xlsx"
+    _here = os.path.dirname(os.path.abspath(__file__))
+    filepath = os.path.join(
+        _here, "../data/Literature/literature_review_material_recovery.xlsx"
+    )
     df = pd.read_excel(filepath)
 
     # name first 2 columns
@@ -110,7 +115,7 @@ def get_material_recovery_data():
             "plastics-total"
         )
         df_temp.loc[df_temp["material"].isin(material_sub_alu), "material"] = (
-            "Aluminium"
+            "aluminium"
         )
         df_temp.loc[df_temp["material"].isin(material_sub_steel), "material"] = (
             "iron_&_steel"

@@ -5,6 +5,11 @@ import re
 import numpy as np
 import pandas as pd
 
+from transition_compass_model._database.pre_processing.industry.eu.get_data_functions.data_material_net_import import (
+    get_faostat_sawnwood_data,
+    get_prodcom_data,
+)
+
 
 def get_const_energy_demand_dm(current_file_directory):
     # note: # fuel vs feedstock: machines eat energy to work (such as oil, etc),
@@ -174,9 +179,19 @@ def get_const_energy_demand_dm(current_file_directory):
     # clean
     del waste_municipal, waste_industrial, waste, solid_biomass, tot
 
+    # prodcom and faostat production data for wwp denominator fix
+    _dm_prodcom_const = get_prodcom_data("ds-056120", current_file_directory)
+    _faostat_sawnwood_const = get_faostat_sawnwood_data(current_file_directory)
+
     # function to get energy intensities from JRC files
     def get_energy_intensity(
-        filepath, techs_code, techs, techs_calc, dict_subtechs_elec, years
+        filepath,
+        techs_code,
+        techs,
+        techs_calc,
+        dict_subtechs_elec,
+        years,
+        df_po_override=None,
     ):
         # definitions
         # filepath: path of JRC file to be uploaded
@@ -464,13 +479,16 @@ def get_const_energy_demand_dm(current_file_directory):
         # make df to check code output
         df_tot = df.copy()
         df_po.columns = ["tech", "total", "unit_production"]
+        if df_po_override is not None:
+            df_po = df_po_override
         df_temp = df_fec.groupby(["tech"], as_index=False)["value"].agg(sum)
         df_temp = pd.merge(df_temp, df_po, how="left", on=["tech"])
         df_temp["ratio"] = df_temp["value"] / df_temp["total"]
         df_energyint_check = df_temp.copy()
 
         # convert toe to TWh, and divide by mega tonnes of production (objective is TWh/Mt)
-        df_po["total"] = df_po["total"] / 1000
+        if df_po_override is None:
+            df_po["total"] = df_po["total"] / 1000
         df_po["unit_production"] = "Mt"
         df["value"] = df["value"] * ktoe_to_twh
         df["unit"] = "TWh"
@@ -491,6 +509,7 @@ def get_const_energy_demand_dm(current_file_directory):
             "tot": df_tot,
             "energy-intensity-check": df_energyint_check,
             "energy-intensity": df,
+            "production": df_po,
         }
         return DF
 
@@ -1308,7 +1327,7 @@ def get_const_energy_demand_dm(current_file_directory):
 
     # techs
     techs = ["Pulp production", "Paper production", "Printing and media reproduction"]
-    techs_calc = ["pulp-tech", "paper-tech", "printing-media-tech"]
+    techs_calc = ["paper-sec", "paper-tech", "printing-media-tech"]
 
     # this is aggregated into electricity
     dict_subtechs_elec = {
@@ -1337,31 +1356,38 @@ def get_const_energy_demand_dm(current_file_directory):
         years=years,
     )
     df = DF["energy-intensity"].copy()
+    df_po = DF["production"].copy()
+    df = df.loc[df["tech"] != "printing-media-tech", :].copy()
 
-    # check
-    df_check = DF["tot"].copy()
-    df_check = df_check.groupby(["tech"], as_index=False)["value"].agg(sum)
-    # note: printing media is wrong but i will drop it so for now i do not fix the function
-    df_check = DF["energy-intensity-check"].copy()
-    df_check = df.groupby(["tech"], as_index=False)["value"].agg(np.mean)
+    # Combined paper+pulp intensity: model tracks only final paper tonnes, so total energy
+    # (JRC pulp step + JRC paper step) must be divided by paper production, not pulp production.
+    # combined_intensity = pulp_int × (pulp_prod/paper_prod) + paper_int (per carrier)
+    # df_po["total"] is in Mt (single averaged value per tech, no year dimension)
+    pulp_prod = df_po.loc[df_po["tech"] == "paper-sec", "total"].values[0]
+    paper_prod = df_po.loc[df_po["tech"] == "paper-tech", "total"].values[0]
+    ratio = pulp_prod / paper_prod if paper_prod > 0 else np.nan
 
-    # drop printing and media
-    df = df.loc[df["tech"] != "printing-media-tech", :]
+    df["carrier_unit"] = df["variable"].str.replace(r"^[^_]+_", "", regex=True)
+    df_pulp = df.loc[
+        df["tech"] == "paper-sec", ["carrier_unit", "value", "energy_demand_type"]
+    ].rename(columns={"value": "pulp_int"})
+    df_paper = df.loc[
+        df["tech"] == "paper-tech", ["carrier_unit", "value", "energy_demand_type"]
+    ].rename(columns={"value": "paper_int"})
+    df_merged = pd.merge(df_pulp, df_paper, on=["carrier_unit", "energy_demand_type"])
+    df_merged["combined"] = df_merged["pulp_int"] * ratio + df_merged["paper_int"]
 
-    # # create paper post consumer
-    # # source: https://ocshredding.com/blog/does-it-take-more-energy-to-produce-recycled-paper/#:~:text=According%20to%20the%20Environmental%20Paper,takes%20about%2022%20million%20BTUs.
-    # ec_perc_less = 0.31
-    # df_temp = df.loc[df["tech"] == "paper-tech",:]
-    # df_temp["value"] = df_temp["value"]*(1-ec_perc_less)
-    # df_temp["tech"] = "paper-sec-post-consumer"
-    # df_temp["variable"] = [i.replace("paper-tech","paper-sec-post-consumer") for i in df_temp["variable"]]
-    # df = pd.concat([df, df_temp])
+    rows = []
+    for tech in ["paper-sec", "paper-tech"]:
+        df_out = df_merged[["carrier_unit", "combined", "energy_demand_type"]].copy()
+        df_out["tech"] = tech
+        df_out["variable"] = tech + "_" + df_out["carrier_unit"]
+        df_out["value"] = df_out["combined"]
+        rows.append(df_out[["variable", "value", "tech", "energy_demand_type"]])
+    df = pd.concat(rows)
 
-    # save
     df_final = pd.concat([df_final, df])
-
-    # clean
-    del DF, df, df_check, df_energyint_check, techs, techs_calc, techs_code
+    del DF, df, df_po, df_pulp, df_paper, df_merged, rows, techs, techs_calc, techs_code
 
     ###########################################################
     ################### ALUMINIUM AND COPPER ##################
@@ -1811,6 +1837,33 @@ def get_const_energy_demand_dm(current_file_directory):
         ]
     }
 
+    # denominator = PRODCOM chips+boards + FAOSTAT total sawnwood = C16 total production.
+    # timber-tech (CDM) + wwp-tech (FXA) together cover all C16; using the same intensity
+    # (C16_energy / C16_total) makes their combined energy sum to C16_energy.
+    # Source: https://www.fao.org/faostat/en/#data/FO
+    _idx = _dm_prodcom_const.idx
+    _prodcom_years = _dm_prodcom_const.col_labels["Years"]
+    _prodcom_wwp_vals_kg = [
+        float(
+            _dm_prodcom_const.array[
+                _idx["EU27"], _idx[yr], _idx["material-demand"], _idx["wwp"]
+            ]
+        )
+        for yr in years
+        if yr in _prodcom_years
+    ]
+    _prodcom_wwp_avg_Mt = np.nanmean(_prodcom_wwp_vals_kg) / 1e9  # kg → Mt
+    _faostat_avg_Mt = np.mean(
+        [_faostat_sawnwood_const[yr] for yr in years if yr in _faostat_sawnwood_const]
+    )
+    df_wwp_po_override = pd.DataFrame(
+        {
+            "tech": ["wwp-tech"],
+            "total": [_prodcom_wwp_avg_Mt + _faostat_avg_Mt],
+            "unit_production": ["Mt"],
+        }
+    )
+
     # get energy intensity
     DF = get_energy_intensity(
         filepath=filepath,
@@ -1819,6 +1872,7 @@ def get_const_energy_demand_dm(current_file_directory):
         techs_calc=techs_calc,
         dict_subtechs_elec=dict_subtechs_elec,
         years=years,
+        df_po_override=df_wwp_po_override,
     )
     df = DF["energy-intensity"].copy()
 
@@ -1828,17 +1882,18 @@ def get_const_energy_demand_dm(current_file_directory):
     df_check = DF["energy-intensity-check"].copy()
     df_check = df.groupby(["tech"], as_index=False)["value"].agg(np.mean)
 
-    # for post consumer recycling
-    # it does not seem to be very spread at the moment (it's mostly used to be burned)
-    # one article is here: https://www.nature.com/articles/s41467-023-42499-6
-    # they say it requires less energy, but not how much less
-    # for the moment i will assume the same of wwp primary
+    # timber-tech: same intensity as wwp-tech (C16 sawmill energy covers all C16 output)
     df_temp = df.copy()
-    df_temp["tech"] = "wwp-sec"
+    df_temp["tech"] = "timber-tech"
     df_temp["variable"] = [
-        i.replace("wwp-tech", "wwp-sec") for i in df_temp["variable"]
+        i.replace("wwp-tech", "timber-tech") for i in df_temp["variable"]
     ]
-    df = pd.concat([df, df_temp])
+    df_temp2 = df_temp.copy()
+    df_temp2["tech"] = "timber-sec"
+    df_temp2["variable"] = [
+        i.replace("timber-tech", "timber-sec") for i in df_temp2["variable"]
+    ]
+    df = pd.concat([df, df_temp, df_temp2])
 
     # save
     df_final = pd.concat([df_final, df])

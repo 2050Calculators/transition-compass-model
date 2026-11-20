@@ -16,6 +16,8 @@ from transition_compass_model._database.pre_processing.fix_jumps import fix_jump
 
 # from transition_compass_model._database.pre_processing.api_routine_Eurostat import get_data_api_eurostat
 from transition_compass_model._database.pre_processing.industry.eu.get_data_functions.data_material_net_import import (
+    get_faostat_sawnwood_data,
+    get_prodcom_cement_production,
     get_prodcom_data,
 )
 from transition_compass_model.model.common.auxiliary_functions import (
@@ -127,6 +129,7 @@ def make_material_net_import_dm(current_file_directory, years_ots, years_fts):
     dict_call = {
         "material-demand_aluminium": None,
         "material-demand_ammonia": None,
+        "material-demand_asphalt": None,
         "material-demand_cement": None,
         "material-demand_chem": None,
         "material-demand_copper": None,
@@ -143,6 +146,7 @@ def make_material_net_import_dm(current_file_directory, years_ots, years_fts):
         "material-demand_tra-equip": None,
         "material-demand_wwp": None,
         "material-export_aluminium": None,
+        "material-export_asphalt": None,
         "material-export_cement": range(2012, 2014 + 1),
         "material-export_chem": None,
         "material-export_copper": None,
@@ -159,6 +163,7 @@ def make_material_net_import_dm(current_file_directory, years_ots, years_fts):
         "material-export_tra-equip": None,
         "material-export_wwp": None,
         "material-import_aluminium": None,
+        "material-import_asphalt": None,
         "material-import_cement": None,
         "material-import_chem": None,
         "material-import_copper": None,
@@ -283,20 +288,25 @@ def make_material_net_import_dm(current_file_directory, years_ots, years_fts):
     # material-net-import[%] = (material-import - material-export)/material-demand
 
     # subset for main materials
+    # ois-modelled = CDM-driven construction ceramics (tiles, bricks, refractory);
+    # distinct from FXA ois (non-construction production) appended later in model workflows.
     materials = [
         "aluminium",
         "ammonia",
+        "asphalt",
         "cement",
         "chem",
         "copper",
         "glass",
         "lime",
+        "ois",
         "other",
         "paper",
         "steel",
         "timber",
     ]
     dm_temp = dm_mat.filter({"Categories1": materials})
+    dm_temp.rename_col("ois", "ois-modelled", "Categories1")
 
     # make material-net-import[%] = (material-import - material-export)/material-demand
     idx = dm_temp.idx
@@ -338,6 +348,48 @@ def make_material_net_import_dm(current_file_directory, years_ots, years_fts):
 
     # let's cap everything to 1
     dm_trade_netshare.array[dm_trade_netshare.array > 1] = 1
+
+    # Override steel net import for EU27: PRODCOM primary-flagged codes only cover C24.10
+    # semi-finished products (~41 Mt), not finished steel (C24.2x-C24.5x). EU27 imports
+    # semi-finished steel from Ukraine/Turkey but exports finished products, so the PRODCOM
+    # formula yields 33% net import when EU27 is actually near-balanced. worldsteel 2019:
+    # EU27 production ~160 Mt, net exports ~6 Mt → net import ≈ -4%.
+    # https://worldsteel.org/steel-topics/statistics/steel-statistical-yearbook/
+    idx = dm_trade_netshare.idx
+    dm_trade_netshare.array[
+        idx["EU27"], :, idx["material-net-import"], idx["steel"]
+    ] = 0.0
+
+    # Override aluminium net import for EU27: PRODCOM code 24421154 (alloy ingots) conflates
+    # primary and secondary remelt ingots in PRODQNT, inflating apparent domestic production
+    # and driving the PRODCOM formula to 90.2% net import. The lever represents total net
+    # imports (primary + secondary combined) relative to total consumption. ERCST 2021 CBAM
+    # paper: EU27 relied on net imports for 48% of total aluminium metal consumption in 2019
+    # (13.2 Mt consumed − 6.7 Mt domestic [2 Mt primary + 4.7 Mt secondary] = 6.5 Mt net
+    # imported). https://ercst.org/wp-content/uploads/2021/08/The-aluminium-value-chain-and-implications-for-CBAM-design.pdf
+    dm_trade_netshare.array[
+        idx["EU27"], :, idx["material-net-import"], idx["aluminium"]
+    ] = 0.48
+
+    # met and nmm: not in PRODCOM DS-056120 (NACE B07/B08 mining), so set from literature.
+    # met (Pb, Zn, Ni, Co, Li, Mn, Mg, Pt): EU27 net import = 0.75, weighted by CDM mass ×
+    # EC Critical Raw Materials 2023 supply-risk import dependence:
+    # Ni 65% × 838 kg + Mn 93% × 402 kg + Co 94% × 53 kg + Pb ~50% × 65 kg
+    # + Li 97% × 26 kg + Mg 93% × 33 kg + Zn ~50% × 5 kg + Pt 71% × 0.1 kg → 75%.
+    # https://op.europa.eu/en/publication-detail/-/publication/57318397-fdd4-11ed-a05c-01aa75ed71a1
+    # nmm (aggregate: sand, gravel, crushed stone): EU27 is self-sufficient;
+    # EW-MFA 2019 net import ~0.15% of domestic extraction → rounded to 0.
+    # https://ec.europa.eu/eurostat/databrowser/view/env_ac_mfa
+    dm_trade_netshare.add(np.nan, col_label="met", dummy=True, dim="Categories1")
+    dm_trade_netshare.add(np.nan, col_label="nmm", dummy=True, dim="Categories1")
+    dm_trade_netshare.sort("Categories1")
+    idx = dm_trade_netshare.idx  # refresh after adding met/nmm
+    dm_trade_netshare.array[idx["EU27"], :, idx["material-net-import"], idx["met"]] = (
+        0.75
+    )
+    dm_trade_netshare.array[idx["EU27"], :, idx["material-net-import"], idx["nmm"]] = (
+        0.0
+    )
 
     # check
     # dm_trade_netshare.filter({"Country" : ["EU27"]}).datamatrix_plot()
@@ -390,7 +442,62 @@ def make_material_net_import_dm(current_file_directory, years_ots, years_fts):
     dm_matprod_fxa = dm_matprod.filter(
         {"Categories1": ["fbt", "mae", "ois", "textiles", "tra-equip", "wwp"]}
     )
+    # add non-construction sawnwood (50% of FAOSTAT total) to wwp production.
+    # 50% = non-construction fraction: CDM timber (~32 Mt) / FAOSTAT total (~65 Mt).
+    # Source: https://www.fao.org/faostat/en/#data/FO
+    faostat_sawnwood = get_faostat_sawnwood_data(current_file_directory)
+    idx = dm_matprod_fxa.idx
+    for yr in dm_matprod_fxa.col_labels["Years"]:
+        if yr in faostat_sawnwood:
+            dm_matprod_fxa.array[
+                idx["EU27"], idx[yr], idx["material-production"], idx["wwp"]
+            ] += (
+                0.5 * faostat_sawnwood[yr] * 1000  # Mt → kt
+            )
     dm_matprod_fxa = linear_fitting(dm_matprod_fxa, years_fts)
+
+    # add civil-engineering cement: dams, bridges, industrial construction not in CDM.
+    # GCCA EU sector breakdown: civil engineering ~40% of total cement consumption.
+    # Source: https://www.gcca.eu/resources/key-facts-figures
+    # Uses PRODCOM CPA 23511210 (Portland) + 23511290 (other hydraulic), not concrete products.
+    # Source: https://ec.europa.eu/eurostat/web/prodcom
+    _cement_prod = get_prodcom_cement_production(current_file_directory)
+    _civil_fraction = 0.40
+    dm_cement_civil = dm_matprod_fxa.filter({"Categories1": ["fbt"]}).copy()
+    dm_cement_civil.rename_col("fbt", "cement-civil", "Categories1")
+    dm_cement_civil.array[:] = np.nan
+    idx = dm_cement_civil.idx
+    for yr in dm_cement_civil.col_labels["Years"]:
+        if yr in _cement_prod:
+            dm_cement_civil.array[
+                idx["EU27"], idx[yr], idx["material-production"], idx["cement-civil"]
+            ] = _cement_prod[yr] * _civil_fraction
+    dm_cement_civil = linear_fitting(dm_cement_civil, years_fts)
+    dm_matprod_fxa.append(dm_cement_civil, "Categories1")
+
+    # add civil-engineering nmm (aggregate): co-produced with civil cement in dams, bridges etc.
+    # UEPG 2019-2020: CDM covers ~87% of aggregate (buildings 65% + roads/rail 22%).
+    # Non-CDM civil fraction ~13% → nmm_civil = cement_civil × 7.0 t aggregate / t cement.
+    # Concrete mix ratio: ~1800 kg aggregate / 300 kg cement per m³ → 6.0; civil lean mixes
+    # (dams, mass concrete) have higher ratios → central estimate 7.0.
+    # Source aggregate/cement ratio: standard concrete mix design (e.g. EN 206).
+    # Source UEPG end-use shares: https://www.aniet.pt/fotos/editor2/uepg_annual_review_2019-2020.pdf
+    _nmm_per_cement = 7.0
+    dm_nmm_civil = dm_cement_civil.copy()
+    dm_nmm_civil.rename_col("cement-civil", "nmm-civil", "Categories1")
+    dm_nmm_civil.array = dm_cement_civil.array * _nmm_per_cement
+    dm_matprod_fxa.append(dm_nmm_civil, "Categories1")
+
+    # add civil-engineering met (metallic minerals): minor metals co-produced with civil cement.
+    # Dominant contribution is zinc (galvanized fittings); Li/Co/REEs negligible in civil works.
+    # TODO: replace placeholder with literature-sourced met/cement ratio for civil construction.
+    _met_per_cement = 0.005
+    dm_met_civil = dm_cement_civil.copy()
+    dm_met_civil.rename_col("cement-civil", "met-civil", "Categories1")
+    dm_met_civil.array = dm_cement_civil.array * _met_per_cement
+    dm_matprod_fxa.append(dm_met_civil, "Categories1")
+
+    dm_matprod_fxa.sort("Categories1")
 
     # # make calibration data
     # dm_matprod_calib = dm_matprod.filter({"Years" : years_ots})
@@ -439,6 +546,14 @@ def make_material_net_import_dm(current_file_directory, years_ots, years_fts):
 
     dm_temp = dm_mat.filter({"Variables": ["material-demand"], "Categories1": ["wwp"]})
     dm_temp.change_unit("material-demand", factor=1e-3, old_unit="kg", new_unit="t")
+    # add non-construction sawnwood (50% of FAOSTAT total) to wwp demand (in t).
+    # Source: https://www.fao.org/faostat/en/#data/FO
+    idx = dm_temp.idx
+    for yr in dm_temp.col_labels["Years"]:
+        if yr in faostat_sawnwood:
+            dm_temp.array[idx["EU27"], idx[yr], idx["material-demand"], idx["wwp"]] += (
+                0.5 * faostat_sawnwood[yr] * 1e6  # Mt → t
+            )
     dm_matdem_fxa = dm_temp.copy()
     dm_matdem_fxa = linear_fitting(dm_matdem_fxa, years_fts)
 

@@ -215,6 +215,7 @@ def get_prodcom_production_data(current_file_directory):
         "marine_ICE-diesel": ["p/st"],
         "tv": ["p/st"],
         "wmachine": ["p/st"],
+        "2W_ICE-gasoline": ["p/st"],
     }
     df_sub = pd.concat(
         [
@@ -365,6 +366,7 @@ def get_prodcom_production_data(current_file_directory):
                 "marine_ICE-diesel",
                 "rail_CEV",
                 "rail_ICE-diesel",
+                "2W_ICE-gasoline",
             ]
         ),
         ["Country", "Years", "variable", "value"],

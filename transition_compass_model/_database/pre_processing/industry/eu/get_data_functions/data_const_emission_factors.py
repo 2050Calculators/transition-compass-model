@@ -177,7 +177,7 @@ def get_process_emission_factors_data(current_file_directory):
         "Cement": ["NMM", "cement"],
         "Glass production": ["NMM", "glass-glass-tech"],
         "Basic chemicals": ["CHI", "chem-chem-tech"],
-        "Pulp production": ["PPA", "pulp-tech"],
+        "Pulp production": ["PPA", "paper-sec"],
         "Paper production": ["PPA", "paper-tech"],
         "Aluminium - primary production": ["NFM", "aluminium-prim"],
         "Aluminium - secondary production": ["NFM", "aluminium-sec"],
@@ -340,10 +340,31 @@ def get_process_emission_factors_data(current_file_directory):
     df_temp["variable"] = "process-emissions_ois-sec_CO2[Mt/Mt]"
     df = pd.concat([df, df_temp])
 
-    # wwp-sec-post-consumer
-    # assuming same of wwp-tech
-    df_temp = df.loc[df["variable"] == "process-emissions_wwp-tech_CO2[Mt/Mt]", :]
-    df_temp["variable"] = "process-emissions_wwp-sec_CO2[Mt/Mt]"
+    # timber-tech and timber-sec: same process emissions as wwp-tech (all C16, same carbon content)
+    df_temp = df.loc[
+        df["variable"] == "process-emissions_wwp-tech_CO2[Mt/Mt]", :
+    ].copy()
+    df_temp["variable"] = "process-emissions_timber-tech_CO2[Mt/Mt]"
+    df_temp2 = df_temp.copy()
+    df_temp2["variable"] = "process-emissions_timber-sec_CO2[Mt/Mt]"
+    df = pd.concat([df, df_temp, df_temp2])
+
+    # asphalt-tech and asphalt-sec
+    # Asphalt is a physical mixture of aggregates and bitumen binder; no calcination or
+    # chemical reaction occurs during hot-mix plant production.
+    # Source: IPCC 2006 Guidelines Vol.3 Ch.3 Table 3.1 — road paving asphalt not listed
+    # as a process-emission source (https://www.ipcc-nggip.iges.or.jp/public/2006gl/vol3.html).
+    # RAP (reclaimed asphalt pavement) reprocessing also involves no chemical reaction.
+    # Source: EAPA asphalt production statistics (https://eapa.org/asphalt-industry/statistics/).
+    df_temp = pd.DataFrame(
+        {
+            "variable": [
+                "process-emissions_asphalt-tech_CO2[Mt/Mt]",
+                "process-emissions_asphalt-sec_CO2[Mt/Mt]",
+            ],
+            "value": [0.0, 0.0],
+        }
+    )
     df = pd.concat([df, df_temp])
 
     # sort

@@ -30,12 +30,12 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 # env_waspac for packaging waste
 
 
-def make_transport(years_ots):
+def make_transport(years_ots, current_file_directory):
     ###############################################
     ##### GET DATA ON END OF LIFE OF VEHICLES #####
     ###############################################
 
-    dm_elv = get_waste_vehicle_data()
+    dm_elv = get_waste_vehicle_data(current_file_directory)
 
     ###################
     ##### FIX OTS #####
@@ -517,8 +517,8 @@ def make_transport(years_ots):
     return DM_wst_mgt
 
 
-def make_buildings(DM_wst_mgt, years_ots):
-    dm_bld = get_waste_buildings_data()
+def make_buildings(DM_wst_mgt, years_ots, current_file_directory):
+    dm_bld = get_waste_buildings_data(current_file_directory)
 
     ###################
     ##### FIX OTS #####
@@ -826,7 +826,7 @@ def adjust_shares(shares):
     return rounded_shares
 
 
-def make_trolley_cables(DM_wst_mgt, years_ots):
+def make_trolley_cables(DM_wst_mgt, years_ots, current_file_directory):
     ###############################################################################
     ################################ TROLLEY CABLES ###############################
     ###############################################################################
@@ -834,8 +834,13 @@ def make_trolley_cables(DM_wst_mgt, years_ots):
     # assuming that eol of trolly cables is similar to the one of copper, which is
     # contained in env_wastrt, the variable metal wastes - non ferrous (W062)
 
-    # get data
-    df = eurostat.get_data_df("env_wastrt")
+    # get data — fetch from Eurostat once and cache locally as CSV
+    filepath = os.path.join(current_file_directory, "../data/eurostat/env_wastrt.csv")
+    if os.path.exists(filepath):
+        df = pd.read_csv(filepath)
+    else:
+        df = eurostat.get_data_df("env_wastrt")
+        df.to_csv(filepath, index=False)
     df.rename(columns={"geo\\TIME_PERIOD": "geoscale"}, inplace=True)
     df = df.loc[df["unit"] == "T", :]
     df = df.loc[df["waste"] == "W062", :]
@@ -1155,21 +1160,25 @@ def make_trolley_cables(DM_wst_mgt, years_ots):
     return
 
 
-def make_appliances(DM_wst_mgt, years_ots):
+def make_appliances(DM_wst_mgt, years_ots, current_file_directory):
     ####################
     ##### GET DATA #####
     ####################
 
-    # get data
-    df = eurostat.get_data_df("env_waselee")
-    # filepath = os.path.join(current_file_directory, '../data/eurostat/env_waselee.csv')
-    # df.to_csv(filepath, index = False)
-    # df = pd.read_csv(filepath)
+    # get data — fetch from Eurostat once and cache locally as CSV
+    filepath = os.path.join(current_file_directory, "../data/eurostat/env_waselee.csv")
+    if os.path.exists(filepath):
+        df = pd.read_csv(filepath)
+    else:
+        df = eurostat.get_data_df("env_waselee")
+        df.to_csv(filepath, index=False)
 
-    df_mun = eurostat.get_data_df("env_wasmun")
-    # filepath = os.path.join(current_file_directory, '../data/eurostat/env_wasmun.csv')
-    # df_mun.to_csv(filepath, index = False)
-    # df_mun = pd.read_csv(filepath)
+    filepath = os.path.join(current_file_directory, "../data/eurostat/env_wasmun.csv")
+    if os.path.exists(filepath):
+        df_mun = pd.read_csv(filepath)
+    else:
+        df_mun = eurostat.get_data_df("env_wasmun")
+        df_mun.to_csv(filepath, index=False)
     df_mun["wst_oper"].unique()
 
     # get geo column
@@ -1782,7 +1791,7 @@ def make_appliances(DM_wst_mgt, years_ots):
     return
 
 
-def make_packages(DM_wst_mgt, years_ots):
+def make_packages(DM_wst_mgt, years_ots, current_file_directory):
     #####################################################
     ################### PACKAGE WASTE ###################
     #####################################################
@@ -1791,16 +1800,20 @@ def make_packages(DM_wst_mgt, years_ots):
     ##### GET DATA #####
     ####################
 
-    # get data
-    df = eurostat.get_data_df("env_waspac")
-    # filepath = os.path.join(current_file_directory, '../data/eurostat/env_waspac.csv')
-    # df.to_csv(filepath, index = False)
-    # df = pd.read_csv(filepath)
+    # get data — fetch from Eurostat once and cache locally as CSV
+    filepath = os.path.join(current_file_directory, "../data/eurostat/env_waspac.csv")
+    if os.path.exists(filepath):
+        df = pd.read_csv(filepath)
+    else:
+        df = eurostat.get_data_df("env_waspac")
+        df.to_csv(filepath, index=False)
 
-    df_mun = eurostat.get_data_df("env_wasmun")
-    # filepath = os.path.join(current_file_directory, '../data/eurostat/env_wasmun.csv')
-    # df_mun.to_csv(filepath, index = False)
-    # df_mun = pd.read_csv(filepath)
+    filepath = os.path.join(current_file_directory, "../data/eurostat/env_wasmun.csv")
+    if os.path.exists(filepath):
+        df_mun = pd.read_csv(filepath)
+    else:
+        df_mun = eurostat.get_data_df("env_wasmun")
+        df_mun.to_csv(filepath, index=False)
     df_mun["wst_oper"].unique()
 
     # get geo column
@@ -2538,17 +2551,25 @@ def clean_up(DM_wst_mgt, years_ots):
     # put together
     # list(DM_wst_mgt)
     dm = DM_wst_mgt["elv-total"].copy()
+    countries = dm.col_labels["Country"]
+    years = dm.col_labels["Years"]
     keys = list(DM_wst_mgt)
     keys = [s for s in keys if "-total" in s]
     keys.remove("elv-total")
     for key in keys:
-        dm.append(DM_wst_mgt[key], dim="Variables")
+        dm.append(
+            DM_wst_mgt[key].filter({"Country": countries, "Years": years}),
+            dim="Variables",
+        )
     dm_col = DM_wst_mgt["elv-col"].copy()
     keys = list(DM_wst_mgt)
     keys = [s for s in keys if "-col" in s]
     keys.remove("elv-col")
     for key in keys:
-        dm_col.append(DM_wst_mgt[key], dim="Variables")
+        dm_col.append(
+            DM_wst_mgt[key].filter({"Country": countries, "Years": years}),
+            dim="Variables",
+        )
     dm.append(dm_col, "Categories1")
 
     ###############
@@ -2562,10 +2583,10 @@ def clean_up(DM_wst_mgt, years_ots):
 
 def make_waste_management_dm(current_file_directory, lever_file, years_ots):
     # vehicles
-    DM_wst_mgt = make_transport(years_ots)
+    DM_wst_mgt = make_transport(years_ots, current_file_directory)
 
     # buildings
-    make_buildings(DM_wst_mgt, years_ots)
+    make_buildings(DM_wst_mgt, years_ots, current_file_directory)
 
     # roads
     make_roads(DM_wst_mgt)
@@ -2574,13 +2595,13 @@ def make_waste_management_dm(current_file_directory, lever_file, years_ots):
     make_rails(DM_wst_mgt, years_ots)
 
     # trolley cables
-    make_trolley_cables(DM_wst_mgt, years_ots)
+    make_trolley_cables(DM_wst_mgt, years_ots, current_file_directory)
 
     # larger appliances, pcs and electronics
-    make_appliances(DM_wst_mgt, years_ots)
+    make_appliances(DM_wst_mgt, years_ots, current_file_directory)
 
     # packages
-    make_packages(DM_wst_mgt, years_ots)
+    make_packages(DM_wst_mgt, years_ots, current_file_directory)
 
     # clean up
     dm_ots = clean_up(DM_wst_mgt, years_ots)

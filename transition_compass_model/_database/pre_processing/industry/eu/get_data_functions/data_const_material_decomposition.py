@@ -1,10 +1,33 @@
+import os
+
 import numpy as np
 import pandas as pd
 
 
 def get_material_decomposition_data():
+    # Scope: NACE C manufacturing only.
+    # Mining (NACE B) and construction (NACE F) are out of scope — the model tracks
+    # manufactured materials (steel, cement, aluminium, etc.) not raw extraction or
+    # civil works. Consequently:
+    #   - Quarried aggregates (sand, gravel, crushed stone — NACE B08) are excluded
+    #     from the CDM "other" bucket even when they appear in product bill-of-materials
+    #     (e.g. concrete mix). Their quarrying energy is negligible relative to the
+    #     manufacturing energy of co-products and does not belong in NACE C intensity.
+    #   - PRODCOM codes B07/B08 are mapped to NaN in PRODCOM2024_PRODCOM2023_Table.csv.
+    #   - JRC IDEES OIS energy includes FC_IND_MQ_E (mining, 44 TWh) and FC_IND_CON_E
+    #     (construction, 119 TWh) on top of NACE C manufacturing. Subtracting them is
+    #     physically correct but cannot be done without also restructuring the ceramics
+    #     fold denominator in data_fxa_energy_demand.py to include CDM bricks (~26 Mt/yr
+    #     from new buildings, NACE C23.3), which is a runtime quantity not available at
+    #     preprocessing time. The current setup — B+F in numerator, asphalt kept in the
+    #     PRODCOM OIS denominator (188.5 Mt) — gives model OIS energy 316 TWh ≈ 303 TWh
+    #     target (Eurostat NSP 128 + JRC NMM ceramics 175) because the inflated denominator
+    #     compensates for the large CDM brick production at runtime.
     # get data
-    filepath = "../data/Literature/literature_review_material_composition.xlsx"
+    _here = os.path.dirname(os.path.abspath(__file__))
+    filepath = os.path.join(
+        _here, "../data/Literature/literature_review_material_composition.xlsx"
+    )
     df = pd.read_excel(filepath)
 
     # name first 2 columns
@@ -48,14 +71,24 @@ def get_material_decomposition_data():
     material_current = [
         "aluminium",
         "ammonia",
+        "brick",
+        "ceramic",
+        "cobalt",
         "concrete-and-inert",
+        "lead",
+        "lithium",
+        "magnesium",
+        "manganese",
+        "nickel",
         "plastics-total",
+        "platinum",
         "copper",
         "glass",
         "lime",
         "paper",
         "iron_&_steel",
         "wood",
+        "zinc",
         "HDPE",
         "latex",
         "paint",
@@ -64,18 +97,29 @@ def get_material_decomposition_data():
         "fibreglass-composites",
         "fluids-and-lubricants",
         "refrigerant-R-134a",
+        "bitumen",
     ]
     material_current_correct_name = [
         "aluminium",
         "ammonia",
+        "ois-modelled",
+        "ois-modelled",
+        "met",
         "cement",
+        "met",
+        "met",
+        "met",
+        "met",
+        "met",
         "chem",
+        "met",
         "copper",
         "glass",
         "lime",
         "paper",
         "steel",
         "timber",
+        "met",
         "chem",
         "chem",
         "chem",
@@ -84,6 +128,7 @@ def get_material_decomposition_data():
         "chem",
         "chem",
         "chem",
+        "asphalt",
     ]
 
     def aggregate_materials(
@@ -149,17 +194,22 @@ def get_material_decomposition_data():
     df_check = df_agg.groupby(["variable"], as_index=False)["value"].agg(sum)
 
     # fix cement
-    # cement is just a fraction of concrete-and-inert, I will apply an adjustment factor of 0.12 and put rest to other
+    # concrete-and-inert is 12% cement + 88% quarried aggregate (sand, gravel, crushed stone).
+    # Cement fraction → "cement" (tracked with energy/emissions intensity).
+    # Aggregate fraction → "nmm" (Non-metallic minerals — no production tech, mass/EOL tracking only).
+    # Split coefficients: EC JRC "Best Available Techniques for the Manufacture of Large Volume
+    # Inorganic Chemicals" (2007); typical structural concrete mix ~350 kg/m³ cement,
+    # ~1850 kg/m³ aggregate, ~175 kg/m³ water → cement share ≈ 350/(350+1850) ≈ 0.12.
     df_temp = df_agg.copy()
     df_agg.loc[df_agg["material"] == "cement", "value"] = (
         df_temp.loc[df_temp["material"] == "cement", "value"] * 0.12
     )
-    df_agg.loc[df_agg["material"] == "other", "value"] = (
-        df_temp.loc[df_temp["material"] == "other", "value"].values
-        + (df_temp.loc[df_temp["material"] == "cement", "value"] * (1 - 0.12)).values
-    )
+    df_nmm_from_concrete = df_temp.loc[df_temp["material"] == "cement", :].copy()
+    df_nmm_from_concrete["material"] = "nmm"
+    df_nmm_from_concrete["value"] = df_nmm_from_concrete["value"] * 0.88
+    df_agg = pd.concat([df_agg, df_nmm_from_concrete], ignore_index=True)
 
-    # fix cement for domapp: domestic appliances do not contain cement, move to other
+    # fix cement and asphalt for domapp: domestic appliances do not contain cement or asphalt, move to other
     domapp_vars = [
         "larger-appliances_fridge[kg/unit]",
         "larger-appliances_dishwasher[kg/unit]",
@@ -168,16 +218,17 @@ def get_material_decomposition_data():
         "larger-appliances_dryer[kg/unit]",
     ]
     for v in domapp_vars:
-        cement_val = df_agg.loc[
-            (df_agg["variable"] == v) & (df_agg["material"] == "cement"), "value"
-        ]
-        if not cement_val.empty:
-            df_agg.loc[
-                (df_agg["variable"] == v) & (df_agg["material"] == "other"), "value"
-            ] += cement_val.values[0]
-            df_agg.loc[
-                (df_agg["variable"] == v) & (df_agg["material"] == "cement"), "value"
-            ] = 0
+        for mat in ["cement", "asphalt"]:
+            mat_val = df_agg.loc[
+                (df_agg["variable"] == v) & (df_agg["material"] == mat), "value"
+            ]
+            if not mat_val.empty:
+                df_agg.loc[
+                    (df_agg["variable"] == v) & (df_agg["material"] == "other"), "value"
+                ] += mat_val.values[0]
+                df_agg.loc[
+                    (df_agg["variable"] == v) & (df_agg["material"] == mat), "value"
+                ] = 0
 
     # fix lime
     # move some mass from other to lime
@@ -217,6 +268,39 @@ def get_material_decomposition_data():
         ]
         - 10
     )
+
+    # fix aluminium in buildings: missing from literature review (all entries are 0).
+    # Aluminium is used in window frames, curtain walls, cladding, gutters, electrical cable.
+    # Values derived from European Aluminium Association "Collection of Aluminium from Buildings
+    # in Europe" (2022): https://european-aluminium.eu/wp-content/uploads/2022/10/collection-of-aluminium-from-buildings-in-europe.pdf
+    # Residential new: 8 kg/m² (windows/frames/gutters/electrical); non-res new: 20 kg/m²
+    # (higher curtain wall and cladding share); renovation: lower (mostly frame replacement).
+    # Added as extra mass — not taken from "other" — because the literature review totals
+    # (1345 kg/m² res, 1326 kg/m² non-res) genuinely excluded aluminium components.
+    for _var, _val in [
+        ("floor-area-new-residential[kg/m2]", 8.0),  # kg; converted to t later
+        ("floor-area-new-non-residential[kg/m2]", 20.0),  # kg; converted to t later
+        ("floor-area-reno-residential[t/m2]", 0.003),
+        ("floor-area-reno-non-residential[t/m2]", 0.008),
+    ]:
+        _mask = (df_agg["variable"] == _var) & (df_agg["material"] == "aluminium")
+        if _mask.any():
+            df_agg.loc[_mask, "value"] = _val
+        else:
+            df_agg = df_agg._append(
+                {"variable": _var, "material": "aluminium", "value": _val},
+                ignore_index=True,
+            )
+
+    # fix HDVM_FCV: 671 kg carbon (H2 pressure vessel fibre) was entered as plain "carbon"
+    # instead of "plastics-carbon-fiber-reinforced". In HDVH_FCV the equivalent mass is
+    # correctly classified as CFRP (994 kg → chem). Reclassify to chem here.
+    _v = "HDVM_FCV-Class-6-PnD-truck[kg/unit]"
+    _mask_carbon = (df_agg["variable"] == _v) & (df_agg["material"] == "carbon")
+    _mask_chem = (df_agg["variable"] == _v) & (df_agg["material"] == "chem")
+    if _mask_carbon.any() and _mask_chem.any():
+        df_agg.loc[_mask_chem, "value"] += df_agg.loc[_mask_carbon, "value"].values[0]
+        df_agg.loc[_mask_carbon, "value"] = 0
 
     # map to products we have in the calc (by taking the mean across products)
     dict_map = {

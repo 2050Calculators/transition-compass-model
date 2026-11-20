@@ -22,11 +22,15 @@ def make_calib_emissions_dm(current_file_directory, lever_files, years_ots, year
     ##### GET CLEAN DATAFRAME WITH DATA #####
     #########################################
 
-    # get data
-    df = eurostat.get_data_df("env_ac_ainah_r2")
-    # filepath = os.path.join(current_file_directory, '../data/eurostat/env_ac_ainah_r2.csv')
-    # df.to_csv(filepath, index = False)
-    # df = pd.read_csv(filepath)
+    # get data — fetch from Eurostat once and cache locally as CSV
+    filepath = os.path.join(
+        current_file_directory, "../data/eurostat/env_ac_ainah_r2.csv"
+    )
+    if os.path.exists(filepath):
+        df = pd.read_csv(filepath)
+    else:
+        df = eurostat.get_data_df("env_ac_ainah_r2")
+        df.to_csv(filepath, index=False)
 
     # get manufacturing and gases in tonnes
     df = df.loc[df["nace_r2"] == "C", :]
@@ -116,7 +120,11 @@ def make_calib_emissions_dm(current_file_directory, lever_files, years_ots, year
 
     # make data matrix
     dm = DataMatrix.create_from_df(df, 1)
-    dm.drop("Years", [2024])
+    # Drop any years beyond the OTS range (Eurostat may include recent provisional data)
+    _max_ots = max(int(y) for y in years_ots)
+    _extra = [y for y in dm.col_labels["Years"] if int(y) > _max_ots]
+    if _extra:
+        dm.drop("Years", _extra)
 
     # add missing years as nan
     missing = np.array(years_ots)[

@@ -1,3 +1,5 @@
+import os
+
 import eurostat
 import numpy as np
 import pandas as pd
@@ -5,17 +7,21 @@ import pandas as pd
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
-def get_waste_vehicle_data():
-    # get data
-    df = eurostat.get_data_df("env_waselv")
-    # filepath = os.path.join(current_file_directory, '../data/eurostat/env_waselv.csv')
-    # df.to_csv(filepath, index = False)
-    # df = pd.read_csv(filepath)
+def get_waste_vehicle_data(current_file_directory):
+    # get data — fetch from Eurostat once and cache locally as CSV
+    filepath = os.path.join(current_file_directory, "../data/eurostat/env_waselv.csv")
+    if os.path.exists(filepath):
+        df = pd.read_csv(filepath)
+    else:
+        df = eurostat.get_data_df("env_waselv")
+        df.to_csv(filepath, index=False)
 
-    df_total = eurostat.get_data_df("env_waselvt")
-    # filepath = os.path.join(current_file_directory, '../data/eurostat/env_waselvt.csv')
-    # df_total.to_csv(filepath, index = False)
-    # df_total = pd.read_csv(filepath)
+    filepath = os.path.join(current_file_directory, "../data/eurostat/env_waselvt.csv")
+    if os.path.exists(filepath):
+        df_total = pd.read_csv(filepath)
+    else:
+        df_total = eurostat.get_data_df("env_waselvt")
+        df_total.to_csv(filepath, index=False)
 
     # get geo column
     df.rename(columns={"geo\\TIME_PERIOD": "geoscale"}, inplace=True)
@@ -256,9 +262,14 @@ def get_waste_vehicle_data():
     return dm_elv
 
 
-def get_waste_buildings_data():
-    # get data
-    df = eurostat.get_data_df("env_wastrt")
+def get_waste_buildings_data(current_file_directory):
+    # get data — fetch from Eurostat once and cache locally as CSV
+    filepath = os.path.join(current_file_directory, "../data/eurostat/env_wastrt.csv")
+    if os.path.exists(filepath):
+        df = pd.read_csv(filepath)
+    else:
+        df = eurostat.get_data_df("env_wastrt")
+        df.to_csv(filepath, index=False)
 
     # get geo column
     df.rename(columns={"geo\\TIME_PERIOD": "geoscale"}, inplace=True)
