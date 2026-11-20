@@ -102,7 +102,7 @@ def product_production(
 
     # transport vehicles
     dm_netimport_tra_veh = dm_import.filter_w_regex(
-        {"Categories1": "HDV|LDV|bus|planes|ships|trains"}
+        {"Categories1": "2W|HDV|LDV|bus|planes|ships|trains"}
     )
     dm_netimport_tra_veh.deepen()
 
@@ -425,6 +425,9 @@ def material_production(
 
     # subset aggregate demand for the materials we keep
     # materials = ['aluminium', 'cement', 'chem', 'copper', 'glass', 'lime', 'paper', 'steel', 'timber']
+    # Lime demand: CDM floor-area decomposition (~10 kg/m², ~1,250 kt/yr EU27) covers only ~6% of total EU
+    # lime production (~17–20 Mt/yr). Steel flux lime is added below; FGD, water treatment, and chemical
+    # uses (~8 Mt/yr) remain unmodelled.
     dm_material_production_natfiber = dm_matdec_agg.filter(
         {"Categories1": ["natfibers"]}
     )  # this will be used for interface agriculture
@@ -454,11 +457,36 @@ def material_production(
         dm_material_net_import_kt.array * dm_material_net_import.array
     )
 
+    # add civil-engineering materials (dams, bridges, industrial construction) to CDM totals
+    # before recovery is subtracted in material_production_by_technology
+    dm_other = dm_matprod_other_industries.copy()
+    if "cement-civil" in dm_other.col_labels["Categories1"]:
+        dm_material_production_bymat[..., "cement"] = (
+            dm_material_production_bymat[..., "cement"] + dm_other[..., "cement-civil"]
+        )
+        dm_other.drop("Categories1", "cement-civil")
+    if "nmm-civil" in dm_other.col_labels["Categories1"]:
+        dm_material_production_bymat[..., "nmm"] = (
+            dm_material_production_bymat[..., "nmm"] + dm_other[..., "nmm-civil"]
+        )
+        dm_other.drop("Categories1", "nmm-civil")
+    if "met-civil" in dm_other.col_labels["Categories1"]:
+        dm_material_production_bymat[..., "met"] = (
+            dm_material_production_bymat[..., "met"] + dm_other[..., "met-civil"]
+        )
+        dm_other.drop("Categories1", "met-civil")
+
     # include other industries from fxa
-    dm_material_production_bymat.append(
-        data2=dm_matprod_other_industries, dim="Categories1"
-    )
+    dm_material_production_bymat.append(data2=dm_other, dim="Categories1")
     dm_material_production_bymat.sort("Categories1")
+
+    # steel-flux lime: 65 kg lime consumed per tonne of steel produced in EU steelmaking
+    # (blast furnace basic oxygen route: ~55-65 kg/t; EAF: ~20-30 kg/t; EU average ~55-65 kg/t)
+    # https://www.worldsteel.org/en/dam/jcr:16ad9bcd-dbf5-449f-b42c-b220952767bf/World+Steel+in+Figures+2023.pdf
+    dm_material_production_bymat[..., "lime"] = (
+        dm_material_production_bymat[..., "lime"]
+        + dm_material_production_bymat[..., "steel"] * 0.065
+    )
 
     # put together
     DM_material_production = {
@@ -1083,14 +1111,10 @@ def end_of_life(
         "material-recovered", factor=1e-3, old_unit="t", new_unit="kt"
     )
 
-    # allocate "recycled cement" to other materials
-    # note:
-    # Cement production: limestone + clay → kiln (1450 °C) → clinker → ground → cement
-    # Cement → not directly recyclable; only partially recoverable via thermal/mechanical or SCM routes, mostly still emerging
-    # Concrete is done by mixing cement, sand, water and aggregates, and it is the main construction material used in buildings
-    # Concrete can be recycled from eol buildings, and usually it's downcycled to make roads, base, etc
-    # what we call here "recycled cement" is recovered concrete from eol buildings, so for now I allocate it to other recovered materials
-    dm_rec_agg[..., "other"] = dm_rec_agg[..., "other"] + dm_rec_agg[..., "cement"]
+    # recycled concrete → aggregate (nmm), not clinker.
+    # Cement clinker is not recoverable from demolished concrete; crushed concrete becomes
+    # recycled aggregate (RCA) used as road sub-base or fill — tracked as nmm.
+    dm_rec_agg[..., "nmm"] = dm_rec_agg[..., "nmm"] + dm_rec_agg[..., "cement"]
     dm_rec_agg[..., "cement"] = 0
 
     # # TODO: tbc but Switzerland in theroy does not have facilities to recycle non-ferrous metals like
@@ -1256,27 +1280,38 @@ def material_production_by_technology(
             dm_material_production_bymat_primary[..., m] - dm_material_recovered[..., m]
         )
 
-    # add timber to wood and wooden products (wwp), and other ot other industrial sector (ois)
+    # merge CDM-driven ois with FXA ois; other/nmm/met stay separate (dropped below)
     dm_material_production_bymat.groupby(
-        {"wwp": "timber|wwp", "ois": "other|ois"},
+        {"ois": "^ois"},
         dim="Categories1",
         aggregation="sum",
         regex=True,
         inplace=True,
     )
     dm_material_production_bymat_primary.groupby(
-        {"wwp": "timber|wwp", "ois": "other|ois"},
+        {"ois": "^ois"},
         dim="Categories1",
         aggregation="sum",
         regex=True,
         inplace=True,
     )
 
+    # drop materials with no production tech (other = residual; nmm = aggregate; met = metallic minerals)
+    _no_tech = [
+        m
+        for m in ["other", "nmm", "met"]
+        if m in dm_material_production_bymat_primary.col_labels["Categories1"]
+    ]
+    if _no_tech:
+        dm_material_production_bymat.drop("Categories1", _no_tech)
+        dm_material_production_bymat_primary.drop("Categories1", _no_tech)
+
     # make material production by tech
     dm_material_production_bytech = dm_material_production_bymat_primary.copy()
     dm_material_production_bytech.rename_col(
         [
             "aluminium",
+            "asphalt",
             "cement",
             "chem",
             "copper",
@@ -1288,11 +1323,13 @@ def material_production_by_technology(
             "paper",
             "steel",
             "textiles",
+            "timber",
             "tra-equip",
             "wwp",
         ],
         [
             "aluminium-prim",
+            "asphalt-tech",
             "cement-dry-kiln",
             "chem-chem-tech",
             "copper-tech",
@@ -1304,6 +1341,7 @@ def material_production_by_technology(
             "paper-tech",
             "steel-BF-BOF",
             "textiles-tech",
+            "timber-tech",
             "tra-equip-tech",
             "wwp-tech",
         ],
@@ -1339,13 +1377,26 @@ def material_production_by_technology(
     dm_material_production_bytech.sort("Categories1")
 
     # add secondary techs
-    dm_material_recovered.rename_col(["other", "timber"], ["ois", "wwp"], "Categories1")
+    # merge ois-modelled recovered → ois (consistent with ^ois groupby on production DMs above)
+    dm_material_recovered.groupby(
+        {"ois": "^ois"},
+        dim="Categories1",
+        aggregation="sum",
+        regex=True,
+        inplace=True,
+    )
+    # drop other/nmm/met from recovered materials — no secondary tech assigned
+    _no_tech_sec = [
+        m
+        for m in ["other", "nmm", "met"]
+        if m in dm_material_recovered.col_labels["Categories1"]
+    ]
+    if _no_tech_sec:
+        dm_material_recovered.drop("Categories1", _no_tech_sec)
     secondary_techs = dm_material_recovered.col_labels["Categories1"]
     for s in secondary_techs:
         dm_material_recovered.rename_col(s, s + "-sec", "Categories1")
-    dm_material_recovered.rename_col(
-        "paper-sec", "pulp-tech", "Categories1"
-    )  # recycled paper is recycled pulp, which will then turned back to paper
+    # paper-sec stays as paper-sec: secondary paper production from recovered/recycled paper
     dm_material_recovered.rename_col(
         "steel-sec", "steel-scrap-EAF", "Categories1"
     )  # secondary steel is made is electric arc furnace using scrap steel
@@ -1354,9 +1405,6 @@ def material_production_by_technology(
     )
     dm_material_production_bytech.append(dm_material_recovered, "Categories1")
     dm_material_production_bytech.sort("Categories1")
-
-    # TODO: you'll have to update names and review some techs (for example wwp-sec would be timber-sec,
-    # and you would need to get the properties of that technology, i.e. energy consumed, emissions, etc)
 
     # # checks
     # # production = primary + secondary
@@ -1367,9 +1415,10 @@ def material_production_by_technology(
     #                     "copper" : ['copper-sec', 'copper-tech'],
     #                     "glass" : ['glass-glass', 'glass-sec'],
     #                     "lime" : ['lime-lime', 'lime-sec'],
-    #                     "paper" : ['paper-tech', 'pulp-tech'],
+    #                     "paper" : ['paper-tech', 'paper-sec'],
     #                     "steel" : ['steel-BF-BOF', 'steel-hisarna', 'steel-hydrog-DRI', 'steel-scrap-EAF'],
-    #                     "wwp" : ['wwp-sec', 'wwp-tech']}
+    #                     "timber" : ['timber-tech', 'timber-sec'],
+    #                     "wwp" : ['wwp-tech']}
     # checks = {}
     # for key in dict_aggregation.keys():
     #     dm_temp1 = dm_material_production_bymat.filter({"Country" : ["EU27"], "Categories1" : [key]})
