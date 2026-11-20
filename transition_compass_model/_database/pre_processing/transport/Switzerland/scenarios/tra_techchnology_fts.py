@@ -426,7 +426,8 @@ def car_efficiency_techno(DM_transport, lev):
 
     # on réduit l'intensité énergétique des BEV car on vend 50% de véhicules intermédiaires dès 2025
     prop_VUS = 0.5
-    efficiency_VUS = 0.11
+    # 0.11 kWh/km (11 kWh/100 km, a small electric car), converted to MJ/km
+    efficiency_VUS = 0.11 * 3.6
 
     efficiency_2025_bev = dm_new_eff_4.array[
         :,
@@ -453,8 +454,9 @@ def car_efficiency_techno(DM_transport, lev):
         idx["LDV"],
         idx["BEV"],
     ]
+    # efficiency_2050_bev already includes the 2/3 size reduction (reduction_map_4)
     efficiency_2050_bev_vus = (
-        efficiency_2050_bev * 2 / 3 * (1 - prop_VUS) + efficiency_VUS * prop_VUS
+        efficiency_2050_bev * (1 - prop_VUS) + efficiency_VUS * prop_VUS
     )
     dm_new_eff_4.array[
         :,

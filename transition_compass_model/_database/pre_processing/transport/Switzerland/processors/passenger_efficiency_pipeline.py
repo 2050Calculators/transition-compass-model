@@ -457,15 +457,11 @@ def run(
         "ICE-diesel",
     ]
 
-    # As EP2050 efficiency are quite high for cars we correct all efficiencies except cars with EP2050 factor.
-    dm_veh_eff_Vaud = dm_veh_eff.copy()
+    # Correct the fleet efficiency of these modes/techs with the EP2050 factor (computed for
+    # Switzerland, applied to every region, LDV included).
     for mode, tech in zip(modes_modif, techs_modif):
         dm_veh_eff[..., mode, tech] = (
             dm_veh_eff[..., mode, tech] * dm_factor[..., mode, tech]
         )
-    idx = dm_veh_eff.idx
-    dm_veh_eff.array[idx["Vaud"], :, :, idx["LDV"], ...] = dm_veh_eff_Vaud.array[
-        idx["Vaud"], :, :, idx["LDV"], ...
-    ]
 
     return dm_veh_eff

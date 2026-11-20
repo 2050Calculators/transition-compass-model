@@ -11,6 +11,10 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
     get_data_api_swiss_stats,
 )
+from transition_compass_model._database.pre_processing.constants import (
+    CANTONS_LABEL_VARIANTS,
+    CANTONS_RENAME_TARGET,
+)
 from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
     utils as utils,
@@ -49,12 +53,7 @@ def get_new_fleet_by_tech_raw(agency, dataflow, file):
                 "Motorcycles",
             ],
             "UV_RV_FUEL": fuel_types,
-            "UV_HGDE_KT": [
-                "Total",
-                "Vaud",
-                "Fribourg",
-                "Schwyz",
-            ],  # "Total" = all of Switzerland
+            "UV_HGDE_KT": utils.swiss_stats_canton_filter(),  # "Total" = all of Switzerland
         }
 
         mapping_dim = {
@@ -77,7 +76,7 @@ def get_new_fleet_by_tech_raw(agency, dataflow, file):
         )
         if dm_new_fleet is None:
             raise ValueError(f"API returned None for {agency},{dataflow}")
-        dm_new_fleet.rename_col("Total", "Switzerland", dim="Country")
+        utils.rename_swiss_stats_cantons(dm_new_fleet)
         dm_new_fleet.sort("Years")
 
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
@@ -229,12 +228,7 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
         car_age_list = ["Total"]
 
         filtering = {
-            "UV_HGDE_KT": [
-                "Total",
-                "Vaud",
-                "Fribourg",
-                "Schwyz",
-            ],
+            "UV_HGDE_KT": utils.swiss_stats_canton_filter(),
             "TIME_PERIOD": structure["TIME_PERIOD"],
             "UV_RV_VEHICLE_AGE": car_age_list,
             "UV_RV_VEHICLE_GROUP_AND_TYPE": passenger_cat,
@@ -262,7 +256,7 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
         if dm_fleet is None:
             raise ValueError(f"API returned None for {agency},{dataflow}")
 
-        dm_fleet.rename_col("Total_Country", "Switzerland", dim="Country")
+        utils.rename_swiss_stats_cantons(dm_fleet)
         dm_fleet.sort("Years")
 
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
@@ -322,11 +316,17 @@ def get_passenger_stock_fleet_by_tech_raw_local_archive(table_id, file):
             "Vor 1960": "Before 1960",
             "Unbekannt": "Unknown",
         }
-        translation_country = {
-            "Schweiz": "Switzerland",
-            "Vaud": "Vaud",
-            "Fribourg / Freiburg": "Fribourg",
-        }
+        # BFS short canton labels (e.g. "Bern / Berne", "Basel-Stadt", "Zürich") to the
+        # country_list names, using the same label sets as rename_cantons()
+        short_to_name = dict(
+            zip(CANTONS_LABEL_VARIANTS["short"], CANTONS_RENAME_TARGET, strict=True)
+        )
+        df_cantons = pd.read_csv(f"data/{table_id}.csv", sep=";", header=1)["Jahr"]
+        translation_country = {"Schweiz": "Switzerland"}
+        for label in df_cantons.dropna().unique():
+            short = label.split(" /")[0].replace("-", " ")
+            if short in short_to_name:
+                translation_country[label] = short_to_name[short]
         translation_vehicle_type = {
             "> Personenwagen": "> Passenger cars",
             "> Sachentransportfahrzeuge": "> Goods transport vehicles",
