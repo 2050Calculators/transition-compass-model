@@ -296,6 +296,10 @@ def passenger_fleet_energy(
         regex=True,
         inplace=True,
     )
+    # FIXME: FCEV (fuel cell, zero direct CO2) and H2-ICE (H2 combustion, zero direct CO2)
+    # are both grouped into "hydrogen" here, and the cp_tra_emission-factor "H2" value
+    # (currently non-zero) is applied to their combined energy demand — see
+    # passenger_emission_factors.py for the pending decision on that factor.
     dm_energy.groupby(
         {
             "diesel": ".*-diesel",
@@ -723,6 +727,10 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
         regex=True,
         inplace=True,
     )
+    # FIXME: FCEV (fuel cell, zero direct CO2) and H2-ICE (H2 combustion, zero direct CO2)
+    # are both grouped into "hydrogen" here, and the cp_tra_emission-factor "H2" value
+    # (currently non-zero) is applied to their combined energy demand — see
+    # passenger_emission_factors.py for the pending decision on that factor.
     dm_energy.groupby(
         {
             "diesel": ".*-diesel",
@@ -737,7 +745,11 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     )
 
     dm_energy_aviation = dm_energy_aviation.groupby(
-        {"ejetfuel": ["ICEefuel"], "biojetfuel": ["ICEbio"]},
+        {
+            "kerosene": ["kerosene"],
+            "ejetfuel": ["ICEefuel", "keroseneefuel"],
+            "biojetfuel": ["ICEbio", "kerosenebio"],
+        },
         inplace=False,
         dim="Categories2",
     )
@@ -769,6 +781,9 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     dm_energy.add(np.nan, dummy=True, dim="Categories1", col_label=missing_cat_road)
 
     dm_energy.append(dm_energy_marine, dim="Categories2")
+    # Drop stale NaN "kerosene" placeholder (road tech dummy) before appending aviation,
+    # which adds the real aviation kerosene values.
+    dm_energy.drop(dim="Categories2", col_label=["kerosene"])
     dm_energy.append(dm_energy_aviation, dim="Categories2")
 
     # Group together by fuel type, drop mode
@@ -907,6 +922,11 @@ def dummy_tra_infrastructure_workflow(dm_pop, lever_setting):
     country_overrides = {
         "Switzerland": (71_500, 5_317, 500),  # BFS roads, BAV rail, approx trolleybus
         "Vaud": (10_500, 510, 90),  # SCRIS roads, approx rail, Lausanne TL
+        "EU27": (
+            5_000_000,
+            150_000,
+            2_000,
+        ),  # Eurostat road_if ~5M km, rail_if_tracks ~150K km, approx trolleybus
     }
     for country, (road_km, rail_km, trolley_km) in country_overrides.items():
         if country in dm_pop.col_labels["Country"]:
