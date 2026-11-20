@@ -17,8 +17,14 @@ def run(country_list, years_ots, years_fts):
     # U-value is computed as the average of the house element u-value (roof, wall, windows, ..) weighted by their area
     # U-value in: W/m^2 K
     # Single-family-households
-    # Non-residential values are proxied from EU Hotmaps data (same envelope U-values by class)
-    nonres_u = {"F": 2.01, "E": 1.74, "D": 1.44, "C": 1.20, "B": 0.69}
+    # Non-residential (all services types share one set): effective U-values fitted to
+    # EP2050+ Dienstleistung, Tabelle 03-01 (useful space heat, kWh/m², same floor area
+    # as the model) with scripts/fit_services_u_values_CH.py:
+    #   C (2001-2010) and B (from 2011) match EP2050 "Neubau" 2001-2010 and 2011-2015;
+    #   D-F keep the ratios of the former EU Hotmaps proxy (2.01/1.74/1.44) and are
+    #   scaled together so the services stock matches EP2050 over 2010-2015.
+    # "Effective": they also absorb the internal gains the model does not subtract.
+    nonres_u = {"F": 1.20, "E": 1.03, "D": 0.86, "C": 0.39, "B": 0.34}
     envelope_cat_u_value = {
         "single-family-households": {
             "F": 0.82,

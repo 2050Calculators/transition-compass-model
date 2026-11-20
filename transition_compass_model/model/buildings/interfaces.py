@@ -344,6 +344,8 @@ def bld_TPE_interface(
     )  # both services and residential
     dm_tpe.append(DM_energy["energy-demand-cooling"].flattest(), dim="Variables")
     dm_tpe.append(DM_energy["emissions"].flattest(), dim="Variables")
+    # bld_useful-heat_<type> [TWh], bld_floor-area-occupied_<type> [Mm2]
+    dm_tpe.append(DM_energy["useful-heat-by-type"].flattest(), dim="Variables")
     dm_tpe.append(DM_area["floor-area-cumulated"].flattest(), dim="Variables")
     dm_tpe.append(DM_area["floor-area-cat"].flattest(), dim="Variables")
     dm_tpe.append(DM_area["floor-area-use-cat"].flattest(), dim="Variables")
