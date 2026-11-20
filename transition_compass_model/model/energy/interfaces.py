@@ -737,6 +737,12 @@ def impose_capacity_constraints_pyomo(m, endyr, dm_capacity, country):
         m.f_min[non_ren] = existing_cap
         m.f_max[non_ren] = max_cap
 
+    # TODO: the 1.3 (dam) and 1.4 (run-of-river) factors below are a calibration hack
+    # to make historical and forecasted hydro production match, so the resulting
+    # hydro output is not reliable. They are applied flat to every period, but the
+    # real capacity/production ratio changes meaningfully over time. Replace with a
+    # proper calibration (e.g. year-dependent, or fix the c_p_t / capacity inputs at
+    # the source).
     # For hydro historical efficiency and forecasted efficiency do not match
     # The adjusting factors I am using here are chosen so that the final efficiency
     # (capacity factor) look coherent
@@ -915,7 +921,16 @@ def impose_industry_demand_pyomo(
 
 def prepare_TPE_output(dm_prod_cap_cntr, dm_demand, country_dem):
     dm_out = dm_prod_cap_cntr.filter({"Variables": ["pow_production", "pow_capacity"]})
-    dm_out.groupby({"Gas": ["GasCC", "GasCC-Syn", "GasSC"]}, dim="Categories1")
+    # groupby defaults to inplace=False, so without this the aggregate was computed
+    # and discarded -- which is why pow_production_Gas never reached the frontend.
+    # All gas technologies are reported as one band, CCS included: the LP never
+    # selects CCS in these scenarios, so a separate band is flat zero then NaN.
+    dm_out.groupby(
+        {"Gas": ["GasCC", "GasCC-CCS", "GasCC-Syn", "GasSC"]},
+        dim="Categories1",
+        inplace=True,
+    )
+    dm_out.groupby({"Hydro": ["Dam", "RoR"]}, dim="Categories1", inplace=True)
     # The LP always solves at country_prod (Switzerland/EU27); when a canton
     # was requested, relabel the result under the canton so the frontend
     # finds it under the geoscale it asked for. Generic over any canton, not

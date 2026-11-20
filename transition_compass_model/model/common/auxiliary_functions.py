@@ -1,4 +1,6 @@
+import base64
 import json
+import math
 import os
 import pickle
 import re
@@ -578,6 +580,7 @@ def calibration_rates(
         dm_cal_sub.append(dm_sub, "Variables")
         var_raw = dm_sub.col_labels["Variables"][0]
         var_cal = dm_cal_sub.col_labels["Variables"][0]
+        # delta = calibration - raw
         dm_cal_sub.operation(var_cal, "-", var_raw, out_col="delta", unit="")
         dm_cal_sub.operation("delta", "/", var_raw, out_col="cal_rate", unit="%")
         dm_cal_sub.array = dm_cal_sub.array + 1
@@ -1391,8 +1394,6 @@ def my_pickle_dump(
             backup_file_path = os.path.join(
                 backup_folder_path, local_pickle_file.split("/")[-1]
             )
-            with open(backup_file_path, "wb") as handle:
-                pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
             # save the new file in place of the old file
             with open(local_pickle_file, "wb") as handle:
                 pickle.dump(DM_new, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -1573,25 +1574,61 @@ def dm_add_missing_variables(dm, dict_all, fill_nans=False):
     return
 
 
+def _resolve_bfe_exturl(url):
+    """Turn an old BFE wrapper link into the direct pubdb download link.
+
+    BFE pages used to link files as
+    https://www.bfe.admin.ch/.../<page>.exturl.html/<base64>.html, where the base64
+    part (with a "/" inserted in it) encodes the real
+    https://pubdb.bfe.admin.ch/.../publication/download/<id> address. These wrapper
+    links now return 404, the direct pubdb links still work. Other URLs are returned
+    unchanged.
+    """
+    if "exturl.html/" not in url:
+        return url
+    encoded = url.split("exturl.html/", 1)[1]
+    encoded = encoded.split("&", 1)[0].removesuffix(".html")
+    encoded = encoded.replace("%3D", "=").replace("%3d", "=").replace("/", "")
+    encoded += "=" * (-len(encoded) % 4)
+    return base64.b64decode(encoded).decode()
+
+
 def save_url_to_file(file_url, local_filename):
-    # Loop for URL
-    if not os.path.exists(local_filename):
-        response = requests.get(file_url, stream=True)
-        # Check if the request was successful
-        if response.status_code == 200:
-            with open(local_filename, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-            print(f"File downloaded successfully as {local_filename}")
-        else:
-            print(f"Error: {response.status_code}, {response.text}")
-    else:
+    """Download file_url to local_filename, unless local_filename already exists.
+
+    Raises RuntimeError if the download fails (bad status, or an HTML error page
+    instead of a file), so the problem shows up here and not later when the file is
+    read. The file is written to "<local_filename>.part" first and renamed when
+    complete, so an interrupted download is never mistaken for a finished one.
+    """
+    if os.path.exists(local_filename):
         print(
             f"File {local_filename} already exists. If you want to download again delete the file"
         )
+        return
 
-    return
+    url = _resolve_bfe_exturl(file_url)
+    response = requests.get(url, stream=True, timeout=120)
+    content_type = response.headers.get("Content-Type", "")
+    if response.status_code != 200 or content_type.startswith("text/html"):
+        raise RuntimeError(
+            f"Could not download {url} (HTTP {response.status_code}, "
+            f"Content-Type {content_type!r}) to {local_filename}. "
+            "The link may have moved: find the new one on the source website."
+        )
+
+    os.makedirs(os.path.dirname(os.path.abspath(local_filename)), exist_ok=True)
+    tmp_filename = local_filename + ".part"
+    try:
+        with open(tmp_filename, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        os.replace(tmp_filename, local_filename)
+    finally:
+        if os.path.exists(tmp_filename):
+            os.remove(tmp_filename)
+    print(f"File downloaded successfully as {local_filename}")
 
 
 def translate_text(text):
@@ -1680,125 +1717,25 @@ def extrapolate_missing_years_based_on_per_capita(dm, dm_pop, years_ots, var_nam
 
 
 def rename_cantons(dm):
+    """Rename BFS canton labels in dm's Country dimension to English names (in place).
+
+    The label sets are defined in _database/pre_processing/constants.py.
+    """
+    # Imported here so the runtime model does not depend on pre_processing at import
+    from transition_compass_model._database.pre_processing.constants import (
+        CANTONS_LABEL_VARIANTS,
+        CANTONS_RENAME_TARGET,
+    )
+
     dm.sort("Country")
     dm.rename_col_regex(" /.*", "", dim="Country")
     dm.rename_col_regex("-", " ", dim="Country")
-    cantons_fr = [
-        "Aargau",
-        "Appenzell Ausserrhoden",
-        "Appenzell Innerrhoden",
-        "Basel Landschaft",
-        "Basel Stadt",
-        "Bern",
-        "Fribourg",
-        "Genève",
-        "Glarus",
-        "Graubünden",
-        "Jura",
-        "Luzern",
-        "Neuchâtel",
-        "Nidwalden",
-        "Obwalden",
-        "Schaffhausen",
-        "Schwyz",
-        "Solothurn",
-        "St. Gallen",
-        "Thurgau",
-        "Ticino",
-        "Uri",
-        "Valais",
-        "Vaud",
-        "Zug",
-        "Zürich",
-    ]
-    if "Canton d'Argovie" in dm.col_labels["Country"]:
-        cantons_fr = [
-            "Canton d'Argovie",
-            "Canton d'Appenzell Rh. E.",
-            "Canton d'Appenzell Rh. I.",
-            "Canton de Bâle Campagne",
-            "Canton de Bâle Ville",
-            "Canton de Berne",
-            "Canton de Fribourg",
-            "Canton de Genève",
-            "Canton de Glaris",
-            "Canton des Grisons",
-            "Canton du Jura",
-            "Canton de Lucerne",
-            "Canton de Neuchâtel",
-            "Canton de Nidwald",
-            "Canton d'Obwald",
-            "Canton de Schaffhouse",
-            "Canton de Schwytz",
-            "Canton de Soleure",
-            "Canton de Saint Gall",
-            "Canton de Thurgovie",
-            "Canton du Tessin",
-            "Canton d'Uri",
-            "Canton du Valais",
-            "Canton de Vaud",
-            "Canton de Zoug",
-            "Canton de Zurich",
-        ]
-    if "Canton d'Argau" in dm.col_labels["Country"]:
-        cantons_fr = [
-            "Canton d'Argau",
-            "Canton d'Appenzell Rh. E.",
-            "Canton d'Appenzell Rh. I.",
-            "Canton de Baselland",
-            "Canton de Basel Stadt",
-            "Canton de Bern",
-            "Canton de Fribourg",
-            "Canton de Genève",
-            "Canton de Glarus",
-            "Canton Graubünden",
-            "Canton du Jura",
-            "Canton de Luzern",
-            "Canton de Neuchâtel",
-            "Canton de Nidwalden",
-            "Canton d'Obwalden",
-            "Canton de Schaffhausen",
-            "Canton de Schwyz",
-            "Canton de Solothurn",
-            "Canton de St. Gallen",
-            "Canton de Thurgau",
-            "Canton du Tessin",
-            "Canton d'Uri",
-            "Canton du Valais",
-            "Canton de Vaud",
-            "Canton de Zug",
-            "Canton de Zürich",
-        ]
-
-    cantons_en = [
-        "Aargau",
-        "Appenzell Ausserrhoden",
-        "Appenzell Innerrhoden",
-        "Basel Landschaft",
-        "Basel Stadt",
-        "Bern",
-        "Fribourg",
-        "Geneva",
-        "Glarus",
-        "Graubünden",
-        "Jura",
-        "Lucerne",
-        "Neuchâtel",
-        "Nidwalden",
-        "Obwalden",
-        "Schaffhausen",
-        "Schwyz",
-        "Solothurn",
-        "St. Gallen",
-        "Thurgau",
-        "Ticino",
-        "Uri",
-        "Valais",
-        "Vaud",
-        "Zug",
-        "Zurich",
-    ]
-    dm.rename_col(cantons_fr, cantons_en, dim="Country")
+    # Detect which label set is used from the first canton (Aargau)
+    variant = "short"
+    for key in ("canton_fr", "canton_de"):
+        if CANTONS_LABEL_VARIANTS[key][0] in dm.col_labels["Country"]:
+            variant = key
+    dm.rename_col(CANTONS_LABEL_VARIANTS[variant], CANTONS_RENAME_TARGET, dim="Country")
 
     return
 
@@ -1810,3 +1747,59 @@ def init_years_lever():
     f = open(os.path.join(current_file_directory, "../../config/lever_position.json"))
     lever_setting = json.load(f)[0]
     return years_setting, lever_setting
+
+
+def compute_diff(dm_og, new_col, old_col):
+    dm = dm_og.copy()
+    dm.array = np.nan_to_num(dm.array)
+    dm.operation(new_col, "-", old_col, out_col="diff_out_col")
+    dm.operation("diff_out_col", "/", old_col, out_col="diff_out_perc")
+    dm.array = np.nan_to_num(dm.array)
+    dm2 = dm.filter({"Variables": ["diff_out_perc"]})
+    arr = dm2.array
+
+    print((arr > 0.01).any())
+    if (arr > 0.01).any():
+        max_val = np.nanmax(arr)
+        max_pos = np.unravel_index(np.nanargmax(arr), arr.shape)
+        print("Max value:", max_val)
+        for dim, pos in zip(dm2.dim_labels, max_pos):
+            print(f"{dim}: {dm2.col_labels[dim][pos]}")
+    dm.flattest().datamatrix_plot()
+    return dm
+
+
+def compare_dm(dm_new: DataMatrix, dm_old: DataMatrix):
+    """Compare 2 datamatrix with identical columns to get the differences between there values.
+    Created for comparing data from the old api with the new one
+
+    Args:
+        dm_new (DataMatrix): dm from new api
+        dm_old (DataMatrix): dm from old api
+
+    Returns:
+        DataMatrix: the two dm merged with new variables corresponding to absolute diff and the relative one
+    """
+
+    new_variable = dm_new.col_labels["Variables"][0]
+    old_variable = dm_old.col_labels["Variables"][0]
+    if new_variable == old_variable:
+        dm_old.rename_col(old_variable, old_variable + "_old", "Variables")
+        old_variable = old_variable + "_old"
+    # Efficiency for BEV
+
+    dm_new.append(dm_old, dim="Variables")
+    return compute_diff(dm_new, new_variable, old_variable)
+
+
+def get_common_values_between_2_list(list_a: list, list_b: list):
+    return list(set(list_a) & set(list_b))
+
+
+def check_filtering_size(filtering, max_size_allowed=5000):
+    """check that the number of combinations is not too big to download at once for the api"""
+    len_filtering = [len(filtering[dim]) for dim in filtering.keys()]
+    len_filtering = math.prod(len_filtering)
+    assert len_filtering <= max_size_allowed, (
+        f"Too many combinations to download at once: {len_filtering}. Please reduce the filtering."
+    )

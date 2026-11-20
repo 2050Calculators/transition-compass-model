@@ -387,107 +387,13 @@ def run(country_list, years_ots):
     dm_space_heat = dm_water.copy()
     dm_space_heat.rename_col("hot-water", "space-heating", "Categories1")
 
-    # Infras, TEP, Prognos, 2021. Analyse des schweizerischen Energieverbrauchs 2000–2020 - Auswertung nach Verwendungszwecken.
-    # Table 26 - Endenergieverbrauch im Dienstleistungssektor nach Verwendungszwecken Entwicklung von 2000 bis 2020, in PJ, inkl. Landwirtschaft
-    # Final energy consumption in the service sector by purpose Development from 2000 to 2020, in PJ, incl. agriculture
-    # https://www.bfe.admin.ch/bfe/de/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA2OTM%3D.html&ved=2ahUKEwiC4OjJvpGOAxWexgIHHdyFGVMQFnoECB0QAQ&usg=AOvVaw1a9deGMbwSdNvV0aVLEBPj
-    services_agri_split = {
-        "space-heating": {
-            2000: 82.1,
-            2014: 67.1,
-            2015: 73.2,
-            2016: 77.3,
-            2017: 75.0,
-            2018: 67.0,
-            2019: 69.7,
-            2020: 65.9,
-        },
-        "hot-water": {
-            2000: 12.7,
-            2014: 12.1,
-            2015: 12.1,
-            2016: 12.0,
-            2017: 12.0,
-            2018: 12.0,
-            2019: 11.9,
-            2020: 11.9,
-        },
-        "process-heat": {
-            2000: 2.3,
-            2014: 2.5,
-            2015: 2.5,
-            2016: 2.5,
-            2017: 2.5,
-            2018: 2.6,
-            2019: 2.7,
-            2020: 2.2,
-        },
-        "lighting": {
-            2000: 16.8,
-            2014: 17.0,
-            2015: 17.0,
-            2016: 17.0,
-            2017: 17.0,
-            2018: 16.9,
-            2019: 16.8,
-            2020: 15.9,
-        },
-        "HVAC and building tech": {
-            2000: 11.2,
-            2014: 13.8,
-            2015: 15.0,
-            2016: 15.1,
-            2017: 15.5,
-            2018: 15.5,
-            2019: 15.8,
-            2020: 15.0,
-        },
-        "ICT and entertainment media": {
-            2000: 6.1,
-            2014: 6.9,
-            2015: 6.9,
-            2016: 6.9,
-            2017: 6.9,
-            2018: 7.0,
-            2019: 7.0,
-            2020: 6.8,
-        },
-        "Drives and processes": {
-            2000: 14.4,
-            2014: 16.1,
-            2015: 16.0,
-            2016: 16.0,
-            2017: 15.9,
-            2018: 16.1,
-            2019: 16.2,
-            2020: 15.7,
-        },
-        "Other": {
-            2000: 4.0,
-            2014: 4.3,
-            2015: 4.4,
-            2016: 4.4,
-            2017: 4.3,
-            2018: 4.4,
-            2019: 4.3,
-            2020: 4.1,
-        },
-        "Total": {
-            2000: 149.7,
-            2014: 139.7,
-            2015: 147.2,
-            2016: 151.2,
-            2017: 149.2,
-            2018: 141.5,
-            2019: 144.4,
-            2020: 137.5,
-        },
-    }
     dm_services_eud = fser.load_services_energy_demand_eud(
-        services_agri_split, years_ots
+        dict(fser.PROGNOS_SERVICES_EUD_PJ),
+        years_ots,  # copy: the loader pops 'Total'
     )
 
     # Extract energy demand by sector at national level by fuel
+    # FIXME : for now it is stilll on stat tab change when not anymore
     table_id = "px-x-0204000000_106"
     local_filename = os.path.join(
         this_dir, "../data/energy_accounts_economy_households.pickle"
@@ -495,14 +401,25 @@ def run(country_list, years_ots):
     # Industry sectors linked to energy, like energy production and waste management, have been removed or edited
     # Remove gasoline and diesel which are for transport / machinery
     dm_energy = fser.extract_national_energy_demand(table_id, local_filename)
+    # The OFS table can have newer years than years_ots (e.g. 2024); keep only
+    # years_ots so its years match the hot-water / space-heating data used below.
+    dm_energy.filter(
+        {"Years": [y for y in dm_energy.col_labels["Years"] if y in years_ots]},
+        inplace=True,
+    )
 
     # Extract number of employees per industry and service sector by canton
     # This is in order to map the national energy demand to cantons
+    # FIXME : for now it is stilll on stat tab change when not anymore
     table_id = "px-x-0602010000_101"
     local_filename = os.path.join(
         this_dir, "../data/employees_per_sector_canton.pickle"
     )
     dm_employees = fser.extract_employees_per_sector_canton(table_id, local_filename)
+    dm_employees.filter(
+        {"Years": [y for y in dm_employees.col_labels["Years"] if y in years_ots]},
+        inplace=True,
+    )
 
     cat_list_ref = dm_energy.col_labels["Categories1"]
     cat_list_match = dm_employees.col_labels["Categories1"]

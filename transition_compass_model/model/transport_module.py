@@ -54,6 +54,8 @@ def read_data(DM_transport, lever_setting):
         "passenger_all": dm_passenger,
         "passenger_pkm_demand": DM_ots_fts["pkm"],
         "passenger_aviation-share-local": dict_fxa["share-local-emissions"],  # pkm/cap
+        # vkm-by-tech adjustment factor (CH/cantons only; None for EU27)
+        "passenger_vkm-adj-factor": dict_fxa.get("passenger_vkm-adj-factor"),
     }
 
     DM_freight = {
@@ -265,9 +267,14 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
         "tra_passenger_emissions", "tra_emissions-CO2e_passenger", dim="Variables"
     )
     DM_passenger_out["emissions"] = dm_emissions
+    # dm_emissions.change_unit("tra_emissions-CO2e_passenger",old_unit ="Mt",new_unit= "t",factor = 10**6)
+    #
 
     results_run, KPI = inter.prepare_TPE_output(
-        DM_passenger_out, DM_freight_out, dm_aviation_local=dm_aviation_local
+        DM_passenger_out,
+        DM_freight_out,
+        dm_aviation_local=dm_aviation_local,
+        years_setting=years_setting,
     )
     return results_run, KPI
 
@@ -278,7 +285,7 @@ def local_transport_run():
     lever_setting = load_lever_config()
 
     # get geoscale
-    country_list = ["Vaud"]
+    country_list = ["Fribourg", "Schwyz", "Vaud", "Switzerland", "EU27"]
     DM_input = filter_country_and_load_data_from_pickles(
         country_list=country_list, modules_list="transport"
     )

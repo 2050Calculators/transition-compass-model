@@ -4,7 +4,7 @@ import numpy as np
 
 import transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.hot_water_CH as hw
 from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.floor_area_CH import (
-    extract_nb_of_apartments_per_building_type,
+    extract_nb_of_apartments_per_building_type_v2,
 )
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
@@ -222,13 +222,14 @@ def run(country_list, years_ots):
     ####      TECHNOLOGY-MIX     #####
     ##################################
     # Get Hot water fuel split at household level per canton
-    table_id = "px-x-0902010000_102"
-    file_hw = os.path.join(this_dir, "../data/bld_hotwater_technology_2021-2023.pickle")
-    # Extract the number of buildings, disaggregated by hot water heating technology and building type in 2021-2023
-    # It only has data for the last 3 years
-    #!FIXME extract 2000 and 1990
-    dm_tech_mix = hw.extract_hotwater_technologies(table_id, file_hw)
+    agency = "CH1.GWS"
+    dataflow = "DF_GWS_REG4"
+    file = os.path.join(
+        this_dir, "../data/bld_hotwater_technology_2021-2023_swiss_stat.pickle"
+    )
+    dm_tech_mix = hw.extract_hotwater_technologies_v2(file, agency, dataflow)
 
+    # still on stat tab
     # Tech mix 1990 and 2000
     table_id = "px-x-0902020100_112"
     file_hw = os.path.join(
@@ -243,12 +244,16 @@ def run(country_list, years_ots):
     dm_add_missing_variables(dm_tech_mix, {"Years": years_ots}, fill_nans=True)
     dm_tech_mix.normalise("Categories2", inplace=True, keep_original=False)
 
-    # Extract number of apartments per building type
-    table_id = "px-x-0902020200_103"
-    file = os.path.join(this_dir, "../data/bld_apartments_per_bld_type.pickle")
-    dm_apt = extract_nb_of_apartments_per_building_type(
-        table_id, file, cantons_fr, cantons_en
+    # Extract number of apartments per building type with the new api
+    agency = "CH1.GWS"
+    dataflow = "DF_GWS_REG7"
+    file = os.path.join(
+        this_dir, "../data/bld_apartments_per_bld_type_swiss_stat.pickle"
     )
+    dm_apt = extract_nb_of_apartments_per_building_type_v2(
+        file, agency, dataflow, cantons_en
+    )
+
     # Extrapolate number of apartments based on apt/pop
     dm_apt = extrapolate_missing_years_based_on_per_capita(dm_apt, dm_pop, years_ots)
 
@@ -260,7 +265,8 @@ def run(country_list, years_ots):
     ####        EFFICIENCY       #####
     ##################################
     # I use the space heating efficiency as a proxy for the hot water efficiency
-    file_url = "https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA0NDE=.html"
+    # Source page: https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.html
+    file_url = "https://pubdb.bfe.admin.ch/de/publication/download/10441"
     zip_name = os.path.join(this_dir, "../data/EP2050_sectors.zip")
     file_pickle = os.path.join(this_dir, "../data/bld_heating_efficiencies.pickle")
     dm_efficiencies = hw.extract_heating_efficiencies_EP2050(
@@ -283,7 +289,8 @@ def run(country_list, years_ots):
     ## Get water tech share based on energy consumption
     # Hot water demand in CH - use efficiency to determine useful energy demand
     # From Prognos EP2050 Analysis: https://www.bfe.admin.ch/bfe/fr/home/approvisionnement/statistiques-et-geodonnees/statistiques-de-lenergie/consommation-energetique-en-fonction-de-lapplication.html
-    file_url = "https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTE5MzU=.html"
+    # Source page: https://www.bfe.admin.ch/bfe/fr/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.html
+    file_url = "https://pubdb.bfe.admin.ch/de/publication/download/11935"
     local_filename = os.path.join(this_dir, "../data/EP2050_Households_CH.xlsx")
     save_url_to_file(file_url, local_filename)
     file_pickle = os.path.join(

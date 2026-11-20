@@ -1,6 +1,8 @@
 import numpy as np
-import requests
 
+from transition_compass_model._database.pre_processing.api_routines_CH import (
+    request_with_retry,
+)
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
@@ -99,9 +101,10 @@ def _fetch_structure(agency, dataflow, headers):
         struct_headers = dict(
             headers, Accept="application/vnd.sdmx.structure+json;version=1.0"
         )
-        response = requests.get(
-            url, params={"references": "all"}, headers=struct_headers
+        response = request_with_retry(
+            "GET", url, params={"references": "all"}, headers=struct_headers
         )
+        response.raise_for_status()
         data = response.json()["data"]
         dsd = data["dataStructures"][0]
         dim_list = dsd["dataStructureComponents"]["dimensionList"]
@@ -133,7 +136,25 @@ def _fetch_structure(agency, dataflow, headers):
             allowed = actual_codes.get(dim["id"])
             if allowed is not None:
                 codes = [c for c in codes if c["id"] in allowed]
-            return [{"id": c["id"], "name": c["name"]} for c in codes]
+            check_duplicates = [c["name"] for c in codes]
+            if len(set(check_duplicates)) == len(check_duplicates):
+                return [{"id": c["id"], "name": c["name"]} for c in codes]
+            else:
+                # Only keep canton and remove communes
+                if dim["id"] == "GEMEINDENAME":
+                    code_list = []
+                    for c in codes:
+                        if "parent" in c.keys():
+                            # 8100 correspond to  switzerland like this only cantons are selected
+                            if c["parent"] == "8100":
+                                code_list.append({"id": c["id"], "name": c["name"]})
+                        else:
+                            code_list.append({"id": c["id"], "name": c["name"]})
+                    return code_list
+                else:
+                    raise Exception(
+                        "There are multiple time the same name for the same dimension. It can for example happen for same name between country and city"
+                    )
 
         # Makes sure that the dimension are extracted in the correct order based on the
         # position argument
@@ -161,6 +182,69 @@ def _fetch_structure(agency, dataflow, headers):
             "dimensions": {"series": series_dims, "observation": observation_dims},
         }
     return _STRUCTURE_CACHE[cache_key]
+
+
+def _count_observations(data_json):
+    series = data_json["data"]["dataSets"][0]["series"]
+    return sum(len(s["observations"]) for s in series.values())
+
+
+# Without a Range header, the server silently drops most observations once a response
+# exceeds roughly 1600 observations: HTTP 200, no errors, all series present but nearly
+# empty (e.g. new registrations for 27 cantons: 562 observations instead of 7004).
+# With "Range: values=0-N" it answers HTTP 206 with everything, and Content-Range
+# ("values 0-7003/7004") reports the total, which we check against what was received.
+_RANGE_HEADER = "values=0-9999999"
+
+
+def _check_content_range(response, n_obs, url):
+    content_range = response.headers.get("Content-Range")
+    if not content_range:
+        return
+    total = content_range.rsplit("/", 1)[-1]
+    if total.isdigit() and int(total) != n_obs:
+        raise RuntimeError(
+            f"Swiss Stats API returned {n_obs} observations but announced {total} "
+            f"(Content-Range: {content_range}) for {url}"
+        )
+
+
+def _fetch_data_consistent(url, params, headers, max_attempts=5):
+    """Fetch /rest/data at least twice and only accept a response once two agree.
+
+    Every request asks for the full range of observations (see _RANGE_HEADER), and the
+    number received is checked against the total in Content-Range.
+    The server also sometimes answers with HTTP 200, no errors, and the full set of
+    series, but with single observations (years) silently missing inside series - e.g. a
+    call that normally returns 586 observations returned 373. It happens in episodes.
+    Missing observations later turn into 0 (nansum / nan_to_num), so they must be caught
+    here. A response is accepted when its observation count has been seen twice and is
+    the largest count seen so far: two identical truncated answers after a complete one
+    are not accepted.
+    """
+    headers = dict(headers, Range=_RANGE_HEADER)
+    counts = []
+    for _ in range(max_attempts):
+        response = request_with_retry("GET", url, params=params, headers=headers)
+        if response.status_code not in (200, 206):
+            raise RuntimeError(
+                f"Failed to retrieve data from {url}: HTTP {response.status_code}\n"
+                f"{response.text[:500]}"
+            )
+        data_json = response.json()
+        counts.append(_count_observations(data_json))
+        _check_content_range(response, counts[-1], url)
+        if len(counts) >= 2 and counts[-1] != counts[-2]:
+            print(
+                f"Warning: Swiss Stats API returned inconsistent responses for {url} "
+                f"(observation counts so far: {counts}), fetching again"
+            )
+        if counts[-1] == max(counts) and counts.count(counts[-1]) >= 2:
+            return data_json
+    raise RuntimeError(
+        f"Swiss Stats API did not return two consistent responses for {url} after "
+        f"{max_attempts} attempts (observation counts: {counts}). Try again later."
+    )
 
 
 def get_data_api_swiss_stats(
@@ -243,12 +327,6 @@ def get_data_api_swiss_stats(
             query_params["endPeriod"] = filter["endPeriod"]
 
         url = f"{base_url}/{agency},{dataflow}/{key}"
-        response = requests.get(url, params=query_params, headers=headers)
-        if response.status_code == 200:
-            data_json = response.json()
-            dm = sdmx_json_to_dm(data_json, mapping_dims, units, filter=filter)
-            return dm
-        else:
-            print(f"Failed to retrieve data: {response.status_code}")
-            print(response.text)
-            return
+        data_json = _fetch_data_consistent(url, query_params, headers)
+        dm = sdmx_json_to_dm(data_json, mapping_dims, units, filter=filter)
+        return dm

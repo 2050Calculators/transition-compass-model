@@ -8,6 +8,55 @@ from transition_compass_model.model.common.constant_data_matrix_class import (
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
+def vkm_share_by_tech(dm_tech, dm_vkm_adj_factor=None):
+    """vkm share by tech [Country, Years, Categories1, Categories2].
+
+    Without a factor, this is the fleet share by tech (every vehicle of a mode
+    drives the same km per year). With the factor computed in preprocessing
+    (processors/transport_vkm_adj_factor.py), the fleet share is multiplied by
+    f[mode, tech] and renormalised per mode, so total vkm by mode is unchanged.
+    Countries / years / modes / techs missing from the factor DM (e.g. EU27) get
+    f = 1, i.e. vkm share = fleet share.
+    """
+    arr_share = dm_tech[:, :, "tra_passenger_technology-share_fleet", :, :].copy()
+    if dm_vkm_adj_factor is None:
+        return arr_share
+
+    var = dm_vkm_adj_factor.col_labels["Variables"][0]
+    labels_t = dm_tech.col_labels
+    labels_f = dm_vkm_adj_factor.col_labels
+    idx_t = dm_tech.idx
+    idx_f = dm_vkm_adj_factor.idx
+    countries = [c for c in labels_f["Country"] if c in labels_t["Country"]]
+    years = [y for y in labels_f["Years"] if y in labels_t["Years"]]
+    modes = [m for m in labels_f["Categories1"] if m in labels_t["Categories1"]]
+    techs = [t for t in labels_f["Categories2"] if t in labels_t["Categories2"]]
+
+    arr_f = np.ones_like(arr_share)
+    if countries and years and modes and techs:
+        ix_t = np.ix_(
+            [idx_t[c] for c in countries],
+            [idx_t[y] for y in years],
+            [idx_t[m] for m in modes],
+            [idx_t[t] for t in techs],
+        )
+        ix_f = np.ix_(
+            [idx_f[c] for c in countries],
+            [idx_f[y] for y in years],
+            [idx_f[var]],
+            [idx_f[m] for m in modes],
+            [idx_f[t] for t in techs],
+        )
+        arr_f[ix_t] = dm_vkm_adj_factor.array[ix_f][:, :, 0, :, :]
+
+    arr_w = np.nan_to_num(arr_share) * arr_f
+    arr_sum = arr_w.sum(axis=-1, keepdims=True)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        arr_adj = np.where(arr_sum > 0, arr_w / arr_sum, arr_share)
+    # keep NaN where the fleet share was NaN (same behaviour as before)
+    return np.where(np.isnan(arr_share), np.nan, arr_adj)
+
+
 def passenger_fleet_energy(
     DM_passenger: DataMatrix,
     dm_lfs: DataMatrix,
@@ -126,11 +175,12 @@ def passenger_fleet_energy(
     )
     dm_demand_vkm.sort(dim="Categories1")
     dm_tech.sort(dim="Categories1")
-    idx_t = dm_tech.idx
-    tmp = (
-        dm_demand_vkm.array[:, :, 0, :, np.newaxis]
-        * dm_tech.array[:, :, idx_t["tra_passenger_technology-share_fleet"], ...]
+    # vkm by tech = vkm by mode x vkm share by tech, where the vkm share is the fleet
+    # share corrected by the EP2050 adjustment factor (if available)
+    arr_vkm_share = vkm_share_by_tech(
+        dm_tech, DM_passenger.get("passenger_vkm-adj-factor")
     )
+    tmp = dm_demand_vkm.array[:, :, 0, :, np.newaxis] * arr_vkm_share
     dm_tech.add(
         tmp, dim="Variables", col_label="tra_passenger_transport-demand-vkm", unit="km"
     )
@@ -225,34 +275,9 @@ def passenger_fleet_energy(
     )
     dm_emissions_by_mode_scope_1.group_all("Categories2", inplace=True)
 
-    # SECTION Passenger - GHG Emissions EV
-    # Compute emissions from electricity
-    dm_energy_EV = dm_energy.filter({"Categories2": ["BEV", "CEV"]})
-    dm_fact = DM_other["electricity-emissions"]
-    idx_f = dm_fact.idx
-    idx_e = dm_energy_EV.idx
-    arr = (
-        dm_energy_EV.array[:, :, idx_e["tra_passenger_energy-demand"], :, :, np.newaxis]
-        * dm_fact.array[
-            :,
-            :,
-            idx_f["tra_emission-factor"],
-            np.newaxis,
-            np.newaxis,
-            :,
-            idx_f["electricity"],
-        ]
-    )
-    dm_emissions_elec = DataMatrix.based_on(
-        arr[:, :, np.newaxis, ...],
-        dm_energy_EV,
-        change={
-            "Variables": ["tra_passenger_emissions"],
-            "Categories3": dm_fact.col_labels["Categories1"],
-        },
-        units={"tra_passenger_emissions": "g"},
-    )
-    dm_emissions.append(dm_emissions_elec, dim="Categories2")
+    # TODO: electricity emissions (BEV/CEV) are not counted in transport for now.
+    # They need the grid emission factor from the energy module rather than the
+    # placeholder DM_other["electricity-emissions"].
     dm_emissions.change_unit("tra_passenger_emissions", 1e-12, "g", "Mt")
 
     # SECTION Prepare output
@@ -263,7 +288,6 @@ def passenger_fleet_energy(
             "diesel": ".*diesel",
             "gasoline": ".*gasoline",
             "gas": ".*gas",
-            "electricity": ".*EV",
         },
         dim="Categories1",
         regex=True,
@@ -343,7 +367,7 @@ def passenger_fleet_energy(
         {
             "Categories1": ["aviation"],
             "Categories3": ["CO2"],
-            "Categories2": ["SAF", "BEV", "H2", "kerosene"],
+            "Categories2": ["SAF", "H2", "kerosene"],
         }
     )
 
@@ -449,6 +473,7 @@ def passenger_fleet_energy(
     DM_passenger_out["agriculture"] = dm_biogas
     DM_passenger_out["emissions"] = dm_emissions_by_mode
     DM_passenger_out["emissions_scope1"] = dm_emissions_by_mode_scope_1
+    DM_passenger_out["emissions_by_fuel"] = dm_emissions_by_fuel
     DM_passenger_out["energy"] = dm_energy
     DM_passenger_out["soft-mobility"] = dm_demand_soft
     DM_passenger_out["aviation"] = {
@@ -571,7 +596,7 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
         "eff_tot": "tra_freight_vehicle-efficiency_fleet",
         "eff_new": "tra_freight_vehicle-efficiency_new",
     }
-    utils.compute_fts_tech_split(dm_mode, dm_tech, cols)
+    utils.compute_fts_tech_split(dm_mode, dm_tech, cols, years_setting)
 
     # Extract freight transport demand vkm for road and tkm for others, join and compute transport demand by technology
     dm_demand_km = dm_mode_road.filter(
@@ -744,14 +769,18 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
         inplace=True,
     )
 
-    dm_energy_aviation = dm_energy_aviation.groupby(
-        {
-            "kerosene": ["kerosene"],
-            "ejetfuel": ["ICEefuel", "keroseneefuel"],
-            "biojetfuel": ["ICEbio", "kerosenebio"],
-        },
-        inplace=False,
-        dim="Categories2",
+    # Road carries empty (NaN) columns for the aviation/marine technologies:
+    # drop them so the aviation and marine fuels below can be appended.
+    dm_energy.drop(
+        dim="Categories2", col_label=["ICE", "ICEbio", "kerosene", "kerosenebio"]
+    )
+
+    # Freight aircraft run on kerosene only (fossil, bio and e-fuel blends)
+    dm_energy_aviation.rename_col(
+        ["kerosenebio", "keroseneefuel"], ["biojetfuel", "ejetfuel"], dim="Categories2"
+    )
+    dm_energy_aviation.filter(
+        {"Categories2": ["kerosene", "biojetfuel", "ejetfuel"]}, inplace=True
     )
 
     dm_energy_marine.rename_col(
@@ -781,9 +810,6 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     dm_energy.add(np.nan, dummy=True, dim="Categories1", col_label=missing_cat_road)
 
     dm_energy.append(dm_energy_marine, dim="Categories2")
-    # Drop stale NaN "kerosene" placeholder (road tech dummy) before appending aviation,
-    # which adds the real aviation kerosene values.
-    dm_energy.drop(dim="Categories2", col_label=["kerosene"])
     dm_energy.append(dm_energy_aviation, dim="Categories2")
 
     # Group together by fuel type, drop mode
@@ -893,6 +919,7 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     DM_freight_out["energy"] = dm_total_energy
     DM_freight_out["agriculture"] = dm_biogas
     DM_freight_out["emissions"] = dm_emissions_by_mode
+    DM_freight_out["emissions_by_fuel"] = dm_emissions_by_fuel
 
     return DM_freight_out
 
@@ -996,12 +1023,14 @@ def convert_to_cO2eq_emissions(dm_emissions):
     CH4_to_CO2 = 28
 
     idx = dm_emissions.idx
-    dm_emissions.array[:, :, :, :, idx["CH4"]] = (
-        dm_emissions.array[:, :, :, :, idx["CH4"]] * CH4_to_CO2
+    dm_emissions.array[..., idx["CH4"]] = (
+        dm_emissions.array[..., idx["CH4"]] * CH4_to_CO2
     )
-    dm_emissions.array[:, :, :, :, idx["N2O"]] = (
-        dm_emissions.array[:, :, :, :, idx["N2O"]] * N2O_to_CO2
+    dm_emissions.array[..., idx["N2O"]] = (
+        dm_emissions.array[..., idx["N2O"]] * N2O_to_CO2
     )
-    dm_emissions.group_all("Categories2")
-
+    if "Categories2" in dm_emissions.dim_labels:
+        dm_emissions.group_all("Categories2")
+    else:
+        dm_emissions.group_all("Categories1")
     return dm_emissions

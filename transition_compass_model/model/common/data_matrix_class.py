@@ -439,14 +439,6 @@ class DataMatrix:
         return idx
 
     def overwrite_1cat(self, matrix2):
-        """_summary_
-
-        Args:
-            matrix2 (_type_): _description_
-
-        Raises:
-            Exception: _description_
-        """
         country = matrix2.col_labels["Country"]
         years = matrix2.col_labels["Years"]
         variables = matrix2.col_labels["Variables"]

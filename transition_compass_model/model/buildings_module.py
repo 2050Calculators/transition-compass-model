@@ -64,7 +64,6 @@ def read_data(DM_buildings, lever_setting):
             "bld_heating-technology"
         ],
         "heatcool-behaviour": DM_ots_fts["heatcool-behaviour"],
-        "heating-calibration": DM_buildings["fxa"]["heating-energy-calibration"],
         "electricity-emission": DM_buildings["fxa"]["emission-factor-electricity"],
         "district_heating-emission": DM_buildings["fxa"][
             "emission-factor-heating_district"
@@ -226,6 +225,11 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
         DM_appliances_out["power"],
         DM_light_out["TPE"],
         DM_hotwater_out["TPE"],
+        {
+            "residential": DM_energy_out["power_households"],
+            "non-residential": DM_energy_out["power_services"],
+        },
+        years_setting=years_setting,
     )
 
     # 'District-heating' module interface
@@ -305,7 +309,7 @@ def buildings_local_run():
     # Function to run only transport module without converter and tpe
 
     # get geoscale
-    country_list = ["Switzerland", "Vaud"]
+    country_list = ["Switzerland", "Vaud", "Fribourg", "Schwyz"]
     DM_input = filter_country_and_load_data_from_pickles(
         country_list=country_list, modules_list="buildings"
     )

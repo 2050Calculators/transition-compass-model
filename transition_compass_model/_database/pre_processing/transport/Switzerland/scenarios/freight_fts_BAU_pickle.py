@@ -40,6 +40,9 @@ from processors.freight_efficiency_tech_share import (
     compute_hdvm_hdvh_efficiency,
 )
 
+from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
+    freight_data as fd,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     create_years_list,
     linear_fit_ratio,
@@ -170,11 +173,11 @@ def _zerob_utilization_road(years_fts):
         vals = np.array(
             [v if isinstance(v, (int, float)) else 0.0 for v in r[4 : 4 + n]]
         )
-        if r[1].startswith("TT/AT"):
+        if r[1] in _HDVH_SEG:
             hdvh_f += vals
-        elif r[1].startswith("RigidTruck"):
+        elif r[1] in _HDVM_SEG:
             hdvm_f += vals
-        elif r[1].startswith("LCV"):
+        elif r[1] in _HDVL_SEG:
             hdvl_f += vals
 
     total_hgv = hdvh_f + hdvm_f
@@ -201,13 +204,12 @@ def _zerob_utilization_road(years_fts):
     }
 
 
-def _zerob_efficiency_road(dm_eff_fts, years_fts):
-    """Return ZERO-B road efficiency by mode/tech aligned to years_fts.
-
-    Returns {mode: {tech: np.ndarray(len(years_fts))}}.
+def _zerob_efficiency_road(dm_eff_fts, years_fts, scenario="ZERO-B"):
+    """Fill dm_eff_fts with EP2050 road efficiency (energy / vkm) of `scenario`,
+    by mode/tech, aligned to years_fts. Returns dm_eff_fts.
     """
-    ep_energy = _read_ep2050_energy(scenario="ZERO-B")
-    ep_vkm = _read_ep2050_vkm(scenario="ZERO-B")
+    ep_energy = _read_ep2050_energy(scenario=scenario)
+    ep_vkm = _read_ep2050_vkm(scenario=scenario)
     frac_hdvh = _read_ep2050_fleet_frac(years_fts)
 
     # efficiency(MJ/km) = energy(PJ) × 1000 / VKM(Mkm)
@@ -246,7 +248,7 @@ def _zerob_efficiency_road(dm_eff_fts, years_fts):
             if tech not in idx_e:
                 continue
             if (tech in ep_energy["Treibstoff"].values) and (
-                tech in ep_vkm["Technology"]
+                tech in ep_vkm["Technology"].values
             ):
                 if mode == "HDVL":
                     dm_eff_fts.array[idx_e[ch], :, 0, idx_e[mode], idx_e[tech]] = (
@@ -273,6 +275,75 @@ def _zerob_efficiency_road(dm_eff_fts, years_fts):
         if country != ch:
             dm_eff_fts.array[idx_e[country], ...] = dm_eff_fts.array[idx_e[ch], ...]
     return dm_eff_fts
+
+
+def _anchor_ep2050_efficiency(dm_eff_ots, dm_eff_lev1, years_ots, scenario):
+    """Road efficiency following an EP2050 scenario trajectory relative to the base
+    year, applied to the calibrated base-year efficiency (historical road efficiency
+    is rescaled to FOEN CO2, so raw EP2050 levels would jump at the first future year).
+
+    eff(t) = eff_ots(base) * eff_EP(t) / eff_EP(base). Non-road modes keep dm_eff_lev1.
+    """
+    base_year = years_ots[-1]
+    years_fts = dm_eff_lev1.col_labels["Years"]
+    dm_zb = dm_eff_ots.filter({"Years": [base_year]})
+    dm_zb.append(dm_eff_lev1.copy(), dim="Years")
+    dm_zb = _zerob_efficiency_road(dm_zb, [base_year] + years_fts, scenario=scenario)
+
+    dm_lev4 = dm_eff_lev1.copy()
+    idx = dm_lev4.idx
+    idx_zb = dm_zb.idx
+    for mode in _ROAD_MODES:
+        zb = dm_zb.array[:, :, 0, idx_zb[mode], :]
+        base = zb[:, [0], :]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            traj = np.where(base > 0, zb[:, 1:, :] / base, 1.0)
+        traj = np.nan_to_num(traj, nan=1.0)
+        eff_base = dm_eff_ots.array[:, [dm_eff_ots.idx[base_year]], 0, idx[mode], :]
+        dm_lev4.array[:, :, 0, idx[mode], :] = eff_base * traj
+    return dm_lev4
+
+
+def _anchor_ep2050_rail_efficiency(
+    dm_eff, dm_eff_ots, dm_tkm_ots, dm_ms_ots, dm_tkm_fts, dm_ms_fts, years_ots
+):
+    """Rail efficiency [MJ/tkm] following EP2050+ freight rail energy (Abb. 112,
+    ZERO Basis) per Swiss rail tkm, relative to the base year. Same definition as the
+    OTS (EP2050 energy / rail tkm), so the level-1 rail energy follows EP2050.
+
+    eff(t) = eff_ots(base) * [E_EP(t) / E_EP(base)] / [tkm(t) / tkm(base)],
+    with tkm the level-1 Swiss rail tkm projection. Edits dm_eff in place.
+    """
+    ch = "Switzerland"
+    base_year = years_ots[-1]
+    years_fts = dm_eff.col_labels["Years"]
+
+    def rail_tkm(dm_tkm, dm_ms, y):
+        return (
+            dm_tkm[ch, y, "tra_freight_tkm-total-demand"]
+            * dm_ms[ch, y, "tra_freight_modal-share", "rail"]
+        )
+
+    tkm_base = rail_tkm(dm_tkm_ots, dm_ms_ots, base_year)
+    tkm_traj = np.array([rail_tkm(dm_tkm_fts, dm_ms_fts, y) for y in years_fts])
+    tkm_traj = tkm_traj / tkm_base
+
+    energy = fd.fill_years(
+        fd.read_ep2050_rail_freight_energy(), [base_year] + years_fts
+    )
+    energy_traj = energy[1:] / energy[0]
+    traj = energy_traj / tkm_traj
+
+    idx = dm_eff.idx
+    var = "tra_freight_vehicle-efficiency_new"
+    for country in dm_eff.col_labels["Country"]:
+        eff_base = dm_eff_ots.array[
+            dm_eff_ots.idx[country], dm_eff_ots.idx[base_year], 0, idx["rail"], :
+        ]
+        dm_eff.array[idx[country], :, idx[var], idx["rail"], :] = (
+            eff_base[np.newaxis, :] * traj[:, np.newaxis]
+        )
+    return dm_eff
 
 
 # ---------------------------------------------------------------------------
@@ -304,9 +375,6 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
     dict
         Freight FTS keyed by variable name, each value a {lev: DataMatrix} dict.
     """
-    all_countries = ["Switzerland", "Vaud"] + [
-        c for c in country_list if c not in ("Switzerland", "Vaud")
-    ]
     ch = "Switzerland"
     DM_fts = {"fts": {}}
 
@@ -319,10 +387,6 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
     dm_tkm_fts = dm_tkm.filter({"Years": years_fts})
     DM_fts["fts"]["freight_tkm"] = {lev: dm_tkm_fts.copy() for lev in range(1, 5)}
 
-    ratio = (
-        dm_tkm.array[dm_tkm.idx["Vaud"], dm_tkm.idx[2050], 0]
-        / dm_tkm.array[dm_tkm.idx["Vaud"], dm_tkm.idx[2023], 0]
-    )
     # ------------------------------------------------------------------
     # freight_modal-share : linear extrapolation
     # For train lever 2 is PCV, 3 and 4 are random values
@@ -336,15 +400,34 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
 
     # ------------------------------------------------------------------
     # freight_vehicle-efficiency_new
-    # Level 1  : linear OTS trend
-    # Level 4  : ZERO-B efficiency for road modes (EP2050)
-    # Levels 2-3: midpoints
+    # Level 1  : road follows EP2050 WWB (business as usual), rail follows EP2050
+    #            energy per tkm, other non-road linear OTS trend
+    # Level 4  : road follows EP2050 ZERO-B, rail as level 1
+    # Road trajectories are relative to the calibrated base year (see
+    # _anchor_ep2050_efficiency). Levels 2-3: midpoints.
     # ------------------------------------------------------------------
-    dm_eff_ots = DM_transport["ots"]["freight_vehicle-efficiency_new"].copy()
+    dm_eff_ots_raw = DM_transport["ots"]["freight_vehicle-efficiency_new"]
+    dm_eff_ots = dm_eff_ots_raw.copy()
     linear_fitting(dm_eff_ots, years_fts, based_on=create_years_list(2010, 2023, 1))
-    dm_eff_lev1 = dm_eff_ots.filter({"Years": years_fts})
-    dm_eff_lev4 = dm_eff_lev1.copy()
-    dm_eff_lev4 = _zerob_efficiency_road(dm_eff_lev4, years_fts)
+    dm_eff_trend = dm_eff_ots.filter({"Years": years_fts})
+    dm_eff_lev1 = _anchor_ep2050_efficiency(
+        dm_eff_ots_raw, dm_eff_trend, years_ots, scenario="WWB"
+    )
+    dm_eff_lev4 = _anchor_ep2050_efficiency(
+        dm_eff_ots_raw, dm_eff_trend, years_ots, scenario="ZERO-B"
+    )
+    # Rail: EP2050 energy per tkm (a linear OTS trend turns negative before 2050).
+    # Abb. 112 is ZERO Basis only, so levels 1 and 4 are the same.
+    for dm_eff in (dm_eff_lev1, dm_eff_lev4):
+        _anchor_ep2050_rail_efficiency(
+            dm_eff,
+            dm_eff_ots_raw,
+            DM_transport["ots"]["freight_tkm"],
+            DM_transport["ots"]["freight_modal-share"],
+            dm_tkm_fts,
+            dm_ms_fts,
+            years_ots,
+        )
 
     dm_eff_lev2 = _midpoint(dm_eff_lev1, dm_eff_lev4, 1 / 3)
     dm_eff_lev3 = _midpoint(dm_eff_lev1, dm_eff_lev4, 2 / 3)
@@ -380,7 +463,7 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
         for tech, vals in zerob_shares[mode].items():
             if tech in idx:
                 dm_ts_lev4.array[idx[ch], :, 0, idx[mode], idx[tech]] = vals
-        for country in all_countries:
+        for country in dm_ts_lev4.col_labels["Country"]:
             if country != ch:
                 dm_ts_lev4.array[idx[country], :, 0, idx[mode], :] = dm_ts_lev4.array[
                     idx[ch], :, 0, idx[mode], :
@@ -411,17 +494,18 @@ def build_freight_fts(DM_transport, country_list, years_ots, years_fts):
     dm_ur_lev1 = dm_ur_lev1.filter({"Years": years_fts})
 
     # Level 4: override utilisation-rate with ZERO-B; load-factor unchanged
-    zerob_ur = _zerob_utilization_road(years_fts)
+    # ZERO-B trajectory relative to the base year, applied to the calibrated base-year
+    # utilisation rate (EP2050 levels differ from the BFS-based historical values)
+    base_year = years_ots[-1]
+    zerob_ur = _zerob_utilization_road([base_year] + years_fts)
     dm_ur_lev4 = dm_ur_lev1.copy()
     idx = dm_ur_lev4.idx
     var_ur = "tra_freight_utilisation-rate"
     for mode in _ROAD_MODES:
-        dm_ur_lev4.array[idx[ch], :, idx[var_ur], idx[mode]] = zerob_ur[mode]
-        for country in all_countries:
-            if country != ch:
-                dm_ur_lev4.array[idx[country], :, idx[var_ur], idx[mode]] = zerob_ur[
-                    mode
-                ]
+        traj = zerob_ur[mode][1:] / zerob_ur[mode][0]
+        for country in dm_ur_lev4.col_labels["Country"]:
+            ur_base = dm_ur_ots[country, base_year, var_ur, mode]
+            dm_ur_lev4.array[idx[country], :, idx[var_ur], idx[mode]] = ur_base * traj
 
     dm_ur_lev2 = _midpoint(dm_ur_lev1, dm_ur_lev4, 1 / 3)
     dm_ur_lev3 = _midpoint(dm_ur_lev1, dm_ur_lev4, 2 / 3)

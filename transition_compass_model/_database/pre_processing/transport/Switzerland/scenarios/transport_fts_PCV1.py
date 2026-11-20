@@ -94,10 +94,11 @@ def run(DM_transport, country_list, years_ots, years_fts):
 
     # Calculate the values for PCV2 in 2030 based on the 2023 proportions
     values_pcv2_2030 = {
-        "rail": 0.3 * share_TP.array[idx_TP["Vaud"], idx_TP[2023], :, idx_TP["rail"]],
+        "rail": 0.3
+        * share_TP.array[idx_TP["Vaud"], idx_TP[2023], :, idx_TP["rail"]][0],
         "metrotram": 0.3
-        * share_TP.array[idx_TP["Vaud"], idx_TP[2023], :, idx_TP["metrotram"]],
-        "bus": 0.3 * share_TP.array[idx_TP["Vaud"], idx_TP[2023], :, idx_TP["bus"]],
+        * share_TP.array[idx_TP["Vaud"], idx_TP[2023], :, idx_TP["metrotram"]][0],
+        "bus": 0.3 * share_TP.array[idx_TP["Vaud"], idx_TP[2023], :, idx_TP["bus"]][0],
     }  # Source: PCV
     values_pcv2_2035 = {"bike": 0.04}
 

@@ -2,67 +2,184 @@ import os
 import pickle
 
 import numpy as np
+import pandas as pd
+from get_data_functions import utils
 
-from transition_compass_model._database.pre_processing.api_routines_CH import (
-    get_data_api_CH,
+from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
+    get_data_api_swiss_stats,
+)
+from transition_compass_model._database.pre_processing.constants import CANTONS_NAME
+from transition_compass_model._database.pre_processing.params import (
+    country_list,
+    years_ots,
 )
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
-def extract_number_of_buildings(table_id, file):
+def canton_to_acronym(country: str) -> str:
+    return CANTONS_NAME["name_to_accronym"][country]
+
+
+def extract_number_of_buildings_v2(
+    file: str, agency: str = "CH1.GWS", dataflow: str = "DF_GWS_REG1"
+) -> DataMatrix:
+    """Extrait les données de l'api pour le base de donnée:
+    Bâtiments selon les niveaux géographiques institutionnels, la catégorie de bâtiment et l'époque de construction
+
+    Args:
+        file (str): file path
+        agency (str, optional): Agency for api call. Defaults to "CH1.GWS".
+        dataflow (str, optional): dataflow for api call. Defaults to "DF_GWS_REG1".
+
+    Returns:
+        DataMatrix: _description_
+    """
     try:
         with open(file, "rb") as handle:
             dm_nb_bld = pickle.load(handle)
     except OSError:
-        structure, title = get_data_api_CH(table_id, "example", language="fr")
-        filter = {
-            "Canton (-) / District (>>) / Commune (......)": ["Suisse", "- Vaud"],
-            "Catégorie de bâtiment": structure["Catégorie de bâtiment"],
-            "Époque de construction": structure["Époque de construction"],
-            "Année": structure["Année"],
-        }
-        mapping = {
-            "Country": "Canton (-) / District (>>) / Commune (......)",
-            "Years": "Année",
-            "Variables": "Époque de construction",
-            "Categories1": "Catégorie de bâtiment",
-        }
-        unit = ["number"] * len(structure["Époque de construction"])
-        dm_nb_bld = get_data_api_CH(
-            table_id,
-            mode="extract",
-            filter=filter,
-            mapping_dims=mapping,
-            language="fr",
-            units=unit,
-        )
-        dm_nb_bld.groupby(
-            {"bld_nb-bld": ".*"}, regex=True, inplace=True, dim="Variables"
-        )
-        dm_nb_bld.groupby(
-            {
-                "single-family-households": ["Maisons individuelles"],
-                "multi-family-households": [
-                    "Maisons à plusieurs logements",
-                    "Bâtiments d'habitation avec usage annexe",
-                    "Bâtiments partiellement à usage d'habitation",
-                ],
-            },
-            dim="Categories1",
-            inplace=True,
-        )
-        dm_nb_bld.rename_col(
-            ["Suisse", "- Vaud"], ["Switzerland", "Vaud"], dim="Country"
-        )
+        dm_nb_bld = None
+        structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
+        # cantons_list = [
+        #     "Switzerland",
+        #     "Vaud",
+        #     "Fribourg",
+        #     "Schwyz",
+        # ]
+
+        category_list = utils.get_all_elements_except_total(structure, "GKATS")
+        # Iterate
+        for cntr in structure["GEMEINDENAME"]:
+            # Extract buildings floor area
+
+            filtering = {
+                "TIME_PERIOD": structure["TIME_PERIOD"],
+                "GEMEINDENAME": [cntr],
+                "GBAUPS": ["Total"],  # époque de construction
+                "FLAECHKL": ["Total"],
+                "GKATS": category_list,
+                "FREQ": ["Annual"],
+            }
+            mapping_dim = {
+                "Country": "GEMEINDENAME",
+                "Years": "TIME_PERIOD",
+                "Variables": "GBAUPS",
+                "Categories1": "GKATS",
+            }
+            unit_all = ["number"] * len(filtering[mapping_dim["Variables"]])
+            # Get api data
+            dm_nb_bld_cntr = get_data_api_swiss_stats(
+                agency,
+                dataflow,
+                mode="extract",
+                filter=filtering,
+                mapping_dims=mapping_dim,
+                units=unit_all,
+                language="en",
+            )
+
+            if dm_nb_bld is None:
+                dm_nb_bld = dm_nb_bld_cntr.copy()
+            else:
+                dm_nb_bld.append(dm_nb_bld_cntr.copy(), dim="Country")
+
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(current_file_directory, file)
         with open(f, "wb") as handle:
             pickle.dump(dm_nb_bld, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+    # The API uses hyphenated Basel names; align them with country_list
+    dm_nb_bld.rename_col(
+        ["Basel-Landschaft", "Basel-Stadt"],
+        ["Basel Landschaft", "Basel Stadt"],
+        dim="Country",
+    )
+    missing = set(country_list) - set(dm_nb_bld.col_labels["Country"])
+    if missing:
+        raise ValueError(f"Cantons missing from {file}: {sorted(missing)}")
+    dm_nb_bld.filter({"Country": country_list, "Years": years_ots}, inplace=True)
+    dm_nb_bld.sort("Country")
+    dm_nb_bld.rename_col_regex("Total_Variables", "bld_nb-bld", dim="Variables")
+    dm_nb_bld.groupby(
+        {
+            "single-family-households": ["Single-family house"],
+            "multi-family-households": [
+                "Multi-family house",
+                "Other residential building (wit subsidiary use)",
+                "Building with partial residential use",
+            ],
+        },
+        dim="Categories1",
+        inplace=True,
+    )
+
     return dm_nb_bld
 
 
-def compute_renovated_buildings(dm_bld, nb_buildings_renovated, VD_share, share_by_bld):
+RENOVATION_DOMAINS = ("Isolation thermique", "Rénovation du système")
+BLOCK_LABELS = {
+    "single-family-households": "NOMBRE DE MAISONS INDIVIDUELLES",
+    "multi-family-households": "NOMBRE D'IMMEUBLES COLLECTIFS",
+}
+
+
+def _count_renovated(df: pd.DataFrame, block_label: str, canton_acronym: str) -> float:
+    """Sum the buildings renovated in one canton for one block (e.g. single-family).
+
+    Counts measures in the domains "Isolation thermique" (M-01) and
+    "Rénovation du système" (M-10 to M-13). Bonus measures (M-14, M-15) are skipped
+    because they are paid on top of another measure for the same building.
+    Rows are found by their labels, so this works for the 2017-2020 and 2021+ layouts.
+    """
+    total = 0.0
+    found = False
+    in_detail_tables = False
+    block = None
+    header = None
+    for i in range(len(df)):
+        row = df.iloc[i].tolist()
+        first = row[0] if isinstance(row[0], str) else ""
+        if first.startswith("Tableau"):
+            if "Nouvelle construction" in first:
+                break
+            in_detail_tables = "détaillée" in first
+            block = None
+            continue
+        if not in_detail_tables:
+            continue
+        if "CH" in row and "Domaine de mesures" in row:
+            header = row
+            continue
+        if first.startswith(("NOMBRE", "VERSEMENTS", "M2")):
+            block = first
+        if block != block_label or header is None:
+            continue
+        domain = row[header.index("Domaine de mesures")]
+        if domain not in RENOVATION_DOMAINS or first.startswith("Bonus"):
+            continue
+        if canton_acronym not in header:
+            raise ValueError(f"Canton column '{canton_acronym}' not found")
+        value = pd.to_numeric(row[header.index(canton_acronym)], errors="coerce")
+        total += 0.0 if pd.isna(value) else float(value)
+        found = True
+    if not found:
+        raise ValueError(f"No renovation rows found for '{block_label}'")
+    return total
+
+
+def extract_nb_renovated_bld(dm_bld: DataMatrix) -> DataMatrix:
+    """From the programme batiments excels that can be downloaded at https://www.leprogrammebatiments.ch/fr/meta/publications-et-photos/rapports-et-statistiques/.
+    Extract the number of buildings renovated and add it to dm_bld as a new variable.
+    Counts buildings with payments in the year for thermal insulation (M-01) and
+    whole-building renovation (M-10 to M-13). Only subsidised renovations are included.
+
+    Args:
+        dm_bld (DataMatrix): DataMatrix with shape (nb_country, 14,1, 2), variables ['bld_nb-bld'] and categories1 ['multi-family-households', 'single-family-households']
+
+    Returns:
+        DataMatrix: DataMatrix with shape (nb_country, 14,2, 2), variables ['bld_nb-bld', 'bld_nb-bld-renovated'] and categories1 ['multi-family-households', 'single-family-households']
+    """
+
     dm_bld.add(
         np.nan,
         dim="Variables",
@@ -71,14 +188,24 @@ def compute_renovated_buildings(dm_bld, nb_buildings_renovated, VD_share, share_
         unit="number",
     )
     idx = dm_bld.idx
-    for yr in nb_buildings_renovated.keys():
-        for cat in ["single-family-households", "multi-family-households"]:
-            dm_bld.array[
-                idx["Switzerland"], idx[yr], idx["bld_nb-bld-renovated"], idx[cat]
-            ] = nb_buildings_renovated[yr] * share_by_bld[cat]
-            dm_bld.array[
-                idx["Vaud"], idx[yr], idx["bld_nb-bld-renovated"], idx[cat]
-            ] = nb_buildings_renovated[yr] * VD_share[yr] * share_by_bld[cat]
+
+    current_file_directory = os.path.dirname(os.path.abspath(__file__))
+
+    for year in range(2017, years_ots[-1] + 1):
+        file_path = current_file_directory + f"/../data/programme_batiment/{year}.xlsx"
+        if year < 2021:
+            sheet = "2. Analyse (versements)"
+        else:
+            sheet = "2.2 Détails (versements)"
+        df = pd.read_excel(file_path, sheet_name=sheet, header=None)
+
+        for country in country_list:
+            canton_acronym = canton_to_acronym(country)
+            for cat, block_label in BLOCK_LABELS.items():
+                dm_bld.array[
+                    idx[country], idx[year], idx["bld_nb-bld-renovated"], idx[cat]
+                ] = _count_renovated(df, block_label, canton_acronym)
+
     return dm_bld
 
 
@@ -102,7 +229,7 @@ def compute_renovation_rate(dm_renovation, years_ots):
 def extract_renovation_redistribuition(ren_map_in, ren_map_out, years_ots):
     dm = DataMatrix(
         col_labels={
-            "Country": ["Switzerland", "Vaud"],
+            "Country": country_list,
             "Years": years_ots,
             "Variables": [
                 "bld_renovation-redistribution-in",
@@ -198,6 +325,8 @@ def fix_negative_stock(dm_all_cat, dm_stock_tot):
     min_values = np.nanmin(shift, axis=2, keepdims=True)
     # Step 3: Replace NaNs with the corresponding minimum values
     shift = np.where(np.isnan(shift), min_values, shift)
+    # Building types with no negative class at all need no shift
+    shift = np.nan_to_num(shift, nan=0.0)
     dm_tmp.array[:, :, 0, :, :] = (
         dm_tmp.array[:, :, 0, :, :] + shift[:, np.newaxis, :, :]
     )
@@ -228,7 +357,7 @@ def compute_stock_area_by_cat(
     dm_stock_cat, dm_new_cat, dm_renov_cat, dm_waste_cat, dm_stock_tot
 ):
     # s_{c,t}(t-1) &= s_{c,t}(t) - n_{c,t}(t) - r_{c,t}(t) + w_{c,t}(t)
-    dm_all_cat = dm_stock_cat
+    dm_all_cat = dm_stock_cat.copy()
     dm_all_cat.append(dm_new_cat, dim="Variables")
     dm_all_cat.append(dm_renov_cat, dim="Variables")
     dm_all_cat.append(dm_waste_cat, dim="Variables")
@@ -256,4 +385,97 @@ def compute_stock_area_by_cat(
             + dm_all_cat.array[:, idx[t], idx["bld_floor-area_waste"], ...]
         )
 
+    # F is what is left of the total stock once B-E are known. New area by class
+    # comes from FSO new dwellings, not from the total stock change, so F also holds
+    # the difference between the two (e.g. buildings reclassified between types).
+    idx_F = idx["F"]
+    others = [idx[c] for c in dm_all_cat.col_labels["Categories2"] if c != "F"]
+    dm_all_cat.array[:, :, idx["bld_floor-area_stock"], :, idx_F] = dm_stock_tot.array[
+        :, :, 0, :
+    ] - np.sum(
+        dm_all_cat.array[:, :, idx["bld_floor-area_stock"], :, :][..., others], axis=-1
+    )
+
     return dm_all_cat
+
+
+def compute_floor_area_new_cat_from_flows(
+    dm_new_raw, dm_new_cat, dm_stock_cat, dm_renov_cat
+):
+    """New floor area by type and class, following the FSO new-dwellings series.
+
+    For each class built only after 1990, the FSO series over the class's building
+    period is scaled so that new + renovated into the class = its 2023 stock. The
+    class is then empty before its building period and the 2023 split is unchanged.
+    Single-family D (also holds houses from 1981-1990) and multi-family E (new built
+    in 1990) use the scaling factor of class C of the same canton and type.
+    """
+    # (building period, scaled to 2023 stock?) per type and class
+    periods = {
+        "single-family-households": {
+            "B": ((2011, 2023), True),
+            "C": ((2001, 2010), True),
+            "D": ((1990, 2000), False),
+        },
+        "multi-family-households": {
+            "B": ((2011, 2023), True),
+            "C": ((2001, 2010), True),
+            "D": ((1991, 2000), True),
+            "E": ((1990, 1990), False),
+        },
+    }
+    years = dm_new_cat.col_labels["Years"]
+    yrs = np.array(years)
+    out = dm_new_cat.copy()
+    out.array[...] = 0.0
+    i_new = out.idx["bld_floor-area_new"]
+    i_stock = dm_stock_cat.idx["bld_floor-area_stock"]
+    i_ren = dm_renov_cat.idx["bld_floor-area_renovated"]
+    i_raw = dm_new_raw.idx["bld_floor-area_new"]
+    # The back-calculation uses flows from 1991 onwards (stock 1990 = stock 1991 - flows 1991)
+    used = yrs > yrs[0]
+
+    print("New area by class from FSO new dwellings, scaling factor k:")
+    for cntr in out.col_labels["Country"]:
+        line = []
+        for typ, classes in periods.items():
+            raw = dm_new_raw.array[dm_new_raw.idx[cntr], :, i_raw, dm_new_raw.idx[typ]]
+            raw = raw[[dm_new_raw.idx[y] for y in years]]
+            k_C = None
+            for cat in ["B", "C", "D", "E"]:
+                if cat not in classes:
+                    continue
+                (start, end), scaled = classes[cat]
+                in_period = (yrs >= start) & (yrs <= end)
+                if scaled:
+                    s23 = dm_stock_cat.array[
+                        dm_stock_cat.idx[cntr],
+                        dm_stock_cat.idx[years[-1]],
+                        i_stock,
+                        dm_stock_cat.idx[typ],
+                        dm_stock_cat.idx[cat],
+                    ]
+                    ren = dm_renov_cat.array[
+                        dm_renov_cat.idx[cntr],
+                        :,
+                        i_ren,
+                        dm_renov_cat.idx[typ],
+                        dm_renov_cat.idx[cat],
+                    ]
+                    # stock 1990 = 0: sum(k * raw) + sum(ren) = stock 2023
+                    k = (s23 - np.nansum(ren[used])) / np.nansum(raw[in_period & used])
+                    if k < 0:
+                        print(
+                            f"  {cntr} {typ} {cat}: more renovated than 2023 stock, k set to 0"
+                        )
+                        k = 0.0
+                    if cat == "C":
+                        k_C = k
+                else:
+                    k = k_C
+                line.append(f"{typ[:3]}-{cat}={k:.2f}")
+                out.array[
+                    out.idx[cntr], in_period, i_new, out.idx[typ], out.idx[cat]
+                ] = k * raw[in_period]
+        print(f"  {cntr}: " + " ".join(line))
+    return out

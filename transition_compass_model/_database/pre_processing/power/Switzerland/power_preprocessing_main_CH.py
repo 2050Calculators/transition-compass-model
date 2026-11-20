@@ -114,7 +114,9 @@ dm_fuels_supply, dm_production = fuels_supply_run(
 )
 
 print("Compiling power capacity levers (nuclear, onshore wind, PV)")
-DM_ots, DM_fts = power_levers_run(dm_capacity, reactor_list, years_ots, years_fts)
+DM_ots, DM_fts = power_levers_run(
+    dm_capacity, dm_production, reactor_list, years_ots, years_fts
+)
 
 for code, name in CANTON_NAMES.items():
     dm_capacity.rename_col(code, name, dim="Country")

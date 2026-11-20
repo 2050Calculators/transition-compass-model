@@ -6,6 +6,11 @@ import zipfile
 import numpy as np
 import pandas as pd
 
+from transition_compass_model._database.pre_processing.constants import (
+    CANTONS_NAME,
+    GRANDE_REGION_CANTONS,
+)
+from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
     utils,
 )
@@ -174,12 +179,47 @@ def get_travel_demand_region_microrecencement(
     if file_url is not None:
         save_url_to_file(file_url, local_filename)
     df = pd.read_excel(local_filename)
-    df = df[["Unnamed: 1", "Unnamed: 2", "Unnamed: 3", "Unnamed: 5"]]
-    df.columns = ["Variables", "Reason", "Switzerland", "Vaud"]
+    # Select thye columns of interest
+    # TODO fine a cleaner year to only get the region of interest
+    # output the row in which the grande region are given
+    year_to_row = {
+        2000: 2,
+        2005: 2,
+        2010: 2,
+        2015: 2,
+        2021: 3,
+    }
+    # Clean the df from the excel file
+    df.replace("\n", "", regex=True, inplace=True)
+
+    # Select only grande region columns
+    cols = ["Unnamed: 1", "Unnamed: 2", "Unnamed: 3"] + df.columns[
+        df.iloc[year_to_row[year]].isin(GRANDE_REGION_CANTONS.keys())
+    ].tolist()
+    df = df[cols]
+
+    # Rename columns
+    grande_region_cols = df.columns[
+        df.iloc[year_to_row[year]].isin(GRANDE_REGION_CANTONS.keys())
+    ]
+
+    df = df.rename(
+        columns=dict(
+            zip(
+                ["Unnamed: 1", "Unnamed: 2", "Unnamed: 3"],
+                ["Variables", "Reason", "Switzerland"],
+            )
+        )
+    )
+
+    df = df.rename(
+        columns={col: df.loc[year_to_row[year], col] for col in grande_region_cols}
+    )
+
     df["Variables"] = df["Variables"].ffill()
     # Keep only the sum of all reasons to travel
     df = df.loc[df["Reason"] == "Tous les motifs"].copy()
-    df = df[["Variables", "Switzerland", "Vaud"]]
+    del df["Reason"]
     df = df.dropna(subset=["Variables"])
 
     # Add years col
@@ -224,12 +264,32 @@ def get_travel_demand_region_microrecencement(
     df_pivot = df_pivot.add_suffix("[pkm/cap/day]")
     df_pivot = df_pivot.add_prefix("tra_pkm-cap_")
     df_pivot.reset_index(inplace=True)
+    df_pivot.rename(columns={"Country": "Grande_region"}, inplace=True)
+    # Create canton-level rows by copying the corresponding Grande Région values
+    rows = []
+
+    for _, row in df_pivot.iterrows():
+        grande_region = row["Grande_region"]
+
+        if grande_region in GRANDE_REGION_CANTONS:
+            for canton in GRANDE_REGION_CANTONS[grande_region]:
+                new_row = row.copy()
+                new_row["Country"] = canton
+                rows.append(new_row)
+        else:
+            # Keep rows such as Switzerland if they are not a Grande Région
+            rows.append(row)
+
+    df_pivot = pd.DataFrame(rows).reset_index(drop=True)
+    df_pivot.loc[df_pivot["Grande_region"] == "Switzerland", "Country"] = "Switzerland"
+    df_pivot.drop(columns=["Grande_region"], inplace=True)
+
+    #
     # Convert to dm
     dm = DataMatrix.create_from_df(df_pivot, num_cat=1)
     dm.change_unit(
         "tra_pkm-cap", factor=365, old_unit="pkm/cap/day", new_unit="pkm/cap"
     )
-
     return dm
 
 
@@ -337,3 +397,85 @@ def extract_EP2050_transport_vkm_demand(
     )
 
     return dm
+
+
+def pkm_MRMT(file_folder_2015, file_path_2021):  # ,
+    # Checks that the file for 2021 exists
+    save_url_to_file(
+        "https://www.bfs.admin.ch/bfsstatic/dam/assets/24025445/master", file_path_2021
+    )
+
+    cantons_list = [x for x in country_list if x != "Switzerland"]
+    # FSO asset ids of the 2015 cantonal tables (order numbers su-f-11.04.03-MZ-2015-A2_<XX>).
+    # Appenzell Ausserrhoden and Innerrhoden share one table (A2_AR_AI), as in 2021 where
+    # they share the sheet "AR et AI". Both cantons get the combined value (km/person/day).
+    asset_ids_2015 = {
+        "ZH": "2005069",
+        "BE": "2005131",
+        "LU": "2005203",
+        "UR": "2005450",
+        "SZ": "2005567",
+        "OW": "2005865",
+        "NW": "2006015",
+        "GL": "2006050",
+        "ZG": "2081270",
+        "FR": "2081306",
+        "SO": "2081343",
+        "BS": "2081381",
+        "BL": "2081416",
+        "SH": "2081453",
+        "AR_AI": "2081490",
+        "SG": "2081527",
+        "GR": "2081566",
+        "AG": "2081601",
+        "TG": "2081640",
+        "TI": "2081677",
+        "VD": "2081714",
+        "VS": "2081749",
+        "NE": "2081788",
+        "GE": "2081828",
+        "JU": "2081865",
+    }
+    canton_pkm_day = {}
+    for canton in cantons_list:
+        acronym = CANTONS_NAME["name_to_accronym"][canton]
+        if acronym in ("AR", "AI"):
+            sheet_2021, key_2015 = "AR et AI", "AR_AI"
+        else:
+            sheet_2021, key_2015 = acronym, acronym
+        canton_pkm_day[canton] = {}
+        canton_pkm_day[canton][2021] = _mrmt_daily_distance(
+            pd.read_excel(file_path_2021, sheet_name=sheet_2021, header=None)
+        )
+        file_canton_2015 = file_folder_2015 + key_2015 + ".xlsx"
+
+        # If the file don't exist, it downloads it and creates it
+        save_url_to_file(
+            f"https://dam-api.bfs.admin.ch/hub/api/dam/assets/{asset_ids_2015[key_2015]}/master",
+            file_canton_2015,
+        )
+        canton_pkm_day[canton][2015] = _mrmt_daily_distance(
+            pd.read_excel(file_canton_2015, header=None)
+        )
+
+    return canton_pkm_day
+
+
+def _mrmt_daily_distance(df):
+    """Return the total average daily distance [km/person/day] from an MRMT key-figures table.
+
+    The value sits in the column titled "Distance journalière moyenne", on the first row
+    labelled "Total" in the first column. Located by label rather than by a fixed cell,
+    since the header block is one row longer in the 2021 tables than in the 2015 ones.
+    """
+    header = df.iloc[:10].astype(str)
+    cols = [
+        c for c in df.columns if (header[c] == "Distance journalière moyenne").any()
+    ]
+    rows = df.index[df.iloc[:, 0].astype(str).str.strip() == "Total"]
+    if len(cols) != 1 or len(rows) == 0:
+        raise ValueError(
+            "MRMT table layout not recognised: expected one 'Distance journalière "
+            f"moyenne' column (found {len(cols)}) and a 'Total' row (found {len(rows)})"
+        )
+    return float(df.loc[rows[0], cols[0]])

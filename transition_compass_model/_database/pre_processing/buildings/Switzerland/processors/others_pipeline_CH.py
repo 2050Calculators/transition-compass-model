@@ -17,8 +17,14 @@ def run(country_list, years_ots, years_fts):
     # U-value is computed as the average of the house element u-value (roof, wall, windows, ..) weighted by their area
     # U-value in: W/m^2 K
     # Single-family-households
-    # Non-residential values are proxied from EU Hotmaps data (same envelope U-values by class)
-    nonres_u = {"F": 2.01, "E": 1.74, "D": 1.44, "C": 1.20, "B": 0.69}
+    # Non-residential (all services types share one set): effective U-values fitted to
+    # EP2050+ Dienstleistung, Tabelle 03-01 (useful space heat, kWh/m², same floor area
+    # as the model) with scripts/fit_services_u_values_CH.py:
+    #   C (2001-2010) and B (from 2011) match EP2050 "Neubau" 2001-2010 and 2011-2015;
+    #   D-F keep the ratios of the former EU Hotmaps proxy (2.01/1.74/1.44) and are
+    #   scaled together so the services stock matches EP2050 over 2010-2015.
+    # "Effective": they also absorb the internal gains the model does not subtract.
+    nonres_u = {"F": 1.20, "E": 1.03, "D": 0.86, "C": 0.39, "B": 0.34}
     envelope_cat_u_value = {
         "single-family-households": {
             "F": 0.82,
@@ -135,8 +141,8 @@ def run(country_list, years_ots, years_fts):
     # SECION: Building age
     first_bld_sfh = {"F": 1900, "E": 1971, "D": 1981, "C": 2001, "B": 2011}
     first_bld_mfh = {"F": 1900, "E": 1981, "D": 1991, "C": 2001, "B": 2011}
-    # Non-residential: EP2050 construction period boundaries (vor 1946→F, 1947-1975→E, etc.)
-    first_bld_nonres = {"F": 1900, "E": 1947, "D": 1976, "C": 1991, "B": 2020}
+    # Non-residential: same construction periods as MFH
+    first_bld_nonres = first_bld_mfh
     col_label = {
         "Country": country_list,
         "Years": years_ots + years_fts,
@@ -217,7 +223,7 @@ def run(country_list, years_ots, years_fts):
     }
     dm_co2_factor = DataMatrix(col_labels=col_dict, units={"bld_CO2-factor": "kt/TWh"})
 
-    arr_co2_factor = np.zeros((2, 40, 1, 2))
+    arr_co2_factor = np.zeros((len(col_dict["Country"]), len(col_dict["Years"]), 1, 2))
     idx = dm_co2_factor.idx
     arr_co2_factor[:, idx[1990] : idx[2023] + 1, :, idx["electricity"]] = 168.64
     arr_co2_factor[:, idx[2025] : idx[2050], :, idx["electricity"]] = np.nan

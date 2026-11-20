@@ -1,13 +1,14 @@
-from params import country_list, years_fts, years_ots
 from processors.aviation_ots_pipeline_CH import run as aviation_ots_run
 from processors.aviation_part1_pipeline_CH import run as aviation_pt1_run
 from processors.electricity_emissions_pipeline import run as electricity_emission_run
 from processors.freight_efficiency_tech_share import run as freight_eff_tech_run
 from processors.freight_mode_other_fxa import run as freight_mode_other_run
 from processors.freight_mode_road_fxa import run as freight_mode_road_run
+from processors.freight_road_ots import run as freight_road_run
 from processors.freight_tech_fxa import run as freight_tech_fxa_run
 from processors.freight_tkm_modal_share import run as freight_tkm_run
 from processors.freight_utilization_rate import run as freight_utilization_run
+from processors.passenger_efficiency_pipeline import compute_tech_share
 from processors.passenger_efficiency_pipeline import run as passenger_efficiency_run
 from processors.passenger_emission_factors import run as passenger_emission_run
 from processors.passenger_energy_pipeline import run as passenger_energy_run
@@ -21,12 +22,18 @@ from processors.transport_calib_energy_demand import run as data_check_energy_ru
 from processors.transport_calib_vkm import run as data_check_vkm_run
 from processors.transport_demand_pipeline import run as demand_pkm_vkm_run
 from processors.transport_ots_pickle import run as ots_pickle_run
+from processors.transport_vkm_adj_factor import run as vkm_adj_factor_run
 from scenarios.tra_techchnology_fts import run as tra_techchnology_fts_run
 from scenarios.transport_fts_BAU_pickle import run as fts_bau_pickle_run
 from scenarios.transport_fts_DLS import run as DLS_pickle_run
 from scenarios.transport_fts_PCV1 import run as fts_PCV1_pickle_run
 from scenarios.transport_fts_PCV2 import run as fts_PCV2_pickle_run
 
+from transition_compass_model._database.pre_processing.params import (
+    country_list,
+    years_fts,
+    years_ots,
+)
 from transition_compass_model._database.pre_processing.transport.Switzerland.scenarios.transport_fts_fill import (
     run as fts_fill_pickle_run,
 )
@@ -95,6 +102,20 @@ dm_data_check_vkm = data_check_vkm_run(
     dm_vkm, dm_LDV_fleet_stock, dm_new_LDV_fleet, years_ots
 )
 
+## vkm-by-tech adjustment factor (EP2050 vkm share / fleet share, CH -> all cantons)
+print("vkm adjustment factor by technology")
+dm_fleet_share = compute_tech_share(
+    dm_private_fleet.filter({"Variables": ["tra_passenger_vehicle-fleet"]}),
+    dm_public_fleet.filter({"Variables": ["tra_passenger_vehicle-fleet"]}),
+)
+dm_vkm_adj_factor = vkm_adj_factor_run(
+    dm_fleet_share,
+    dm_data_check_vkm["passenger-and-freight_road_EP-2050"],
+    years_ots,
+    years_fts,
+    country_list,
+)
+
 ## Efficiency
 print("Efficiency")
 dm_veh_eff = passenger_efficiency_run(
@@ -137,25 +158,33 @@ dm_freight_mode_other = freight_mode_other_run(
     DM_freight_ots, years_ots, years_fts, country_list
 )
 
+## Road freight back-calculated from targets (BFS tkm and fleet, EP2050 vkm and
+## fuel split, FOEN truck CO2): load factor, utilisation, renewal, tech share, efficiency
+print("Freight road OTS (targets)")
+road_freight = freight_road_run(years_ots, cdm_emissions_factors)
+
 ## Freight utilization rate OTS (road: HDVH, HDVL, HDVM)
 print("Freight utilization rate OTS")
-dm_freight_utilization = freight_utilization_run(years_ots, country_list)
+dm_freight_utilization = freight_utilization_run(years_ots, country_list, road_freight)
 
 ## Freight mode road FXA (road: HDVH, HDVL, HDVM lifetime)
 print("Freight mode road FXA")
 dm_freight_mode_road = freight_mode_road_run(
-    dm_freight_utilization, years_ots, years_fts, country_list
+    dm_freight_utilization, road_freight, years_ots, years_fts, country_list
 )
 
 ## Freight efficiency and tech share for new vehicles OTS
 print("Freight efficiency + tech share new vehicles")
-DM_freight_eff_tech = freight_eff_tech_run(years_ots, country_list)
+DM_freight_eff_tech = freight_eff_tech_run(
+    years_ots, country_list, road_freight, DM_freight_ots
+)
 
 ## Freight tech FXA (fleet tech share + fleet efficiency)
 print("Freight tech FXA")
 dm_freight_tech = freight_tech_fxa_run(
     DM_freight_eff_tech["freight_vehicle-efficiency_new"],
     DM_freight_eff_tech["freight_technology-share_new"],
+    road_freight,
     years_ots,
     years_fts,
     country_list,
@@ -185,11 +214,12 @@ DM_input = {
     ],
     "freight_technology-share_new": DM_freight_eff_tech["freight_technology-share_new"],
     "freight_tech": dm_freight_tech,
+    "vkm_adj_factor": dm_vkm_adj_factor,
 }
 # DM.keys = ['passenger_private-fleet', 'passenger_public-fleet', 'passenger_renewal-rate', 'passenger_new-vehicles', 'passenger_waste-fleet']
 DM_input = DM_input | DM  # join
 DM_transport_wo_aviation, DM_transport = ots_pickle_run(
-    DM_input, years_ots, years_fts, DM_aviation_ots, country_list
+    DM_input, years_ots, years_fts, DM_aviation_ots, country_list, dm_pop_ots
 )
 
 # Transport fts pickle (passenger + freight, then aviation merged in)

@@ -9,59 +9,154 @@ from transition_compass_model._database.pre_processing.api_routines_CH import (
 )
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
-    linear_fitting,
+    rename_cantons,
 )
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
+# Infras, TEP, Prognos, 2021. Analyse des schweizerischen Energieverbrauchs 2000–2020 - Auswertung nach Verwendungszwecken.
+# Table 26 - Endenergieverbrauch im Dienstleistungssektor nach Verwendungszwecken Entwicklung von 2000 bis 2020, in PJ, inkl. Landwirtschaft
+# Final energy consumption in the service sector by purpose Development from 2000 to 2020, in PJ, incl. agriculture
+# https://www.bfe.admin.ch/bfe/de/home/versorgung/statistik-und-geodaten/energiestatistiken/energieverbrauch-nach-verwendungszweck.exturl.html/aHR0cHM6Ly9wdWJkYi5iZmUuYWRtaW4uY2gvZGUvcHVibGljYX/Rpb24vZG93bmxvYWQvMTA2OTM%3D.html&ved=2ahUKEwiC4OjJvpGOAxWexgIHHdyFGVMQFnoECB0QAQ&usg=AOvVaw1a9deGMbwSdNvV0aVLEBPj
+PROGNOS_SERVICES_EUD_PJ = {
+    "space-heating": {
+        2000: 82.1,
+        2014: 67.1,
+        2015: 73.2,
+        2016: 77.3,
+        2017: 75.0,
+        2018: 67.0,
+        2019: 69.7,
+        2020: 65.9,
+    },
+    "hot-water": {
+        2000: 12.7,
+        2014: 12.1,
+        2015: 12.1,
+        2016: 12.0,
+        2017: 12.0,
+        2018: 12.0,
+        2019: 11.9,
+        2020: 11.9,
+    },
+    "process-heat": {
+        2000: 2.3,
+        2014: 2.5,
+        2015: 2.5,
+        2016: 2.5,
+        2017: 2.5,
+        2018: 2.6,
+        2019: 2.7,
+        2020: 2.2,
+    },
+    "lighting": {
+        2000: 16.8,
+        2014: 17.0,
+        2015: 17.0,
+        2016: 17.0,
+        2017: 17.0,
+        2018: 16.9,
+        2019: 16.8,
+        2020: 15.9,
+    },
+    "HVAC and building tech": {
+        2000: 11.2,
+        2014: 13.8,
+        2015: 15.0,
+        2016: 15.1,
+        2017: 15.5,
+        2018: 15.5,
+        2019: 15.8,
+        2020: 15.0,
+    },
+    "ICT and entertainment media": {
+        2000: 6.1,
+        2014: 6.9,
+        2015: 6.9,
+        2016: 6.9,
+        2017: 6.9,
+        2018: 7.0,
+        2019: 7.0,
+        2020: 6.8,
+    },
+    "Drives and processes": {
+        2000: 14.4,
+        2014: 16.1,
+        2015: 16.0,
+        2016: 16.0,
+        2017: 15.9,
+        2018: 16.1,
+        2019: 16.2,
+        2020: 15.7,
+    },
+    "Other": {
+        2000: 4.0,
+        2014: 4.3,
+        2015: 4.4,
+        2016: 4.4,
+        2017: 4.3,
+        2018: 4.4,
+        2019: 4.3,
+        2020: 4.1,
+    },
+    "Total": {
+        2000: 149.7,
+        2014: 139.7,
+        2015: 147.2,
+        2016: 151.2,
+        2017: 149.2,
+        2018: 141.5,
+        2019: 144.4,
+        2020: 137.5,
+    },
+}
+
 
 def _extract_type_class_shares_from_cadastre(this_dir):
-    """Return P(type | class) shares from Vaud cadastre, shape (n_types, n_classes)."""
-    cadastre_path = os.path.join(this_dir, "../data/cadastre_regener.csv")
-    df = pd.read_csv(cadastre_path, low_memory=False)
+    """Return P(type | class) shares from RegBL cadastre, shape (n_types, n_classes)."""
+    # For now use REGBL data which contains lots of missing values. #FIXME
+    cadastre_path = os.path.join(
+        this_dir, "../data/Regbl/Switzerland/gebaeude_batiment_edificio.csv"
+    )
+    df = pd.read_csv(cadastre_path, sep="\t")
 
-    non_res_sia = [
-        "Administration",
-        "Commerce",
-        "Ecoles",
-        "Hopitaux",
-        "Restauration",
-        "Lieux_de_rassemblement",
-        "Installations_sportives",
-    ]
+    # Documentation is available here https://www.housing-stat.ch/catalog/fr/4.3/final
     type_map = {
-        "Administration": "offices",
-        "Commerce": "trade",
-        "Ecoles": "education",
-        "Hopitaux": "health",
-        "Restauration": "hotels",
-        "Lieux_de_rassemblement": "other",
-        "Installations_sportives": "other",
+        1220: "offices",
+        1230: "trade",
+        1261: "education",
+        1263: "education",
+        1264: "health",
+        1211: "hotels",
+        1212: "hotels",
+        1231: "hotels",
     }
 
-    df = df[df["aff_sia"].isin(non_res_sia)].copy()
-    df = df[df["gebf"].notna() & (df["gebf"] > 0)]
-    df["model_type"] = df["aff_sia"].map(type_map)
+    df = df[df["GKLAS"] > 1200].copy()
+    df = df[df["GEBF"].notna() & (df["GEBF"] > 0)]
+    df["model_type"] = df["GKLAS"].map(type_map)
+    df["model_type"].fillna("other", inplace=True)
 
     def _year_to_class(yr):
         if pd.isna(yr):
             return None
         yr = int(yr)
-        if yr < 1947:
+        # Same construction periods as multi-family houses
+        if yr <= 1980:
             return "F"
-        elif yr <= 1975:
-            return "E"
         elif yr <= 1990:
+            return "E"
+        elif yr <= 2000:
             return "D"
-        elif yr <= 2019:
+        elif yr <= 2010:
             return "C"
         else:
             return "B"
 
-    df["energy_class"] = df["gbauj"].apply(_year_to_class)
+    df["energy_class"] = df["GBAUJ"].apply(_year_to_class)
     df = df[df["energy_class"].notna()]
 
     area_by_type_class = (
-        df.groupby(["model_type", "energy_class"])["gebf"]
+        df.groupby(["model_type", "energy_class"])["GEBF"]
         .sum()
         .unstack("energy_class")
         .fillna(0)
@@ -89,27 +184,21 @@ def extract_services_floor_area_EP2050(this_dir, years_ots):
     }
     years_ep2050 = sorted(year_cols.keys())
 
-    # Construction period rows map to energy classes (labels in column 1)
-    period_to_class = {
-        "vor 1946": "F",
-        "1947-1975": "E",
-        "1976-1990": "D",
-        "1991-2019": "C",
-        "ab 2020": "B",
-    }
-    energy_classes = ["B", "C", "D", "E", "F"]
-
-    # Extract floor area (Tsd. m²) per class per year
-    class_area = {}  # class → np.array over years_ep2050
-    for period, cls in period_to_class.items():
+    # Floor area (Tsd. m²) per EP2050 construction period (labels in column 1)
+    periods = ["vor 1946", "1947-1975", "1976-1990", "1991-2019", "ab 2020"]
+    period_area = {}  # period → np.array over years_ep2050, in m²
+    for period in periods:
         row_mask = df.iloc[:, 1].astype(str).str.strip() == period
         row_idx = df.index[row_mask][0]
         values = np.array(
             [df.iloc[row_idx, year_cols[yr]] for yr in years_ep2050], dtype=float
         )
-        class_area[cls] = values * 1000  # Tsd. m² → m²
+        period_area[period] = values * 1000  # Tsd. m² → m²
 
-    # Get P(type | class) shares from Vaud cadastre
+    class_area = _ep2050_periods_to_mfh_classes(period_area, years_ep2050)
+    energy_classes = ["B", "C", "D", "E", "F"]
+
+    # Get P(type | class) shares from the RegBL building register
     type_shares = _extract_type_class_shares_from_cadastre(this_dir)
     bld_types = sorted(
         type_shares.index.tolist()
@@ -139,12 +228,89 @@ def extract_services_floor_area_EP2050(this_dir, years_ots):
                     total_cls * share
                 )
 
-    missing_years = [yr for yr in years_ots if yr not in years_ep2050]
+    missing_years = [yr for yr in years_ots if yr < years_ep2050[0]]
     if missing_years:
-        dm_add_missing_variables(dm_ch, {"Years": missing_years})
-        dm_ch.sort("Years")
-    linear_fitting(dm_ch, years_ots, based_on=list(range(2000, 2010)))
+        _backcast_services_floor_area_WP(this_dir, dm_ch, missing_years)
+
+    assert (dm_ch.array >= 0).all(), "Negative services floor area"
     return dm_ch.filter({"Years": years_ots})
+
+
+def _ep2050_periods_to_mfh_classes(period_area, years):
+    """Map EP2050 construction periods to envelope classes with the MFH periods.
+
+    MFH classes: F before 1981, E 1981-1990, D 1991-2000, C 2001-2010, B from 2011.
+    - The 1976-1990 band is split evenly per year: 5/15 to F, 10/15 to E.
+    - The 1991-2019 band is split by the year the floor area was added, assuming
+      no demolition of these recent buildings up to 2019: D is the stock of 2000,
+      C what was added 2001-2010, B what was added 2011-2019. After 2019 the band
+      declines; the decline goes to D and C (the older buildings), B stays constant.
+    """
+    years = list(years)
+    p76 = period_area["1976-1990"]
+    p91 = period_area["1991-2019"]
+    i_2000, i_2010, i_2019 = years.index(2000), years.index(2010), years.index(2019)
+    assert np.all(np.diff(p91[: i_2019 + 1]) >= 0), "1991-2019 band decreases"
+
+    d, c, b = np.zeros(len(years)), np.zeros(len(years)), np.zeros(len(years))
+    for i, yr in enumerate(years):
+        d[i] = p91[min(i, i_2000)]
+        c[i] = p91[min(i, i_2010)] - p91[i_2000] if yr > 2000 else 0
+        b[i] = p91[min(i, i_2019)] - p91[i_2010] if yr > 2010 else 0
+        if yr > 2019:
+            scale = (p91[i] - b[i]) / (p91[i_2019] - b[i])
+            assert scale >= 0, "1991-2019 band falls below its 2011-2019 part"
+            d[i], c[i] = d[i] * scale, c[i] * scale
+
+    return {
+        "F": period_area["vor 1946"] + period_area["1947-1975"] + p76 * 5 / 15,
+        "E": p76 * 10 / 15,
+        "D": d,
+        "C": c,
+        "B": b + period_area["ab 2020"],
+    }
+
+
+def _backcast_services_floor_area_WP(this_dir, dm_ch, missing_years):
+    """Fill the years before EP2050 (1990-1999) from the Wüest & Partner EBF stock.
+
+    W&P for BFE (2004) gives the yearly services floor-area stock for 1990-2003.
+    Agricultural buildings are removed to match EP2050.
+    - Total follows the W&P growth, scaled to the EP2050 total of the first year (2000).
+    - Class D (built 1991-2000) is 0 in 1990 and reaches its EP2050 value in 2000,
+      following the timing of the W&P floor-area additions since 1990.
+    - Classes C and B (built from 2001) are 0.
+    - Classes E and F share the rest, with their split of the first EP2050 year.
+    - The split by building type within each class is the one of the first EP2050 year.
+    """
+    file_path = os.path.join(this_dir, "../data/WP_EBF_services_1990_2003_BFE2004.csv")
+    df_wp = pd.read_csv(file_path, comment="#", index_col="year")
+    wp_srv = df_wp["DLG"] - df_wp["landw"]  # thousand m2, services without agriculture
+
+    yr_ref = dm_ch.col_labels["Years"][0]  # first EP2050 year
+    yr_0 = 1990  # last year before class D buildings exist
+    assert all(yr in wp_srv.index for yr in missing_years + [yr_ref, yr_0])
+
+    classes = dm_ch.col_labels["Categories2"]
+    i_D = classes.index("D")
+    i_old = [classes.index(c) for c in ["E", "F"]]
+
+    arr_ref = dm_ch.array[0, dm_ch.idx[yr_ref], 0, :, :]  # type x class
+    class_ref = arr_ref.sum(axis=0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        type_share = np.nan_to_num(arr_ref / class_ref)
+    old_share = class_ref[i_old] / class_ref[i_old].sum()
+
+    dm_add_missing_variables(dm_ch, {"Years": missing_years})
+    for yr in missing_years:
+        total = class_ref.sum() * wp_srv[yr] / wp_srv[yr_ref]
+        added = (wp_srv[yr] - wp_srv[yr_0]) / (wp_srv[yr_ref] - wp_srv[yr_0])
+        class_yr = np.zeros(len(classes))
+        class_yr[i_D] = class_ref[i_D] * max(added, 0)
+        class_yr[i_old] = (total - class_yr[i_D]) * old_share
+        dm_ch.array[0, dm_ch.idx[yr], 0, :, :] = type_share * class_yr
+
+    return
 
 
 def extract_services_renovation_rate_EP2050(
@@ -228,9 +394,15 @@ def extract_national_energy_demand(table_id, file):
         # Drop too detailed split
         keep_sectors = [s for s in keep_sectors if "---- " not in s]
 
+        # The table has a single unit. Its label changed from "Térajoules" to
+        # "Terajoules", so read it from the structure instead of hard-coding it.
+        unit = structure["Unité de mesure"][0]
+        if unit.lower().replace("é", "e") != "terajoules":
+            raise ValueError(f"{table_id}: expected unit Terajoules, got '{unit}'")
+
         filter = {
             "Économie et ménages": keep_sectors,
-            "Unité de mesure": ["Térajoules"],
+            "Unité de mesure": [unit],
             "Année": structure["Année"],
             "Agent énergétique": structure["Agent énergétique"],
         }
@@ -252,7 +424,7 @@ def extract_national_energy_demand(table_id, file):
         )
 
         # dm_heating.rename_col('--- Chauffage des ménages', 'bld_heating-demand', dim='Variables')
-        dm_energy.rename_col("Térajoules", "Switzerland", dim="Country")
+        dm_energy.rename_col(unit, "Switzerland", dim="Country")
 
         # We drop the fuels fro transport
         dict_rename = {
@@ -344,7 +516,8 @@ def extract_employees_per_sector_canton(table_id, file):
         f = os.path.join(current_file_directory, file)
         with open(f, "wb") as handle:
             pickle.dump(dm_employees, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
+    ### Celan canton name
+    rename_cantons(dm_employees)
     return dm_employees
 
 

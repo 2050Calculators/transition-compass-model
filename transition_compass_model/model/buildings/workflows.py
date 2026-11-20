@@ -8,6 +8,109 @@ from transition_compass_model.model.common.auxiliary_functions import (
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
+def _renovation_with_spillover(s_avail, arr_rr, ren_in, ren_out, classes):
+    """Net renovation flow r_t (sums to 0 over classes).
+
+    Each class gives its planned share arr_rr * ren_out, capped at its available
+    stock. A shortfall spills to the next-better class (e.g. F -> E -> D -> C).
+    Planned m2 land according to ren_in; spilled m2 from class X land only in
+    classes better than X (ren_in restricted to those, renormalised).
+
+    s_avail: (cntr, bld_type, class) stock after demolition
+    arr_rr: (cntr, bld_type, 1) total m2 to renovate
+    ren_in, ren_out: (cntr, 1, class) in/out shares
+    classes: energy-class labels; alphabetical order = best -> worst
+    Returns r_t and the m2 that could not be renovated, shape (cntr, bld_type).
+    """
+    avail = np.maximum(np.nan_to_num(s_avail), 0)
+    planned = arr_rr * ren_out
+    if (planned <= avail).all():
+        # no shortage: skip the class loop
+        return arr_rr * (ren_in - ren_out), np.zeros(avail.shape[:-1])
+    ren_in = np.broadcast_to(ren_in, avail.shape)
+    order = np.argsort(classes)[::-1]  # worst first
+    outflow = np.zeros_like(avail)
+    inflow = np.zeros_like(avail)
+    carry = np.zeros(avail.shape[:-1])
+    for pos, k in enumerate(order):
+        better = order[pos + 1 :]
+        take_plan = np.minimum(planned[..., k], avail[..., k])
+        take_spill = np.zeros_like(carry)
+        if len(better) > 0:
+            take_spill = np.minimum(carry, avail[..., k] - take_plan)
+        carry = carry + planned[..., k] - take_plan - take_spill
+        outflow[..., k] = take_plan + take_spill
+        inflow += take_plan[..., np.newaxis] * ren_in
+        if take_spill.any():
+            w = np.zeros_like(avail)
+            w[..., better] = ren_in[..., better]
+            tot = w.sum(axis=-1, keepdims=True)
+            w = np.divide(w, tot, out=np.zeros_like(w), where=tot > 0)
+            inflow += take_spill[..., np.newaxis] * w
+    return inflow - outflow, carry
+
+
+def _demolition_with_spillover(s_tm1, w_tot, old_mask, classes):
+    """Demolished m2 by class, w_t.
+
+    w_tot is split over buildings older than 50 years, in proportion to their
+    stock. If old stock is missing or too small, the shortfall comes from the
+    worst remaining class (F -> E -> ... -> B).
+
+    s_tm1: (cntr, bld_type, class) stock at t-1
+    w_tot: (cntr, bld_type, 1) total m2 to demolish
+    old_mask: (cntr, bld_type, class) 1 where buildings are older than 50 years
+    classes: energy-class labels; alphabetical order = best -> worst
+    Returns w_t and the m2 that could not be demolished, shape (cntr, bld_type).
+    """
+    avail = np.maximum(np.nan_to_num(s_tm1), 0)
+    old = old_mask * avail
+    old_tot = old.sum(axis=-1, keepdims=True)
+    share = np.divide(old, old_tot, out=np.zeros_like(old), where=old_tot > 0)
+    planned = w_tot * share
+    carry = w_tot[..., 0] - planned.sum(axis=-1)  # all of it if no old stock
+    if not (carry > 0).any() and (planned <= avail).all():
+        return planned, np.zeros_like(carry)  # no shortage: skip the class loop
+    order = np.argsort(classes)[::-1]  # worst first
+    w_t = np.zeros_like(avail)
+    for k in order:
+        take_plan = np.minimum(planned[..., k], avail[..., k])
+        take_spill = np.minimum(carry, avail[..., k] - take_plan)
+        carry = carry + planned[..., k] - take_plan - take_spill
+        w_t[..., k] = take_plan + take_spill
+    return w_t, carry
+
+
+def _allocate_vacancy(s_t, vac_tot, classes):
+    """Vacant m2 by building type and class, v_t.
+
+    Vacancy goes to the worst class first (F -> E -> ... -> B). Within a class
+    it is split across building types in proportion to their stock.
+
+    s_t: (cntr, bld_type, class) physical stock at t
+    vac_tot: (cntr,) total vacant m2 (stock - demand, >= 0)
+    classes: energy-class labels; alphabetical order = best -> worst
+    Returns v_t and the m2 that could not be placed, shape (cntr,).
+    """
+    avail = np.maximum(np.nan_to_num(s_t), 0)
+    v_t = np.zeros_like(avail)
+    carry = np.nan_to_num(vac_tot).astype(float)
+    if not (carry > 0).any():
+        return v_t, carry
+    class_tot = avail.sum(axis=1)  # (cntr, class)
+    for k in np.argsort(classes)[::-1]:  # worst first
+        take = np.minimum(carry, class_tot[:, k])
+        share = np.divide(
+            avail[..., k],
+            class_tot[:, k, np.newaxis],
+            out=np.zeros_like(avail[..., k]),
+            where=class_tot[:, k, np.newaxis] > 0,
+        )
+        v_t[..., k] = take[:, np.newaxis] * share
+        carry = carry - take
+    return v_t, carry
+
+
 def compute_stock_fts(DM, years_ots, years_fts):
     dm = DM["ots"].copy()
     del DM["ots"]
@@ -36,6 +139,8 @@ def compute_stock_fts(DM, years_ots, years_fts):
         },
         inplace=True,
     )
+    # OTS stock = demand x mix, so there is no vacant floor area in OTS
+    dm.add(0, dummy=True, dim="Variables", col_label="bld_floor-area_vacant", unit="m2")
     years_missing = list(set(range(years_ots[0], years_fts[-1] + 1)) - set(years_ots))
     dm.add(np.nan, dummy=True, dim="Years", col_label=years_missing)
 
@@ -51,57 +156,89 @@ def compute_stock_fts(DM, years_ots, years_fts):
     future_years.sort()
     for ti in future_years:
         # ni = n[idx[ti]]
+        # total stock for time t
         s_t_tot = dm_demand[:, ti, "bld_floor-area_total"]
+        # stock at t-1 by category
         s_tm1 = dm[:, ti - 1, "bld_floor-area_stock", ...]
-        dem_tm1 = dm_dem_rate[:, ti - 1, "bld_demolition-rate", ...]
-        dem_distr_tm1 = dm_dem_distr[:, ti - 1, "bld_to-demolish", :, :] * s_tm1
-        dem_distr_tm1 = dem_distr_tm1 / np.nansum(dem_distr_tm1, axis=-1, keepdims=True)
-        w_t = (
-            np.nansum(s_tm1, axis=-1, keepdims=True)
-            * dem_tm1[..., np.newaxis]
-            * dem_distr_tm1
+        dem_rate_tm1 = dm_dem_rate[:, ti - 1, "bld_demolition-rate", ...]
+        # dm_dem_distr[..., "bld_to-demolish", :, :] is a  0/1 mask of buildings older than 50yrs
+        # Demolition goes to old buildings first; if they run out, to the worst class left
+        w_t, not_demolished = _demolition_with_spillover(
+            s_tm1,
+            np.nansum(s_tm1, axis=-1, keepdims=True) * dem_rate_tm1[..., np.newaxis],
+            dm_dem_distr[:, ti - 1, "bld_to-demolish", :, :],
+            dm.col_labels["Categories2"],
         )
+        if (not_demolished > 1).any():
+            print(
+                f"bld demolition {ti}: {not_demolished.sum():,.0f} m2 not demolished "
+                "(no stock left to demolish)"
+            )
         s_tm1_w_t = s_tm1 - w_t
+        # arr_rr = m2 renovated by bld type
         arr_rr = np.nansum(
             s_tm1_w_t * dm_rr[:, ti, "bld_renovation-rate", :, np.newaxis],
             axis=-1,
             keepdims=True,
         )
-        r_t = arr_rr * (
-            dm_renov_distr[:, ti, "bld_renovation-redistribution-in", np.newaxis, :]
-            + -dm_renov_distr[:, ti, "bld_renovation-redistribution-out", np.newaxis, :]
+        # So r_t is a net transfer that sums to zero across classes.
+        # Old classes go down, good classes go up, and the total stock doesn't change
+        # If a class runs out (e.g. all F renovated/demolished), its shortfall
+        # spills to the next-better class, so renovation never makes stock negative
+        r_t, not_renovated = _renovation_with_spillover(
+            s_tm1_w_t,
+            arr_rr,
+            dm_renov_distr[:, ti, "bld_renovation-redistribution-in", np.newaxis, :],
+            dm_renov_distr[:, ti, "bld_renovation-redistribution-out", np.newaxis, :],
+            dm.col_labels["Categories2"],
         )
-        # If any class would go negative, cap per-class outflow and scale inflows
-        # proportionally so mass is conserved across all energy classes.
-        mask_negative = np.any(s_tm1_w_t + r_t < 0, axis=2, keepdims=True)
-        if mask_negative.any():
-            ren_out = dm_renov_distr[
-                :, ti, "bld_renovation-redistribution-out", np.newaxis, :
-            ]
-            ren_in = dm_renov_distr[
-                :, ti, "bld_renovation-redistribution-in", np.newaxis, :
-            ]
-            # Max fraction each class can supply without going negative: s/arr_rr + ren_in
-            with np.errstate(divide="ignore", invalid="ignore"):
-                max_out = np.where(arr_rr > 0, s_tm1_w_t / arr_rr + ren_in, ren_out)
-            ren_out_capped = np.minimum(ren_out, np.maximum(0.0, max_out))
-            # Scale inflows to match reduced outflow total
-            total_out = np.nansum(ren_out, axis=-1, keepdims=True)
-            total_out_capped = np.nansum(ren_out_capped, axis=-1, keepdims=True)
-            scale = np.where(total_out > 0, total_out_capped / total_out, 1.0)
-            r_t_corrected = arr_rr * (ren_in * scale - ren_out_capped)
-            mask_expanded = mask_negative.repeat(r_t.shape[-1], axis=-1)
-            r_t = np.where(mask_expanded, r_t_corrected, r_t)
+        if (not_renovated > 1).any():
+            print(
+                f"bld renovation {ti}: {not_renovated.sum():,.0f} m2 not renovated "
+                "(no stock left to renovate)"
+            )
+        # TODO: alternative cap-and-scale fix to prevent negative renovation stock
+        # (mass-conserving). Discuss with colleagues before enabling.
+        # mask_negative = np.any(s_tm1_w_t + r_t < 0, axis=2, keepdims=True)
+        # if mask_negative.any():
+        #     ren_out = dm_renov_distr[
+        #         :, ti, "bld_renovation-redistribution-out", np.newaxis, :
+        #     ]
+        #     ren_in = dm_renov_distr[
+        #         :, ti, "bld_renovation-redistribution-in", np.newaxis, :
+        #     ]
+        #     with np.errstate(divide="ignore", invalid="ignore"):
+        #         max_out = np.where(arr_rr > 0, s_tm1_w_t / arr_rr + ren_in, ren_out)
+        #     ren_out_capped = np.minimum(ren_out, np.maximum(0.0, max_out))
+        #     total_out = np.nansum(ren_out, axis=-1, keepdims=True)
+        #     total_out_capped = np.nansum(ren_out_capped, axis=-1, keepdims=True)
+        #     scale = np.where(total_out > 0, total_out_capped / total_out, 1.0)
+        #     r_t_corrected = arr_rr * (ren_in * scale - ren_out_capped)
+        #     mask_expanded = mask_negative.repeat(r_t.shape[-1], axis=-1)
+        #     r_t = np.where(mask_expanded, r_t_corrected, r_t)
 
-        # TOTAL: n_t = s(t) - s(t-1) + w(t) (without cat split)
-        n_t_tot = s_t_tot - np.nansum(s_tm1_w_t, axis=(-1, -2))
+        # TOTAL: n_t = s(t) - s(t-1) + w(t) (without cat split), never negative.
+        # If demand falls below the stock left after demolition, nothing is built
+        # and the extra floor area is vacant (not heated). Vacancy is recomputed
+        # every year, so if demand rises again vacant area is re-occupied first.
+        s_avail_tot = np.nansum(s_tm1_w_t, axis=(-1, -2))
+        n_t_tot = np.maximum(s_t_tot - s_avail_tot, 0)
         n_t = (
             n_t_tot[..., np.newaxis, np.newaxis]
             * dm[:, ti, "bld_building-mix_new", ...]
         )
 
         s_t = s_tm1_w_t + n_t + r_t
+        v_t, not_vacant = _allocate_vacancy(
+            s_t, np.maximum(s_avail_tot - s_t_tot, 0), dm.col_labels["Categories2"]
+        )
+        if (not_vacant > 1).any():
+            print(
+                f"bld vacancy {ti}: {not_vacant.sum():,.0f} m2 vacancy not placed "
+                "(no stock left)"
+            )
         dm[:, ti, "bld_floor-area_stock", ...] = s_t
+        dm[:, ti, "bld_floor-area_vacant", ...] = v_t
         dm[:, ti, "bld_floor-area_renovated", ...] = r_t
         dm[:, ti, "bld_floor-area_new", ...] = n_t
         dm[:, ti, "bld_floor-area_waste", ...] = w_t
@@ -273,6 +410,23 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots, years_f
 
     dm_bld_tot = compute_stock_fts(DM, years_ots, years_fts)
     del DM, dm_bld_ots
+    # Occupied = physical stock - vacant: the area that is heated, cooled and used
+    dm_bld_tot.operation(
+        "bld_floor-area_stock",
+        "-",
+        "bld_floor-area_vacant",
+        out_col="bld_floor-area_occupied",
+        unit="m2",
+    )
+
+    res_types = ["multi-family-households", "single-family-households"]
+    nonres_types = [
+        t for t in dm_bld_tot.col_labels["Categories1"] if t not in res_types
+    ]
+    # Building types -> building use, for outputs split residential / non-residential
+    use_groups = {"residential": res_types}
+    if nonres_types:
+        use_groups["non-residential"] = nonres_types
 
     ########################
     ####   CUMULATED    ####
@@ -313,7 +467,7 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots, years_f
     )
 
     dm_cumulated.group_all("Categories2")
-    dm_cumulated.group_all("Categories1")
+    dm_cumulated.groupby(use_groups, dim="Categories1", inplace=True)
     dm_cumulated.filter(
         {
             "Variables": [
@@ -334,7 +488,6 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots, years_f
     dm_bld_tot.filter({"Years": years_ots + years_fts}, inplace=True)
 
     # SECTION Prepare output
-    res_types = ["multi-family-households", "single-family-households"]
     flow_vars = [
         "bld_floor-area_new",
         "bld_floor-area_renovated",
@@ -352,9 +505,6 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots, years_f
     DM_industry = {}
     DM_industry["floor-area"] = dm_industry.copy()
 
-    nonres_types = [
-        t for t in dm_bld_tot.col_labels["Categories1"] if t not in res_types
-    ]
     if nonres_types:
         dm_nonres = dm_bld_tot.filter(
             {"Variables": flow_vars, "Categories1": nonres_types}
@@ -409,6 +559,9 @@ def bld_floor_area_workflow(DM_floor_area, dm_lfs, cdm_const, years_ots, years_f
         "TPE": {
             "floor-area-cumulated": dm_cumulated,
             "floor-area-cat": dm_stock.group_all("Categories1", inplace=False),
+            "floor-area-use-cat": dm_stock.groupby(
+                use_groups, dim="Categories1", inplace=False
+            ),
             "floor-area-bld-type": dm_stock.group_all("Categories2", inplace=False),
         },
         "wf-energy": dm_bld_tot,
@@ -435,7 +588,7 @@ def multiply_energy_consumption_by_emission_factor_fxa(
             dm_tech[:, :, variable_name, :, :]
             * dm_emis_tech[:, :, "bld_CO2-factor", np.newaxis, :]
         )
-        new_var = "services_CO2-emissions_heating"
+        new_var = "services_CO2-emissions_hot-water"
 
     elif variable_name == "bld_hot-water_energy-demand":
         arr = dm_tech[:, :, variable_name, :] * dm_emis_tech[:, :, "bld_CO2-factor", :]
@@ -470,9 +623,9 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
     dm_A = DM_energy["surface-to-floorarea"]
 
     # Power per degree
-    #  Us * A * m2
+    #  Us * A * m2 (occupied area only: vacant floor area is not heated or cooled)
     arr_W_K = (
-        dm_floor_area[:, :, "bld_floor-area_stock", :, :]
+        dm_floor_area[:, :, "bld_floor-area_occupied", :, :]
         * dm_uvalue[:, :, "bld_u-value", :, :]
         * dm_A[:, :, "bld_surface-to-floorarea", :, np.newaxis]
     )
@@ -620,13 +773,21 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
     )
 
     # Join fossil and electricity
+    # dm_elec is 0 everywhere
     dm_emissions.append(dm_elec, dim="Categories3")
     dm_emissions.append(dm_district_heating, dim="Categories3")
 
     dm_emiss_by_class = dm_emissions.group_all("Categories3", inplace=False)
     dm_emiss_by_class.group_all("Categories1")
     dm_emissions.group_all("Categories2")
-    dm_emissions.group_all("Categories1")
+    dm_emissions.groupby(
+        {
+            "services": ["education", "health", "hotels", "offices", "other", "trade"],
+            "residential": ["multi-family-households", "single-family-households"],
+        },
+        dim="Categories1",
+        inplace=True,
+    )
 
     # SECTION Prepare output
     #########################
@@ -672,6 +833,21 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
         - dm_fuel[:, :, "bld_energy-demand_heating", "heat-pump"]
     )
 
+    # Useful heating demand and occupied floor area by building type (energy classes
+    # summed). Their ratio, kWh/m², is the heat loss per m² (U-value x envelope area x
+    # HDD) and is checked against EP2050 in scripts/buildings_validation_CH.py.
+    dm_useful_by_type = dm_floor_area.filter(
+        {"Variables": ["bld_heating", "bld_floor-area_occupied"]}
+    )
+    dm_useful_by_type.group_all("Categories2", inplace=True)
+    dm_useful_by_type.change_unit("bld_heating", 1e-9, "kWh", "TWh")
+    dm_useful_by_type.change_unit("bld_floor-area_occupied", 1e-6, "m2", "Mm2")
+    dm_useful_by_type.rename_col(
+        ["bld_heating", "bld_floor-area_occupied"],
+        ["bld_useful-heat", "bld_floor-area-occupied"],
+        dim="Variables",
+    )
+
     # Heating demand by type of building
     dm_class = dm_floor_area.group_all("Categories1", inplace=False)
     dm_class.filter({"Variables": ["bld_heating"]}, inplace=True)
@@ -712,6 +888,7 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
                 }
             ),
             "emissions": dm_emissions,
+            "useful-heat-by-type": dm_useful_by_type,
         },
         "power": dm_fuel.copy(),
         "power_households": dm_fuel_households,
@@ -1544,7 +1721,7 @@ def compute_emissions_per_fuel_type_from_energy(
     emission_factor_district_heating,
     energy_consumption_col,
     fuel_category: str,
-    output_label="services_CO2-emissions_heating",
+    output_label="services_CO2-emissions_hot-water",
 ):
     # Filter fossil fuels
     cdm_emission = cdm_const["emissions"]
@@ -1652,6 +1829,71 @@ def bld_hotwater_workflow(
     return DM_hotwater_out
 
 
+def compute_services_hot_water_emissions(
+    dm_srv_tech_mix, cdm_const, dm_dh_emission_factor
+):
+    # Non-residential hot-water CO2 emissions by fuel (Mt). Space-heating emissions are
+    # computed in bld_energy_workflow (full stock), elec and lighting have no scope 1.
+    cdm_emission = cdm_const["emissions"]
+    dm_srv_emissions = dm_srv_tech_mix.filter(
+        {
+            "Categories2": cdm_emission.col_labels["Categories1"],
+            "Categories1": ["hot-water"],
+            "Variables": ["bld_services_energy-consumption"],
+        }
+    )
+    dm_srv_emissions.sort("Categories2")
+    cdm_emission.sort("Categories1")
+    arr = (
+        dm_srv_emissions[:, :, "bld_services_energy-consumption", :, :]
+        * cdm_emission[np.newaxis, np.newaxis, "bld_CO2-factors", np.newaxis, :]
+    )
+    dm_srv_emissions.add(
+        arr, dim="Variables", col_label="services_CO2-emissions_hot-water", unit="kt"
+    )
+    dm_srv_emissions.change_unit("services_CO2-emissions_hot-water", 1e-3, "kt", "Mt")
+    dm_srv_emissions.filter(
+        {"Variables": ["services_CO2-emissions_hot-water"]}, inplace=True
+    )
+
+    dm_district_consumption = dm_srv_tech_mix.filter(
+        {
+            "Categories2": ["district-heating"],
+            "Categories1": ["hot-water"],
+            "Variables": ["bld_services_energy-consumption"],
+        }
+    )
+    # DH CO2 proxy — see comment in bld_energy_workflow; remove when DH module is activated.
+    dm_district_emissions = multiply_energy_consumption_by_emission_factor_fxa(
+        dm_district_consumption,
+        dm_dh_emission_factor,
+        variable_name="bld_services_energy-consumption",
+    )
+    dm_srv_emissions.append(dm_district_emissions, dim="Categories2")
+
+    # Electricity and heat-pump emissions: zeroed — scope 1 attributed to energy module
+    dm_elec_srv = dm_srv_tech_mix.filter(
+        {
+            "Categories2": ["electricity", "heat-pump"],
+            "Categories1": ["hot-water"],
+            "Variables": ["bld_services_energy-consumption"],
+        }
+    )
+    arr = np.zeros_like(dm_elec_srv[:, :, "bld_services_energy-consumption", :, :])
+    dm_elec_srv.add(
+        arr, dim="Variables", col_label="services_CO2-emissions_hot-water", unit="kt"
+    )
+    dm_elec_srv.change_unit("services_CO2-emissions_hot-water", 1e-3, "kt", "Mt")
+    dm_elec_srv.filter(
+        {"Variables": ["services_CO2-emissions_hot-water"]}, inplace=True
+    )
+    dm_srv_emissions.append(dm_elec_srv, dim="Categories2")
+
+    dm_srv_emissions.group_all("Categories1")
+
+    return dm_srv_emissions
+
+
 # Non-residential services are kept in a separate workflow from residential because
 # the energy demand drivers differ fundamentally: residential uses per-person quantities
 # (population × demand per person) while services use per-floor-area intensities
@@ -1716,12 +1958,12 @@ def bld_services_workflow(
     dm_srv_tech_mix.append(dm_srv_hw_tech, dim="Categories1")
     dm_srv_tech_mix.sort("Categories1")
 
-    # Convert intensity (kWh/m²) to total demand (TWh) by multiplying by non-res floor area
+    # Convert intensity (kWh/m²) to total demand (TWh) by multiplying by occupied non-res floor area
     dm_demand = DM_services["services_demand"].copy()
     if dm_bld_floor is not None:
         non_res_cats = ["education", "health", "hotels", "offices", "other", "trade"]
         dm_floor = dm_bld_floor.filter(
-            {"Variables": ["bld_floor-area_stock"], "Categories1": non_res_cats}
+            {"Variables": ["bld_floor-area_occupied"], "Categories1": non_res_cats}
         )
         idx_flo = dm_floor.idx
         idx_dem = dm_demand.idx
@@ -1754,60 +1996,9 @@ def bld_services_workflow(
     )
 
     # CO2 emissions — hot-water only; space-heating emissions are in bld_energy_workflow (full stock)
-    cdm_emission = cdm_const["emissions"]
-    dm_srv_emissions = dm_srv_tech_mix.filter(
-        {
-            "Categories2": cdm_emission.col_labels["Categories1"],
-            "Categories1": ["hot-water"],
-            "Variables": ["bld_services_energy-consumption"],
-        }
+    dm_srv_emissions = compute_services_hot_water_emissions(
+        dm_srv_tech_mix, cdm_const, DM_energy["district_heating-emission"]
     )
-    dm_srv_emissions.sort("Categories2")
-    cdm_emission.sort("Categories1")
-    arr = (
-        dm_srv_emissions[:, :, "bld_services_energy-consumption", :, :]
-        * cdm_emission[np.newaxis, np.newaxis, "bld_CO2-factors", np.newaxis, :]
-    )
-    dm_srv_emissions.add(
-        arr, dim="Variables", col_label="services_CO2-emissions_heating", unit="kt"
-    )
-    dm_srv_emissions.change_unit("services_CO2-emissions_heating", 1e-3, "kt", "Mt")
-    dm_srv_emissions.filter(
-        {"Variables": ["services_CO2-emissions_heating"]}, inplace=True
-    )
-
-    dm_district_consumption = dm_srv_tech_mix.filter(
-        {
-            "Categories2": ["district-heating"],
-            "Categories1": ["hot-water"],
-            "Variables": ["bld_services_energy-consumption"],
-        }
-    )
-    # DH CO2 proxy — see comment in bld_energy_workflow; remove when DH module is activated.
-    dm_district_emissions = multiply_energy_consumption_by_emission_factor_fxa(
-        dm_district_consumption,
-        DM_energy["district_heating-emission"],
-        variable_name="bld_services_energy-consumption",
-    )
-    dm_srv_emissions.append(dm_district_emissions, dim="Categories2")
-
-    # Electricity and heat-pump emissions: zeroed — scope 1 attributed to energy module
-    dm_elec_srv = dm_srv_tech_mix.filter(
-        {
-            "Categories2": ["electricity", "heat-pump"],
-            "Categories1": ["hot-water"],
-            "Variables": ["bld_services_energy-consumption"],
-        }
-    )
-    arr = np.zeros_like(dm_elec_srv[:, :, "bld_services_energy-consumption", :, :])
-    dm_elec_srv.add(
-        arr, dim="Variables", col_label="services_CO2-emissions_heating", unit="kt"
-    )
-    dm_elec_srv.change_unit("services_CO2-emissions_heating", 1e-3, "kt", "Mt")
-    dm_elec_srv.filter({"Variables": ["services_CO2-emissions_heating"]}, inplace=True)
-    dm_srv_emissions.append(dm_elec_srv, dim="Categories2")
-
-    dm_srv_emissions.group_all("Categories1")
 
     nonres_tpe = {
         "services_energy-consumption": dm_srv_tech_mix.filter(

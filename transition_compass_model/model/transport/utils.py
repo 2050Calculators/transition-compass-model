@@ -63,7 +63,10 @@ def evaluate_at_tmlife(dm, tmlife_arr, col_name):
     return out
 
 
-def compute_fts_tech_split(dm_mode, dm_tech, cols):
+def compute_fts_tech_split(dm_mode, dm_tech, cols, years_setting):
+    # Historical years (up to the base year years_setting[1]) keep the fleet tech share
+    # and fleet efficiency from the input data; the stock-flow runs from the year after,
+    # as in compute_stock_from_lifetime.
     rr_col = cols["renewal-rate"]
     tot_col = cols["tot"]
     waste_col = cols["waste"]
@@ -85,7 +88,9 @@ def compute_fts_tech_split(dm_mode, dm_tech, cols):
     dm_tech.sort("Years")
     dm_mode.fill_nans("Years")
     dm_tech.fill_nans("Years")
-    years_compute = list(range(2010, dm_mode.col_labels["Years"][-1] + 1))
+    years_compute = list(
+        range(years_setting[1] + 1, dm_mode.col_labels["Years"][-1] + 1)
+    )
 
     for t in years_compute:
         # Vehicle fleet at t-1 (e.g. if t = 2020 and tmn = 2015, t-1 = 2019)

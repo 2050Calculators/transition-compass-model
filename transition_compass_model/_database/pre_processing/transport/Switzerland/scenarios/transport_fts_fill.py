@@ -51,8 +51,10 @@ def interpolate_between_1_4_filtered(DM_transport, lever_name, country_to_filter
     dm_transport_lev_2 = midpoint(dic_dm_freight_fts[1], dic_dm_freight_fts[4], 0.25)
 
     dm_transport_lev_3 = midpoint(dic_dm_freight_fts[1], dic_dm_freight_fts[4], 0.75)
-    idx_transport_lev_2 = dm_transport_lev_2.idx
-    idx_transport_lev_3 = dm_transport_lev_3.idx
+    # Index with the full matrix: the midpoint matrices hold only country_to_filter, so
+    # their own index is always 0 and would point to the first country of the full matrix
+    idx_transport_lev_2 = DM_transport["fts"][lever_name][2].idx
+    idx_transport_lev_3 = DM_transport["fts"][lever_name][3].idx
     DM_transport["fts"][lever_name][2].array[
         idx_transport_lev_2[country_to_filter], ...
     ] = dm_transport_lev_2.array
@@ -157,7 +159,8 @@ def implement_modal_share_fts(DM_transport):
         dm_fts_3_modal.filter({"Country": ["Switzerland"]}),
         0.5,
     )
-    idx_fts_switzerland_2 = dm_fts_switzerland_2.idx
+    # Index with the full matrix (the midpoint matrix holds only Switzerland)
+    idx_fts_switzerland_2 = DM_transport["fts"]["passenger_modal-share"][2].idx
     DM_transport["fts"]["passenger_modal-share"][2].array[
         idx_fts_switzerland_2["Switzerland"], ...
     ] = dm_fts_switzerland_2.array
@@ -196,17 +199,20 @@ def tech_share_fts(DM_transport):
 
 
 def occupancy_fts(DM_transport):
-    dm_occ_ots, idx_ots_occ, dm_occ_fts, idx_fts_occ = get_lev_data(
+    """Car occupancy for levels 2, 3, 4: level 1 in 2050 + 0.1, 0.2, 0.3 people per car,
+    reached linearly from 2025. Other modes keep the level-1 values."""
+    _, _, dm_occ_lev1, idx = get_lev_data(
         DM_transport, "passenger_occupancy", lev_number=1
     )
-    occ_rate = dm_occ_fts.array[:, idx_fts_occ[2050], 0, idx_fts_occ["LDV"]]
+    # Copy: a plain slice would be a view, cleared below together with the array
+    occ_2050_lev1 = dm_occ_lev1.array[:, idx[2050], 0, idx["LDV"]].copy()
 
-    for i in [2, 3, 4]:
-        occ_rate += 0.1
-        dm_occ_fts.array[:, 1:, :, idx_fts_occ["LDV"]] = np.nan
-        dm_occ_fts.array[:, idx_fts_occ[2050], 0, idx_fts_occ["LDV"]] = occ_rate
-        dm_occ_fts.fill_nans("Years")
-        DM_transport["fts"]["passenger_occupancy"][i] = dm_occ_fts.copy()
+    for lev, increase in zip([2, 3, 4], [0.1, 0.2, 0.3]):
+        dm_occ = dm_occ_lev1.copy()
+        dm_occ.array[:, 1:, :, idx["LDV"]] = np.nan
+        dm_occ.array[:, idx[2050], 0, idx["LDV"]] = occ_2050_lev1 + increase
+        dm_occ.fill_nans("Years")
+        DM_transport["fts"]["passenger_occupancy"][lev] = dm_occ
     return DM_transport
 
 
@@ -263,27 +269,28 @@ def freight_modal_share_fts(DM_transport):
         DM_transport, "freight_modal-share", lev_number=1
     )
 
-    # The objectif are for terrestial transport only
-    share_without_aviation_2050 = (
-        1 - dm_freight_fts.array[idx_fts["Vaud"], idx_fts[2050], 0, idx_fts["aviation"]]
-    )
-
+    # Applied to every canton (Switzerland keeps its values)
+    cantons = [c for c in dm_freight_fts.col_labels["Country"] if c != "Switzerland"]
     dm_copy = dm_freight_fts.copy()
     for i, share in enumerate([0.6, 0.7]):
         i += 3
         dm_freight_fts = dm_copy.copy()
-
-        dm_freight_fts.array[idx_fts["Vaud"], 1:-1, :, :] = np.nan
-
-        dm_freight_fts.array[idx_fts["Vaud"], idx_fts[2050], :, idx_fts["rail"]] = (
-            share * share_without_aviation_2050
-        )
-
-        dm_freight_fts.normalise_non_fixed_values(
-            ["rail"],
-            idx_fts[2050],
-            variable_name="tra_freight_modal-share",
-        )
+        for canton in cantons:
+            # The objectif are for terrestial transport only
+            share_without_aviation_2050 = (
+                1
+                - dm_copy.array[idx_fts[canton], idx_fts[2050], 0, idx_fts["aviation"]]
+            )
+            dm_freight_fts.array[idx_fts[canton], 1:-1, :, :] = np.nan
+            dm_freight_fts.array[idx_fts[canton], idx_fts[2050], :, idx_fts["rail"]] = (
+                share * share_without_aviation_2050
+            )
+            dm_freight_fts.normalise_non_fixed_values(
+                ["rail"],
+                idx_fts[2050],
+                variable_name="tra_freight_modal-share",
+                country_name=canton,
+            )
 
         dm_freight_fts.fill_nans("Years")
         dm_freight_fts.normalise(dim="Categories1", inplace=True)

@@ -6,6 +6,7 @@
 
 import json
 import os
+import sys
 
 import pyomo.environ as pyo
 from pyomo.contrib.appsi.solvers import Highs
@@ -33,6 +34,9 @@ def make_highs(time_limit=None, show_log=True):
 
 def attach(opt, m):
     if not opt.config.stream_solver:
+        # Flush Python buffers first, or pending prints end up in /dev/null.
+        sys.stdout.flush()
+        sys.stderr.flush()
         devnull_fd = os.open(os.devnull, os.O_WRONLY)
         old_stdout = os.dup(1)
         old_stderr = os.dup(2)
@@ -41,6 +45,8 @@ def attach(opt, m):
             os.dup2(devnull_fd, 2)
             opt.set_instance(m)
         finally:
+            sys.stdout.flush()
+            sys.stderr.flush()
             os.dup2(old_stdout, 1)
             os.dup2(old_stderr, 2)
             os.close(old_stdout)
@@ -48,12 +54,36 @@ def attach(opt, m):
             os.close(devnull_fd)
     else:
         opt.set_instance(m)
+    # set_instance already loaded every coefficient into HiGHS. Skip the param
+    # re-push on the next solve: it is redundant and, for mutable coefficients
+    # equal to 0, makes HiGHS print a harmless "changeCoeff ... ignored" warning
+    # outside Pyomo's output capture. solve() re-enables it afterwards.
+    opt.update_config.update_params = False
 
 
 def solve(opt, m, warmstart=True):
+    res = _run_solver(opt, m, warmstart)
+    if res.best_feasible_objective is None:
+        raise RuntimeError(
+            "EnergyScope: HiGHS found no feasible solution "
+            f"(termination condition: {res.termination_condition.name}). "
+            "Check lever settings and input data, or rerun with "
+            "ENERGYSCOPE_SOLVER_LOG=1 to see the solver log."
+        )
+    opt.load_vars()
+    return res
+
+
+def _run_solver(opt, m, warmstart):
+    # Load the solution ourselves in solve(), so a failed solve raises an
+    # error that names the termination condition (e.g. infeasible).
+    opt.config.load_solution = False
     if warmstart and hasattr(opt, "warm_start"):
         opt.warm_start(m)
     if not opt.config.stream_solver:
+        # Flush Python buffers first, or pending prints end up in /dev/null.
+        sys.stdout.flush()
+        sys.stderr.flush()
         devnull_fd = os.open(os.devnull, os.O_WRONLY)
         old_stdout = os.dup(1)
         old_stderr = os.dup(2)
@@ -62,12 +92,19 @@ def solve(opt, m, warmstart=True):
             os.dup2(devnull_fd, 2)
             return opt.solve(m)
         finally:
+            sys.stdout.flush()
+            sys.stderr.flush()
             os.dup2(old_stdout, 1)
             os.dup2(old_stderr, 2)
             os.close(old_stdout)
             os.close(old_stderr)
             os.close(devnull_fd)
-    return opt.solve(m)
+            opt.update_config.update_params = True
+    try:
+        return opt.solve(m)
+    finally:
+        # Later re-solves must pick up parameter changes (see attach()).
+        opt.update_config.update_params = True
 
 
 def extract_results(m):

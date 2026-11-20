@@ -1,23 +1,48 @@
 ###################################
-#####  VEHICLE EFFICIENCY LDV  ####
+#####  VEHICLE EFFICIENCY  ########
 ###################################
+# Passenger vehicle efficiency (MJ/km), fleet and new vehicles, ots.
+#
+# How each (mode, technology) is obtained:
+#   - LDV ICE / PHEV: Swiss statistics on CO2 emissions (gCO2/km), converted to
+#     MJ/km with the CO2 emission factors. Available for every region.
+#   - Other modes and LDV BEV / FCEV: Swiss energy demand / vkm by technology.
+#     Only available for Switzerland: cantons get the Swiss value, and new
+#     vehicles get the fleet value.
+#   - EP2050 calibration of the main ICE (mode, technology) pairs: the Swiss
+#     fleet efficiency is set to EP2050 energy / EP2050 vkm. For LDV the same
+#     correction factor is applied to every canton and to new vehicles.
 
 import os
-import pickle
 
 import numpy as np
 
 import transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions.efficiency as get_data
+from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     linear_fitting,
 )
 
+VAR_FLEET = "tra_passenger_veh-efficiency_fleet"
+VAR_NEW = "tra_passenger_veh-efficiency_new"
+
+# (mode, technology) pairs whose Swiss fleet efficiency is calibrated on EP2050
+EP2050_CALIBRATED = {
+    "2W": ["ICE-gasoline"],
+    "LDV": ["ICE-diesel", "ICE-gas", "ICE-gasoline"],
+    "bus": ["ICE-diesel"],
+}
+# EP2050 LDV ICE-gas efficiency is not usable before 2007: in those years the
+# 2007 correction factor is used instead.
+LDV_GAS_FIRST_GOOD_YEAR = 2007
+
 
 def convert_eff_from_gCO2_km_to_MJ_km(
     dm_veh_eff_LDV, cdm_emissions_factors, new_var_name
 ):
-    dm_veh_eff_LDV.drop("Categories2", ["BEV", "FCEV"])
+    if "BEV" in dm_veh_eff_LDV.col_labels["Categories2"]:
+        dm_veh_eff_LDV.drop("Categories2", ["BEV", "FCEV"])
     var_name = dm_veh_eff_LDV.col_labels["Variables"][0]
     dm_veh_eff_LDV.rename_col(var_name, "tmp_name", dim="Variables")
     cdm_emissions_CO2_LDV = cdm_emissions_factors.filter(
@@ -39,65 +64,6 @@ def convert_eff_from_gCO2_km_to_MJ_km(
     return dm_veh_eff_LDV
 
 
-def replace_LDV_efficiency_with_new(
-    dm_veh_eff, dm_veh_new_eff, dm_veh_eff_LDV, dm_veh_new_eff_LDV, baseyear_old
-):
-    # Vaud efficiency = Swiss efficiency
-    dm_veh_eff_VD = dm_veh_eff.copy()
-    dm_veh_eff_VD.rename_col("Switzerland", "Vaud", dim="Country")
-    dm_veh_eff.append(dm_veh_eff_VD, dim="Country")
-    # Vaud efficiency = Swiss efficiency
-    dm_veh_new_eff_VD = dm_veh_new_eff.copy()
-    dm_veh_new_eff_VD.rename_col("Switzerland", "Vaud", dim="Country")
-    dm_veh_new_eff.append(dm_veh_new_eff_VD, dim="Country")
-
-    # Remove fts years and add ots years missing
-    years_match = [y for y in dm_veh_eff.col_labels["Years"] if y <= baseyear_old]
-    years_missing = list(set(dm_veh_eff_LDV.col_labels["Years"]) - set(years_match))
-    dm_veh_eff.filter({"Years": years_match}, inplace=True)
-    dm_veh_new_eff.filter({"Years": years_match}, inplace=True)
-    dm_veh_eff.add(np.nan, dummy=True, dim="Years", col_label=years_missing)
-    dm_veh_new_eff.add(np.nan, dummy=True, dim="Years", col_label=years_missing)
-
-    # Rename 2W_PHEV as 2W_PHEV-diesel and 2W_PHEV-gasoline
-    DM = {"veh-eff": dm_veh_eff, "veh-eff-new": dm_veh_new_eff}
-    for key, dm in DM.items():
-        dm = dm.flatten()
-        if "2W_PHEV" in dm.col_labels["Categories1"]:
-            dm_tmp = dm.filter({"Categories1": ["2W_PHEV"]})
-            dm.rename_col("2W_PHEV", "2W_PHEV-diesel", dim="Categories1")
-            dm_tmp.rename_col("2W_PHEV", "2W_PHEV-gasoline", dim="Categories1")
-            dm.append(dm_tmp, dim="Categories1")
-            dm.deepen()
-            DM[key] = dm
-
-    dm_veh_eff = DM["veh-eff"]
-    dm_veh_new_eff = DM["veh-eff-new"]
-
-    idx_t = dm_veh_eff.idx
-    idx_l = dm_veh_eff_LDV.idx
-    for cat in dm_veh_eff_LDV.col_labels["Categories2"]:
-        dm_veh_eff.array[:, :, :, idx_t["LDV"], idx_t[cat]] = dm_veh_eff_LDV.array[
-            :, :, :, idx_l["LDV"], idx_l[cat]
-        ]
-        dm_veh_new_eff.array[:, :, :, idx_t["LDV"], idx_t[cat]] = (
-            dm_veh_new_eff_LDV.array[:, :, :, idx_l["LDV"], idx_l[cat]]
-        )
-
-    dm_veh_eff.fill_nans(dim_to_interp="Years")
-    dm_veh_new_eff.fill_nans(dim_to_interp="Years")
-    # Remove aviation
-    dm_veh_eff.drop(dim="Categories1", col_label="aviation")
-    dm_veh_new_eff.drop(dim="Categories1", col_label="aviation")
-    drop_cat = ["PHEV", "ICE"]
-    for cat in drop_cat:
-        if cat in dm_veh_eff.col_labels["Categories2"]:
-            dm_veh_eff.drop(col_label=[cat], dim="Categories2")
-            dm_veh_new_eff.drop(col_label=[cat], dim="Categories2")
-
-    return dm_veh_eff, dm_veh_new_eff
-
-
 def compute_tech_share(dm_private_fleet, dm_public_fleet):
     # All technologies
     dm_private = dm_private_fleet.copy()
@@ -115,24 +81,62 @@ def compute_tech_share(dm_private_fleet, dm_public_fleet):
     return dm_tech_share
 
 
-def compute_vehicle_efficiency_from_energy_demand(
-    dm_energy, dm_vkm, dm_private_fleet, dm_public_fleet
-):
-    # Drop bio-fuels energy
-    dm_pass_energy = dm_energy.copy()
-    dm_pass_energy.groupby(
+def get_energy_demand_MJ(dm_energy):
+    # Energy demand by mode and technology in MJ, with bio-gasoline counted as gasoline
+    dm_energy_MJ = dm_energy.copy()
+    dm_energy_MJ.groupby(
         {"ICE-gasoline": ["biogasoline", "gasoline"]}, dim="Categories2", inplace=True
     )
-
-    # Compute Demand by technology = Demand(vkm) * tech_share (%)
-    dm_fleet = dm_private_fleet.filter({"Variables": ["tra_passenger_vehicle-fleet"]})
-    ## join private and public fleet
-    dm_tmp = dm_public_fleet.copy()
-    ### COMPUTE TECH SHARE
-    dm_tech_share = compute_tech_share(
-        dm_private_fleet=dm_fleet, dm_public_fleet=dm_tmp
+    dm_energy_MJ.change_unit(
+        "tra_energy_demand", old_unit="TWh", new_unit="MJ", factor=3.6e9
     )
-    ## demand by tech
+    return dm_energy_MJ
+
+
+def get_LDV_efficiency_from_co2(this_dir, cdm_emissions_factors, years_ots):
+    # LDV ICE and PHEV efficiency (MJ/km), fleet and new vehicles, every region.
+    # Swiss statistics give gCO2/km; BEV and FCEV values are unreliable and dropped.
+    # Fleet: https://stats.swiss/vis?lc=fr&df[ds]=disseminate&df[id]=DF_MFZ_1_EMISSION&df[ag]=CH1.MFZ_IVS
+    dm_fleet_co2 = get_data.get_vehicle_efficiency_co2(
+        os.path.join(this_dir, "../data/tra_veh_efficiency_swiss_stat_co2.pickle"),
+        "CH1.MFZ_IVS",
+        "DF_MFZ_1_EMISSION",
+        var_name=VAR_FLEET,
+    )
+    dm_fleet_co2.filter({"Country": country_list, "Years": years_ots}, inplace=True)
+
+    # New vehicles: https://stats.swiss/vis?lc=fr&df%5bds%5d=disseminate&df%5bid%5d=DF_IVS_1_EMISSION&df%5bag%5d=CH1.MFZ_IVS
+    dm_new_co2, _ = get_data.get_new_vehicle_efficiency_co2(
+        os.path.join(this_dir, "../data/tra_new-veh_efficiency_co2.pickle"),
+        "CH1.MFZ_IVS",
+        "DF_IVS_1_EMISSION",
+        var_name=VAR_NEW,
+    )
+    dm_new_co2.filter({"Country": country_list}, inplace=True)
+
+    # gCO2/km -> MJ/km
+    dm_LDV = convert_eff_from_gCO2_km_to_MJ_km(
+        dm_fleet_co2, cdm_emissions_factors, new_var_name=VAR_FLEET
+    )
+    dm_LDV_new = convert_eff_from_gCO2_km_to_MJ_km(
+        dm_new_co2, cdm_emissions_factors, new_var_name=VAR_NEW
+    )
+    dm_LDV.append(dm_LDV_new, dim="Variables")
+    dm_LDV.filter({"Years": years_ots}, inplace=True)
+    return dm_LDV
+
+
+def compute_vehicle_efficiency_from_energy_demand(
+    dm_energy_MJ, dm_vkm, dm_private_fleet, dm_public_fleet
+):
+    # Efficiency (MJ/km) = Energy (MJ) / Demand by technology (vkm),
+    # with Demand by technology = Demand (vkm) * fleet technology share (%)
+    dm_tech_share = compute_tech_share(
+        dm_private_fleet=dm_private_fleet.filter(
+            {"Variables": ["tra_passenger_vehicle-fleet"]}
+        ),
+        dm_public_fleet=dm_public_fleet,
+    )
     arr_demand_tech = dm_vkm[..., np.newaxis] * dm_tech_share[...]
     dm_tech_share.add(
         arr_demand_tech,
@@ -141,41 +145,46 @@ def compute_vehicle_efficiency_from_energy_demand(
         unit="vkm",
     )
 
-    # efficiency = energy/demand
-    dm_demand_tech = dm_tech_share.filter(
+    # Energy is only available for Switzerland
+    dm_veh_eff = dm_tech_share.filter(
         {
             "Variables": ["tra_passenger_demand-vkm"],
-            "Categories1": dm_pass_energy.col_labels["Categories1"],
-            "Categories2": dm_pass_energy.col_labels["Categories2"],
-            "Country": dm_pass_energy.col_labels["Country"],
+            "Categories1": dm_energy_MJ.col_labels["Categories1"],
+            "Categories2": dm_energy_MJ.col_labels["Categories2"],
+            "Country": dm_energy_MJ.col_labels["Country"],
         }
     )
-
-    # dm_demand_tech.drop(col_label='LDV', dim='Categories1')
-    # dm_pass_energy.drop(col_label='LDV', dim='Categories1')
-    dm_demand_tech.append(dm_pass_energy, dim="Variables")
-    dm_demand_tech.change_unit(
-        "tra_energy_demand", old_unit="TWh", new_unit="MJ", factor=3.6 * 1e9
-    )
-    dm_demand_tech.operation(
+    dm_veh_eff.append(dm_energy_MJ, dim="Variables")
+    dm_veh_eff.operation(
         "tra_energy_demand",
         "/",
         "tra_passenger_demand-vkm",
-        out_col="tra_passenger_veh-efficiency_fleet",
+        out_col=VAR_FLEET,
         unit="MJ/km",
     )
+    dm_veh_eff.filter({"Variables": [VAR_FLEET]}, inplace=True)
 
-    dm_veh_eff = dm_demand_tech.filter(
-        {"Variables": ["tra_passenger_veh-efficiency_fleet"]}
-    )
+    return dm_veh_eff
 
+
+def clean_electric_efficiency(dm_veh_eff):
+    # No energy or no vkm -> efficiency is not known
+    dm_veh_eff.array[dm_veh_eff.array == 0] = np.nan
+    # LDV BEV 2011-2012 are outliers
+    dm_veh_eff[:, 2011, VAR_FLEET, "LDV", "BEV"] = np.nan
+    dm_veh_eff[:, 2012, VAR_FLEET, "LDV", "BEV"] = np.nan
+    # Electric and hydrogen efficiencies are noisy: use their average over all years
+    for mode, tech in [("LDV", "BEV"), ("LDV", "FCEV"), ("2W", "BEV")]:
+        dm_veh_eff[:, :, VAR_FLEET, mode, tech] = np.nanmean(
+            dm_veh_eff[:, :, VAR_FLEET, mode, tech], axis=1, keepdims=True
+        )
     return dm_veh_eff
 
 
 def add_metrotram_efficiency_from_JRC(dm_veh_eff):
     # JRC-IDEES-2021, TrRail_ene sheet (Vehicle-efficiency kgoe/100 km)
     # metrotram values go from 45 kgoe/100km in 2000 to 32.2 kgoe/100km  in 2021, roughly linearly
-    var_name = "tra_passenger_veh-efficiency_fleet"
+    var_name = VAR_FLEET
     dm_veh_eff.add(np.nan, col_label="metrotram", dim="Categories1", dummy=True)
     dm_veh_eff.add(np.nan, col_label="mt", dim="Categories2", dummy=True)
     dm_veh_eff["Switzerland", 2000, var_name, "metrotram", "mt"] = 45 * 41.868 / 100
@@ -191,6 +200,53 @@ def add_metrotram_efficiency_from_JRC(dm_veh_eff):
     return dm_veh_eff
 
 
+def compute_ep2050_efficiency(dm_energy_MJ, dm_vkm_ep2050, mode, tech):
+    # Swiss fleet efficiency (MJ/km) = EP2050 energy (MJ) / EP2050 vkm, by year
+    energy = dm_energy_MJ["Switzerland", :, "tra_energy_demand", mode, tech]
+    vkm = dm_vkm_ep2050["Switzerland", :, "tra_vkm_demand", mode, tech]
+    return energy / vkm
+
+
+def calibrate_on_ep2050(dm_veh_eff_CH, dm_LDV, dm_energy_MJ, dm_vkm_ep2050):
+    years = dm_LDV.col_labels["Years"]
+    for mode, techs in EP2050_CALIBRATED.items():
+        for tech in techs:
+            eff_ep2050 = compute_ep2050_efficiency(
+                dm_energy_MJ, dm_vkm_ep2050, mode, tech
+            )
+            if mode != "LDV":
+                # Switzerland only: replace with the EP2050 efficiency
+                dm_veh_eff_CH["Switzerland", :, VAR_FLEET, mode, tech] = eff_ep2050
+                continue
+            # LDV: factor = EP2050 / Swiss CO2-based fleet efficiency, applied to
+            # every region and to both fleet and new vehicles
+            factor = eff_ep2050 / dm_LDV["Switzerland", :, VAR_FLEET, mode, tech]
+            if tech == "ICE-gas":
+                i_good = years.index(LDV_GAS_FIRST_GOOD_YEAR)
+                factor[:i_good] = factor[i_good]
+            dm_LDV[:, :, :, mode, tech] = (
+                dm_LDV[:, :, :, mode, tech] * factor[np.newaxis, :, np.newaxis]
+            )
+    return dm_veh_eff_CH, dm_LDV
+
+
+def expand_to_regions_and_new_vehicles(dm_veh_eff_CH):
+    # New vehicles efficiency = fleet efficiency
+    dm_veh_eff = dm_veh_eff_CH.copy()
+    dm_veh_eff.add(
+        dm_veh_eff.array.copy(), dim="Variables", col_label=VAR_NEW, unit="MJ/km"
+    )
+    # Every canton = Switzerland
+    dm_CH = dm_veh_eff.copy()
+    for canton in country_list:
+        if canton == "Switzerland":
+            continue
+        dm_canton = dm_CH.copy()
+        dm_canton.rename_col("Switzerland", canton, dim="Country")
+        dm_veh_eff.append(dm_canton, dim="Country")
+    return dm_veh_eff
+
+
 def run(
     dm_energy,
     dm_vkm,
@@ -200,305 +256,42 @@ def run(
     years_ots,
     dm_data_check_vkm,
 ):
-    this_dir = os.path.dirname(os.path.abspath(__file__))  # creates local path variable
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    dm_energy_MJ = get_energy_demand_MJ(dm_energy)
 
-    ###############################
-    ####  Efficiency for LDV   ####
-    ###############################
-    # SECTION Vehicle efficiency LDV, stock and new, ots
-    #### Vehicle efficiency - LDV - CO2/km
-    # FCEV (Hydrogen) data are off - BEV too
-    # !!! Attention: The data are bad before 2016 and after 2020, backcasting to 1990 from 2016 done with linear fitting.
-    table_id_veh_eff = "px-x-1103020100_106"
-    local_filename_veh = os.path.join(
-        this_dir, "../data/tra_veh_efficiency.pickle"
-    )  # The file is created if it doesn't exist
-    dm_veh_eff_LDV = get_data.get_vehicle_efficiency(
-        table_id_veh_eff,
-        local_filename_veh,
-        var_name="tra_passenger_veh-efficiency_fleet",
-        years_ots=years_ots,
-    )
-    del table_id_veh_eff, local_filename_veh
+    # LDV ICE / PHEV, every region, fleet + new: from CO2 statistics
+    dm_LDV = get_LDV_efficiency_from_co2(this_dir, cdm_emissions_factors, years_ots)
 
-    #### Vehicle efficiency new - LDV - CO2/km
-    # FCEV data are off, BEV = 25 gCO2/km independently of car power
-    table_id_new_eff = "px-x-1103020200_201"
-    local_filename_new = os.path.join(
-        this_dir, "../data/tra_new-veh_efficiency.pickle"
-    )  # The file is created if it doesn't exist3#
-    dm_veh_new_eff_LDV = get_data.get_new_vehicle_efficiency(
-        table_id_new_eff,
-        local_filename_new,
-        var_name="tra_passenger_veh-efficiency_new",
-        years_ots=years_ots,
+    # Other modes + LDV BEV / FCEV, Switzerland, fleet: from energy / vkm
+    dm_veh_eff_CH = compute_vehicle_efficiency_from_energy_demand(
+        dm_energy_MJ, dm_vkm, dm_private_fleet, dm_public_fleet
     )
-    del table_id_new_eff, local_filename_new
+    dm_veh_eff_CH = clean_electric_efficiency(dm_veh_eff_CH)
+    dm_veh_eff_CH = add_metrotram_efficiency_from_JRC(dm_veh_eff_CH)
+    dm_veh_eff_CH.fill_nans("Years")
 
-    # The Swiss efficiency for the fleet is given in gCO2/km. We convert it to MJ/km
-    dm_veh_eff_LDV = convert_eff_from_gCO2_km_to_MJ_km(
-        dm_veh_eff_LDV,
-        cdm_emissions_factors,
-        new_var_name="tra_passenger_veh-efficiency_fleet",
-    )
-    dm_veh_new_eff_LDV = convert_eff_from_gCO2_km_to_MJ_km(
-        dm_veh_new_eff_LDV,
-        cdm_emissions_factors,
-        new_var_name="tra_passenger_veh-efficiency_new",
+    # Calibrate main ICE technologies on EP2050
+    dm_veh_eff_CH, dm_LDV = calibrate_on_ep2050(
+        dm_veh_eff_CH,
+        dm_LDV,
+        dm_energy_MJ,
+        dm_data_check_vkm["passenger-and-freight_road_EP-2050"],
     )
 
-    ################################################
-    ####  Efficiency for modes other than LDV   ####
-    ################################################
+    # Cantons = Switzerland, new vehicles = fleet
+    dm_veh_eff = expand_to_regions_and_new_vehicles(dm_veh_eff_CH)
 
-    # Efficiency = MJ/vkm = Energy(MJ)/Demand(vkm)
-    dm_veh_eff = compute_vehicle_efficiency_from_energy_demand(
-        dm_energy, dm_vkm, dm_private_fleet, dm_public_fleet
-    )
-    # Fix LDV BEV and FCEV
-    mask = dm_veh_eff[...] == 0
-    dm_veh_eff.array[mask] = np.nan
-    # Remove odd years
-    dm_veh_eff[:, 2011, "tra_passenger_veh-efficiency_fleet", "LDV", "BEV"] = np.nan
-    dm_veh_eff[:, 2012, "tra_passenger_veh-efficiency_fleet", "LDV", "BEV"] = np.nan
-
-    dm_veh_eff[:, :, "tra_passenger_veh-efficiency_fleet", "LDV", "BEV"] = np.nanmean(
-        dm_veh_eff[:, :, "tra_passenger_veh-efficiency_fleet", "LDV", "BEV"],
-        axis=1,
-        keepdims=True,
-    )
-    dm_veh_eff[:, :, "tra_passenger_veh-efficiency_fleet", "LDV", "FCEV"] = np.nanmean(
-        dm_veh_eff[:, :, "tra_passenger_veh-efficiency_fleet", "LDV", "FCEV"],
-        axis=1,
-        keepdims=True,
-    )
-    dm_veh_eff[:, :, "tra_passenger_veh-efficiency_fleet", "2W", "BEV"] = np.nanmean(
-        dm_veh_eff[:, :, "tra_passenger_veh-efficiency_fleet", "2W", "BEV"],
-        axis=1,
-        keepdims=True,
-    )
-
-    # Add metrotram efficiency from JRC
-    dm_veh_eff = add_metrotram_efficiency_from_JRC(dm_veh_eff)
-
-    # new-veh-eff = veh-eff & vaud  = swiss efficiency
-    dm_veh_eff.add(
-        np.nan,
-        dim="Variables",
-        col_label="tra_passenger_veh-efficiency_new",
-        unit="MJ/km",
-        dummy=True,
-    )
-    dm_veh_eff.add(np.nan, dim="Country", col_label="Vaud", dummy=True)
-    dm_veh_eff.fill_nans(dim_to_interp="Variables")
-    dm_veh_eff.fill_nans(dim_to_interp="Country")
-    dm_veh_eff.fill_nans("Years")
-
-    # If it is all 0 for all years, replace with nans
-    arr = dm_veh_eff.array
-    mask = (arr == 0).all(axis=1, keepdims=True)
-    dm_veh_eff.array = np.where(mask, np.nan, arr)
-
-    # # check efficiencies differences for fleet for LDV 'ICE-diesel', 'ICE-gas', 'ICE-gasoline' (CO2 based vs energy/vkm based)
-    # checks = ['ICE-diesel', 'ICE-gas', 'ICE-gasoline']
-    # dm_co2 = dm_veh_eff_LDV.filter({"Years" : years_ots, "Categories2" : checks})
-    # dm_co2.rename_col("tra_passenger_veh-efficiency_fleet","tra_passenger_veh-efficiency_fleet-co2-based","Variables")
-    # dm_ene_vkm = dm_veh_eff.filter({"Variables" : ["tra_passenger_veh-efficiency_fleet"], "Categories1" : ['LDV'], "Categories2" : checks})
-    # dm_co2.append(dm_ene_vkm, "Variables")
-    # # df_temp = dm_co2.write_df()
-    # dm_co2.operation("tra_passenger_veh-efficiency_fleet", "/", "tra_passenger_veh-efficiency_fleet-co2-based", "Variables", "factor", "num")
-    # dm_co2.add(dm_co2[:,2023,...], "Years", [2024])
-    # # df_temp = dm_co2.filter({"Variables" : ["factor"]}).write_df()
-    # dm_factor = dm_co2.filter({"Variables" : ["factor"]})
-    # for tech in checks:
-    #     dm_veh_eff_LDV[...,tech] = dm_veh_eff_LDV[...,tech] * dm_factor[...,tech]
-    #     dm_veh_new_eff_LDV[...,tech] = dm_veh_new_eff_LDV[...,tech] * dm_factor[...,tech]
-
-    # Join LDV and other modes
-    all_tech = set(dm_veh_eff_LDV.col_labels["Categories2"]).union(
-        set(dm_veh_eff.col_labels["Categories2"])
-    )
-    dm_veh_eff_LDV.append(dm_veh_new_eff_LDV, dim="Variables")
-    dm_veh_eff_LDV.filter({"Years": years_ots}, inplace=True)
-    dm_LDV_BEV_FCEV = dm_veh_eff.filter(
-        {"Categories1": ["LDV"], "Categories2": ["BEV", "FCEV"]}
+    # Join: LDV = CO2-based ICE / PHEV + energy-based BEV / FCEV
+    dm_LDV.append(
+        dm_veh_eff.filter({"Categories1": ["LDV"], "Categories2": ["BEV", "FCEV"]}),
+        dim="Categories2",
     )
     dm_veh_eff.drop("Categories1", "LDV")
-    dm_veh_eff_LDV.append(dm_LDV_BEV_FCEV, dim="Categories2")
-
-    dm_add_missing_variables(dm_veh_eff_LDV, {"Categories2": all_tech})
+    all_tech = set(dm_LDV.col_labels["Categories2"]).union(
+        dm_veh_eff.col_labels["Categories2"]
+    )
+    dm_add_missing_variables(dm_LDV, {"Categories2": all_tech})
     dm_add_missing_variables(dm_veh_eff, {"Categories2": all_tech})
-    dm_veh_eff.append(dm_veh_eff_LDV.filter({"Years": years_ots}), dim="Categories1")
-
-    # check efficiencies differences for fleet for LDV using energy ep 2050 (CO2 based vs energy ep2050/vkm ep2050)
-    modes = ["2W", "LDV", "bus"]
-    techs = ["ICE-diesel", "ICE-gas", "ICE-gasoline"]
-    dm_vkm_ep2050 = dm_data_check_vkm["passenger-and-freight_road_EP-2050"].filter(
-        {"Categories1": modes, "Categories2": techs}
-    )
-    dm_veh_eff_ep2050 = dm_energy.copy()
-    dm_veh_eff_ep2050.groupby(
-        {"ICE-gasoline": ["biogasoline", "gasoline"]}, "Categories2", inplace=True
-    )
-    dm_veh_eff_ep2050 = dm_veh_eff_ep2050.filter(
-        {"Categories1": modes, "Categories2": techs}
-    )
-    dm_veh_eff_ep2050.change_unit(
-        "tra_energy_demand", old_unit="TWh", new_unit="MJ", factor=3.6e9, operator="*"
-    )
-    dm_veh_eff_ep2050.append(dm_vkm_ep2050, "Variables")
-    dm_veh_eff_ep2050.operation(
-        "tra_energy_demand",
-        "/",
-        "tra_vkm_demand",
-        "Variables",
-        "efficiency_fleet_ep2050",
-        "MJ/km",
-    )
-    dm_veh_eff_ep2050.append(
-        dm_veh_eff.filter(
-            {
-                "Country": ["Switzerland"],
-                "Variables": ["tra_passenger_veh-efficiency_fleet"],
-                "Categories1": modes,
-                "Categories2": techs,
-            }
-        ),
-        "Variables",
-    )
-    dm_veh_eff_ep2050.operation(
-        "efficiency_fleet_ep2050",
-        "/",
-        "tra_passenger_veh-efficiency_fleet",
-        "Variables",
-        "factor",
-        "num",
-    )
-    # df_temp = dm_veh_eff_ep2050.filter({"Variables" : ["factor"]}).write_df()
-    # dm_veh_eff_ep2050.filter({"Variables" : ['efficiency_fleet_ep2050', 'tra_passenger_veh-efficiency_fleet']}).flatten().datamatrix_plot()
-    dm_factor = dm_veh_eff_ep2050.filter({"Variables": ["factor"]})
-    for y in list(range(1990, 2006 + 1)):
-        dm_factor[:, y, :, "LDV", "ICE-gas"] = dm_factor[:, 2007, :, "LDV", "ICE-gas"]
-    # df_temp = dm_factor.filter({"Variables" : ["factor"]}).write_df()
-    modes_modif = ["2W", "LDV", "LDV", "LDV", "bus"]
-    techs_modif = [
-        "ICE-gasoline",
-        "ICE-diesel",
-        "ICE-gas",
-        "ICE-gasoline",
-        "ICE-diesel",
-    ]
-
-    # As EP2050 efficiency are quite high for cars we correct all efficiencies except cars with EP2050 factor.
-    dm_veh_eff_Vaud = dm_veh_eff.copy()
-    for mode, tech in zip(modes_modif, techs_modif):
-        dm_veh_eff[..., mode, tech] = (
-            dm_veh_eff[..., mode, tech] * dm_factor[..., mode, tech]
-        )
-    idx = dm_veh_eff.idx
-    dm_veh_eff.array[idx["Vaud"], :, :, idx["LDV"], ...] = dm_veh_eff_Vaud.array[
-        idx["Vaud"], :, :, idx["LDV"], ...
-    ]
+    dm_veh_eff.append(dm_LDV, dim="Categories1")
 
     return dm_veh_eff
-
-
-def run_old(cdm_emissions_factors, years_ots):
-    this_dir = os.path.dirname(os.path.abspath(__file__))  # creates local path variable
-
-    # SECTION Vehicle efficiency LDV, stock and new, ots
-    #### Vehicle efficiency - LDV - CO2/km
-    # FCEV (Hydrogen) data are off - BEV too
-    # !!! Attention: The data are bad before 2016 and after 2020, backcasting to 1990 from 2016 done with linear fitting.
-    table_id_veh_eff = "px-x-1103020100_106"
-    local_filename_veh = os.path.join(
-        this_dir, "../data/tra_veh_efficiency.pickle"
-    )  # The file is created if it doesn't exist
-    dm_veh_eff_LDV = get_data.get_vehicle_efficiency(
-        table_id_veh_eff,
-        local_filename_veh,
-        var_name="tra_passenger_veh-efficiency_fleet",
-        years_ots=years_ots,
-    )
-    del table_id_veh_eff, local_filename_veh
-
-    #### Vehicle efficiency new - LDV - CO2/km
-    # FCEV data are off, BEV = 25 gCO2/km independently of car power
-    table_id_new_eff = "px-x-1103020200_201"
-    local_filename_new = os.path.join(
-        this_dir, "../data/tra_new-veh_efficiency.pickle"
-    )  # The file is created if it doesn't exist3#
-    dm_veh_new_eff_LDV = get_data.get_new_vehicle_efficiency(
-        table_id_new_eff,
-        local_filename_new,
-        var_name="tra_passenger_veh-efficiency_new",
-        years_ots=years_ots,
-    )
-    del table_id_new_eff, local_filename_new
-
-    # The Swiss efficiency for the fleet is given in gCO2/km. We convert it to MJ/km
-    dm_veh_eff_LDV = convert_eff_from_gCO2_km_to_MJ_km(
-        dm_veh_eff_LDV,
-        cdm_emissions_factors,
-        new_var_name="tra_passenger_veh-efficiency_fleet",
-    )
-    dm_veh_new_eff_LDV = convert_eff_from_gCO2_km_to_MJ_km(
-        dm_veh_new_eff_LDV,
-        cdm_emissions_factors,
-        new_var_name="tra_passenger_veh-efficiency_new",
-    )
-
-    ### We should do a separate flow for aviation. from pkm/cap -> pkm -> technology share (applied to pkm) -> emissions/pkm
-    data_file = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "../../../../data/datamatrix/transport.pickle",
-    )
-    with open(data_file, "rb") as handle:
-        DM_transport = pickle.load(handle)
-
-    lev = list(DM_transport["ots"].keys())[0]
-    baseyear_old = DM_transport["ots"][lev].col_labels["Years"][-1]
-
-    # Add to the LDV efficiency the efficiency of other means of transport, taken from EUCalc data
-    print(
-        "You are missing vehicle efficiency for LDV FCEV and BEV, but also 2W, bus, aviation, metrotram, rail."
-        " Bus efficiency looks very wrong"
-    )
-    dm_veh_eff = DM_transport["fxa"]["passenger_tech"].filter(
-        {
-            "Variables": ["tra_passenger_veh-efficiency_fleet"],
-            "Country": ["Switzerland"],
-        }
-    )
-    dm_veh_new_eff = DM_transport["ots"]["passenger_veh-efficiency_new"].filter(
-        {"Variables": ["tra_passenger_veh-efficiency_new"], "Country": ["Switzerland"]}
-    )
-
-    # Adjust efficiency for metrotram and rail
-    idx = dm_veh_eff.idx
-    idx_n = dm_veh_new_eff.idx
-    public_eff = {
-        ("metrotram", "mt"): 3,
-        ("rail", "CEV"): 1,
-        ("rail", "ICE-diesel"): 1 * 0.8 / 0.3,
-        ("rail", "FCEV"): 1 * 0.8 / 0.3,
-    }
-    for key, value in public_eff.items():
-        dm_veh_eff.array[
-            :, :, idx["tra_passenger_veh-efficiency_fleet"], idx[key[0]], idx[key[1]]
-        ] = value
-        dm_veh_new_eff.array[
-            :,
-            :,
-            idx_n["tra_passenger_veh-efficiency_new"],
-            idx_n[key[0]],
-            idx_n[key[1]],
-        ] = value
-
-    # Determine efficiency
-    # It also removes aviation
-    dm_veh_eff, dm_veh_new_eff = replace_LDV_efficiency_with_new(
-        dm_veh_eff, dm_veh_new_eff, dm_veh_eff_LDV, dm_veh_new_eff_LDV, baseyear_old
-    )
-
-    return dm_veh_eff, dm_veh_new_eff
