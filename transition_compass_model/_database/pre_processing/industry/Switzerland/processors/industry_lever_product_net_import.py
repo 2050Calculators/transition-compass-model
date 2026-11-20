@@ -116,9 +116,6 @@ def time_series_chf_over_tonne(df_price, df_price_index):
         ],
     )
     df.sort_values(["variable-calc", "trade-flow", "year"], inplace=True)
-    df.loc[df["variable-calc"] == "mae", "price[chf/t]"] = np.array(
-        df.loc[df["variable-calc"] == "computer, phone, tv", "price[chf/t]"]
-    )
     df["price-index-pch"] = np.nan
     df["year"] = df["year"].astype(int)
     for y in list(range(2023, 2004 - 1, -1)):
@@ -283,6 +280,8 @@ def make_net_import_share(current_file_directory, dm_io, years_ots):
         }
     )
     dict_map = {
+        "2W_BEV": "vehicles",
+        "2W_ICE-gasoline": "vehicles",
         "HDV_BEV": "vehicles",
         "HDV_FCEV": "vehicles",
         "HDV_ICE-diesel": "vehicles",
@@ -435,12 +434,27 @@ def make_material_net_import_share(current_file_directory, dm_netimp, years_ots)
         # factor on more production). Both tech mix and quantity are known limitations.
     )
     dm_netimp_materials[..., "aluminium"] = 0.90
-    dm_netimp_materials[
-        ..., "cement"
-    ] = -0.25  # net exporter: ~4,500 kt production vs ~3,500 kt consumption
+    dm_netimp_materials[..., "cement"] = (
+        0.11  # net importer ~11%: 659 kt imports − 106 kt exports over 4,874 kt consumption (2019)
+        # https://www.cemsuisse.ch/app/uploads/2020/05/Cemsuisse_Kennzahlen_2020_RZ.pdf p.4+10
+    )
     dm_netimp_materials[
         ..., "lime"
     ] = -0.80  # net exporter: production significantly exceeds domestic consumption
+
+    # Asphalt: produced domestically at mixing plants (Implenia, Strabag, Kibag);
+    # finished asphalt is not traded across borders at scale (too heavy, hardens quickly).
+    dm_netimp_materials.add(0.0, "Categories1", "asphalt", dummy=True)
+
+    # ois-modelled (CDM-driven construction ceramics): produced domestically, 0 net import.
+    dm_netimp_materials.add(0.0, "Categories1", "ois-modelled", dummy=True)
+    # nmm (aggregates: sand, gravel, crushed stone): Switzerland is self-sufficient, 0 net import.
+    dm_netimp_materials.add(0.0, "Categories1", "nmm", dummy=True)
+    # met (critical metals: Zn, Ni, Co, Li, Mn, Pt): no domestic mining; Switzerland imports
+    # the vast majority of its critical metal requirements. Set to 0.75 consistent with EU27.
+    # Source: EU27 value derived from PRODCOM DS-056120 B07 trade data; applied to CH by analogy
+    # (CH has no significant Zn/Ni/Co/Li mining). https://ec.europa.eu/eurostat/web/prodcom
+    dm_netimp_materials.add(0.75, "Categories1", "met", dummy=True)
 
     # # save
     # dm_ots = dm_netimp_materials.filter({"Years" : years_ots})
@@ -614,19 +628,6 @@ def make_material_production(
     k_wwp = 0.073  # example: brings ~8.2 Mt down to ~0.6 Mt
     dm_out[..., "wwp"] = dm_out[..., "wwp"] * k_wwp
 
-    # MAE: IO uses "computer, phone, TV" import price (~50,000 CHF/t) as proxy, but
-    # the MAE aggregate is dominated by fabricated metal products (NOGA 25, tools,
-    # hardware, structural metal) at ~2,000 CHF/t. Price ratio: 50,000 / 2,000 ≈ 25;
-    # using 24 as a conservative estimate.
-    k_mae = 24.0
-    dm_out[..., "mae"] = dm_out[..., "mae"] * k_mae
-
-    # Textiles: Swiss specialty textiles (technical fabrics, high-end apparel) have
-    # higher CHF/kg than generic import prices imply; employment-based estimate
-    # (~140-170 kt) is ~2x the IO-derived ~85 kt.
-    k_textiles = 2.0
-    dm_out[..., "textiles"] = dm_out[..., "textiles"] * k_textiles
-
     # make calibration data
     # note: for calib data, we do not need to make missing ots and fts
     dm_out_calib = dm_out.filter({"Years": list(range(2011, 2023, +1))})
@@ -662,6 +663,47 @@ def make_material_production(
     dm_out_notmodelled = dm_out.filter(
         {"Categories1": ["fbt", "mae", "ois", "textiles", "wwp", "tra-equip"]}
     )
+
+    # cement-civil: 40% of Swiss cement production allocated to civil engineering
+    # (dams, bridges, industrial construction not captured in CDM buildings/transport).
+    # Civil fraction 40%: https://www.gcca.eu/resources/key-facts-figures
+    # Production anchor 4321 kt (2019): Cemsuisse Kennzahlen 2020 p.4+10,
+    # domestic deliveries 4215 kt + cement exports 106 kt (94.6% of 112 kt total exports):
+    # https://www.cemsuisse.ch/app/uploads/2020/05/Cemsuisse_Kennzahlen_2020_RZ.pdf
+    _CEMSUISSE_PRODUCTION_2019_KT = 4_321.0
+    _GCCA_CIVIL_FRACTION = 0.40
+    dm_cement_civil = dm_out.filter({"Categories1": ["cement"]}).copy()
+    dm_cement_civil.rename_col("cement", "cement-civil", "Categories1")
+    _io_cement_2019 = float(
+        dm_cement_civil["Switzerland", 2019, "material-production", "cement-civil"]
+    )
+    _cement_civil_2019_kt = _CEMSUISSE_PRODUCTION_2019_KT * _GCCA_CIVIL_FRACTION
+    if np.isnan(_io_cement_2019) or _io_cement_2019 == 0:
+        # EU27 calibration file is all-NaN (temporary placeholder); fall back to
+        # flat Cemsuisse anchor for all years.
+        dm_cement_civil.array[:] = _cement_civil_2019_kt
+    else:
+        dm_cement_civil.array = dm_cement_civil.array * (
+            _cement_civil_2019_kt / _io_cement_2019
+        )
+    dm_out_notmodelled.append(dm_cement_civil, "Categories1")
+
+    # nmm-civil: aggregates consumed in civil engineering = 7× cement-civil (by mass)
+    # Ratio from EU27 CDM: https://www.mckinsey.com/industries/chemicals/our-insights/
+    # the-impact-of-shifting-demographics-on-the-construction-materials-industry
+    # (same ratio applied in EU27 fxa/prod; kept consistent here)
+    dm_nmm_civil = dm_cement_civil.copy()
+    dm_nmm_civil.rename_col("cement-civil", "nmm-civil", "Categories1")
+    dm_nmm_civil.array = dm_cement_civil.array * 7.0
+    dm_out_notmodelled.append(dm_nmm_civil, "Categories1")
+
+    # met-civil: structural steel in civil engineering = 0.005× cement-civil (by mass)
+    # Same ratio as EU27 fxa/prod.
+    dm_met_civil = dm_cement_civil.copy()
+    dm_met_civil.rename_col("cement-civil", "met-civil", "Categories1")
+    dm_met_civil.array = dm_cement_civil.array * 0.005
+    dm_out_notmodelled.append(dm_met_civil, "Categories1")
+
     # f = os.path.join(current_file_directory, '../data/datamatrix/fxa_material-production.pickle')
     # with open(f, 'wb') as handle:
     #     pickle.dump(dm_out_notmodelled, handle, protocol=pickle.HIGHEST_PROTOCOL)

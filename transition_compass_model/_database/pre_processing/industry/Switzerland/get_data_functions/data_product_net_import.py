@@ -57,10 +57,6 @@ def get_price_data(current_file_directory, flow):
     df.columns = ["variable", "kt", "chf-mio"]
     df["kt"] = df["kt"].astype(float)
     df["chf-mio"] = df["chf-mio"].astype(float)
-    df["t"] = df["kt"] * 1000
-    df["chf"] = df["chf-mio"] * 1000000
-    df["price[chf/t]"] = df["chf"] / df["t"]
-    df = df.loc[:, ["variable", "price[chf/t]"]]
 
     # rename variables with mapping
     filepath_map = os.path.join(
@@ -77,8 +73,16 @@ def get_price_data(current_file_directory, flow):
         df_map["calc_industry_material"].isna(), "calc_industry_product"
     ]
     df = df.merge(df_map.loc[:, ["variable", "variable-calc"]], "left", ["variable"])
-    df = df.loc[~df["variable-calc"].isna(), ["variable-calc", "price[chf/t]"]]
-    df = df.groupby(["variable-calc"], as_index=False)["price[chf/t]"].agg(np.mean)
+    df = df.loc[~df["variable-calc"].isna(), ["variable-calc", "kt", "chf-mio"]]
+
+    # volume-weighted average: total chf-mio / total kt across all NST4 groups per
+    # model category — correct aggregation for CHF-to-tonne conversion
+    agg = df.groupby("variable-calc", as_index=False).agg(
+        total_kt=("kt", "sum"),
+        total_chf_mio=("chf-mio", "sum"),
+    )
+    agg["price[chf/t]"] = agg["total_chf_mio"] / agg["total_kt"] * 1000
+    df = agg[["variable-calc", "price[chf/t]"]].copy()
     df["trade-flow"] = flow
 
     return df

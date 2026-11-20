@@ -13,7 +13,7 @@ def run(DM_input, years_ots):
     # directories
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
 
-    DM = {"ots": dict(), "fxa": dict(), "calibration": dict()}
+    DM = {"ots": dict(), "fxa": dict(), "calibration": dict(), "constant": dict()}
 
     DM["ots"]["product-net-import"] = DM_input["product-net-import"]
     DM["ots"]["material-net-import"] = DM_input["material-net-import"]
@@ -64,6 +64,9 @@ def run(DM_input, years_ots):
     DM["fxa"]["energy-demand-excl-feedstock"] = DM_input["fxa-energy-exclfeedstock"]
     DM["fxa"]["energy-demand-feedstock"] = DM_input["fxa-energy-feedstock"]
 
+    # constants have no Country dimension — copy CDMs directly from EU27 pickle
+    DM["constant"] = {k: v.copy() for k, v in DM_industry_current["constant"].items()}
+
     # for calibration, for the moment put material production as missing
     # NOTE: we'll see later if to calibrate this against CHF data on material production (converted to tonne)
     dm_temp = DM_industry_current["calibration"]["material-production"].filter(
@@ -81,7 +84,7 @@ def run(DM_input, years_ots):
         pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     # make ammonia
-    DM_amm = {"ots": dict(), "fxa": dict(), "calibration": dict()}
+    DM_amm = {"ots": dict(), "fxa": dict(), "calibration": dict(), "constant": dict()}
 
     DM_amm["ots"]["product-net-import"] = DM_input["fert-product-net-import"]
     DM_amm["ots"]["material-net-import"] = DM_input["amm-material-net-import"]
@@ -118,6 +121,9 @@ def run(DM_input, years_ots):
         "fxa-amm-energy-exclfeedstock"
     ]
     DM_amm["fxa"]["energy-demand-feedstock"] = DM_input["fxa-amm-energy-feedstock"]
+
+    # constants have no Country dimension — copy CDMs directly from EU27 ammonia pickle
+    DM_amm["constant"] = {k: v.copy() for k, v in DM_amm_current["constant"].items()}
 
     # for calibration for now put all to nan (we have material production in case for later)
     DM_amm["calibration"]["material-production"] = DM_input[

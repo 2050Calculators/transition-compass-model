@@ -12,9 +12,10 @@ TECH_TO_SECTOR = {
     "fbt-tech": 1,
     "textiles-tech": 2,
     "paper-tech": 3,
-    "pulp-tech": 3,
+    "paper-sec": 3,
     "wwp-tech": 3,
-    "wwp-sec": 3,
+    "timber-tech": 3,
+    "timber-sec": 3,
     "chem-chem-tech": 4,
     "chem-sec": 4,
     "cement-dry-kiln": 5,
@@ -36,6 +37,8 @@ TECH_TO_SECTOR = {
     "tra-equip-tech": 10,
     "ois-tech": 11,
     "ois-sec": 11,
+    "asphalt-tech": 11,
+    "asphalt-sec": 11,
 }
 
 # SFOE data covers 1999-2024; clamp model years to this range
@@ -59,23 +62,22 @@ SFOE_YEAR_MAX = 2023  # align with OTS end year; 2024 extrapolated is not used
 #     has a structural gap (Novelis imports scrap, processes for export — no domestic
 #     demand signal) that cannot be fixed by adjusting intensity.
 SWISS_INTENSITY_SCALE = {
-    # Sector 1 - FBT (scale < 1, physically driven): Swiss food manufacturing is
-    # dominated by specialty food and ingredients (Nestlé, Lindt, Givaudan) rather
-    # than bulk processing (grain milling, sugar refining, dairy). Bulk processing is
-    # more energy-intensive per tonne, so EU27 intensities — calibrated on a mix
-    # weighted toward bulk — overstate Swiss energy use per tonne. This is a genuine
-    # product-mix difference, not a production-quantity artefact.
+    # Sector 1 - FBT: re-derive after EU27 fix.
+    # EU27 intensity was previously computed using JRC value-added index (M€) as
+    # denominator instead of PRODCOM tonnes — causing a ~3× overestimate. After the
+    # fix the EU27 intensity drops from ~1.46 to ~0.40 TWh/Mt.
     # Derivation: SFOE S1 2022 (4.70 TWh) / (Swiss FBT production ~7 792 kt ×
-    # EU27 intensity 1.46 TWh/Mt) ≈ 0.41.
-    "fbt-tech": 0.41,
+    # new EU27 intensity TWh/Mt). TODO: re-run after EU27 pickle rebuild.
+    "fbt-tech": 1.0,  # TODO: re-derive against new EU27 intensity (was 0.41 against old 1.46 TWh/Mt)
     # Sector 3 - Paper/Pulp/WWP (scale < 1, physically driven): Switzerland has very
     # high paper recycling rates. Recycled-fibre production genuinely requires ~30–40%
     # less energy per tonne than virgin-pulp production because the energy-intensive
     # wood pulping stage is avoided. This is a real process difference.
     "paper-tech": 0.67,
-    "pulp-tech": 0.67,
+    "paper-sec": 0.67,
     "wwp-tech": 0.67,
-    "wwp-sec": 0.67,
+    "timber-tech": 0.67,
+    "timber-sec": 0.67,
     # Sector 7 - Steel (scale > 1, physically driven): Swiss Steel Group produces
     # specialty and tool steels (alloyed, stainless, bearing steels) that require more
     # heat treatments, rolling passes and processing steps per tonne than commodity-grade
@@ -85,13 +87,11 @@ SWISS_INTENSITY_SCALE = {
     "steel-hisarna": 1.9,
     "steel-hydrog-DRI": 1.9,
     "steel-scrap-EAF": 1.9,
-    # Sector 11 - OIS (scale < 1, physically driven): Switzerland's other-industry
-    # sector is genuinely weighted toward light manufacturing and service-adjacent
-    # activities relative to the EU27 average, which includes heavier industry from
-    # Central and Eastern Europe. EU27 OIS intensities structurally overestimate Swiss
-    # energy use per tonne.
-    "ois-tech": 0.7,
-    "ois-sec": 0.7,
+    # Sector 11 - OIS: re-derive after CH model run shows new results.
+    # EU27 OIS intensity was updated (ceramics folded in, PRODCOM denominator fixed).
+    # Set to 1.0 until CH energy output is checked against SFOE S11.
+    "ois-tech": 1.0,  # TODO: re-derive after CH model run vs SFOE S11
+    "ois-sec": 1.0,  # TODO: re-derive after CH model run vs SFOE S11
 }
 
 
