@@ -71,19 +71,27 @@ def compute_stock_fts(DM, years_ots, years_fts):
             dm_renov_distr[:, ti, "bld_renovation-redistribution-in", np.newaxis, :]
             + -dm_renov_distr[:, ti, "bld_renovation-redistribution-out", np.newaxis, :]
         )
-        # check for s_tm1 + r_t < 0 ( I'm renovating more building than what is available)
+        # If any class would go negative, cap per-class outflow and scale inflows
+        # proportionally so mass is conserved across all energy classes.
         mask_negative = np.any(s_tm1_w_t + r_t < 0, axis=2, keepdims=True)
         if mask_negative.any():
-            mask_negative = mask_negative.repeat(r_t.shape[-1], axis=-1)
-            # this most likely mean that I have renovated/demolished all cat.F buildings
-            ren_distr_in = dm_renov_distr[
+            ren_out = dm_renov_distr[
+                :, ti, "bld_renovation-redistribution-out", np.newaxis, :
+            ]
+            ren_in = dm_renov_distr[
                 :, ti, "bld_renovation-redistribution-in", np.newaxis, :
             ]
-            ren_distr_in = ren_distr_in.repeat(r_t.shape[1], axis=1)
-            arr_rr = arr_rr.repeat(ren_distr_in.shape[-1], axis=-1)
-            r_t[mask_negative] = arr_rr[mask_negative] * (
-                -dem_distr_tm1[mask_negative] + ren_distr_in[mask_negative]
-            )
+            # Max fraction each class can supply without going negative: s/arr_rr + ren_in
+            with np.errstate(divide="ignore", invalid="ignore"):
+                max_out = np.where(arr_rr > 0, s_tm1_w_t / arr_rr + ren_in, ren_out)
+            ren_out_capped = np.minimum(ren_out, np.maximum(0.0, max_out))
+            # Scale inflows to match reduced outflow total
+            total_out = np.nansum(ren_out, axis=-1, keepdims=True)
+            total_out_capped = np.nansum(ren_out_capped, axis=-1, keepdims=True)
+            scale = np.where(total_out > 0, total_out_capped / total_out, 1.0)
+            r_t_corrected = arr_rr * (ren_in * scale - ren_out_capped)
+            mask_expanded = mask_negative.repeat(r_t.shape[-1], axis=-1)
+            r_t = np.where(mask_expanded, r_t_corrected, r_t)
 
         # TOTAL: n_t = s(t) - s(t-1) + w(t) (without cat split)
         n_t_tot = s_t_tot - np.nansum(s_tm1_w_t, axis=(-1, -2))
