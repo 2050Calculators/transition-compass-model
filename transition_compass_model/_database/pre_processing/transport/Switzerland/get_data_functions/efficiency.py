@@ -99,12 +99,7 @@ def get_vehicle_electric_efficiency(
             "UV_RV_OWNER_AGE": ["Total"],
             "UV_RV_EMPTY_WEIGHT": ["Total"],
             "UV_RV_ECONSUMPTION_WLTP_PC": consumption_list,
-            "UV_HGDE_KT": [
-                "Total",
-                "Vaud",
-                "Fribourg",
-                "Schwyz",
-            ],
+            "UV_HGDE_KT": utils.swiss_stats_canton_filter(),
             "UV_RV_CO2_NEDC": CO2_emission_list,
         }
 
@@ -147,6 +142,7 @@ def get_vehicle_electric_efficiency(
     # Remove fuel type "Autre" (there are only very few car in this category)
     # Before 2022 data is mainly unknown so it is dropped as it is doesn't give us efficiency information
 
+    utils.rename_swiss_stats_cantons(dm_veh_eff)
     dm_veh_eff.filter(
         {
             "Country": country_list,
@@ -169,7 +165,7 @@ def get_vehicle_electric_efficiency(
         units=dm_veh_eff.units,
     )
     dm_veh_eff_LDV.switch_categories_order()
-    dm_veh_eff_LDV.rename_col("Total_Country", "Switzerland", dim="Country")
+    utils.rename_swiss_stats_cantons(dm_veh_eff_LDV)
     dm_veh_eff_LDV.filter({"Years": years_ots}, inplace=True)
 
     return dm_veh_eff_LDV
@@ -235,12 +231,7 @@ def get_vehicle_efficiency_co2(
             "UV_RV_OWNER_AGE": ["Total"],
             "UV_RV_EMPTY_WEIGHT": ["Total"],
             "UV_RV_ECONSUMPTION_WLTP_PC": consumption_list,
-            "UV_HGDE_KT": [
-                "Total",
-                "Vaud",
-                "Fribourg",
-                "Schwyz",
-            ],
+            "UV_HGDE_KT": utils.swiss_stats_canton_filter(),
             "UV_RV_CO2_NEDC": CO2_emission_list,
         }
 
@@ -274,13 +265,18 @@ def get_vehicle_efficiency_co2(
 
     # Distribute Inconnu on other categories based on their share
     # Remove fuel type "Autre" (there are only very few car in this category)
-    dm_veh_eff.rename_col("Total_Country", "Switzerland", dim="Country")
+    utils.rename_swiss_stats_cantons(dm_veh_eff)
     # Flat extrapolation data is bad before 2016 so removeit and then backstage it
     dm_veh_eff.filter({"Years": list(range(2016, years_ots[-1]))}, inplace=True)
 
-    # remove unknown categories
+    # remove unknown categories. In canton-years where more than 15% of cars have an
+    # unknown CO2 class (e.g. Appenzell Innerrhoden 2022: 36%), they are spread with the
+    # Swiss CO2-class distribution instead of the canton's own.
     dm_veh_eff = utils.drop_if_smaller_than_0_01(
-        dm_veh_eff, cat_to_drop="Categories2", col_to_drop="No data/unknown"
+        dm_veh_eff,
+        cat_to_drop="Categories2",
+        col_to_drop="No data/unknown",
+        ref_country="Switzerland",
     )
     dm_veh_eff = utils.drop_if_smaller_than_0_01(
         dm_veh_eff, cat_to_drop="Categories1", col_to_drop="Other"
@@ -548,12 +544,7 @@ def get_new_vehicle_efficiency_elec(file: str, agency: str, dataflow: str, var_n
 
         CO2_emission_list = ["Total"]
 
-        canton_list = [
-            "Total",
-            "Vaud",
-            "Fribourg",
-            "Schwyz",
-        ]
+        canton_list = utils.swiss_stats_canton_filter()
 
         mapping_dim = {
             "Country": "UV_HGDE_KT",
@@ -606,6 +597,7 @@ def get_new_vehicle_efficiency_elec(file: str, agency: str, dataflow: str, var_n
     }
 
     # Before 2021 data is mainly unknown so it is dropped as it is doesn't give us efficiency information
+    utils.rename_swiss_stats_cantons(dm_veh_eff)
     dm_veh_eff.filter(
         {"Years": [year for year in range(2022, years_ots[-1] + 1)]}, inplace=True
     )
@@ -636,7 +628,7 @@ def get_new_vehicle_efficiency_elec(file: str, agency: str, dataflow: str, var_n
         units=dm_veh_eff.units,
     )
     dm_veh_eff_LDV.switch_categories_order()
-    dm_veh_eff_LDV.rename_col("Total_Country", "Switzerland", dim="Country")
+    utils.rename_swiss_stats_cantons(dm_veh_eff_LDV)
     dm_veh_eff_LDV.filter({"Years": years_ots}, inplace=True)
     return dm_veh_eff_LDV
 
@@ -687,12 +679,7 @@ def get_new_vehicle_efficiency_co2(file: str, agency: str, dataflow: str, var_na
             for emis in structure["UV_RV_CO2_WLTP"]
             if emis not in ["Total", "Not applicable"]
         ]
-        canton_list = [
-            "Total",
-            "Vaud",
-            "Fribourg",
-            "Schwyz",
-        ]
+        canton_list = utils.swiss_stats_canton_filter()
 
         mapping_dim = {
             "Country": "UV_HGDE_KT",
@@ -737,7 +724,7 @@ def get_new_vehicle_efficiency_co2(file: str, agency: str, dataflow: str, var_na
         with open(f, "wb") as handle:
             pickle.dump(dm_veh_eff, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    dm_veh_eff.rename_col("Total_Country", "Switzerland", dim="Country")
+    utils.rename_swiss_stats_cantons(dm_veh_eff)
     dm_veh_eff_raw = dm_veh_eff.copy()
 
     mask = dm_veh_eff.array == 0
