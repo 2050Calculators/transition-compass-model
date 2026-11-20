@@ -14,7 +14,7 @@ CANTONS_NAME = {
         "GR": "Graubünden",
         "JU": "Jura",
         "LU": "Lucerne",
-        "NE": "Neuchatel",
+        "NE": "Neuchâtel",
         "NW": "Nidwalden",
         "OW": "Obwalden",
         "SH": "Schaffhausen",
@@ -43,7 +43,7 @@ CANTONS_NAME = {
         "Graubünden": "GR",
         "Jura": "JU",
         "Lucerne": "LU",
-        "Neuchatel": "NE",
+        "Neuchâtel": "NE",
         "Nidwalden": "NW",
         "Obwalden": "OW",
         "Schaffhausen": "SH",
@@ -61,7 +61,7 @@ CANTONS_NAME = {
 }
 GRANDE_REGION_CANTONS = {
     "Région lémanique": ["Geneva", "Valais", "Vaud"],
-    "Espace Mittelland": ["Bern", "Fribourg", "Jura", "Neuchatel", "Solothurn"],
+    "Espace Mittelland": ["Bern", "Fribourg", "Jura", "Neuchâtel", "Solothurn"],
     "Suisse du Nord-Ouest": ["Aargau", "Basel Landschaft", "Basel Stadt"],
     "Zurich": ["Zurich"],
     "Suisse orientale": [
@@ -81,10 +81,8 @@ GRANDE_REGION_CANTONS = {
 # Canton labels found in BFS source files, used by
 # model.common.auxiliary_functions.rename_cantons().
 # Every list is aligned with CANTONS_RENAME_TARGET (same order, 26 cantons).
-# NOTE: CANTONS_RENAME_TARGET differs from CANTONS_NAME for 4 cantons
-# ("Basel Landschaft", "Basel Stadt", "Graubünden", "Neuchâtel" vs
-# "Basel-Landschaft", "Basel-Stadt", "Graubunden", "Neuchatel"). It is kept as is
-# because existing buildings/power pickles use these labels.
+# CANTONS_RENAME_TARGET uses the same canton names as CANTONS_NAME and
+# params.country_list (e.g. "Basel Landschaft", "Graubünden", "Neuchâtel").
 # ---------------------------------------------------------------------------
 CANTONS_RENAME_TARGET = [
     "Aargau",
