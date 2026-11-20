@@ -55,6 +55,12 @@ def run():
             "kerosene": 73.3 * 1000,
             "marinefueloil": 77400,
             "SAF": 73.3 * (2 / 3) * 1000,
+            # FIXME: H2 direct combustion CO2 = 0 (H2 + O2 → H2O, no CO2 produced).
+            # Current value (kerosene × 2/3 × 0.25 = 12.2 g/MJ) has no sourced basis —
+            # it approximates blue H2 upstream emissions but is not derived from literature.
+            # Decision needed: direct combustion (→ 0) or lifecycle (→ sourced value per H2 pathway).
+            # Note: in workflows.py both FCEV and H2-ICE are grouped into "hydrogen" fuel before
+            # this factor is applied, so the fix must cover both vehicle types.
             "H2": 73.3 * (2 / 3) * 0.25 * 1000,
         },
         "CH4": {
