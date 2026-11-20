@@ -129,6 +129,10 @@ def compute_fts_tech_split(dm_mode, dm_tech, cols):
         # Re-compute the actual efficiency shares with the exception of when tot_t=0
         eff_tot_t[~mask] = eff_tot_t[~mask] / tot_t[~mask]
         eff_tot_t[mask] = eff_tot_tmn[mask]
+        # Fleet efficiency must stay between new-vehicle and previous fleet efficiency
+        eff_new_t = dm_tech.array[:, idx_t[t], idx_t[eff_new_col], ...]
+        eff_tot_t = np.maximum(eff_tot_t, np.minimum(eff_new_t, eff_tot_tmn))
+        eff_tot_t = np.minimum(eff_tot_t, np.maximum(eff_new_t, eff_tot_tmn))
         # Re-compute the actual technology shares at time t with the exception of when sum_tot_t = 0
         sum_tot_t = np.nansum(tot_t, axis=-1, keepdims=True)
         tech_tot_t = np.divide(
