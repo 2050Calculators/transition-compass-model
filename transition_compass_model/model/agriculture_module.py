@@ -1403,7 +1403,7 @@ def agriculture(lever_setting, years_setting, DM_input, interface=Interface()):
 
     # interface to Land use
     DM_lus = agriculture_landuse_interface(
-        DM_bioenergy, dm_lgn, dm_land_use, write_pickle=True
+        DM_bioenergy, dm_lgn, dm_land_use, write_pickle=False
     )
     interface.add_link(from_sector="agriculture", to_sector="land-use", dm=DM_lus)
 
@@ -1437,7 +1437,7 @@ def agriculture(lever_setting, years_setting, DM_input, interface=Interface()):
     # interface.add_link(from_sector='agriculture', to_sector='power', dm=dm_storage)
 
     # interface to Energy
-    DM_energy = agriculture_energy_interface(DM_energy_ghg, write_pickle=True)
+    DM_energy = agriculture_energy_interface(DM_energy_ghg, write_pickle=False)
     interface.add_link(from_sector="agriculture", to_sector="energy", dm=DM_energy)
 
     # interface to Minerals
