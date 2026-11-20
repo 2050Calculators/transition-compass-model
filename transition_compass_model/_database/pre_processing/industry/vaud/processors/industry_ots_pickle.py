@@ -9,7 +9,7 @@ from transition_compass_model.model.common.auxiliary_functions import create_yea
 def run(DM_input, years_ots):
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
 
-    DM = {"ots": dict(), "fxa": dict(), "calibration": dict()}
+    DM = {"ots": dict(), "fxa": dict(), "calibration": dict(), "constant": dict()}
 
     DM["ots"]["product-net-import"] = DM_input["product-net-import"]
     DM["ots"]["material-net-import"] = DM_input["material-net-import"]
@@ -51,6 +51,9 @@ def run(DM_input, years_ots):
     DM["fxa"]["energy-demand-excl-feedstock"] = DM_input["fxa-energy-exclfeedstock"]
     DM["fxa"]["energy-demand-feedstock"] = DM_input["fxa-energy-feedstock"]
 
+    # constants have no Country dimension — copy CDMs directly from CH pickle
+    DM["constant"] = {k: v.copy() for k, v in DM_ch["constant"].items()}
+
     # Calibration: all NaN (no Vaud-specific calibration data available)
     for calib_key in ["emissions", "energy-demand", "material-production"]:
         dm_temp = (
@@ -69,7 +72,7 @@ def run(DM_input, years_ots):
         pickle.dump(DM, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     # ---- Ammonia OTS ----
-    DM_amm = {"ots": dict(), "fxa": dict(), "calibration": dict()}
+    DM_amm = {"ots": dict(), "fxa": dict(), "calibration": dict(), "constant": dict()}
 
     ammonia_pickle_file = os.path.join(
         current_file_directory, "../../../../data/datamatrix/ammonia.pickle"
@@ -107,6 +110,9 @@ def run(DM_input, years_ots):
         "fxa-amm-energy-exclfeedstock"
     ]
     DM_amm["fxa"]["energy-demand-feedstock"] = DM_input["fxa-amm-energy-feedstock"]
+
+    # constants have no Country dimension — copy CDMs directly from CH ammonia pickle
+    DM_amm["constant"] = {k: v.copy() for k, v in DM_amm_ch["constant"].items()}
 
     # Calibration for ammonia: all NaN
     for calib_key in ["emissions", "material-production"]:
