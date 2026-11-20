@@ -173,11 +173,11 @@ def industry_landuse_interface(
 
     # woodpuplp
     dm_woodpulp = DM_material_production["bytech"].filter(
-        {"Categories1": ["pulp-tech"]}
+        {"Categories1": ["paper-sec"]}
     )
     dm_woodpulp = dm_woodpulp.flatten()
     dm_woodpulp.rename_col(
-        "material-production_pulp-tech",
+        "material-production_paper-sec",
         "ind_material-production_paper_woodpulp",
         "Variables",
     )
