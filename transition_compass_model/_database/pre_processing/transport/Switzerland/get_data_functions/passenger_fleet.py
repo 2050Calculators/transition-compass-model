@@ -246,8 +246,6 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
             "Categories2": "UV_RV_FUEL",
         }
 
-        utils.assert_len_dimension_for_call_to_api(filtering)
-
         # Extract new fleet (already annual, unlike the old STAT-TAB source which was
         # monthly-only and had to be summed across all 12 months to get yearly totals)
         dm_fleet = get_data_api_swiss_stats(
@@ -392,6 +390,9 @@ def get_passenger_stock_fleet_by_tech_raw_local_archive(table_id, file):
 
         # Create datamatrix
         dm_fleet = DataMatrix.create_from_df(df_pivot, num_cat=2)
+        with open(file, "wb") as handle:
+            pickle.dump(dm_fleet, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
     # Group all vehicles independently of immatriculation data
     dm_fleet.groupby(
         {"tra_passenger_vehicle-fleet": ".*"}, dim="Variables", regex=True, inplace=True
@@ -550,7 +551,15 @@ def get_fleet_bus(file, agency="CH1.MFZ_IVS", dataflow="DF_MFZ_2"):
     except OSError:
         structure, title = get_data_api_swiss_stats(agency, dataflow, mode="example")
 
-        cantons_list = [country for country in country_list if country != "Switzerland"]
+        cantons_list = country_list
+        d = {
+            "Switzerland": "Total",
+            "Basel Landschaft": "Basel-Landschaft",
+            "Basel Stadt": "Basel-Stadt",
+        }
+
+        cantons_list = [d.get(v, v) for v in country_list]
+
         vehicle_type_list = ["Coach, bus", "Articulated bus"]
         fuel_list = [fuel for fuel in structure["UV_RV_FUEL"] if fuel != "Total"]
         filtering = {
@@ -560,7 +569,7 @@ def get_fleet_bus(file, agency="CH1.MFZ_IVS", dataflow="DF_MFZ_2"):
             "UV_RV_STANDING_PLACES": ["Total"],
             "UV_RV_BODY_SHAPE": ["Total"],
             "UV_RV_FUEL": fuel_list,
-            "UV_HGDE_KT": cantons_list + ["Total"],  # "Total" = all of Switzerland
+            "UV_HGDE_KT": cantons_list,  # "Total" = all of Switzerland
         }
 
         mapping_dim = {
@@ -569,8 +578,6 @@ def get_fleet_bus(file, agency="CH1.MFZ_IVS", dataflow="DF_MFZ_2"):
             "Variables": "UV_RV_VEHICLE_TYPE",
             "Categories1": "UV_RV_FUEL",
         }
-
-        utils.assert_len_dimension_for_call_to_api(filtering)
 
         # Extract new fleet (already annual, unlike the old STAT-TAB source which was
         # monthly-only and had to be summed across all 12 months to get yearly totals)
@@ -611,13 +618,20 @@ def get_fleet_bus(file, agency="CH1.MFZ_IVS", dataflow="DF_MFZ_2"):
 
     dm_fleet_bus.groupby(dict_tech, dim="Categories1", regex=False, inplace=True)
 
-    dm_fleet_bus = utils.drop_if_smaller_than_0_01(
-        dm_fleet_bus, cat_to_drop="Categories1", col_to_drop="Other"
-    )
+    # we want the proportion in the other categories
+    dm_fleet_bus.drop(dim="Categories1", col_label="Other")
+
     dm_fleet_bus.filter({"Years": years_ots}, inplace=True)
 
     dm_fleet_bus.sort("Country")
-    return dm_fleet_bus
+    dm_bus_normalised = dm_fleet_bus.normalise(dim="Categories1", inplace=False)
+
+    # add missing years and extrapoalte the missing values with a linear fit
+    year_database = dm_bus_normalised.col_labels["Years"]
+    old_years = [y for y in years_ots if y not in year_database]
+    dm_bus_normalised.add(np.nan, dim="Years", col_label=old_years, dummy=True)
+    dm_bus_normalised.sort("Years")
+    return dm_bus_normalised
 
 
 def extract_public_passenger_fleet(df, years_ots):

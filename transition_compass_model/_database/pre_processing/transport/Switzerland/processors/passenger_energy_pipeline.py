@@ -76,7 +76,7 @@ def run(years_ots):
         dm_energy_public.array[:, :, :, [idx_public["bus"], idx_public["rail"]], :]
     )
 
-    return dm_passenger_ep2050, dm_passenger_energy_all
+    return dm_passenger_energy_all
 
 
 if __name__ == "__main__":

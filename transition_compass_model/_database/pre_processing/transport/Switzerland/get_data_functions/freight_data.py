@@ -113,8 +113,6 @@ def _fetch_bfs_goods_vehicles(dataflow: str, cache_file: str) -> pd.DataFrame:
         filtering["FREQ"] = ["Annual"]
         var_dim = "UV_RV_REGISTRATION_TYPE"
 
-    utils.assert_len_dimension_for_call_to_api(filtering)
-
     dm = get_data_api_swiss_stats(
         agency,
         dataflow,

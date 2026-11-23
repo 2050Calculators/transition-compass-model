@@ -250,17 +250,10 @@ def compute_non_diesel_bus_share(dm_public_fleet, years_ots):
     # We have the total number of bus. We know want the distinction between the number of bus by fuel type (electric and diesel)
     # Get a database with the number of bus by fuel type (electric and diesel) for all cantons
     file = "../data/tra_fleet_transport_vehicles.pickle"
-    dm_bus_fleet = get_data.get_fleet_bus(
+    dm_bus_normalised = get_data.get_fleet_bus(
         file, agency="CH1.MFZ_IVS", dataflow="DF_MFZ_2"
     )
-    dm_bus_normalised = dm_bus_fleet.normalise(dim="Categories1", inplace=False)
 
-    # add missing years and extrapoalte the missing values with a linear fit
-    year_database = dm_bus_normalised.col_labels["Years"]
-    old_years = [y for y in years_ots if y not in year_database]
-
-    dm_bus_normalised.add(np.nan, dim="Years", col_label=old_years, dummy=True)
-    dm_bus_normalised.sort("Years")
     idx_normalised = dm_bus_normalised.idx
     # Almost only diesel bus before 2005
     dm_bus_normalised.array[:, : idx_normalised[2005], 0, :] = 0
@@ -272,7 +265,7 @@ def compute_non_diesel_bus_share(dm_public_fleet, years_ots):
     # keep the proportion and multiply it with OFS fleet
     non_overlapping_tech = [
         i
-        for i in dm_bus_fleet.col_labels["Categories1"]
+        for i in dm_bus_normalised.col_labels["Categories1"]
         if i not in dm_public_fleet.col_labels["Categories2"]
     ]
     for tech in non_overlapping_tech:

@@ -111,7 +111,6 @@ def get_vehicle_electric_efficiency(
             "Categories1": "UV_RV_FUEL",
             "Categories2": "UV_RV_ECONSUMPTION_WLTP_PC",
         }
-        utils.assert_len_dimension_for_call_to_api(filtering)
 
         # Extract new fleet
         dm_veh_eff = get_data_api_swiss_stats(
@@ -224,9 +223,14 @@ def get_vehicle_efficiency_co2(
         CO2_emission_list = [
             emis for emis in structure["UV_RV_CO2_NEDC"] if emis not in ["Total"]
         ]
-        cantons_list = [canton for canton in country_list if canton != "Switzerland"]
-        country_to_call = cantons_list + ["Total"]
+        country_to_call = country_list
+        d = {
+            "Switzerland": "Total",
+            "Basel Landschaft": "Basel-Landschaft",
+            "Basel Stadt": "Basel-Stadt",
+        }
 
+        country_to_call = [d.get(v, v) for v in country_list]
         years_to_call = [year for year in structure["TIME_PERIOD"] if int(year) >= 2017]
         filtering = {
             "TIME_PERIOD": years_to_call,
@@ -248,7 +252,6 @@ def get_vehicle_efficiency_co2(
 
         dm_veh_eff = None
 
-        utils.assert_len_dimension_for_call_to_api(filtering)
         for country in country_to_call:
             filtering["UV_HGDE_KT"] = [country]
 
@@ -578,7 +581,6 @@ def get_new_vehicle_efficiency_elec(file: str, agency: str, dataflow: str, var_n
                 "FREQ": ["Annual"],
             }
 
-            utils.assert_len_dimension_for_call_to_api(filtering)
             # Extract new fleet
             dm_veh_eff_canton = get_data_api_swiss_stats(
                 agency,
@@ -702,37 +704,33 @@ def get_new_vehicle_efficiency_co2(file: str, agency: str, dataflow: str, var_na
             "Categories2": "UV_RV_CO2_WLTP",
         }
         year_to_call = [year for year in structure["TIME_PERIOD"] if int(year) >= 2021]
-        for i, canton in enumerate(canton_list):
-            filtering = {
-                "TIME_PERIOD": year_to_call,
-                "UV_RV_FUEL": fuel_list,
-                "UV_RV_OWNER_TYPE": ["Total"],
-                "UV_RV_REGISTRATION_TYPE": ["First registrations of new vehicles"],
-                "UV_RV_OWNER_AGE": ["Total"],
-                "UV_RV_EMPTY_WEIGHT": ["Total"],
-                "UV_RV_ECONSUMPTION_WLTP_PC": consumption_list,
-                "UV_HGDE_KT": [canton],
-                "UV_RV_CO2_WLTP": CO2_emission_list,
-                "FREQ": ["Annual"],
-            }
-            utils.assert_len_dimension_for_call_to_api(filtering)
-            # Extract new fleet
-            dm_veh_eff_canton = get_data_api_swiss_stats(
-                agency,
-                dataflow,
-                mode="extract",
-                filter=filtering,
-                mapping_dims=mapping_dim,
-                units=["number"] * len(consumption_list),
-            )
-            if dm_veh_eff_canton is None:
-                raise ValueError(f"API returned None for {agency},{dataflow}, {canton}")
 
-            dm_veh_eff_canton.rename_col("Total_Variables", var_name, dim="Variables")
-            if i == 0:
-                dm_veh_eff = dm_veh_eff_canton.copy()
-            else:
-                dm_veh_eff.append(dm_veh_eff_canton.copy(), dim="Country")
+        filtering = {
+            "TIME_PERIOD": year_to_call,
+            "UV_RV_FUEL": fuel_list,
+            "UV_RV_OWNER_TYPE": ["Total"],
+            "UV_RV_REGISTRATION_TYPE": ["First registrations of new vehicles"],
+            "UV_RV_OWNER_AGE": ["Total"],
+            "UV_RV_EMPTY_WEIGHT": ["Total"],
+            "UV_RV_ECONSUMPTION_WLTP_PC": consumption_list,
+            "UV_HGDE_KT": canton_list,
+            "UV_RV_CO2_WLTP": CO2_emission_list,
+            "FREQ": ["Annual"],
+        }
+
+        # Extract new fleet
+        dm_veh_eff = get_data_api_swiss_stats(
+            agency,
+            dataflow,
+            mode="extract",
+            filter=filtering,
+            mapping_dims=mapping_dim,
+            units=["number"] * len(consumption_list),
+        )
+        if dm_veh_eff is None:
+            raise ValueError(f"API returned None for {agency},{dataflow}")
+
+        dm_veh_eff.rename_col("Total_Variables", var_name, dim="Variables")
 
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(current_file_directory, file)

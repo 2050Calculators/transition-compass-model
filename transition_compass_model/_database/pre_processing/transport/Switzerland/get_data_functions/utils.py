@@ -1,9 +1,7 @@
-import math
-
 import numpy as np
 import pandas as pd
-from pre_processing.params import country_list
 
+from transition_compass_model._database.pre_processing.params import country_list
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     linear_fitting,
@@ -299,14 +297,3 @@ def add_aviation_data_to_DM(DM_transport_new, DM_transport):
                         )
 
     return
-
-
-def assert_len_dimension_for_call_to_api(filtering: dict):
-    """Check whether the nb of data being call to the api is smaller than 1000 to ensure successful call
-
-    Args:
-        filtering (dict): dimension and list of values to call to the api
-    """
-    len_dimension = [len(i) for i in filtering.values()]
-    res = math.prod(len_dimension)
-    assert res < 1000
