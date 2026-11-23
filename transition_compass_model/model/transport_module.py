@@ -285,7 +285,7 @@ def local_transport_run():
     lever_setting = load_lever_config()
 
     # get geoscale
-    country_list = ["Fribourg", "Schwyz", "Vaud", "Switzerland", "EU27"]
+    country_list = ["Fribourg", "Schwyz", "Vaud", "Switzerland"]
     DM_input = filter_country_and_load_data_from_pickles(
         country_list=country_list, modules_list="transport"
     )

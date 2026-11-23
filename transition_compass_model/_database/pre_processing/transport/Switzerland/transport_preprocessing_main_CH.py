@@ -51,7 +51,7 @@ dm_pop_ots = load_pop(country_list, years_list=years_ots)
 print("Transport passenger demand pkm, vkm")
 dm_pkm_cap, dm_pkm, dm_vkm = demand_pkm_vkm_run(dm_pop_ots, years_ots)
 
-## Total fleet and new-fleet (for private only)
+## Total fleet and new-fleet
 print("Fleet - private and public")
 dm_private_fleet, dm_public_fleet = passenger_fleet_run(dm_pkm, years_ots)
 

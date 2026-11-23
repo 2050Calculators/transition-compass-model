@@ -455,13 +455,13 @@ def pkm_MRMT(file_folder_2015, file_path_2021):  # ,
             file_canton_2015,
         )
         canton_pkm_day[canton][2015] = _mrmt_daily_distance(
-            pd.read_excel(file_canton_2015, header=None)
+            pd.read_excel(file_canton_2015, header=None), country=canton
         )
 
     return canton_pkm_day
 
 
-def _mrmt_daily_distance(df):
+def _mrmt_daily_distance(df, country="switzerland"):
     """Return the total average daily distance [km/person/day] from an MRMT key-figures table.
 
     The value sits in the column titled "Distance journalière moyenne", on the first row

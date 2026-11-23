@@ -42,6 +42,7 @@ def clean_energy_dimension(dm_veh_eff, var_name):
 
     dm_veh_eff.change_unit(var_name, 1, old_unit="%", new_unit="kWh/100km")
     dm_veh_eff.change_unit(var_name, 1 / 100, old_unit="kWh/100km", new_unit="kWh/km")
+    dm_veh_eff.change_unit(var_name, 3.6, old_unit="kWh/km", new_unit="MJ/km")
     return dm_veh_eff
 
 
@@ -218,23 +219,29 @@ def get_vehicle_efficiency_co2(
                 "Fuel cell electric vehicle (FCEV)",
             ]
         ]
-        consumption_list = ["Total"]
 
         CO2_emission_list = [
             emis for emis in structure["UV_RV_CO2_NEDC"] if emis not in ["Total"]
         ]
+        country_to_call = country_list
+        d = {
+            "Switzerland": "Total",
+            "Basel Landschaft": "Basel-Landschaft",
+            "Basel Stadt": "Basel-Stadt",
+        }
 
+        country_to_call = [d.get(v, v) for v in country_list]
+        years_to_call = [year for year in structure["TIME_PERIOD"] if int(year) >= 2017]
         filtering = {
-            "TIME_PERIOD": structure["TIME_PERIOD"],
+            "TIME_PERIOD": years_to_call,
             "UV_RV_FUEL": fuel_list,
             "UV_RV_OWNER_TYPE": ["Total"],
             "UV_RV_OWNER_AGE": ["Total"],
             "UV_RV_EMPTY_WEIGHT": ["Total"],
-            "UV_RV_ECONSUMPTION_WLTP_PC": consumption_list,
+            "UV_RV_ECONSUMPTION_WLTP_PC": ["Total"],
             "UV_HGDE_KT": utils.swiss_stats_canton_filter(),
             "UV_RV_CO2_NEDC": CO2_emission_list,
         }
-
         mapping_dim = {
             "Country": "UV_HGDE_KT",
             "Years": "TIME_PERIOD",
@@ -243,31 +250,39 @@ def get_vehicle_efficiency_co2(
             "Categories2": "UV_RV_CO2_NEDC",
         }
 
-        # Extract new fleet
-        dm_veh_eff = get_data_api_swiss_stats(
-            agency,
-            dataflow,
-            mode="extract",
-            filter=filtering,
-            mapping_dims=mapping_dim,
-            units=["number"] * len(consumption_list),
-        )
-        if dm_veh_eff is None:
-            raise ValueError(f"API returned None for {agency},{dataflow}")
+        dm_veh_eff = None
 
-        dm_veh_eff.array = np.nan_to_num(dm_veh_eff.array)
-        dm_veh_eff.rename_col("Total_Variables", var_name, dim="Variables")
+        for country in country_to_call:
+            filtering["UV_HGDE_KT"] = [country]
+
+            # Extract new fleet
+            dm_veh_eff_country = get_data_api_swiss_stats(
+                agency,
+                dataflow,
+                mode="extract",
+                filter=filtering,
+                mapping_dims=mapping_dim,
+                units=["number"] * len(CO2_emission_list),
+            )
+            if dm_veh_eff_country is None:
+                raise ValueError(f"API returned None for {country},{agency},{dataflow}")
+
+            dm_veh_eff_country.array = np.nan_to_num(dm_veh_eff_country.array)
+            dm_veh_eff_country.rename_col("Total_Variables", var_name, dim="Variables")
+            if dm_veh_eff is None:
+                dm_veh_eff = dm_veh_eff_country.copy()
+            else:
+                dm_veh_eff.append(dm_veh_eff_country, "Country")
 
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(current_file_directory, file)
         with open(f, "wb") as handle:
             pickle.dump(dm_veh_eff, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    # Distribute Inconnu on other categories based on their share
     # Remove fuel type "Autre" (there are only very few car in this category)
     utils.rename_swiss_stats_cantons(dm_veh_eff)
-    # Flat extrapolation data is bad before 2016 so removeit and then backstage it
-    dm_veh_eff.filter({"Years": list(range(2016, years_ots[-1]))}, inplace=True)
+    # Flat extrapolation data is bad before 2017 so removeit and then backstage it
+    dm_veh_eff.filter({"Years": list(range(2017, years_ots[-1]))}, inplace=True)
 
     # remove unknown categories. In canton-years where more than 15% of cars have an
     # unknown CO2 class (e.g. Appenzell Innerrhoden 2022: 36%), they are spread with the
@@ -359,6 +374,7 @@ def get_vehicle_efficiency_ofs(table_id, file, years_ots, var_name):
                 f"The vehicle efficienty is read from file {file}. Delete it if you want to update data from api."
             )
     except OSError:
+        print(f"file {file} not found calling from api")
         structure, title = get_data_api_CH(table_id, mode="example", language="fr")
         i = 0
         # The table is too big to be downloaded at once
@@ -493,8 +509,6 @@ def get_difference_between_col_label(dm1, dm2, dim):
 
 
 def add_missing_data_for_merging(dm1: DataMatrix, dm2: DataMatrix, dim: str):
-    dm1.col_labels[dim]
-
     only_dm1 = get_difference_between_col_label(dm1, dm2, dim)
     only_dm2 = get_difference_between_col_label(dm2, dm1, dim)
 
@@ -566,6 +580,7 @@ def get_new_vehicle_efficiency_elec(file: str, agency: str, dataflow: str, var_n
                 "UV_RV_CO2_WLTP": CO2_emission_list,
                 "FREQ": ["Annual"],
             }
+
             # Extract new fleet
             dm_veh_eff_canton = get_data_api_swiss_stats(
                 agency,
@@ -688,36 +703,34 @@ def get_new_vehicle_efficiency_co2(file: str, agency: str, dataflow: str, var_na
             "Categories1": "UV_RV_FUEL",
             "Categories2": "UV_RV_CO2_WLTP",
         }
-        for i, canton in enumerate(canton_list):
-            filtering = {
-                "TIME_PERIOD": structure["TIME_PERIOD"],
-                "UV_RV_FUEL": fuel_list,
-                "UV_RV_OWNER_TYPE": ["Total"],
-                "UV_RV_REGISTRATION_TYPE": ["First registrations of new vehicles"],
-                "UV_RV_OWNER_AGE": ["Total"],
-                "UV_RV_EMPTY_WEIGHT": ["Total"],
-                "UV_RV_ECONSUMPTION_WLTP_PC": consumption_list,
-                "UV_HGDE_KT": [canton],
-                "UV_RV_CO2_WLTP": CO2_emission_list,
-                "FREQ": ["Annual"],
-            }
-            # Extract new fleet
-            dm_veh_eff_canton = get_data_api_swiss_stats(
-                agency,
-                dataflow,
-                mode="extract",
-                filter=filtering,
-                mapping_dims=mapping_dim,
-                units=["number"] * len(consumption_list),
-            )
-            if dm_veh_eff_canton is None:
-                raise ValueError(f"API returned None for {agency},{dataflow}, {canton}")
+        year_to_call = [year for year in structure["TIME_PERIOD"] if int(year) >= 2021]
 
-            dm_veh_eff_canton.rename_col("Total_Variables", var_name, dim="Variables")
-            if i == 0:
-                dm_veh_eff = dm_veh_eff_canton.copy()
-            else:
-                dm_veh_eff.append(dm_veh_eff_canton.copy(), dim="Country")
+        filtering = {
+            "TIME_PERIOD": year_to_call,
+            "UV_RV_FUEL": fuel_list,
+            "UV_RV_OWNER_TYPE": ["Total"],
+            "UV_RV_REGISTRATION_TYPE": ["First registrations of new vehicles"],
+            "UV_RV_OWNER_AGE": ["Total"],
+            "UV_RV_EMPTY_WEIGHT": ["Total"],
+            "UV_RV_ECONSUMPTION_WLTP_PC": consumption_list,
+            "UV_HGDE_KT": canton_list,
+            "UV_RV_CO2_WLTP": CO2_emission_list,
+            "FREQ": ["Annual"],
+        }
+
+        # Extract new fleet
+        dm_veh_eff = get_data_api_swiss_stats(
+            agency,
+            dataflow,
+            mode="extract",
+            filter=filtering,
+            mapping_dims=mapping_dim,
+            units=["number"] * len(consumption_list),
+        )
+        if dm_veh_eff is None:
+            raise ValueError(f"API returned None for {agency},{dataflow}")
+
+        dm_veh_eff.rename_col("Total_Variables", var_name, dim="Variables")
 
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         f = os.path.join(current_file_directory, file)
@@ -727,13 +740,13 @@ def get_new_vehicle_efficiency_co2(file: str, agency: str, dataflow: str, var_na
     utils.rename_swiss_stats_cantons(dm_veh_eff)
     dm_veh_eff_raw = dm_veh_eff.copy()
 
-    mask = dm_veh_eff.array == 0
-    dm_veh_eff.array[mask] = np.nan
+    # mask = dm_veh_eff.array == 0
+    # dm_veh_eff.array[mask] = np.nan
     # Distribute Inconnu on other categories based on their share
     # Remove fuel type "Autre" (there are only very few car in this category)
 
-    # Flat extrapolation data is bad before 2016 so backstage it
-    dm_veh_eff.filter({"Years": list(range(2017, years_ots[-1]))}, inplace=True)
+    # Flat extrapolation data is bad before 2021 so backstage it
+    dm_veh_eff.filter({"Years": list(range(2021, years_ots[-1] + 1))}, inplace=True)
     years_to_add = [
         year for year in years_ots if year not in dm_veh_eff.col_labels["Years"]
     ]
@@ -741,16 +754,9 @@ def get_new_vehicle_efficiency_co2(file: str, agency: str, dataflow: str, var_na
     dm_veh_eff.sort(dim="Years")
     dm_veh_eff.fill_nans(dim_to_interp="Years")
 
-    # Remove inconnue share
-    # dm_veh_eff = utils.drop_if_smaller_than_0_01_per_category_country_cat_2(
-    #         dm_veh_eff, cat_to_drop="Categories2", col_to_drop="No data/unknown"
-    #     )
-
     dm_veh_eff.drop(dim="Categories2", col_label="No data/unknown")
     # For BEV electric consumption check get_vehicle_electric_efficiency
     dm_veh_eff.drop(dim="Categories1", col_label="BEV")
-    # # Do this to have realistic curve
-
     dm_veh_eff.drop(dim="Categories1", col_label="Other")
 
     # Group categories1 according to model

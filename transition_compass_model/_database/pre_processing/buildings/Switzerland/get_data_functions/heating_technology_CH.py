@@ -268,9 +268,9 @@ def extract_heating_technologies(
 
             dm_heating_cntr = extract_cntr_heating(cntr_list, structure)
             if dm_heating is None:
-                dm_heating = dm_heating_cntr
+                dm_heating = dm_heating_cntr.copy()
             else:
-                dm_heating.append(dm_heating_cntr, dim="Country")
+                dm_heating.append(dm_heating_cntr.copy(), dim="Country")
 
         # dm_heating_cntr = extract_cntr_heating(["Suisse", "Neuchâtel", "St. Gallen"])
         # dm_heating.append(dm_heating_cntr, dim="Country")
