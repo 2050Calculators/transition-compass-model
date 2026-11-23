@@ -1035,8 +1035,10 @@ def energyscope_pyomo(
     apply_power_capacity_levers(m, DM_lever_fts, lever_setting, nuclear_curve_mw)
 
     set_constraints(m, objective="cost")
-    # Put show_log to True to see the results of the optimisation
-    opt = make_highs(show_log=True)
+    # Solver log is silent by default (it would flood the app/API output).
+    # Set ENERGYSCOPE_SOLVER_LOG=1 to see the HiGHS optimisation log.
+    show_log = os.environ.get("ENERGYSCOPE_SOLVER_LOG", "0") == "1"
+    opt = make_highs(show_log=show_log)
     attach(opt, m)
     res = solve(opt, m, warmstart=True)
 

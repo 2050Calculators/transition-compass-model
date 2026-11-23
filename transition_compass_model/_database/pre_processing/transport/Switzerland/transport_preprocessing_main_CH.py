@@ -8,6 +8,7 @@ from processors.freight_road_ots import run as freight_road_run
 from processors.freight_tech_fxa import run as freight_tech_fxa_run
 from processors.freight_tkm_modal_share import run as freight_tkm_run
 from processors.freight_utilization_rate import run as freight_utilization_run
+from processors.passenger_efficiency_pipeline import compute_tech_share
 from processors.passenger_efficiency_pipeline import run as passenger_efficiency_run
 from processors.passenger_emission_factors import run as passenger_emission_run
 from processors.passenger_energy_pipeline import run as passenger_energy_run
@@ -21,6 +22,7 @@ from processors.transport_calib_energy_demand import run as data_check_energy_ru
 from processors.transport_calib_vkm import run as data_check_vkm_run
 from processors.transport_demand_pipeline import run as demand_pkm_vkm_run
 from processors.transport_ots_pickle import run as ots_pickle_run
+from processors.transport_vkm_adj_factor import run as vkm_adj_factor_run
 from scenarios.tra_techchnology_fts import run as tra_techchnology_fts_run
 from scenarios.transport_fts_BAU_pickle import run as fts_bau_pickle_run
 from scenarios.transport_fts_DLS import run as DLS_pickle_run
@@ -98,6 +100,20 @@ dm_LDV_fleet_stock = DM["passenger_private-fleet"].filter({"Categories1": ["LDV"
 dm_new_LDV_fleet = DM["passenger_new-vehicles"].filter({"Categories1": ["LDV"]})
 dm_data_check_vkm = data_check_vkm_run(
     dm_vkm, dm_LDV_fleet_stock, dm_new_LDV_fleet, years_ots
+)
+
+## vkm-by-tech adjustment factor (EP2050 vkm share / fleet share, CH -> all cantons)
+print("vkm adjustment factor by technology")
+dm_fleet_share = compute_tech_share(
+    dm_private_fleet.filter({"Variables": ["tra_passenger_vehicle-fleet"]}),
+    dm_public_fleet.filter({"Variables": ["tra_passenger_vehicle-fleet"]}),
+)
+dm_vkm_adj_factor = vkm_adj_factor_run(
+    dm_fleet_share,
+    dm_data_check_vkm["passenger-and-freight_road_EP-2050"],
+    years_ots,
+    years_fts,
+    country_list,
 )
 
 ## Efficiency
@@ -199,11 +215,12 @@ DM_input = {
     ],
     "freight_technology-share_new": DM_freight_eff_tech["freight_technology-share_new"],
     "freight_tech": dm_freight_tech,
+    "vkm_adj_factor": dm_vkm_adj_factor,
 }
 # DM.keys = ['passenger_private-fleet', 'passenger_public-fleet', 'passenger_renewal-rate', 'passenger_new-vehicles', 'passenger_waste-fleet']
 DM_input = DM_input | DM  # join
 DM_transport_wo_aviation, DM_transport = ots_pickle_run(
-    DM_input, years_ots, years_fts, DM_aviation_ots, country_list
+    DM_input, years_ots, years_fts, DM_aviation_ots, country_list, dm_pop_ots
 )
 
 # Transport fts pickle (passenger + freight, then aviation merged in)

@@ -47,12 +47,12 @@ uv run python transition_compass_model/_database/pre_processing/buildings/Switze
 
 | Setting | Value | Meaning |
 |---|---|---|
-| `country_list` | Switzerland, Vaud, Fribourg, Schwyz | Regions written to the pickle |
+| `country_list` | Switzerland and the 26 cantons | Regions written to the pickle |
 | `years_ots` | 1990–2023, yearly | Historical years |
 | `years_fts` | 2025–2050, every 5 years | Future years |
 
-Most pipelines compute **all 26 cantons** internally (several steps need the full set to
-compute shares), then keep only `country_list` at the end.
+Most pipelines compute all 26 cantons internally anyway (several steps need the full set
+to compute shares), then keep only `country_list` at the end.
 
 **Other pickles must already exist and be up to date:**
 
@@ -358,12 +358,39 @@ rather than from time series.
 
 | Output key | What | Values and source |
 |---|---|---|
-| `u-value` | Average envelope U-value [W/m²K], type × class | Residential: Pongelli et al. (2023), e.g. SFH F 0.82 → B 0.25. Non-residential: EU Hotmaps |
+| `u-value` | Average envelope U-value [W/m²K], type × class | Residential: Pongelli et al. (2023), e.g. SFH F 0.82 → B 0.25. Non-residential: fitted to EP2050+ (see below) |
 | `surface-to-floor` | Envelope surface per m² floor area | SFH 2.0, MFH 1.3 (Pongelli et al.). Non-residential 1.1–1.4 (Delmastro et al. 2016, Fleiter et al. 2017) |
 | `Tint-heat` | Indoor heating temperature [°C] | MFH: F 19 °C to B 23 °C (better buildings are kept warmer). SFH: 1 °C lower. Non-residential: 20 °C (SIA 380/1) |
 | `age` | Age of each class [years] | Year minus the first construction year of the class |
 | `emission-factors` | CO₂ per fuel [kt/TWh] | OFEV: coal 350, heating oil 265, gas 201, wood and solar 0 |
 | `emission-fact-elec_district` | CO₂ of electricity and district heating [kt/TWh] | Electricity 168.64 until 2023, falling to 0 in 2050. District heating 73.55 until 2019, 66 in 2023, 20.7 in 2050 |
+
+**Non-residential U-values.** All six services types share one set, by class:
+
+| Class | F | E | D | C | B |
+|---|---|---|---|---|---|
+| U-value [W/m²K] | 1.20 | 1.03 | 0.86 | 0.39 | 0.34 |
+
+These are effective values, worked back from EP2050+ *Dienstleistung*, Tabelle 03-01, which
+gives useful space heat per m². Useful heat is the heat the building loses, before boiler
+or heat-pump losses. The model computes it as U-value × envelope area per m² × degree days,
+so it is linear in the U-value and each class can be fitted with one factor. EP2050+ uses
+the same floor area as the model. The fit is done by `scripts/fit_services_u_values_CH.py`
+(repo root), which prints the values and writes nothing:
+
+- C (built 2001–2010) matches EP2050+ "Neubau" (new buildings), averaged over 2001–2010
+  (about 44 kWh/m²).
+- B (built from 2011) matches "Neubau" averaged over 2011–2015 (about 37 kWh/m²).
+- D, E and F keep the ratios of the former EU Hotmaps proxy (2.01 / 1.74 / 1.44). They are
+  scaled together so that the services stock ("Baujahr < 2020") matches EP2050+ over
+  2010–2015, as a ratio of sums (total heat ÷ total floor area over the six years).
+  EP2050+ reacts only weakly to the weather, so a six-year average of cold and warm years
+  is used rather than a single year.
+
+The former Hotmaps values were 1.6–2× too high: services needed 1.5–1.9× the EP2050+ heat
+per m². Being effective values, the fitted ones also absorb the internal gains (heat from
+people, lighting, IT) that the model doesn't subtract. To change them, re-run the fit
+script and copy its output into `nonres_u`.
 
 ---
 
@@ -457,8 +484,9 @@ employees per sector (STAT-TAB `px-x-0602010000_101`).
 
 **Energy by end use.** The national split by end use comes from Prognos/Infras/TEP,
 *Analyse des schweizerischen Energieverbrauchs 2000–2020*, Table 26: space heating, hot water,
-process heat, lighting, HVAC, ICT, drives and processes, other. The values are hard-coded in
-the pipeline. It is applied per canton, then adjusted so that each fuel matches the FSO
+process heat, lighting, HVAC, ICT, drives and processes, other. The values are hard-coded as
+`PROGNOS_SERVICES_EUD_PJ` in `get_data_functions/services_CH.py`, also used by the
+validation script. It is applied per canton, then adjusted so that each fuel matches the FSO
 consumption. Useful energy is *consumption × efficiency*, using the hot-water efficiencies
 (biogas = gas, biomass = wood, everything else 1).
 
@@ -511,8 +539,24 @@ climate → lifestyles → buildings for Switzerland and compares final energy b
 - FSO energy accounts (STAT-TAB `px-x-0204000000_106`): household heating, which includes
   hot water.
 
+It then checks services space heating on its own:
+
+- useful heat per m² against EP2050+ *Dienstleistung*, Tabelle 03-01 (stock built before
+  2020). This checks the services U-values. It needs the TPE variables
+  `bld_useful-heat_<type>` [TWh] and `bld_floor-area-occupied_<type>` [Mm²], which the
+  buildings module publishes for this purpose;
+- space heating, final energy, against Prognos Table 26 (includes agriculture);
+- the heating mix against EP2050+ Tabelle 02-02. EP2050+ gives a share of heating systems
+  in buildings built before 2010, so it is compared with the model's input mix weighted
+  by floor area (also a share of systems), not with energy by fuel.
+
+Results are printed as tables and plotted in `scripts/output/buildings_validation_CH.html`.
+Official files are cached in `scripts/data/`. The EP2050+ workbook is read from this
+folder's `data/EP2050_sectors/` if it exists, otherwise downloaded once.
+
 ```bash
 uv run python scripts/buildings_validation_CH.py
+uv run python scripts/fit_services_u_values_CH.py   # services U-value fit (see step 5)
 ```
 
 ---
@@ -549,8 +593,8 @@ It then writes `ots`, `fxa` and `constant` to `buildings.pickle`.
 Every lever has four levels, from 1 (business as usual) to 4 (most ambitious). The scenario
 builders first fill **all four levels with BAU**, then overwrite specific levels.
 
-Many policies are coded for **Vaud only** (`dm["Vaud", ...]`). For Switzerland, Fribourg
-and Schwyz, those levels keep the BAU values unless stated otherwise below.
+Many policies are coded for **Vaud only** (`dm["Vaud", ...]`). For Switzerland and the
+other cantons, those levels keep the BAU values unless stated otherwise below.
 
 ### Step by step
 
@@ -648,7 +692,7 @@ DM_buildings
     └── emissions                       bld_CO2-factors  [fuel], ConstantDataMatrix
 ```
 
-All DataMatrices have `Country` = Switzerland, Vaud, Fribourg, Schwyz (plus any other
+All DataMatrices have `Country` = Switzerland and the 26 cantons (plus any other
 country already in the pickle). `ots` matrices cover 1990–2023, `fts` matrices 2025–2050 in
 5-year steps, and most `fxa` matrices both.
 
@@ -666,9 +710,9 @@ country already in the pickle). `ots` matrices cover 1990–2023, `fts` matrices
 | STAT-TAB `px-x-0204000000_106` | Energy accounts by sector and fuel | PxWeb API | `energy_accounts_economy_households.pickle` |
 | STAT-TAB `px-x-0602010000_101` | Employees by sector and canton | PxWeb API | `employees_per_sector_canton.pickle` |
 | FSO households table | Number of households | Download | `households_number.xlsx` |
-| EP2050+ detailed results (*Private Haushalte*, *Dienstleistung*) | Residential floor area, heating mix, heating efficiency, non-residential floor area and renovation | Download (zip) | `EP2050_sectors/`, `bld_EP2050_floor_area_type.pickle`, `bld_heating_tech_EP2050.pickle`, `bld_heating_efficiencies.pickle` |
+| EP2050+ detailed results (*Private Haushalte*, *Dienstleistung*) | Residential floor area, heating mix, heating efficiency, non-residential floor area and renovation; services useful heat (U-value fit and validation) and services heating mix (validation) | Download (zip) | `EP2050_sectors/`, `bld_EP2050_floor_area_type.pickle`, `bld_heating_tech_EP2050.pickle`, `bld_heating_efficiencies.pickle` |
 | EP2050+ / Prognos, *Analyse nach Verwendungszweck* | Hot water, lighting, cooking, other electricity | Download | `EP2050_Households_CH.xlsx` |
-| Prognos/Infras/TEP 2021, Table 26 | Services energy by end use | Hard-coded | – |
+| Prognos/Infras/TEP 2021, Table 26 | Services energy by end use; services space heating (validation) | Hard-coded (`services_CH.py`) | – |
 | SFOE open data `ogd109` | Appliance stock, sales, consumption | Download | `appliances_stock_new_energy_CH_raw.csv` |
 | SFOE *Gesamtenergiestatistik* T17a, T17c | Validation only (`scripts/buildings_validation_CH.py`) | Download | `scripts/data/statistique_globale_suisse_energie.xlsx` |
 | Wüest & Partner, EBF 2023 | Cantonal floor-area anchor | Local file | `WP_EBF_cantons_2023.xlsx` |
@@ -676,21 +720,30 @@ country already in the pickle). `ots` matrices cover 1990–2023, `fts` matrices
 | Programme Bâtiments annual reports 2017–2022 | Renovated buildings | Local files | `programme_batiment/` |
 | RegBL building register | Non-residential type shares | Local file | `Regbl/Switzerland/` |
 | OFEV CO₂ factors for cantonal reporting | Fuel emission factors | Hard-coded | – |
-| Pongelli et al. 2023; Döring & Richter 2024; Delmastro et al. 2016; Fleiter et al. 2017 | U-values, surface ratios, heat-pump COP by class | Hard-coded | – |
+| Pongelli et al. 2023; Döring & Richter 2024; Delmastro et al. 2016; Fleiter et al. 2017 | Residential U-values, surface ratios, heat-pump COP by class | Hard-coded | – |
 | *Perspectives chaleur* study (Vaud) | Replacement mix when fossil heating is phased out | Hard-coded | – |
 
 ---
 
 ## Known issues and caveats
 
-- **Several policy levels apply to Vaud only.** Fribourg and Schwyz get BAU for most
+- **Several policy levels apply to Vaud only.** The other cantons and Switzerland get BAU for most
   heating, hot-water and renovation levels.
 - **Fribourg and Schwyz renovation shares are placeholders** (`FIXME` in the renovation
   pipeline). In the current code that dictionary isn't used, since the rate comes from the
   Programme Bâtiments reports instead.
 - **Demolition** uses a 0.2 % floor rather than measured data.
 - **Services space-heating mix** is a copy of the hot-water mix.
-- **Non-residential heating mix** copies MFH.
+- **Non-residential heating mix** copies MFH. Compared with EP2050+, services get too many
+  heat pumps (2023: 23 % vs 9 % of systems) and too little oil, gas and district heating.
+  This likely explains why services final space heating is about 15 % below Prognos
+  although useful heat matches EP2050+.
+- **Internal gains are not subtracted** in the heating formula. The residential and the
+  fitted services U-values absorb them on average, but the trend over time is off: the
+  model falls more slowly than EP2050+ (services: 0.89 × EP2050+ in 2000, 1.07 × in 2023
+  after the fit).
+- **Services electricity is too low** (about 0.77 × BFE): Prognos "Other" and
+  "process-heat" are dropped, and the intensities are rescaled to FSO totals.
 - The **main script's printed messages** don't always match which levels a step writes. For
   example, "PCV (level 2) and PCV+ (level 3)" also writes renovation for levels 3 and 4,
   and hot water for levels 2–4. The table above shows the final state.

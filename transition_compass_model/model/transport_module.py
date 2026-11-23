@@ -54,6 +54,8 @@ def read_data(DM_transport, lever_setting):
         "passenger_all": dm_passenger,
         "passenger_pkm_demand": DM_ots_fts["pkm"],
         "passenger_aviation-share-local": dict_fxa["share-local-emissions"],  # pkm/cap
+        # vkm-by-tech adjustment factor (CH/cantons only; None for EU27)
+        "passenger_vkm-adj-factor": dict_fxa.get("passenger_vkm-adj-factor"),
     }
 
     DM_freight = {

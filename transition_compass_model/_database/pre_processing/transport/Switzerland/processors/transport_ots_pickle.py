@@ -45,27 +45,45 @@ _CH_BIOFUEL_BLEND = {
 }
 
 
-def _expand_ch_to_countries(dm, country_list):
+def _canton_pop_share(dm_pop, country_list, year=2023):
+    """Population share of each country relative to Switzerland in `year` (Switzerland = 1)."""
+    idx = dm_pop.idx
+    pop_ch = dm_pop.array[idx["Switzerland"], idx[year], idx["lfs_population_total"]]
+    return {
+        c: dm_pop.array[idx[c], idx[year], idx["lfs_population_total"]] / pop_ch
+        for c in country_list
+    }
+
+
+def _copy_ch_to_country(dm, country, pop_share=None, scaled_vars=None):
+    """Copy Switzerland's rows to `country`. Variables in `scaled_vars` are Swiss totals
+    (absolute values), so they are multiplied by the country's population share."""
+    dm_c = dm.filter({"Country": ["Switzerland"]})
+    dm_c.rename_col("Switzerland", country, dim="Country")
+    if scaled_vars:
+        for var in scaled_vars:
+            dm_c.array[:, :, dm_c.idx[var], ...] *= pop_share[country]
+    dm.append(dm_c, dim="Country")
+
+
+def _expand_ch_to_countries(dm, country_list, pop_share=None, scaled_vars=None):
     """Duplicate Switzerland data to any countries in country_list not already present."""
     for country in country_list:
         if country not in dm.col_labels["Country"]:
-            dm_c = dm.filter({"Country": ["Switzerland"]})
-            dm_c.rename_col("Switzerland", country, dim="Country")
-            dm.append(dm_c, dim="Country")
+            _copy_ch_to_country(dm, country, pop_share, scaled_vars)
 
 
-def _add_aviation_to_dm(dm_target, dm_aviation_ch, country_list):
+def _add_aviation_to_dm(
+    dm_target, dm_aviation_ch, country_list, pop_share=None, scaled_vars=None
+):
     """Append an aviation sub-DM (Switzerland only) to a multi-modal target DM.
 
-    Duplicates Switzerland data for any extra countries in country_list.
+    Duplicates Switzerland data for any extra countries in country_list (scaling the
+    absolute variables in `scaled_vars` by population share).
     Aligns Categories2 (road techs vs aviation techs) before appending.
     """
     dm_av = dm_aviation_ch.copy()
-    for country in country_list:
-        if country not in dm_av.col_labels["Country"]:
-            dm_country = dm_av.filter({"Country": ["Switzerland"]})
-            dm_country.rename_col("Switzerland", country, dim="Country")
-            dm_av.append(dm_country, dim="Country")
+    _expand_ch_to_countries(dm_av, country_list, pop_share, scaled_vars)
     if "Categories2" in dm_target.col_labels and "Categories2" in dm_av.col_labels:
         cat2_all = set(dm_target.col_labels["Categories2"]).union(
             set(dm_av.col_labels["Categories2"])
@@ -75,7 +93,10 @@ def _add_aviation_to_dm(dm_target, dm_aviation_ch, country_list):
     dm_target.append(dm_av, dim="Categories1")
 
 
-def run(DM_input, years_ots, years_fts, DM_aviation_ots, country_list):
+def run(DM_input, years_ots, years_fts, DM_aviation_ots, country_list, dm_pop):
+    # Aviation is computed for Switzerland only. Absolute Swiss totals (seat flows, max
+    # seats, SAF budget) are scaled by population share when copied to the cantons.
+    pop_share = _canton_pop_share(dm_pop, country_list)
     DM_transport_new = {"ots": dict(), "fts": dict(), "fxa": dict(), "constant": dict()}
 
     ######################################
@@ -127,6 +148,16 @@ def run(DM_input, years_ots, years_fts, DM_aviation_ots, country_list):
     ################################
     dm_lifetime = DM_input["lifetime"].copy()
     DM_transport_new["fxa"]["passenger_vehicle-lifetime"] = dm_lifetime
+
+    ######################################
+    ####   VKM-BY-TECH ADJ. FACTOR   #####
+    ######################################
+    # Already constant over ots+fts and copied to all cantons
+    # (processors/transport_vkm_adj_factor.py)
+    if "vkm_adj_factor" in DM_input:
+        DM_transport_new["fxa"]["passenger_vkm-adj-factor"] = DM_input[
+            "vkm_adj_factor"
+        ].copy()
 
     ####################################
     ####    ELECTRICITY EMISSION   #####
@@ -274,6 +305,8 @@ def run(DM_input, years_ots, years_fts, DM_aviation_ots, country_list):
         DM_transport_new["fxa"]["passenger_tech"],
         DM_aviation_ots["fxa"]["passenger_tech"],
         country_list,
+        pop_share,
+        scaled_vars=["tra_passenger_new-vehicles", "tra_passenger_vehicle-waste"],
     )
     _add_aviation_to_dm(
         DM_transport_new["fxa"]["passenger_vehicle-lifetime"],
@@ -283,7 +316,12 @@ def run(DM_input, years_ots, years_fts, DM_aviation_ots, country_list):
     DM_transport_new["fxa"]["vehicles-max"] = DM_aviation_ots["fxa"][
         "vehicles-max"
     ].copy()
-    _expand_ch_to_countries(DM_transport_new["fxa"]["vehicles-max"], country_list)
+    _expand_ch_to_countries(
+        DM_transport_new["fxa"]["vehicles-max"],
+        country_list,
+        pop_share,
+        scaled_vars=["tra_vehicles-max"],
+    )
     DM_transport_new["fxa"]["share-local-emissions"] = DM_aviation_ots["fxa"][
         "share-local-emissions"
     ].copy()
@@ -294,7 +332,10 @@ def run(DM_input, years_ots, years_fts, DM_aviation_ots, country_list):
         "fuel-mix-availability"
     ].copy()
     _expand_ch_to_countries(
-        DM_transport_new["fxa"]["fuel-mix-availability"], country_list
+        DM_transport_new["fxa"]["fuel-mix-availability"],
+        country_list,
+        pop_share,
+        scaled_vars=["tra_passenger_available-fuel-mix"],
     )
 
     ###################################

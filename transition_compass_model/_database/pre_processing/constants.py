@@ -81,10 +81,8 @@ GRANDE_REGION_CANTONS = {
 # Canton labels found in BFS source files, used by
 # model.common.auxiliary_functions.rename_cantons().
 # Every list is aligned with CANTONS_RENAME_TARGET (same order, 26 cantons).
-# NOTE: CANTONS_RENAME_TARGET differs from CANTONS_NAME for 4 cantons
-# ("Basel Landschaft", "Basel Stadt", "Graubünden", "Neuchâtel" vs
-# "Basel-Landschaft", "Basel-Stadt", "Graubunden", "Neuchatel"). It is kept as is
-# because existing buildings/power pickles use these labels.
+# CANTONS_RENAME_TARGET uses the same canton names as CANTONS_NAME and
+# params.country_list (e.g. "Basel Landschaft", "Graubünden", "Neuchâtel").
 # ---------------------------------------------------------------------------
 CANTONS_RENAME_TARGET = [
     "Aargau",

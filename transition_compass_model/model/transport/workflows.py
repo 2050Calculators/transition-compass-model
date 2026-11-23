@@ -8,6 +8,55 @@ from transition_compass_model.model.common.constant_data_matrix_class import (
 from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
+def vkm_share_by_tech(dm_tech, dm_vkm_adj_factor=None):
+    """vkm share by tech [Country, Years, Categories1, Categories2].
+
+    Without a factor, this is the fleet share by tech (every vehicle of a mode
+    drives the same km per year). With the factor computed in preprocessing
+    (processors/transport_vkm_adj_factor.py), the fleet share is multiplied by
+    f[mode, tech] and renormalised per mode, so total vkm by mode is unchanged.
+    Countries / years / modes / techs missing from the factor DM (e.g. EU27) get
+    f = 1, i.e. vkm share = fleet share.
+    """
+    arr_share = dm_tech[:, :, "tra_passenger_technology-share_fleet", :, :].copy()
+    if dm_vkm_adj_factor is None:
+        return arr_share
+
+    var = dm_vkm_adj_factor.col_labels["Variables"][0]
+    labels_t = dm_tech.col_labels
+    labels_f = dm_vkm_adj_factor.col_labels
+    idx_t = dm_tech.idx
+    idx_f = dm_vkm_adj_factor.idx
+    countries = [c for c in labels_f["Country"] if c in labels_t["Country"]]
+    years = [y for y in labels_f["Years"] if y in labels_t["Years"]]
+    modes = [m for m in labels_f["Categories1"] if m in labels_t["Categories1"]]
+    techs = [t for t in labels_f["Categories2"] if t in labels_t["Categories2"]]
+
+    arr_f = np.ones_like(arr_share)
+    if countries and years and modes and techs:
+        ix_t = np.ix_(
+            [idx_t[c] for c in countries],
+            [idx_t[y] for y in years],
+            [idx_t[m] for m in modes],
+            [idx_t[t] for t in techs],
+        )
+        ix_f = np.ix_(
+            [idx_f[c] for c in countries],
+            [idx_f[y] for y in years],
+            [idx_f[var]],
+            [idx_f[m] for m in modes],
+            [idx_f[t] for t in techs],
+        )
+        arr_f[ix_t] = dm_vkm_adj_factor.array[ix_f][:, :, 0, :, :]
+
+    arr_w = np.nan_to_num(arr_share) * arr_f
+    arr_sum = arr_w.sum(axis=-1, keepdims=True)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        arr_adj = np.where(arr_sum > 0, arr_w / arr_sum, arr_share)
+    # keep NaN where the fleet share was NaN (same behaviour as before)
+    return np.where(np.isnan(arr_share), np.nan, arr_adj)
+
+
 def passenger_fleet_energy(
     DM_passenger: DataMatrix,
     dm_lfs: DataMatrix,
@@ -126,11 +175,12 @@ def passenger_fleet_energy(
     )
     dm_demand_vkm.sort(dim="Categories1")
     dm_tech.sort(dim="Categories1")
-    idx_t = dm_tech.idx
-    tmp = (
-        dm_demand_vkm.array[:, :, 0, :, np.newaxis]
-        * dm_tech.array[:, :, idx_t["tra_passenger_technology-share_fleet"], ...]
+    # vkm by tech = vkm by mode x vkm share by tech, where the vkm share is the fleet
+    # share corrected by the EP2050 adjustment factor (if available)
+    arr_vkm_share = vkm_share_by_tech(
+        dm_tech, DM_passenger.get("passenger_vkm-adj-factor")
     )
+    tmp = dm_demand_vkm.array[:, :, 0, :, np.newaxis] * arr_vkm_share
     dm_tech.add(
         tmp, dim="Variables", col_label="tra_passenger_transport-demand-vkm", unit="km"
     )
