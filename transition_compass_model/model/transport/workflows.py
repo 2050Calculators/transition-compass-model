@@ -830,8 +830,10 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
     cdm_const.rename_col("ICE-diesel", "diesel", dim="Categories2")
     cdm_const.rename_col("ICE-gasoline", "gasoline", dim="Categories2")
     cdm_const.rename_col("ICE-gas", "gas", dim="Categories2")
-    cdm_const.rename_col("H2", "hydrogen", dim="Categories2")
-    cdm_const.drop(col_label="SAF", dim="Categories2")
+    # SAF and H2 factors are aviation altitude effects (see passenger_emission_factors.py).
+    # Freight aircraft run on kerosene blends only, and road FCEV hydrogen has no direct
+    # emissions, so neither factor applies here.
+    cdm_const.drop(col_label=["SAF", "H2"], dim="Categories2")
     cdm_const.array = cdm_const.array * 3.6e9
     cdm_const.units["cp_tra_emission-factor"] = "g/TWh"
 
