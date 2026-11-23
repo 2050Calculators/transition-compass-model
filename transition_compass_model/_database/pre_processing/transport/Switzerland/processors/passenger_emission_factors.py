@@ -45,6 +45,17 @@ def run():
     # For kerosene (aviation) we use Table 3.6.4 (CO2) and 3.6.5 (CH4, N2O)
     # https://www.ipcc-nggip.iges.or.jp/public/2006gl/pdf/2_Volume2/V2_3_Ch3_Mobile_Combustion.pdf
     # Similar values can be found in the National Inventory Document of Switzerland 2024 (Table 3-13).
+    # SAF and H2 (aviation only): the CO2 released by burning SAF was taken from the air,
+    # so its net CO2 is ~0 (same convention as road biofuels). The values below are not
+    # combustion CO2 but the non-CO2 effect of burning fuel at cruise altitude (contrails,
+    # contrail cirrus, NOx, water vapour), expressed as CO2-equivalent and stored in the
+    # CO2 row:
+    #   SAF = 2/3 of kerosene CO2, close to the GWP100 non-CO2/CO2 ratio of ~0.7 for
+    #         aviation (Lee et al. 2021), slightly lower because SAF emits less soot.
+    #   H2  = 1/4 of SAF: no soot and lower NOx, residual contrail effect.
+    # Fossil kerosene carries its combustion CO2 only (no non-CO2 term), so the benefit
+    # of SAF and H2 over kerosene is understated. Do not apply SAF/H2 factors outside
+    # aviation (e.g. road FCEV has no direct emissions).
     # endregion
     # Emission factors in kg/TJ
     emis = {
