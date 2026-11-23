@@ -305,7 +305,7 @@ def get_passenger_stock_fleet_by_tech_raw(agency: str, dataflow: str, file: str)
 def get_passenger_stock_fleet_by_tech_raw_local_archive(table_id, file):
     # New fleet data are heavy, download them only once
     try:
-        with open(file + "f", "rb") as handle:
+        with open(file, "rb") as handle:
             dm_fleet = pickle.load(handle)
     except OSError:
         translation_fuels = {

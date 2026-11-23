@@ -17,8 +17,6 @@ from processors.passenger_lifetime_pipeline import run as passenger_lifetime_run
 from processors.passenger_renewal_rate_and_waste_pipeline import (
     run as passenger_ren_rate_waste_adj_run,
 )
-from processors.transport_calib_emissions import run as data_check_emissions_run
-from processors.transport_calib_energy_demand import run as data_check_energy_run
 from processors.transport_calib_vkm import run as data_check_vkm_run
 from processors.transport_demand_pipeline import run as demand_pkm_vkm_run
 from processors.transport_ots_pickle import run as ots_pickle_run
@@ -90,10 +88,6 @@ cdm_emissions_factors = passenger_emission_run()
 print("Energy demand")
 dm_energy = passenger_energy_run(years_ots)
 
-## Load data check energy demand
-print("Load data check energy demand")
-DM_data_check_ene = data_check_energy_run(years_ots)
-
 ## Load data check vkm
 print("Load data check vkm")
 dm_LDV_fleet_stock = DM["passenger_private-fleet"].filter({"Categories1": ["LDV"]})
@@ -127,10 +121,6 @@ dm_veh_eff = passenger_efficiency_run(
     years_ots,
     dm_data_check_vkm,
 )
-
-## Load data check emissions
-print("Load data check emissions")
-DM_data_check_emi = data_check_emissions_run(years_ots)
 
 # aviation_pt1_run downloads/caches raw data files (FSO, IATA, World Bank)
 # and returns Swiss aviation pkm/cap used as the monde reference curve
