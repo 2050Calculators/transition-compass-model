@@ -243,7 +243,189 @@ def fribourg_run():
 
 
 def schwyz_values():
-    pd.read_csv()
+    df_raw = pd.read_excel("data/Schwyz/bld_emi_ecospeed.xlsx")
+
+    years = [str(i) for i in range(2016, 2026)]
+
+    # Keep single-family homes
+    df = pd.DataFrame()
+    # df = df_raw.loc[
+    #     df_raw["Building Type"] == "Single-family homes"
+    # ].copy()
+
+    # df.replace("Single-family homes",'single-family-households')
+
+    # Aggregate multifamily homes
+    mask_res = df_raw["Building Type"].isin(
+        [
+            "Single-family homes",
+            "Multifamily homes",
+            "Residential buildings with secondary use",
+            # "Buildings with partial residential use"
+        ]
+    )
+
+    new_row = df_raw.loc[mask_res, years].sum()
+
+    new_row["Building Type"] = "residential"
+
+    df = pd.concat([df, new_row.to_frame().T], ignore_index=True)
+
+    # Aggregate services (all remaining building types)
+    mask_services = ~mask_res
+
+    new_row = df_raw.loc[mask_services, years].sum()
+    new_row["Building Type"] = "services"
+
+    df = pd.concat([df, new_row.to_frame().T], ignore_index=True)
+
+    df.loc["total", years] = df_raw.loc[:, years].sum()
+    df.loc[:, years] = df.loc[:, years] * 10**-6  # Convert from tCO2eq to MTCO2eq
+    df.loc["total", "Building Type"] = "Total"
+
+    df_total = pd.read_excel("data/Schwyz/Eco_speed_sectors.xlsx")
+    df_bld_tot = df_total[
+        (df_total["Bereiche"] == "Haushalte") | (df_total["Bereiche"] == "Wirtschaft")
+    ]
+
+    df_bld_tot.iloc[:, 1:] = df_bld_tot.iloc[:, 1:] * 10**-6
+
+    return df, df_bld_tot
+
+
+def plot_emissions_comparison_schwyz(df_sector, df_detailed, emissions_model):
+    years = list(range(2010, 2026))
+
+    colors = {
+        "Model": COLOR_MODEL,
+        "Detailed data": COLOR_OFFICIAL,
+        "Sector statistics": "#4C9F9A",  # Muted teal
+    }
+    # Extract data from df_sector
+    households = df_sector.loc[df_sector["Bereiche"] == "Haushalte"].iloc[0]
+
+    economy = df_sector.loc[df_sector["Bereiche"] == "Wirtschaft"].iloc[0]
+
+    # Extract data from df_detailed
+    residential = df_detailed.loc[df_detailed["Building Type"] == "residential"].iloc[0]
+
+    services = df_detailed.loc[df_detailed["Building Type"] == "services"].iloc[0]
+
+    # Create figure
+    fig = make_subplots(
+        rows=3,
+        cols=1,
+        subplot_titles=(
+            "Residential emissions",
+            "Services emissions",
+            "Total emissions",
+        ),
+        shared_xaxes=True,
+        shared_yaxes=True,
+        vertical_spacing=0.10,
+    )
+
+    # Helper function to add traces
+    def add_trace(row, name, x, y, dash="solid"):
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=y,
+                mode="lines+markers",
+                name=name,
+                legendgroup=name,
+                showlegend=(row == 1),  # Show legend only in first subplot
+                line=dict(color=colors[name], dash=dash, width=2),
+                marker=dict(size=6),
+            ),
+            row=row,
+            col=1,
+        )
+
+    # --------------------------------------------------
+    # 1. RESIDENTIAL
+    # --------------------------------------------------
+
+    add_trace(
+        1, "Sector statistics", years, [households.get(str(y), None) for y in years]
+    )
+
+    add_trace(
+        1,
+        "Detailed data",
+        list(range(2016, 2026)),
+        [residential.get(str(y), None) for y in range(2016, 2026)],
+    )
+
+    add_trace(
+        1, "Model", years, [emissions_model["residential"].get(y, None) for y in years]
+    )
+
+    # --------------------------------------------------
+    # 2. SERVICES
+    # --------------------------------------------------
+
+    add_trace(2, "Sector statistics", years, [economy.get(str(y), None) for y in years])
+
+    add_trace(
+        2,
+        "Detailed data",
+        list(range(2016, 2026)),
+        [services.get(str(y), None) for y in range(2016, 2026)],
+    )
+
+    add_trace(
+        2, "Model", years, [emissions_model["services"].get(y, None) for y in years]
+    )
+
+    # --------------------------------------------------
+    # 3. TOTAL
+    # --------------------------------------------------
+
+    sector_total = [
+        (households.get(str(y), 0) or 0) + (economy.get(str(y), 0) or 0) for y in years
+    ]
+    detailed_total = df_detailed.loc[df_detailed["Building Type"] == "Total"].iloc[0]
+
+    add_trace(3, "Sector statistics", years, sector_total)
+
+    add_trace(3, "Detailed data", years, detailed_total)
+
+    add_trace(3, "Model", years, [emissions_model["total"].get(y, None) for y in years])
+
+    # --------------------------------------------------
+    # LAYOUT
+    # --------------------------------------------------
+    # Find common y-axis range across all subplots
+    all_values = []
+
+    for trace in fig.data:
+        numeric_values = pd.to_numeric(pd.Series(trace.y), errors="coerce").dropna()
+
+        all_values.extend(numeric_values.tolist())
+
+    y_min = min(all_values)
+    y_max = max(all_values)
+
+    # Add 5% padding
+    padding = (y_max - y_min) * 0.05
+
+    y_range = [y_min - padding, y_max + padding]
+
+    # Apply identical y-axis range to all subplots
+    fig.update_yaxes(range=y_range, autorange=False)
+
+    fig.update_layout(
+        height=1100,
+        width=1100,
+        title_text="CO₂ Emissions Comparison – Canton Schwyz",
+        template="plotly_white",
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+    )
+
+    fig.show()
+    return fig
 
 
 def schwyz_run():
@@ -255,7 +437,7 @@ def schwyz_run():
     fuels.remove("other-tech")
     fuels.remove("ambient-heat")
 
-    YEARS_SCHWYZ_BILAN = [2017, 2023]
+    YEARS_SCHWYZ_BILAN = [y for y in range(2010, 2024)] + [2025]
     emissions_Shwyz_model = {
         "services": model_use_emissions(
             dm_tpe, fuels, "services", YEARS_SCHWYZ_BILAN
@@ -268,11 +450,14 @@ def schwyz_run():
         emissions_Shwyz_model["services"] + emissions_Shwyz_model["residential"]
     )
 
-    EMISSION_FRIBOURG = fribourg_values()
-    fig = plot_emissions_comparison(emissions_Shwyz_model, EMISSION_FRIBOURG)
+    df_detailed, df_sector = schwyz_values()
+    fig = plot_emissions_comparison_schwyz(
+        df_sector, df_detailed, emissions_Shwyz_model
+    )
 
     print("test")
 
 
 if __name__ == "__main__":
-    fribourg_run()
+    # fribourg_run()
+    schwyz_run()
