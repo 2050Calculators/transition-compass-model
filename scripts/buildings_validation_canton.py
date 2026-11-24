@@ -3,6 +3,7 @@ import os
 
 import pandas as pd
 import plotly.graph_objects as go
+import read_data as read_data
 from plotly.subplots import make_subplots
 
 from transition_compass_model._database.pre_processing.params import years_ots
@@ -92,17 +93,21 @@ def run_model(country):
     return dm_tpe, interface.get_link("buildings", "energy"), dm_heating_mix
 
 
-def model_all_uses(dm_tpe, fuels, building_use):
-    """Model final energy, all uses, by model fuel [TWh]. building_use is
-    "residential" or "non-residential"."""
-    var_of = {f: f"bld_energy-demand_{building_use}_{f}" for f in fuels}
-    dm = dm_tpe.filter({"Variables": list(var_of.values())})
+def from_dic_var_get_df(dm_tpe, var_of, years):
+    dm = dm_tpe.filter({"Variables": list(var_of.values()), "Years": years})
     idx = dm.idx
     df = pd.DataFrame(
         {f: dm.array[0, :, idx[v]] for f, v in var_of.items()},
         index=[int(y) for y in dm.col_labels["Years"]],
     )
     return df
+
+
+def model_all_uses(dm_tpe, fuels, building_use, years):
+    """Model final energy, all uses, by model fuel [TWh]. building_use is
+    "residential" or "non-residential"."""
+    var_of = {f: f"bld_energy-demand_{building_use}_{f}" for f in fuels}
+    return from_dic_var_get_df(dm_tpe, var_of, years)
 
 
 ##### FRIBOURG ###
@@ -127,10 +132,6 @@ def fribourg_values():
 def model_use_emissions(dm_tpe, fuels, building_use, years=years_ots):
     """Model final emisisons, all uses, by model fuel [MtCO2eq]. building_use is
     "residential" or "non-residential"."""
-    # "bld_CO2-emissions_residential_heating[Mt]",
-    #     "bld_CO2-emissions_residential_hot-water[Mt]",
-    #     "bld_CO2-emissions_services_heating[Mt]",
-    #     "bld_CO2-emissions_services_hot-water[Mt]"
     heat_tech = ["heating", "hot-water"]
     var_of = {f: f"bld_CO2-emissions_{building_use}_{f}" for f in heat_tech}
     dm = dm_tpe.filter({"Variables": list(var_of.values()), "Years": years})
@@ -389,7 +390,7 @@ def plot_emissions_comparison_schwyz(df_sector, df_detailed, emissions_model):
 
     add_trace(3, "Sector statistics", years, sector_total)
 
-    add_trace(3, "Detailed data", years, detailed_total)
+    add_trace(3, "Detailed data", list(range(2016, 2026)), detailed_total)
 
     add_trace(3, "Model", years, [emissions_model["total"].get(y, None) for y in years])
 
@@ -458,6 +459,251 @@ def schwyz_run():
     print("test")
 
 
+def plot_comparaison(model, col_to_plot_vaud, legend_label, groups, dic_off_to_model):
+    # Get the intersections of the model columns and dic_off_to_model values
+    if len(dic_off_to_model.values()) == 1:
+        nb_rows = 1
+    else:
+        nb_rows = round(len(set(model.columns) & set(dic_off_to_model.values())) / 2)
+
+    # Filter years
+
+    model.reset_index(inplace=True)
+    model.rename(columns={"index": "Years"}, inplace=True)
+    model = model[model["Years"].isin([2015, 2019, 2023])].reset_index(drop=True)
+
+    # Sort groups: total should be plotted last
+    groups_list = list(groups)
+
+    groups_sorted = [g for g in groups_list if str(g[0]).lower() != "('total',)"] + [
+        g for g in groups_list if str(g[0]).lower() == "('total',)"
+    ]
+
+    n_groups = len(groups_sorted)
+
+    # Colors
+    colors = {"Bilan Carbone": COLOR_OFFICIAL, "Speed2zero": COLOR_MODEL}
+
+    # -------------------------
+    # Main comparison figure
+    # -------------------------
+
+    fig = make_subplots(
+        rows=nb_rows,
+        cols=2,
+        shared_xaxes=True,
+        shared_yaxes=True,
+        subplot_titles=[
+            str(g[0][0]).capitalize()
+            for g in groups_sorted
+            if dic_off_to_model.get(g[0][0].lower()) in model.columns
+        ],
+    )
+
+    # -------------------------
+    # Ratio figure
+    # -------------------------
+
+    fig_ratio = go.Figure()
+
+    bar_width = 0.1
+
+    i = 0
+
+    for name, group in groups_sorted:
+        name = name[0].lower()
+
+        if dic_off_to_model[name] not in model.columns:
+            continue
+
+        # Determine subplot position
+        row = i // 2 + 1
+        col = i % 2 + 1
+
+        # Sort data
+        group_sorted = (
+            group[["Years", col_to_plot_vaud]]
+            .sort_values("Years")
+            .reset_index(drop=True)
+        )
+
+        years = group_sorted["Years"]
+        vaud_values = group_sorted[col_to_plot_vaud]
+        model_values = model[dic_off_to_model[name]]
+
+        # -------------------------
+        # Main comparison plot
+        # -------------------------
+
+        fig.add_trace(
+            go.Scatter(
+                x=years,
+                y=vaud_values,
+                mode="lines+markers",
+                name="Bilan Carbone",
+                legendgroup="Bilan Carbone",
+                showlegend=(i == 0),
+                line=dict(color=colors["Bilan Carbone"], dash="dash"),
+                marker=dict(size=8),
+                hovertemplate=("Année: %{x}<br>Bilan Carbone: %{y:.2f}<extra></extra>"),
+            ),
+            row=row,
+            col=col,
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=years,
+                y=model_values,
+                mode="lines+markers",
+                name="Speed2zero",
+                legendgroup="Speed2zero",
+                showlegend=(i == 0),
+                line=dict(color=colors["Speed2zero"], dash="solid"),
+                marker=dict(size=8),
+                hovertemplate=("Année: %{x}<br>Speed2zero: %{y:.2f}<extra></extra>"),
+            ),
+            row=row,
+            col=col,
+        )
+
+        # -------------------------
+        # Ratio calculation
+        # -------------------------
+
+        ratio = (model_values - vaud_values) / vaud_values * 100
+
+        # -------------------------
+        # Ratio bar plot
+        # -------------------------
+
+        offset = (i - (n_groups - 1) / 2) * bar_width
+
+        fig_ratio.add_trace(
+            go.Bar(
+                x=years + offset,
+                y=ratio,
+                name=name.capitalize(),
+                width=bar_width,
+                opacity=0.8,
+                hovertemplate=(
+                    "Année: %{x}<br>"
+                    + name.capitalize()
+                    + ": %{y:.2f}%"
+                    + "<extra></extra>"
+                ),
+            )
+        )
+
+        if name == "total":
+            print("Total ratio:", ratio)
+
+        i += 1
+
+    # -------------------------
+    # Main figure styling
+    # -------------------------
+
+    fig.update_layout(
+        height=350 * nb_rows,
+        width=1100,
+        template="plotly_white",
+        title=None,
+        font=dict(size=16),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+        margin=dict(t=100, b=70),
+    )
+
+    fig.update_xaxes(title_text="Année", showgrid=True, gridcolor="lightgrey")
+
+    fig.update_yaxes(title_text=legend_label, showgrid=True, gridcolor="lightgrey")
+
+    # -------------------------
+    # Ratio figure styling
+    # -------------------------
+
+    fig_ratio.add_hline(y=0, line_color="black", line_width=1)
+
+    fig_ratio.update_layout(
+        template="plotly_white",
+        width=1100,
+        height=550,
+        xaxis_title="Année",
+        yaxis_title="Différence (%)",
+        font=dict(size=16),
+        barmode="overlay",
+        legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
+        margin=dict(r=200),
+    )
+
+    fig_ratio.update_xaxes(showgrid=True)
+    fig_ratio.update_yaxes(showgrid=True, gridcolor="lightgrey")
+
+    # -------------------------
+    # Display figures
+    # -------------------------
+
+    fig.show()
+    fig_ratio.show()
+
+    return fig
+
+
+def from_twh_to_mwh(df):
+    df["total"] = df.sum(axis=1)
+    return df * 10**6
+
+
+def vaud_run():
+    print("Vaud")
+
+    _, bilan, groups, DIC_OFF_TO_MODEL = read_data.read_vaud_data()
+
+    print("Running climate -> lifestyles -> buildings")
+    country = "Vaud"
+    # Get model values
+    dm_tpe, link, dm_heating_mix = run_model(country)
+    fuels = link["households_heating"].col_labels["Categories1"]
+
+    YEARS_VAUD_BILAN = [1990, 2015, 2019, 2023]
+
+    use_type = ["residential", "non-residential"]
+    energy_vaud_model = {}
+    for use in use_type:
+        energy_vaud_model[use] = from_twh_to_mwh(
+            model_all_uses(dm_tpe, fuels, use, YEARS_VAUD_BILAN)
+        )
+
+    energy_vaud_model["total"] = (
+        energy_vaud_model["non-residential"] + energy_vaud_model["residential"]
+    )
+
+    plot_comparaison(
+        energy_vaud_model["total"],
+        col_to_plot_vaud="Activité [MWh]",
+        legend_label="Énergie consommée (MWh)",
+        groups=groups,
+        dic_off_to_model=DIC_OFF_TO_MODEL,
+    )
+
+    fuels.remove("other-tech")
+    fuels.remove("ambient-heat")
+
+    emissions_Vaud_model = {
+        "services": model_use_emissions(
+            dm_tpe, fuels, "services", YEARS_VAUD_BILAN
+        ).sum(axis=1),
+        "residential": model_use_emissions(
+            dm_tpe, fuels, "residential", YEARS_VAUD_BILAN
+        ).sum(axis=1),
+    }
+    emissions_Vaud_model["total"] = (
+        emissions_Vaud_model["services"] + emissions_Vaud_model["residential"]
+    )
+    print("finish")
+
+
 if __name__ == "__main__":
     # fribourg_run()
-    schwyz_run()
+    # schwyz_run()
+    vaud_run()
