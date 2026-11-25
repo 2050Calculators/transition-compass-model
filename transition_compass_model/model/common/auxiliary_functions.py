@@ -1466,6 +1466,10 @@ def filter_DM(DM, dict_selection):
             dm = DM[key]
             for dim in dict_selection.keys():
                 if dim in dm.dim_labels:
+                    # Skip DMs that don't contain any of the requested values
+                    # (e.g. CH-only FXA data when filtering to EU27)
+                    if not any(v in dm.col_labels[dim] for v in dict_selection[dim]):
+                        continue
                     dm.filter(dict_selection, inplace=True)
                     DM[key] = dm
     return
