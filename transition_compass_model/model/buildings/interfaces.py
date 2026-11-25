@@ -344,6 +344,8 @@ def bld_TPE_interface(
     )  # both services and residential
     dm_tpe.append(DM_energy["energy-demand-cooling"].flattest(), dim="Variables")
     dm_tpe.append(DM_energy["emissions"].flattest(), dim="Variables")
+    # bld_useful-heat_<type> [TWh], bld_floor-area-occupied_<type> [Mm2]
+    dm_tpe.append(DM_energy["useful-heat-by-type"].flattest(), dim="Variables")
     dm_tpe.append(DM_area["floor-area-cumulated"].flattest(), dim="Variables")
     dm_tpe.append(DM_area["floor-area-cat"].flattest(), dim="Variables")
     dm_tpe.append(DM_area["floor-area-use-cat"].flattest(), dim="Variables")
@@ -442,9 +444,11 @@ def bld_TPE_interface(
     dm_emission_global_fuel.group_all("Categories1", inplace=True)
     dm_tpe.append(dm_emission_global_fuel.flattest(), dim="Variables")
     dm_tpe.append(dm_emission_enduse.flattest(), dim="Variables")
+    # dm_emission_global_fuel.change_unit("bld_CO2-emissions", factor=1e6, old_unit="Mt", new_unit="t" )
+    # dm_emission_global_fuel.write_df().to_csv("/home/augustoni/Documents/PDM/excels/bld/emissions/Vaud/update.csv")
 
     # Buildings-wide total, published for the cross-sector (Overall) charts and read
-    # back for the KPI so card and chart share one source. Named CO2e for consistency
+    # back for the KPI so card and chart share one source. Named CO2ecscsv for consistency
     # with the tra_emissions-CO2e_* series; buildings model no CH4/N2O, so CO2e = CO2.
     # Collapse building use, fuel and end-use down to a single total
     for _ in range(3):
@@ -514,6 +518,8 @@ def bld_TPE_interface(
         },
         dim="Variables",
     )
+    # dm_energy_comsumption_tot.change_unit("energy_consumption", factor=1e6, old_unit="TWh", new_unit="MWh" )
+    # dm_energy_comsumption_tot.write_df().to_csv("/home/augustoni/Documents/PDM/excels/bld/energy_comsumption/Vaud/energy_comsumption_update.csv")
 
     dm_tpe.append(dm_energy_comsumption_tot.flattest(), dim="Variables")
     dm_energy_heating = dm_energy_global.groupby(

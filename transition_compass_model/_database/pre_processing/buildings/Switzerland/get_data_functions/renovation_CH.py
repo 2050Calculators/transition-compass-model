@@ -17,9 +17,6 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 def canton_to_acronym(country: str) -> str:
-    # CANTONS_NAME spells it "Neuchatel", country_list uses "Neuchâtel"
-    if country == "Neuchâtel":
-        country = "Neuchatel"
     return CANTONS_NAME["name_to_accronym"][country]
 
 

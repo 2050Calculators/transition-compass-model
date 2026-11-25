@@ -406,23 +406,76 @@ def pkm_MRMT(file_folder_2015, file_path_2021):  # ,
     )
 
     cantons_list = [x for x in country_list if x != "Switzerland"]
-    # iterate in canton to get the valeu for each one
-    asset_ids_2015 = {"Vaud": "2081714", "Fribourg": "2081306", "Schwyz": "2005567"}
+    # FSO asset ids of the 2015 cantonal tables (order numbers su-f-11.04.03-MZ-2015-A2_<XX>).
+    # Appenzell Ausserrhoden and Innerrhoden share one table (A2_AR_AI), as in 2021 where
+    # they share the sheet "AR et AI". Both cantons get the combined value (km/person/day).
+    asset_ids_2015 = {
+        "ZH": "2005069",
+        "BE": "2005131",
+        "LU": "2005203",
+        "UR": "2005450",
+        "SZ": "2005567",
+        "OW": "2005865",
+        "NW": "2006015",
+        "GL": "2006050",
+        "ZG": "2081270",
+        "FR": "2081306",
+        "SO": "2081343",
+        "BS": "2081381",
+        "BL": "2081416",
+        "SH": "2081453",
+        "AR_AI": "2081490",
+        "SG": "2081527",
+        "GR": "2081566",
+        "AG": "2081601",
+        "TG": "2081640",
+        "TI": "2081677",
+        "VD": "2081714",
+        "VS": "2081749",
+        "NE": "2081788",
+        "GE": "2081828",
+        "JU": "2081865",
+    }
     canton_pkm_day = {}
     for canton in cantons_list:
+        acronym = CANTONS_NAME["name_to_accronym"][canton]
+        if acronym in ("AR", "AI"):
+            sheet_2021, key_2015 = "AR et AI", "AR_AI"
+        else:
+            sheet_2021, key_2015 = acronym, acronym
         canton_pkm_day[canton] = {}
-        canton_pkm_day[canton][2021] = pd.read_excel(
-            file_path_2021, sheet_name=CANTONS_NAME["name_to_accronym"][canton]
-        ).iloc[5, 9]
-        file_canton_2015 = (
-            file_folder_2015 + CANTONS_NAME["name_to_accronym"][canton] + ".xlsx"
+        canton_pkm_day[canton][2021] = _mrmt_daily_distance(
+            pd.read_excel(file_path_2021, sheet_name=sheet_2021, header=None)
         )
+        file_canton_2015 = file_folder_2015 + key_2015 + ".xlsx"
 
         # If the file don't exist, it downloads it and creates it
         save_url_to_file(
-            f"https://dam-api.bfs.admin.ch/hub/api/dam/assets/{asset_ids_2015[canton]}/master",
+            f"https://dam-api.bfs.admin.ch/hub/api/dam/assets/{asset_ids_2015[key_2015]}/master",
             file_canton_2015,
         )
-        canton_pkm_day[canton][2015] = pd.read_excel(file_canton_2015).iloc[4, 9]
+        canton_pkm_day[canton][2015] = _mrmt_daily_distance(
+            pd.read_excel(file_canton_2015, header=None), country=canton
+        )
 
     return canton_pkm_day
+
+
+def _mrmt_daily_distance(df, country="switzerland"):
+    """Return the total average daily distance [km/person/day] from an MRMT key-figures table.
+
+    The value sits in the column titled "Distance journalière moyenne", on the first row
+    labelled "Total" in the first column. Located by label rather than by a fixed cell,
+    since the header block is one row longer in the 2021 tables than in the 2015 ones.
+    """
+    header = df.iloc[:10].astype(str)
+    cols = [
+        c for c in df.columns if (header[c] == "Distance journalière moyenne").any()
+    ]
+    rows = df.index[df.iloc[:, 0].astype(str).str.strip() == "Total"]
+    if len(cols) != 1 or len(rows) == 0:
+        raise ValueError(
+            "MRMT table layout not recognised: expected one 'Distance journalière "
+            f"moyenne' column (found {len(cols)}) and a 'Total' row (found {len(rows)})"
+        )
+    return float(df.loc[rows[0], cols[0]])

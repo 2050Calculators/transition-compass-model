@@ -54,6 +54,8 @@ def read_data(DM_transport, lever_setting):
         "passenger_all": dm_passenger,
         "passenger_pkm_demand": DM_ots_fts["pkm"],
         "passenger_aviation-share-local": dict_fxa["share-local-emissions"],  # pkm/cap
+        # vkm-by-tech adjustment factor (CH/cantons only; None for EU27)
+        "passenger_vkm-adj-factor": dict_fxa.get("passenger_vkm-adj-factor"),
     }
 
     DM_freight = {
@@ -175,11 +177,6 @@ def transport(lever_setting, years_setting, DM_input, interface=Interface()):
         DM_checks_EU = checks.check_transport_EU(
             current_file_directory, DM_passenger_out, DM_freight_out
         )
-    check_transport_ch = False
-    if check_transport_ch is True and cntr_list == ["Switzerland"]:
-        DM_checks_CH = checks.check_transport_CH(
-            current_file_directory, DM_passenger_out, DM_freight_out
-        )
 
     # Pre-compute outbound vs round-trip aviation variants once; shared by
     # the emissions interface and prepare_TPE_output.
@@ -283,7 +280,7 @@ def local_transport_run():
     lever_setting = load_lever_config()
 
     # get geoscale
-    country_list = ["Fribourg", "Schwyz", "Vaud", "Switzerland", "EU27"]
+    country_list = ["Fribourg", "Schwyz", "Vaud", "Switzerland"]
     DM_input = filter_country_and_load_data_from_pickles(
         country_list=country_list, modules_list="transport"
     )

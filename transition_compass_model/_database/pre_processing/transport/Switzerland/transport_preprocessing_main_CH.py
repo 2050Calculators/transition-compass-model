@@ -8,6 +8,7 @@ from processors.freight_road_ots import run as freight_road_run
 from processors.freight_tech_fxa import run as freight_tech_fxa_run
 from processors.freight_tkm_modal_share import run as freight_tkm_run
 from processors.freight_utilization_rate import run as freight_utilization_run
+from processors.passenger_efficiency_pipeline import compute_tech_share
 from processors.passenger_efficiency_pipeline import run as passenger_efficiency_run
 from processors.passenger_emission_factors import run as passenger_emission_run
 from processors.passenger_energy_pipeline import run as passenger_energy_run
@@ -16,11 +17,10 @@ from processors.passenger_lifetime_pipeline import run as passenger_lifetime_run
 from processors.passenger_renewal_rate_and_waste_pipeline import (
     run as passenger_ren_rate_waste_adj_run,
 )
-from processors.transport_calib_emissions import run as data_check_emissions_run
-from processors.transport_calib_energy_demand import run as data_check_energy_run
 from processors.transport_calib_vkm import run as data_check_vkm_run
 from processors.transport_demand_pipeline import run as demand_pkm_vkm_run
 from processors.transport_ots_pickle import run as ots_pickle_run
+from processors.transport_vkm_adj_factor import run as vkm_adj_factor_run
 
 # Schwyz
 from scenarios.Schwyz.tra_objectif_PCS import run as fts_schwyz_pcs_run
@@ -54,7 +54,7 @@ dm_pop_ots = load_pop(country_list, years_list=years_ots)
 print("Transport passenger demand pkm, vkm")
 dm_pkm_cap, dm_pkm, dm_vkm = demand_pkm_vkm_run(dm_pop_ots, years_ots)
 
-## Total fleet and new-fleet (for private only)
+## Total fleet and new-fleet
 print("Fleet - private and public")
 dm_private_fleet, dm_public_fleet = passenger_fleet_run(dm_pkm, years_ots)
 
@@ -93,16 +93,26 @@ cdm_emissions_factors = passenger_emission_run()
 print("Energy demand")
 dm_energy = passenger_energy_run(years_ots)
 
-## Load data check energy demand
-print("Load data check energy demand")
-DM_data_check_ene = data_check_energy_run(years_ots)
-
 ## Load data check vkm
 print("Load data check vkm")
 dm_LDV_fleet_stock = DM["passenger_private-fleet"].filter({"Categories1": ["LDV"]})
 dm_new_LDV_fleet = DM["passenger_new-vehicles"].filter({"Categories1": ["LDV"]})
 dm_data_check_vkm = data_check_vkm_run(
     dm_vkm, dm_LDV_fleet_stock, dm_new_LDV_fleet, years_ots
+)
+
+## vkm-by-tech adjustment factor (EP2050 vkm share / fleet share, CH -> all cantons)
+print("vkm adjustment factor by technology")
+dm_fleet_share = compute_tech_share(
+    dm_private_fleet.filter({"Variables": ["tra_passenger_vehicle-fleet"]}),
+    dm_public_fleet.filter({"Variables": ["tra_passenger_vehicle-fleet"]}),
+)
+dm_vkm_adj_factor = vkm_adj_factor_run(
+    dm_fleet_share,
+    dm_data_check_vkm["passenger-and-freight_road_EP-2050"],
+    years_ots,
+    years_fts,
+    country_list,
 )
 
 ## Efficiency
@@ -116,10 +126,6 @@ dm_veh_eff = passenger_efficiency_run(
     years_ots,
     dm_data_check_vkm,
 )
-
-## Load data check emissions
-print("Load data check emissions")
-DM_data_check_emi = data_check_emissions_run(years_ots)
 
 # aviation_pt1_run downloads/caches raw data files (FSO, IATA, World Bank)
 # and returns Swiss aviation pkm/cap used as the monde reference curve
@@ -203,11 +209,12 @@ DM_input = {
     ],
     "freight_technology-share_new": DM_freight_eff_tech["freight_technology-share_new"],
     "freight_tech": dm_freight_tech,
+    "vkm_adj_factor": dm_vkm_adj_factor,
 }
 # DM.keys = ['passenger_private-fleet', 'passenger_public-fleet', 'passenger_renewal-rate', 'passenger_new-vehicles', 'passenger_waste-fleet']
 DM_input = DM_input | DM  # join
 DM_transport_wo_aviation, DM_transport = ots_pickle_run(
-    DM_input, years_ots, years_fts, DM_aviation_ots, country_list
+    DM_input, years_ots, years_fts, DM_aviation_ots, country_list, dm_pop_ots
 )
 
 # Transport fts pickle (passenger + freight, then aviation merged in)

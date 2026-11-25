@@ -28,6 +28,7 @@ import pickle
 
 import numpy as np
 import pandas as pd
+from get_data_functions import utils as utils
 
 from transition_compass_model._database.pre_processing.api_routines_swiss_stats import (
     get_data_api_swiss_stats,
@@ -111,6 +112,7 @@ def _fetch_bfs_goods_vehicles(dataflow: str, cache_file: str) -> pd.DataFrame:
         filtering["UV_RV_REGISTRATION_TYPE"] = ["First registrations of new vehicles"]
         filtering["FREQ"] = ["Annual"]
         var_dim = "UV_RV_REGISTRATION_TYPE"
+
     dm = get_data_api_swiss_stats(
         agency,
         dataflow,

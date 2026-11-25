@@ -814,6 +814,21 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
         - dm_fuel[:, :, "bld_energy-demand_heating", "heat-pump"]
     )
 
+    # Useful heating demand and occupied floor area by building type (energy classes
+    # summed). Their ratio, kWh/m², is the heat loss per m² (U-value x envelope area x
+    # HDD) and is checked against EP2050 in scripts/buildings_validation_CH.py.
+    dm_useful_by_type = dm_floor_area.filter(
+        {"Variables": ["bld_heating", "bld_floor-area_occupied"]}
+    )
+    dm_useful_by_type.group_all("Categories2", inplace=True)
+    dm_useful_by_type.change_unit("bld_heating", 1e-9, "kWh", "TWh")
+    dm_useful_by_type.change_unit("bld_floor-area_occupied", 1e-6, "m2", "Mm2")
+    dm_useful_by_type.rename_col(
+        ["bld_heating", "bld_floor-area_occupied"],
+        ["bld_useful-heat", "bld_floor-area-occupied"],
+        dim="Variables",
+    )
+
     # Heating demand by type of building
     dm_class = dm_floor_area.group_all("Categories1", inplace=False)
     dm_class.filter({"Variables": ["bld_heating"]}, inplace=True)
@@ -854,6 +869,7 @@ def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
                 }
             ),
             "emissions": dm_emissions,
+            "useful-heat-by-type": dm_useful_by_type,
         },
         "power": dm_fuel.copy(),
         "power_households": dm_fuel_households,
