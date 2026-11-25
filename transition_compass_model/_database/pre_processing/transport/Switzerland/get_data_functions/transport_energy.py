@@ -4,9 +4,11 @@ import zipfile
 
 import numpy as np
 import pandas as pd
-from get_data_functions import utils as utils
 
 from transition_compass_model._database.pre_processing.params import years_ots
+from transition_compass_model._database.pre_processing.transport.Switzerland.get_data_functions import (
+    utils as utils,
+)
 from transition_compass_model.model.common.auxiliary_functions import (
     dm_add_missing_variables,
     save_url_to_file,
