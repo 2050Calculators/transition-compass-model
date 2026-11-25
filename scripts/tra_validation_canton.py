@@ -2,8 +2,9 @@ import math
 
 import pandas as pd
 import plotly.graph_objects as go
-import read_data as read_data
+import Vaud.read_data as read_data
 from plotly.subplots import make_subplots
+from Vaud.plots import from_unit_to_other_unit_and_total, plot_comparaison
 
 from transition_compass_model.model.climate_module import climate
 from transition_compass_model.model.common.auxiliary_functions import (
@@ -95,6 +96,7 @@ def model_emissions(tpe):
         s = tpe[f"tra_emissions-CO2e_{kind}_{mode}[Mt]"]
         cols[foen] = cols[foen] + s if foen in cols else s
     by_mode = pd.DataFrame(cols)
+
     by_kind = pd.DataFrame(
         {
             kind: _tpe_block(tpe, f"tra_emissions-CO2e-by-fuel-{kind}", "Mt").sum(
@@ -103,13 +105,25 @@ def model_emissions(tpe):
             for kind in ("passenger", "freight")
         }
     )
+
+    cols_by_kind = {"passenger": {}, "freight": {}}
+    for (kind, mode), foen in MODEL_MODE_TO_FOEN.items():
+        s = tpe[f"tra_emissions-CO2e_{kind}_{mode}[Mt]"]
+        cols_by_kind[kind][foen] = (
+            cols_by_kind[kind][foen] + s if foen in cols_by_kind else s
+        )
+
+    by_mode_by_kind = {"passenger": {}, "freight": {}}
+    for kind in cols_by_kind.keys():
+        by_mode_by_kind[kind] = pd.DataFrame(cols_by_kind[kind])
+
     # Aviation with passenger flights counted outbound only (about the flights
     # leaving Swiss airports, like the inventory) + freight aviation.
     aviation_local = (
         tpe["tra_passenger-emissions-local_aviation[Mt]"]
         + tpe["tra_emissions-CO2e_freight_aviation[Mt]"]
     )
-    return by_mode, by_kind, aviation_local
+    return by_mode, by_kind, by_mode_by_kind, aviation_local
 
 
 def fribourg_values():
@@ -328,7 +342,7 @@ def fribourg_run():
 
     # --- Emissions by mode model ----------------------------------------------------
     years_list = [2017, 2023]
-    m_by_mode, m_by_kind, aviation_local = model_emissions(tpe)
+    m_by_mode, m_by_kind, m_by_kind_by_mode, aviation_local = model_emissions(tpe)
     m_by_mode = m_by_mode.loc[years_list, :]
     # emissions bilan carbone
     emi_by_mode_fribourg = fribourg_values()
@@ -428,7 +442,7 @@ def schwyz_run():
     tpe, tech = run_model(country)
     # --- Emissions by mode model ----------------------------------------------------
     YEARS_SCHWYZ_BILAN = [y for y in range(2010, 2024)] + [2025]
-    m_by_mode, m_by_kind, aviation_local = model_emissions(tpe)
+    m_by_mode, m_by_kind, m_by_kind_by_mode, aviation_local = model_emissions(tpe)
     m_by_mode = m_by_mode.loc[YEARS_SCHWYZ_BILAN, :]
     m_by_mode["total"] = m_by_mode.sum(axis=1)
     serie_schwyz = schwyz_tra_values().astype(float)
@@ -449,6 +463,67 @@ def schwyz_run():
     print("end schwyz")
 
 
+def vaud_run():
+    # Get bilan carbone values
+    bilan_carbone_tot, _, groups, DIC_OFF_TO_MODEL = read_data.read_vaud_data()
+    dummy_dic = {
+        "moto/scooter": "2W",
+        "voiture": "LDV",
+        "bus ": "bus",
+        "train": "rail",
+        "total": "total",
+    }
+    groups_transports_emission = bilan_carbone_tot[
+        bilan_carbone_tot["Catégorie"].isin(dummy_dic.keys())
+    ].groupby(["Catégorie"])
+
+    # Get model value
+    country = "Vaud"
+    tpe, tech = run_model(country)
+
+    m_by_mode, m_by_kind, m_by_kind_by_mode, aviation_local = model_emissions(tpe)
+
+    for kind in ["freight", "passenger"]:
+        # Mt to t
+        m_by_kind_by_mode[kind] = from_unit_to_other_unit_and_total(
+            m_by_kind_by_mode[kind], 10**6
+        )
+
+    plot_comparaison(
+        m_by_kind_by_mode["passenger"],
+        col_to_plot_vaud="CO2",
+        legend_label="Émissions de GES [tCo2eq]",
+        groups=groups_transports_emission,
+        dic_off_to_model=dummy_dic,
+    )
+    bilan_carbone_tot = pd.read_excel(
+        "data/Vaud/bilan_carbone_territoire_2023_public2(8).xlsx",
+        sheet_name="Transports - Emissions",
+        header=8,
+    ).iloc[:, 1:-3]
+    bilan_carbone_tot = bilan_carbone_tot[
+        bilan_carbone_tot["Année"].isin([2015, 2019, 2023])
+    ]
+    bilan_carbone_tot.rename(columns={"Année": "Years"}, inplace=True)
+    bilan_carbone_tot.reset_index(inplace=True, drop=True)
+    bilan_carbone_freight = bilan_carbone_tot[
+        bilan_carbone_tot["Sous-secteur"] == "Transport de marchandises"
+    ]
+    bilan_carbone_freight["Modèle"] = "Bilan Carbone"
+    bilan_carbone_freight["Sous-secteur"] = bilan_carbone_freight[
+        "Sous-secteur"
+    ].str.lower()
+
+    plot_comparaison(
+        m_by_kind_by_mode["freight"],
+        col_to_plot_vaud="CO2",
+        legend_label="Émissions de GES [tCo2eq]",
+        groups=bilan_carbone_freight.groupby(["Sous-secteur"]),
+        dic_off_to_model={"transport de marchandises": "total"},
+    )
+
+
 if __name__ == "__main__":
     # fribourg_run()
-    schwyz_run()
+    # schwyz_run()
+    vaud_run()
