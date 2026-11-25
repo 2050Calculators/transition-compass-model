@@ -1568,9 +1568,9 @@ def dm_add_missing_variables(dm, dict_all, fill_nans=False):
         missing_list = list(set(full_list) - set(dm.col_labels[dim]))
         if len(missing_list) > 0:
             dm.add(np.nan, dim=dim, col_label=missing_list, dummy=True)
-            dm.sort(dim)
-            if fill_nans:
-                dm.fill_nans(dim)
+        dm.sort(dim)
+        if fill_nans:
+            dm.fill_nans(dim)
 
     return
 
