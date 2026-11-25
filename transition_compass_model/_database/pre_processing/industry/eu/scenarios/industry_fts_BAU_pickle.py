@@ -387,18 +387,14 @@ def run(DM_industry, DM_ammonia, country_list, years_ots, years_fts):
     pickle_file = os.path.join(
         current_file_directory, "../../../../data/datamatrix/industry.pickle"
     )
-    my_pickle_dump(
-        DM_new=DM_industry, local_pickle_file=pickle_file, refactoring_change=True
-    )
+    my_pickle_dump(DM_new=DM_industry, local_pickle_file=pickle_file)
     sort_pickle(pickle_file)
 
     # save ammonia
     pickle_file = os.path.join(
         current_file_directory, "../../../../data/datamatrix/ammonia.pickle"
     )
-    my_pickle_dump(
-        DM_new=DM_ammonia, local_pickle_file=pickle_file, refactoring_change=True
-    )
+    my_pickle_dump(DM_new=DM_ammonia, local_pickle_file=pickle_file)
     sort_pickle(pickle_file)
 
     return DM_industry, DM_ammonia
