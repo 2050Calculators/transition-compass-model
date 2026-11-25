@@ -373,35 +373,43 @@ def _sum_by_fuel(dm_list, variable):
 
 
 def compute_transport_by_fuel(DM_passenger_out, DM_freight_out):
-    """Passenger + freight energy demand [TWh] and CO2e emissions [Mt] by fuel family.
+    """Energy demand [TWh] and CO2e emissions [Mt] by fuel family, for passenger,
+    freight and their total.
 
     Energy covers all modes, aviation included. Emissions are direct (scope 1),
     so electricity does not appear; they add up to the by-mode CO2e emissions.
+    Returns {"energy" | "emissions": {"passenger" | "freight" | "total": dm}}.
     """
     dm_pass_land = DM_passenger_out["energy"].copy()
     dm_pass_aviation = DM_passenger_out["aviation"]["energy"].copy()
     dm_pass_aviation.group_all("Categories1", inplace=True)
-    dm_energy = _sum_by_fuel(
-        [
-            _group_fuel_families(dm_pass_land),
-            _group_fuel_families(dm_pass_aviation),
-            _group_fuel_families(DM_freight_out["energy"].copy()),
-        ],
-        variable="tra_energy-demand-by-fuel",
-    )
-
     dm_emi_pass = convert_to_cO2eq_emissions(
         DM_passenger_out["emissions_by_fuel"].copy()
     )
     dm_emi_freight = convert_to_cO2eq_emissions(
         DM_freight_out["emissions_by_fuel"].copy()
     )
-    dm_emissions = _sum_by_fuel(
-        [_group_fuel_families(dm_emi_pass), _group_fuel_families(dm_emi_freight)],
-        variable="tra_emissions-CO2e-by-fuel",
-    )
+    parts = {
+        "energy": (
+            "tra_energy-demand-by-fuel",
+            [dm_pass_land, dm_pass_aviation],
+            [DM_freight_out["energy"].copy()],
+        ),
+        "emissions": ("tra_emissions-CO2e-by-fuel", [dm_emi_pass], [dm_emi_freight]),
+    }
 
-    return dm_energy, dm_emissions
+    out = {}
+    for key, (variable, dms_pass, dms_freight) in parts.items():
+        dm_pass = _sum_by_fuel(
+            [_group_fuel_families(dm) for dm in dms_pass], f"{variable}-passenger"
+        )
+        dm_freight = _sum_by_fuel(
+            [_group_fuel_families(dm) for dm in dms_freight], f"{variable}-freight"
+        )
+        # _sum_by_fuel edits its inputs in place, hence the copies
+        dm_total = _sum_by_fuel([dm_pass.copy(), dm_freight.copy()], variable)
+        out[key] = {"passenger": dm_pass, "freight": dm_freight, "total": dm_total}
+    return out
 
 
 # Main categories shown in the primary transport charts, as
@@ -462,11 +470,9 @@ def group_main_categories(dm_tpe):
 def prepare_TPE_output(
     DM_passenger_out, DM_freight_out, dm_aviation_local, years_setting
 ):
-    # Whole-transport (passenger + freight) totals by fuel family. Built first,
+    # Passenger, freight and whole-transport totals by fuel family. Built first,
     # because the aviation energy below is regrouped in place.
-    dm_energy_by_fuel, dm_emissions_by_fuel = compute_transport_by_fuel(
-        DM_passenger_out, DM_freight_out
-    )
+    DM_by_fuel = compute_transport_by_fuel(DM_passenger_out, DM_freight_out)
 
     # Aviation Energy-demand
     dm_keep_aviation_energy = DM_passenger_out["aviation"]["energy"]
@@ -656,8 +662,11 @@ def prepare_TPE_output(
     dm_tpe.append(dm_energy_pass_land.flattest(), dim="Variables")
     dm_tpe.append(dm_energy_freight_tot.flattest(), dim="Variables")
     dm_tpe.append(dm_emi_freight_by_mode.flattest(), dim="Variables")
-    dm_tpe.append(dm_energy_by_fuel.flattest(), dim="Variables")
-    dm_tpe.append(dm_emissions_by_fuel.flattest(), dim="Variables")
+    # tra_energy-demand-by-fuel[-passenger|-freight]_<fuel> [TWh] and
+    # tra_emissions-CO2e-by-fuel[-passenger|-freight]_<fuel> [Mt]
+    for dms in DM_by_fuel.values():
+        for scope in ("total", "passenger", "freight"):
+            dm_tpe.append(dms[scope].flattest(), dim="Variables")
     dm_tpe.append(group_main_categories(dm_tpe), dim="Variables")
 
     # Only the electric-car share needs a datamatrix of its own; the two totals are

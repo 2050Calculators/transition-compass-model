@@ -57,6 +57,25 @@ def run(years_ots):
     dm_passenger_energy_all.append(dm_passenger_rail, dim="Categories1")
     dm_passenger_energy_all.filter({"Years": years_ots}, inplace=True)
 
+    dm_passenger_ep2050 = dm_passenger_energy_all.copy()
+
+    dm_energy_public = get_data.get_public_transport_energy_consumption(
+        dm_passenger_energy_all
+    )
+
+    idx = dm_passenger_energy_all.idx
+    idx_public = dm_energy_public.idx
+
+    dm_add_missing_variables(
+        dm_energy_public,
+        {"Categories2": dm_passenger_energy_all.col_labels["Categories2"]},
+        fill_nans=False,
+    )
+
+    dm_passenger_energy_all.array[:, :, :, [idx["bus"], idx["rail"]], :] = (
+        dm_energy_public.array[:, :, :, [idx_public["bus"], idx_public["rail"]], :]
+    )
+
     return dm_passenger_energy_all
 
 

@@ -19,3 +19,4 @@ repos:
         types_or: [python, markdown]
         additional_dependencies: [tomli]
         exclude: _database/
+        args: ["--ignore-words-list=GES"]

@@ -258,14 +258,15 @@ def run(
 ):
     this_dir = os.path.dirname(os.path.abspath(__file__))
     dm_energy_MJ = get_energy_demand_MJ(dm_energy)
-
+    print("CO2")
     # LDV ICE / PHEV, every region, fleet + new: from CO2 statistics
     dm_LDV = get_LDV_efficiency_from_co2(this_dir, cdm_emissions_factors, years_ots)
-
+    print("manual efficiency")
     # Other modes + LDV BEV / FCEV, Switzerland, fleet: from energy / vkm
     dm_veh_eff_CH = compute_vehicle_efficiency_from_energy_demand(
         dm_energy_MJ, dm_vkm, dm_private_fleet, dm_public_fleet
     )
+    print("cleaning efficiency")
     dm_veh_eff_CH = clean_electric_efficiency(dm_veh_eff_CH)
     dm_veh_eff_CH = add_metrotram_efficiency_from_JRC(dm_veh_eff_CH)
     dm_veh_eff_CH.fill_nans("Years")

@@ -6,7 +6,6 @@ years_ots = create_years_list(1990, 2023, 1)
 years_fts = create_years_list(2025, 2050, 5)
 
 country_list = [
-    "Switzerland",
     "Aargau",
     "Appenzell Ausserrhoden",
     "Appenzell Innerrhoden",
@@ -33,4 +32,5 @@ country_list = [
     "Vaud",
     "Zug",
     "Zurich",
+    "Switzerland",
 ]
