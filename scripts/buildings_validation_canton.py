@@ -103,18 +103,18 @@ def from_dic_var_get_df(dm_tpe, var_of, years):
     return df
 
 
-def model_all_uses(dm_tpe, fuels, building_use, years):
+def model_all_demand(dm_tpe, fuels, building_use, years):
     """Model final energy, all uses, by model fuel [TWh]. building_use is
     "residential" or "non-residential"."""
     var_of = {f: f"bld_energy-demand_{building_use}_{f}" for f in fuels}
     return from_dic_var_get_df(dm_tpe, var_of, years)
 
 
-# def model_all_demand(dm_tpe, fuels, building_use, years):
-#     """Model final energy, all uses, by model fuel [TWh]. building_use is
-#     "residential" or "non-residential"."""
-#     var_of = {f: f"bld_energy-demand_{building_use}_{f}" for f in fuels}
-#     return from_dic_var_get_df(dm_tpe, var_of, years)
+def model_all_consumption(dm_tpe, fuels, years):
+    """Model final energy, all uses, by model fuel [TWh]. building_use is
+    "residential" or "non-residential"."""
+    var_of = {f: f"energy_consumption_{f}" for f in fuels}
+    return from_dic_var_get_df(dm_tpe, var_of, years)
 
 
 ##### FRIBOURG ###
@@ -136,7 +136,13 @@ def fribourg_values():
     return EMISSION_FRIBOURG
 
 
-def model_use_emissions(dm_tpe, fuels, building_use, years=years_ots):
+def model_use_emissions_per_fuel(dm_tpe, fuels, years):
+    """Model final emisisons, all uses, by model fuel [MtCO2eq]."""
+    var_of = {f: f"bld_CO2-emissions_{f}" for f in fuels}
+    return from_dic_var_get_df(dm_tpe, var_of, years)
+
+
+def model_use_emissions_per_type_household(dm_tpe, building_use, years=years_ots):
     """Model final emisisons, all uses, by model fuel [MtCO2eq]. building_use is
     "residential" or "non-residential"."""
     heat_tech = ["heating", "hot-water"]
@@ -240,11 +246,11 @@ def fribourg_run():
 
     YEARS_FRIBOURG_BILAN = [2017, 2023]
     emissions_fribourg_model = {
-        "services": model_use_emissions(
-            dm_tpe, fuels, "services", YEARS_FRIBOURG_BILAN
+        "services": model_use_emissions_per_type_household(
+            dm_tpe, "services", YEARS_FRIBOURG_BILAN
         ).sum(axis=1),
-        "residential": model_use_emissions(
-            dm_tpe, fuels, "residential", YEARS_FRIBOURG_BILAN
+        "residential": model_use_emissions_per_type_household(
+            dm_tpe, "residential", YEARS_FRIBOURG_BILAN
         ).sum(axis=1),
     }
     emissions_fribourg_model["total"] = (
@@ -465,11 +471,11 @@ def schwyz_run():
 
     YEARS_SCHWYZ_BILAN = [y for y in range(2010, 2024)] + [2025]
     emissions_Shwyz_model = {
-        "services": model_use_emissions(
-            dm_tpe, fuels, "services", YEARS_SCHWYZ_BILAN
+        "services": model_use_emissions_per_type_household(
+            dm_tpe, "services", YEARS_SCHWYZ_BILAN
         ).sum(axis=1),
-        "residential": model_use_emissions(
-            dm_tpe, fuels, "residential", YEARS_SCHWYZ_BILAN
+        "residential": model_use_emissions_per_type_household(
+            dm_tpe, "residential", YEARS_SCHWYZ_BILAN
         ).sum(axis=1),
     }
     emissions_Shwyz_model["total"] = (
@@ -674,9 +680,9 @@ def plot_comparaison(model, col_to_plot_vaud, legend_label, groups, dic_off_to_m
     return fig
 
 
-def from_twh_to_mwh(df):
+def from_unit_to_other_unit_and_total(df, conv_factor=10**6):
     df["total"] = df.sum(axis=1)
-    return df * 10**6
+    return df * conv_factor
 
 
 def vaud_run():
@@ -695,36 +701,51 @@ def vaud_run():
     use_type = ["residential", "non-residential"]
     energy_vaud_model = {}
     for use in use_type:
-        energy_vaud_model[use] = from_twh_to_mwh(
-            model_all_uses(dm_tpe, fuels, use, YEARS_VAUD_BILAN)
+        # TWh to MWh
+        energy_vaud_model[use] = from_unit_to_other_unit_and_total(
+            model_all_demand(dm_tpe, fuels, use, YEARS_VAUD_BILAN)
         )
 
     energy_vaud_model["total"] = (
         energy_vaud_model["non-residential"] + energy_vaud_model["residential"]
     )
+    # TWh to MWh
+    energy_consumption_model = from_unit_to_other_unit_and_total(
+        model_all_consumption(dm_tpe, fuels, YEARS_VAUD_BILAN), 10**6
+    )
 
     plot_comparaison(
         energy_vaud_model["total"],
+        col_to_plot_vaud="Activité [MWh]",
+        legend_label="Énergie demandée (MWh)",
+        groups=groups,
+        dic_off_to_model=DIC_OFF_TO_MODEL,
+    )
+    plot_comparaison(
+        energy_consumption_model,
         col_to_plot_vaud="Activité [MWh]",
         legend_label="Énergie consommée (MWh)",
         groups=groups,
         dic_off_to_model=DIC_OFF_TO_MODEL,
     )
 
+    # Other tech and ambient heat are not accounted in the emissions only in energy consumption
     fuels.remove("other-tech")
     fuels.remove("ambient-heat")
 
-    emissions_Vaud_model = {
-        "services": model_use_emissions(
-            dm_tpe, fuels, "services", YEARS_VAUD_BILAN
-        ).sum(axis=1),
-        "residential": model_use_emissions(
-            dm_tpe, fuels, "residential", YEARS_VAUD_BILAN
-        ).sum(axis=1),
-    }
-    emissions_Vaud_model["total"] = (
-        emissions_Vaud_model["services"] + emissions_Vaud_model["residential"]
+    # Mt to t
+    emissions_Vaud_model = from_unit_to_other_unit_and_total(
+        model_use_emissions_per_fuel(dm_tpe, fuels, YEARS_VAUD_BILAN), 10**6
     )
+
+    plot_comparaison(
+        emissions_Vaud_model,
+        col_to_plot_vaud="Emissions Territoriales [tCo2eq] GES",
+        legend_label="Émissions Territoriales [tCo2eq]",
+        groups=groups,
+        dic_off_to_model=DIC_OFF_TO_MODEL,
+    )
+
     print("finish")
 
 
