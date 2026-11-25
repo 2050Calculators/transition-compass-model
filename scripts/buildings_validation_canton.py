@@ -110,6 +110,13 @@ def model_all_uses(dm_tpe, fuels, building_use, years):
     return from_dic_var_get_df(dm_tpe, var_of, years)
 
 
+# def model_all_demand(dm_tpe, fuels, building_use, years):
+#     """Model final energy, all uses, by model fuel [TWh]. building_use is
+#     "residential" or "non-residential"."""
+#     var_of = {f: f"bld_energy-demand_{building_use}_{f}" for f in fuels}
+#     return from_dic_var_get_df(dm_tpe, var_of, years)
+
+
 ##### FRIBOURG ###
 
 
@@ -143,10 +150,17 @@ def model_use_emissions(dm_tpe, fuels, building_use, years=years_ots):
     return df
 
 
-def plot_emissions_comparison(emissions_fribourg_model, EMISSION_FRIBOURG):
-    categories = ["services", "residential", "total"]
-
-    fig = make_subplots(rows=1, cols=3, subplot_titles=categories, shared_yaxes=True)
+def plot_emissions_comparison(
+    emissions_fribourg_model,
+    EMISSION_FRIBOURG,
+    categories=["services", "residential", "total"],
+):
+    fig = make_subplots(
+        rows=len(categories) % 3 + 1,
+        cols=3,
+        subplot_titles=categories,
+        shared_yaxes=True,
+    )
 
     colors = {
         "Model": COLOR_MODEL,
@@ -162,7 +176,7 @@ def plot_emissions_comparison(emissions_fribourg_model, EMISSION_FRIBOURG):
             go.Bar(
                 x=years,
                 y=model_values,
-                name="Model",
+                name="Transition Compass",
                 marker_color=colors["Model"],
                 showlegend=(i == 1),
                 text=[f"{v:.3f}" for v in model_values],
@@ -197,7 +211,7 @@ def plot_emissions_comparison(emissions_fribourg_model, EMISSION_FRIBOURG):
         )
 
     fig.update_layout(
-        title="Comparison of CO₂ emissions in Fribourg",
+        title="Comparaison des émissions du secteur du bâtiment de Fribourg",
         title_x=0.5,
         template="plotly_white",
         barmode="group",
@@ -206,7 +220,7 @@ def plot_emissions_comparison(emissions_fribourg_model, EMISSION_FRIBOURG):
         legend_title="Dataset",
     )
 
-    fig.update_yaxes(title_text="Emissions", row=1, col=1)
+    fig.update_yaxes(title_text="Emissions [Mt CO2 eq]", row=1, col=1)
 
     fig.update_xaxes(title_text="Year", tickvals=[2017, 2023])
 
@@ -298,7 +312,7 @@ def plot_emissions_comparison_schwyz(df_sector, df_detailed, emissions_model):
     years = list(range(2010, 2026))
 
     colors = {
-        "Model": COLOR_MODEL,
+        "Transition Compass": COLOR_MODEL,
         "Detailed data": COLOR_OFFICIAL,
         "Sector statistics": "#4C9F9A",  # Muted teal
     }
@@ -359,7 +373,10 @@ def plot_emissions_comparison_schwyz(df_sector, df_detailed, emissions_model):
     )
 
     add_trace(
-        1, "Model", years, [emissions_model["residential"].get(y, None) for y in years]
+        1,
+        "Transition Compass",
+        years,
+        [emissions_model["residential"].get(y, None) for y in years],
     )
 
     # --------------------------------------------------
@@ -376,7 +393,10 @@ def plot_emissions_comparison_schwyz(df_sector, df_detailed, emissions_model):
     )
 
     add_trace(
-        2, "Model", years, [emissions_model["services"].get(y, None) for y in years]
+        2,
+        "Transition Compass",
+        years,
+        [emissions_model["services"].get(y, None) for y in years],
     )
 
     # --------------------------------------------------
@@ -392,7 +412,12 @@ def plot_emissions_comparison_schwyz(df_sector, df_detailed, emissions_model):
 
     add_trace(3, "Detailed data", list(range(2016, 2026)), detailed_total)
 
-    add_trace(3, "Model", years, [emissions_model["total"].get(y, None) for y in years])
+    add_trace(
+        3,
+        "Transition Compass",
+        years,
+        [emissions_model["total"].get(y, None) for y in years],
+    )
 
     # --------------------------------------------------
     # LAYOUT
@@ -414,12 +439,12 @@ def plot_emissions_comparison_schwyz(df_sector, df_detailed, emissions_model):
     y_range = [y_min - padding, y_max + padding]
 
     # Apply identical y-axis range to all subplots
-    fig.update_yaxes(range=y_range, autorange=False)
+    fig.update_yaxes(range=y_range, title_text="Emissions [Mt CO2 eq]", autorange=False)
 
     fig.update_layout(
         height=1100,
         width=1100,
-        title_text="CO₂ Emissions Comparison – Canton Schwyz",
+        title_text="Buildings CO₂ Emissions Comparison – Canton Schwyz",
         template="plotly_white",
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
