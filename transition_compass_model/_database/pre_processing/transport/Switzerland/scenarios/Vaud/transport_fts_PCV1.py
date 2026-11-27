@@ -433,7 +433,7 @@ def run(DM_transport, country_list, years_ots, years_fts):
     current_file_directory = os.path.dirname(os.path.abspath(__file__))
     lfs_interface_data_file = os.path.join(
         current_file_directory,
-        "../../../../data/interface/lifestyles_to_transport.pickle",
+        "../../../../../data/interface/lifestyles_to_transport.pickle",
     )
     with open(lfs_interface_data_file, "rb") as handle:
         DM_lfs = pickle.load(handle)
@@ -550,7 +550,9 @@ def run(DM_transport, country_list, years_ots, years_fts):
     # ======================  EXPORTS FINAUX   ===========================
     # Load existing DM_transport
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")
+    pickle_file = os.path.join(
+        this_dir, "../../../../../data/datamatrix/transport.pickle"
+    )
 
     my_pickle_dump(DM_new=DM_fts, local_pickle_file=pickle_file)
     sort_pickle(pickle_file)
@@ -563,7 +565,7 @@ def run(DM_transport, country_list, years_ots, years_fts):
 if __name__ == "__main__":
     this_dir = os.path.dirname(os.path.abspath(__file__))
     file = os.path.join(
-        this_dir, "../../../../data/datamatrix/transport_wo_aviation.pickle"
+        this_dir, "../../../../../data/datamatrix/transport_wo_aviation.pickle"
     )
 
     with open(file, "rb") as handle:

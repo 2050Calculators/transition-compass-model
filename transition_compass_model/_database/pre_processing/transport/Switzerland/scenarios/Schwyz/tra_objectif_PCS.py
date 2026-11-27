@@ -25,7 +25,9 @@ def run(DM_transport: dict, lev=2):
 
     ##### Save pickle #########
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    pickle_file = os.path.join(this_dir, "../../../../data/datamatrix/transport.pickle")
+    pickle_file = os.path.join(
+        this_dir, "../../../../../data/datamatrix/transport.pickle"
+    )
     my_pickle_dump(DM_new=DM_transport, local_pickle_file=pickle_file)
     sort_pickle(pickle_file)
 
