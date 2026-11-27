@@ -3,6 +3,7 @@ import os
 import numpy as np
 
 import transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.heating_technology_CH as ht
+import transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.services_CH as fser
 from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.construction_period_param import (
     load_construction_period_param,
 )
@@ -20,6 +21,106 @@ from transition_compass_model.model.common.auxiliary_functions import (
     linear_fitting,
     load_pop,
 )
+
+
+def correct_nonres_mix_with_EP2050(
+    dm_heating_tech,
+    dm_floor_area,
+    df_services_mix,
+    nonres_types,
+    classes=("C", "D", "E", "F"),
+    n_iter=20,
+):
+    """Correct the non-residential heating mix (copied from MFH) with EP2050+ services.
+
+    For classes C-F, each canton's mix is multiplied by a national factor per
+    heating-mix group and year, then renormalised over technologies. The factor is
+    fitted so that the Swiss mix of classes C-F, weighted by the Swiss MFH floor area
+    of each class, equals the EP2050+ services mix of buildings built before 2010.
+    First guess: EP2050+ services / Swiss MFH; a few fixed-point iterations then
+    remove the small error from renormalising each class separately. Years before
+    the first EP2050+ year use the factor of that year. Class B is not changed.
+    Modifies dm_heating_tech in place.
+    """
+    techs = dm_heating_tech.col_labels["Categories3"]
+    years = dm_heating_tech.col_labels["Years"]
+    groups = list(df_services_mix.columns)
+    tech_to_group = np.zeros((len(techs), len(groups)))  # tech x group
+    for i, t in enumerate(techs):
+        tech_to_group[i, groups.index(fser.MODEL_TECH_TO_MIX_GROUP[t])] = 1
+
+    # Swiss MFH floor-area weights and mix, classes C-F: years x class (x tech)
+    dm_area = dm_floor_area.filter(
+        {
+            "Country": ["Switzerland"],
+            "Variables": ["bld_floor-area_stock"],
+            "Categories1": ["multi-family-households"],
+            "Categories2": list(classes),
+        }
+    )
+    assert dm_area.col_labels["Years"] == years
+    area = dm_area.array[0, :, 0, 0, :]
+    weights = area / area.sum(axis=1, keepdims=True)
+    mfh = dm_heating_tech.filter(
+        {
+            "Country": ["Switzerland"],
+            "Categories1": ["multi-family-households"],
+            "Categories2": list(classes),
+        }
+    ).array[0, :, 0, 0, :, :]
+    mfh = np.nan_to_num(mfh)
+
+    def apply(mix, factor_tech):
+        """Multiply mix [..., year, ..., tech] by factor and renormalise over tech."""
+        out = mix * factor_tech
+        tot = np.nansum(out, axis=-1, keepdims=True)
+        return np.divide(out, tot, out=mix.copy(), where=tot > 0)
+
+    # Fit the factor on the EP2050+ years
+    ep_years = [y for y in years if y in df_services_mix.index]
+    iy = [years.index(y) for y in ep_years]
+    target = df_services_mix.loc[ep_years].to_numpy()
+
+    def fitted(factor):
+        mix = apply(mfh[iy], (factor @ tech_to_group.T)[:, None, :])
+        return np.einsum("yc,yct,tg->yg", weights[iy], mix, tech_to_group)
+
+    factor = np.ones_like(target)
+    for _ in range(n_iter):
+        model = fitted(factor)
+        if np.abs(model - target).max() < 1e-6:
+            break
+        factor *= np.divide(target, model, out=np.ones_like(target), where=model > 0)
+    model = fitted(factor)
+    gap = np.abs(model - target).max()
+
+    # Years before the first EP2050+ year use its factor
+    factor_all = np.ones((len(years), len(groups)))
+    factor_all[iy] = factor
+    factor_all[: iy[0]] = factor[0]
+    factor_tech = factor_all @ tech_to_group.T  # year x tech
+
+    arr = dm_heating_tech.array  # country x year x variable x type x class x tech
+    for t in nonres_types:
+        for c in classes:
+            it, ic = dm_heating_tech.idx[t], dm_heating_tech.idx[c]
+            arr[:, :, :, it, ic, :] = apply(
+                arr[:, :, :, it, ic, :], factor_tech[None, :, None, :]
+            )
+
+    print(
+        "Non-residential heating mix, classes C-F corrected to EP2050+ services "
+        f"(Switzerland, max gap {gap * 100:.3f} pt):"
+    )
+    for y in [2000, 2010, 2023]:
+        if y in ep_years:
+            k = ep_years.index(y)
+            row = ", ".join(
+                f"{g} {model[k, j] * 100:.1f}/{target[k, j] * 100:.1f}"
+                for j, g in enumerate(groups)
+            )
+            print(f"  {y} model/EP2050 [%]: {row}")
+    return dm_heating_tech
 
 
 def add_dummy_envelope_cat(dm_heating_eff):
@@ -329,10 +430,11 @@ def run(global_var, dm_all, country_list, years_ots):
 
     # Proxy non-residential heating tech mix from multi-family-households.
     # No type-specific data available in BFS API (px-x-0902010000_102) for non-residential.
-    # Multi-family-households used as proxy because non-res tech mix (especially district
-    # heating penetration and gas share) is closer to apartment blocks than detached houses.
-    # Source: assumption consistent with EP2050 data for CH non-residential sector
-    # (Prognos/TEP Energy/Infras, "Energieperspektiven 2050+", SFOE 2020, Fig. 4.2-4).
+    # Start from the MFH mix of each canton (apartment blocks are closer to services
+    # buildings than detached houses), then correct classes C-F (built up to 2010) so that
+    # Switzerland matches the EP2050+ services mix of buildings built before 2010
+    # (Dienstleistung, Tabelle 02-02). Class B keeps the MFH mix: EP2050+ has no services
+    # mix for new buildings only.
     nonres_types = ["education", "health", "hotels", "offices", "other", "trade"]
     idx_mfh = dm_heating_tech.idx["multi-family-households"]
     for t in nonres_types:
@@ -343,6 +445,12 @@ def run(global_var, dm_all, country_list, years_ots):
             unit=dm_heating_tech.units.get("bld_heating-mix", ""),
         )
     dm_heating_tech.sort("Categories1")
+    df_services_mix = fser.extract_services_heating_mix_EP2050(
+        os.path.join(this_dir, fser.EP2050_SERVICES_WORKBOOK)
+    )
+    correct_nonres_mix_with_EP2050(
+        dm_heating_tech, dm_all, df_services_mix, nonres_types
+    )
 
     # Reconstruct heating-mix for new categories using archetypes for B and C
 

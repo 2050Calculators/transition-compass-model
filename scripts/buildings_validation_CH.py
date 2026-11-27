@@ -20,8 +20,10 @@ It then checks services space heating on its own, with three more series:
      model (EP2050).
   5. Space heating, final energy (Prognos 2021, Table 26, TWh, incl. agriculture).
   6. Heating mix (EP2050 Dienstleistung, Tabelle 02-02, share of heating systems in
-     buildings built before 2010). Compared with the model's input heating mix,
-     weighted by floor area: a share of systems, not of energy.
+     buildings built before 2010). Compared with the model's input heating mix of
+     classes C-F (built up to 2010), weighted by floor area: a share of systems, not
+     of energy. The pre-processing fits classes C-F to this table, so it should match.
+     Class B (built from 2011) is shown too; it has no official counterpart.
 
 Prints one table per series (official, model, model/official) and writes an
 interactive plotly page: one row per fuel group, one column per series, then the
@@ -54,7 +56,10 @@ from transition_compass_model._database.pre_processing.buildings.Switzerland.get
     extract_energy_statistics_data,
 )
 from transition_compass_model._database.pre_processing.buildings.Switzerland.get_data_functions.services_CH import (
+    EP2050_SERVICES_MIX_GROUPS,
+    MODEL_TECH_TO_MIX_GROUP,
     PROGNOS_SERVICES_EUD_PJ,
+    extract_services_heating_mix_EP2050,
 )
 from transition_compass_model.model.buildings_module import buildings
 from transition_compass_model.model.climate_module import climate
@@ -136,31 +141,10 @@ EP2050_PREPROC_FILE = os.path.join(
 EP2050_SERVICES_FILE = os.path.join(DATA_DIR, "EP2050_Dienstleistung.xlsx")
 # Tabelle 03-01: useful space heat of services, ZERO scenarios, kWh/m².
 EP2050_HEAT_TABLE = ("03 Nutzenergie RW", "Tabelle 03-01", "Baujahr < 2020")
-# Tabelle 02-02: heating systems in buildings built before 2010, ZERO Basis
-# (the historical years are the same in all scenarios). Row label -> model group.
-EP2050_MIX_TABLE = ("02 Beheizungsstruktur", "Tabelle 02-02")
-EP2050_MIX_GROUPS = {
-    "Heizöl": "heating-oil",
-    "Gas*": "gas",
-    "Holz": "wood",
-    "Strom": "electricity",
-    "Wärmepumpen": "heat-pump",
-    "Fernwärme/Nahwärme": "district-heating",
-    "sonstige/keine Heizung": "other",
-}
-# Model heating technologies -> heating-mix groups ("other": coal, solar, other-tech)
-MODEL_TO_MIX_GROUP = {
-    "heating-oil": "heating-oil",
-    "gas": "gas",
-    "wood": "wood",
-    "electricity": "electricity",
-    "heat-pump": "heat-pump",
-    "district-heating": "district-heating",
-    "coal": "other",
-    "solar": "other",
-    "other-tech": "other",
-}
-MIX_ORDER = list(dict.fromkeys(EP2050_MIX_GROUPS.values()))
+# Heating mix (Tabelle 02-02, buildings built before 2010): groups and loader are
+# shared with the pre-processing (services_CH). "other": coal, solar, other-tech.
+MIX_ORDER = list(EP2050_SERVICES_MIX_GROUPS.values())
+MIX_CLASSES_PRE2010 = ["C", "D", "E", "F"]
 NONRES_TYPES = ["education", "health", "hotels", "offices", "other", "trade"]
 TWH_PER_PJ = 1 / 3.6
 
@@ -303,11 +287,8 @@ def load_ep2050_services_useful_heat():
 
 def load_ep2050_services_heating_mix():
     """EP2050 share of heating systems, services built before 2010. Years x group."""
-    sheet, table = EP2050_MIX_TABLE
-    df = _ep2050_table(sheet, table, list(EP2050_MIX_GROUPS))
-    df = df.rename(columns=EP2050_MIX_GROUPS)
-    df["other"] = df["other"].clip(lower=0)  # tiny negative values in the source
-    return df.div(df.sum(axis=1), axis=0)
+    df = extract_services_heating_mix_EP2050(ep2050_services_workbook())
+    return df.loc[df.index.isin(YEARS), MIX_ORDER]
 
 
 def load_prognos_services_space_heating():
@@ -390,18 +371,19 @@ def model_services_space_heating(link):
     return pd.DataFrame({"services": df.drop(columns="ambient-heat").sum(axis=1)})
 
 
-def model_services_heating_mix(dm_mix, dm_tpe):
-    """Model input heating mix of services, weighted by floor area by class.
+def model_services_heating_mix(dm_mix, dm_tpe, classes):
+    """Model input heating mix of services for `classes`, weighted by floor area.
 
-    Services copy the multi-family mix, so the mix is the same for all services
-    types; it is weighted by the services floor area of each energy class.
-    Returns Years x heating-mix group (shares sum to 1).
+    All services types have the same mix, so the mix is weighted only by the
+    services floor area of each energy class. Returns Years x heating-mix group
+    (shares sum to 1; NaN in years where the classes have no floor area).
     """
-    dm = dm_mix.filter({"Country": [COUNTRY], "Categories1": NONRES_TYPES})
+    dm = dm_mix.filter(
+        {"Country": [COUNTRY], "Categories1": NONRES_TYPES, "Categories2": classes}
+    )
     arr = dm.array[0, :, 0]  # years x type x class x tech
     if not np.allclose(arr, arr[:, :1], equal_nan=True):
         raise ValueError("Services types have different heating mixes: weight by type")
-    classes = dm.col_labels["Categories2"]
     years = [int(y) for y in dm.col_labels["Years"]]
     area = pd.DataFrame(
         {
@@ -412,7 +394,7 @@ def model_services_heating_mix(dm_mix, dm_tpe):
     weights = area.div(area.sum(axis=1), axis=0).to_numpy()  # years x class
     mix = np.einsum("yc,yct->yt", weights, np.nan_to_num(arr[:, 0]))
     df = pd.DataFrame(mix, index=years, columns=dm.col_labels["Categories3"])
-    df = df.T.groupby(MODEL_TO_MIX_GROUP).sum().T
+    df = df.T.groupby(MODEL_TECH_TO_MIX_GROUP).sum().T
     return df.reindex(columns=MIX_ORDER).loc[lambda d: d.index.isin(YEARS)]
 
 
@@ -590,9 +572,13 @@ def services_heating_figure(heat, heat_by_type, space_heating, mix):
             col=1,
         )
     palette = ["#6b4c3b", "#e0a030", "#8db255", "#7a5fb0", "#2fa59b", "#d6453d", "#999"]
-    official, model = mix
+    official, model, model_new = mix
     for g, color in zip(MIX_ORDER, palette):
-        for name, df, dash in (("EP2050", official, "dash"), ("model", model, "solid")):
+        for name, df, dash, width in (
+            ("EP2050, built < 2010", official, "dash", 2),
+            ("model C-F", model, "solid", 2),
+            ("model B, built from 2011", model_new, "dot", 1),
+        ):
             fig.add_trace(
                 go.Scatter(
                     x=df.index,
@@ -600,7 +586,7 @@ def services_heating_figure(heat, heat_by_type, space_heating, mix):
                     mode="lines",
                     name=f"{g} ({name})",
                     legendgroup=g,
-                    line={"width": 2, "dash": dash, "color": color},
+                    line={"width": width, "dash": dash, "color": color},
                     hovertemplate=f"{g} {name}: %{{y:.1f}}%<extra></extra>",
                 ),
                 row=1,
@@ -672,8 +658,9 @@ def main():
     model_sh = model_services_space_heating(link)
     space_heating = (prognos, model_sh.loc[prognos.index])
     ep_mix = load_ep2050_services_heating_mix()
-    model_mix = model_services_heating_mix(dm_heating_mix, dm_tpe)
-    mix = (ep_mix, model_mix)
+    model_mix = model_services_heating_mix(dm_heating_mix, dm_tpe, MIX_CLASSES_PRE2010)
+    model_mix_new = model_services_heating_mix(dm_heating_mix, dm_tpe, ["B"])
+    mix = (ep_mix, model_mix, model_mix_new)
 
     with pd.option_context("display.width", 200, "display.max_rows", 200):
         print("\n=== Services useful heat per m², EP2050 [kWh/m²/yr] ===")
@@ -687,16 +674,23 @@ def main():
             .round(2)
             .to_string()
         )
-        print("\n=== Services heating mix, share of systems, EP2050 [%] ===")
-        print(mix_table(*mix).round(1).to_string())
+        print(
+            "\n=== Services heating mix, built before 2010 (model classes C-F), "
+            "share of systems, EP2050 [%] ==="
+        )
+        print(mix_table(ep_mix, model_mix).round(1).to_string())
+        years_b = [y for y in KEY_YEARS if y >= 2011] + [YEARS[-1]]
+        print("\nModel services heating mix, class B (built from 2011) [%]:")
+        print((model_mix_new.loc[sorted(set(years_b))] * 100).round(1).T.to_string())
     print(
         "\nNotes: useful heat = heat lost by the building, before boiler/heat-pump "
         "losses;\nthe model computes it from U-value x envelope area x heating degree "
         "days.\nEP2050 kWh/m² is for the stock built before 2020; the model is not "
         "weather-corrected.\nPrognos space heating includes agriculture (a few %). "
         "Model final energy excludes\nambient heat. Model heating mix = input mix "
-        "(the multi-family mix) weighted by\nservices floor area by class; EP2050 = "
-        "systems in buildings built before 2010."
+        "of classes C-F (the multi-family mix\ncorrected to EP2050 in the "
+        "pre-processing) weighted by services floor area by class;\nEP2050 = "
+        "systems in buildings built before 2010. Class B keeps the multi-family mix."
     )
 
     os.makedirs(args.out, exist_ok=True)

@@ -149,7 +149,7 @@ The main script runs in three phases.
 Phase 1: historical pipelines (processors/)
    passenger: demand (pkm, vkm) ─► fleet ─► renewal and waste ─► lifetime
               emission factors, energy (EP2050+) ─► efficiency
-              data checks (energy, vkm, emissions)
+              EP2050+ vkm (for the efficiency correction)
    aviation:  part 1 (downloads) ─► aviation history and fixed inputs
    freight:   tkm and modal share ─► non-road inputs
               road trucks from targets ─► utilisation ─► lifetime ─► efficiency, tech share
@@ -181,7 +181,7 @@ are travelled by each mode, and how many vkm that means.
 **National pkm.** FSO, *Transport de personnes: prestations de transport*
 (je-f-11.04.01.02) gives Swiss pkm by mode. Missing values are filled with linear trends
 (fitted from 2020 on for the recent years, before 2008 for the early years). FSO's "Cars"
-row (coaches) is counted as `LDV`.
+row (coaches) is counted as `bus`, like the survey ("Autocar") and EP2050+ ("coach").
 
 **Regional split.** The Swiss mobility survey (MRMT, *Microrecensement mobilité et
 transports*) gives km per person per day by mode for each *grande région* (7 groups of
@@ -202,7 +202,7 @@ Total pkm = pkm per person × population.
 
 **vkm.** FSO, *prestations kilométriques et mouvements des véhicules* (je-f-11.04.01.01)
 gives Swiss vkm by mode (2023 is extrapolated from 2020 on; a 2004 spike in metro/tram is
-removed). Swiss occupancy is *FSO pkm / FSO vkm*. Every canton gets the Swiss occupancy,
+removed). The "Cars privés" row (coaches) is counted as `bus`, as for pkm. Swiss occupancy is *FSO pkm / FSO vkm*. Every canton gets the Swiss occupancy,
 and its vkm is its pkm divided by that occupancy. Bike and walk have no vkm.
 
 **Output:** `dm_pkm_cap` [pkm/cap], `dm_pkm` [pkm] and `dm_vkm` [vkm], by mode.
@@ -229,7 +229,13 @@ technology, and how many new cars and motorbikes are registered each year.
 
 **Buses, trains, trams.** FSO, *Transports publics – séries chronologiques détaillées*
 (`tra_public_transport.xlsx`) gives the Swiss fleet. Each canton gets the Swiss fleet ×
-*canton pkm / Swiss pkm* for that mode.
+*canton pkm / Swiss pkm* for that mode. The bus fleet is public-operator buses only,
+while bus pkm and vkm include coaches. So bus vkm per vehicle is high, and the
+electric-bus efficiency (energy / vkm, step 5) is lower than a city-bus-only value.
+
+**Minibuses.** The Swiss Stats group "Passenger vehicles" (code 200: mostly minibuses up
+to 3.5 t, plus coaches and buses) is counted with cars (`LDV`), in the stock and in new
+registrations, because most of them are minibuses used like cars.
 
 **Output:** `dm_private_fleet` (stock and new vehicles, `LDV` and `2W`) and
 `dm_public_fleet` (stock, `bus`, `rail`, `metrotram`), in number of vehicles.
@@ -320,38 +326,35 @@ emission factor [g/MJ] gives MJ/km.
 **All other modes, and electric or fuel-cell cars.** Efficiency = EP2050+ energy / vkm.
 The vkm by technology is the FSO vkm × the fleet technology share. Electric car,
 fuel-cell car and electric motorbike values are noisy, so each is replaced by its average
-over all years. Metro/tram comes from JRC-IDEES 2021: 45 kgoe/100 km in 2000 and
+over all years (electric cars: 2011 and 2012 are left out of the average as outliers). Metro/tram comes from JRC-IDEES 2021: 45 kgoe/100 km in 2000 and
 32.2 kgoe/100 km in 2021, joined by a straight line. For these modes, new vehicles get the
 fleet value, and every canton gets the Swiss value.
 
 **Correction to EP2050+.** For 2W gasoline, LDV diesel, gas and gasoline, and bus diesel,
-the efficiency is multiplied each year by *EP2050+ efficiency / model efficiency*, where
-EP2050+ efficiency is EP2050+ energy / EP2050+ vkm. The factor is computed for
-Switzerland and applied to every canton, for both the fleet and new vehicles. For LDV gas,
-years before 2007 use the 2007 factor.
+the Swiss fleet efficiency is set to *EP2050+ energy / EP2050+ vkm*, each year.
+- 2W and bus: every canton and new vehicles get this Swiss value, like the other modes.
+- LDV: the CO₂-based values are multiplied by *EP2050+ efficiency / Swiss CO₂-based fleet
+  efficiency*. So Switzerland matches EP2050+, while cantons and new cars keep their
+  CO₂-based ratio to the Swiss fleet. For LDV gas, years before 2007 use the 2007 factor
+  (the EP2050+ value is not usable before then).
 
 **Output:** one DataMatrix with `tra_passenger_veh-efficiency_fleet` and
 `tra_passenger_veh-efficiency_new` [MJ/km], mode × technology.
 
 ---
 
-### 6. Data checks (written, not used by the model)
+### 6. EP2050+ vkm
 
-`processors/transport_calib_energy_demand.py`, `transport_calib_vkm.py`,
-`transport_calib_emissions.py`
+`processors/transport_calib_vkm.py`
 
-These three steps collect official totals to compare the model with. Each writes a pickle
-to `transport/Switzerland/data/datamatrix/` (`calibration_energy-demand.pickle`,
-`calibration_vkm.pickle`, `calibration_emissions.pickle`). The model does not read them.
+Reads EP2050+ road vkm by mode and technology (sheet "03 Fahrleistung", WWB). It is
+passed in memory to the vkm adjustment factor and the efficiency step (step 5) for the
+EP2050+ correction, and written to `transport/Switzerland/data/datamatrix/calibration_vkm.pickle`,
+which the model does not read.
 
-- **Energy:** SFOE *Gesamtenergiestatistik*, table T17e (transport energy by fuel, with
-  electricity split into rail, road and non-road), plus EP2050+ energy for passengers,
-  freight and aviation.
-- **vkm:** EP2050+ road vkm by mode and technology (sheet "03 Fahrleistung", WWB). This
-  one is also passed in memory to the efficiency step (step 5) for the EP2050+
-  correction.
-- **Emissions:** FOEN greenhouse-gas inventory, CO₂, CH₄ and N₂O by mode (cars, buses,
-  trucks, motorbikes, rail, aviation, navigation).
+The official totals used to check the model (SFOE energy by fuel, EP2050+ energy by
+mode and technology, FOEN emissions by mode) are no longer built here. They are built
+and cached by `scripts/transport_validation_CH.py` in `scripts/data/`.
 
 ---
 

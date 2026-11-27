@@ -110,6 +110,61 @@ PROGNOS_SERVICES_EUD_PJ = {
     },
 }
 
+# EP2050+ services workbook (BFE publication 10441, extracted into data/EP2050_sectors/)
+EP2050_SERVICES_WORKBOOK = (
+    "../data/EP2050_sectors/EP2050+_Szenarienergebnisse_Details_Nachfragesektoren/"
+    "EP2050+_Detailergebnisse 2020-2060_Dienstleistung_alle Szenarien_2022-10-20.xlsx"
+)
+
+# EP2050+ heating-system labels (Dienstleistung, Tabelle 02-02) -> heating-mix group
+EP2050_SERVICES_MIX_GROUPS = {
+    "Heizöl": "heating-oil",
+    "Gas*": "gas",
+    "Holz": "wood",
+    "Strom": "electricity",
+    "Wärmepumpen": "heat-pump",
+    "Fernwärme/Nahwärme": "district-heating",
+    "sonstige/keine Heizung": "other",
+}
+
+# Model heating technology -> heating-mix group
+MODEL_TECH_TO_MIX_GROUP = {
+    "heating-oil": "heating-oil",
+    "gas": "gas",
+    "wood": "wood",
+    "electricity": "electricity",
+    "heat-pump": "heat-pump",
+    "district-heating": "district-heating",
+    "coal": "other",
+    "solar": "other",
+    "other-tech": "other",
+}
+
+
+def extract_services_heating_mix_EP2050(workbook):
+    """EP2050+ heating mix of services buildings built before 2010 (ZERO Basis).
+
+    Dienstleistung, sheet "02 Beheizungsstruktur", Tabelle 02-02: share of heating
+    systems ("Anteile Anlagen"), 2000-2060. Returns a DataFrame Years x heating-mix
+    group (see EP2050_SERVICES_MIX_GROUPS); tiny negative values in the source are set
+    to 0 and each year sums to 1.
+    """
+    df = pd.read_excel(workbook, sheet_name="02 Beheizungsstruktur", header=None)
+    col1 = df.iloc[:, 1].astype(str).str.strip()
+    start = col1.index[col1.str.startswith("Tabelle 02-02")][0]
+    head = next(i for i in df.index[df.index > start] if 2000 in df.loc[i].values)
+    year_cols = {
+        int(v): c
+        for c, v in df.loc[head].items()
+        if isinstance(v, (int, float)) and not pd.isna(v)
+    }
+    out = {}
+    for label, group in EP2050_SERVICES_MIX_GROUPS.items():
+        row = col1.index[(col1 == label) & (col1.index > head)][0]
+        out[group] = [float(df.loc[row, c]) for c in year_cols.values()]
+    mix = pd.DataFrame(out, index=list(year_cols)).clip(lower=0)
+    return mix.div(mix.sum(axis=1), axis=0)
+
 
 def _extract_type_class_shares_from_cadastre(this_dir):
     """Return P(type | class) shares from RegBL cadastre, shape (n_types, n_classes)."""
