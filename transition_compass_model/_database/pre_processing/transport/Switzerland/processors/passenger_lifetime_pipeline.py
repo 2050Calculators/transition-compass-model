@@ -58,9 +58,7 @@ def run(mode_cat, tech_cat, years_ots, years_fts, country_list):
     dm_lifetime[:, :, "tra_passenger_lifetime", "rail", "ICE-diesel"] = 30
     dm_lifetime[:, :, "tra_passenger_lifetime", "rail", "mt"] = 30
     dm_lifetime[:, :, "tra_passenger_lifetime", "metrotram", "mt"] = 20
-    dm_lifetime[:, :, "tra_passenger_lifetime", "bus", "CEV"] = 10
-    dm_lifetime[:, :, "tra_passenger_lifetime", "bus", "ICE-diesel"] = 10
-    dm_lifetime[:, :, "tra_passenger_lifetime", "bus", "mt"] = 10
+    dm_lifetime[:, :, "tra_passenger_lifetime", "bus", :] = 10
 
     dm_lifetime.fill_nans("Years")
 
