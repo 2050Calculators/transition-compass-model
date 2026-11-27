@@ -14,7 +14,7 @@ tra_freight_vehicle-efficiency_fleet : MJ/km (road), MJ/tkm (non-road)
 
 Notes
 -----
-The model (model/transport/utils.py, compute_fts_tech_split) keeps these values for
+The model (model/transport/utils.py, compute_stock_from_lifetime) keeps these values for
 all historical years and only runs the fleet stock-flow after the base year, so they
 set historical energy directly. FTS years are held flat here and overwritten by the
 model's stock-flow.

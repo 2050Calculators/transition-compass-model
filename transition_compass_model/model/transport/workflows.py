@@ -582,17 +582,41 @@ def freight_fleet_energy(DM_freight, DM_other, cdm_const, years_setting):
         tmp_3, col_label="tra_freight_new-vehicles", dim="Variables", unit="number"
     )
     del tmp_1, tmp_2, tmp_3
-    #
+    # Future fleet by technology: same stock-flow as passenger. Vehicles bought at
+    # t - lifetime are retired at t, with the efficiency they had when new.
+    # Lifetime [years] = 1 / renewal-rate, the same for all technologies of a mode.
+    rr = dm_mode[:, :, "tra_freight_renewal-rate", :]
+    lifetime = np.divide(
+        1.0, rr, out=np.full_like(rr, np.nan, dtype=float), where=rr > 0
+    )
+    dm_tech.add(
+        np.repeat(
+            lifetime[..., np.newaxis], len(dm_tech.col_labels["Categories2"]), -1
+        ),
+        dim="Variables",
+        col_label="tra_freight_vehicle-lifetime",
+        unit="years",
+    )
+    # compute_stock_from_lifetime rebuilds the fleet by technology from dm_mode
+    dm_tech.drop(dim="Variables", col_label="tra_freight_vehicle-fleet")
     cols = {
-        "renewal-rate": "tra_freight_renewal-rate",
-        "tot": "tra_freight_vehicle-fleet",
+        "lifetime": "tra_freight_vehicle-lifetime",
+        "stock": "tra_freight_vehicle-fleet",
         "waste": "tra_freight_vehicle-waste",
         "new": "tra_freight_new-vehicles",
-        "tech_tot": "tra_freight_technology-share_fleet",
-        "eff_tot": "tra_freight_vehicle-efficiency_fleet",
-        "eff_new": "tra_freight_vehicle-efficiency_new",
+        "tech-new": "tra_freight_technology-share_new",
+        "tech-stock": "tra_freight_technology-share_fleet",
+        "eff-stock": "tra_freight_vehicle-efficiency_fleet",
+        "eff-new": "tra_freight_vehicle-efficiency_new",
     }
-    utils.compute_fts_tech_split(dm_mode, dm_tech, cols, years_setting)
+    dm_tech = utils.compute_stock_from_lifetime(
+        dm_mode, dm_tech, var_names=cols, years_setting=years_setting
+    )
+    dm_tech.drop(dim="Variables", col_label="tra_freight_vehicle-lifetime")
+    # New vehicles and waste by mode change in future years: update dm_mode
+    i_fts = dm_mode.col_labels["Years"].index(years_setting[1]) + 1
+    for var in [cols["new"], cols["waste"]]:
+        dm_mode[:, i_fts:, var, :] = np.nansum(dm_tech[:, i_fts:, var, :, :], axis=-1)
 
     # Extract freight transport demand vkm for road and tkm for others, join and compute transport demand by technology
     dm_demand_km = dm_mode_road.filter(
