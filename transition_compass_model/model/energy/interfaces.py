@@ -189,11 +189,35 @@ def impose_transport_demand_pyomo(m, endyr, share_of_national_demand, DM_tra, cn
         {"Categories1": ["metrotram", "bus", "rail"]}
     )
     dm_public = dm_public.flatten()
+    # Group pkm and energy (not intensities), then divide back, so each EnergyScope
+    # technology gets the pkm-weighted energy intensity of the modes it represents
+    # (summing intensities would e.g. add the tram and bus kWh/pkm together).
+    dm_public.operation(
+        "tra_passenger_transport-demand",
+        "*",
+        "tra_passenger_energy-intensity",
+        out_col="tra_passenger_energy-demand",
+        unit="GWh",
+    )
+    dm_public.drop(col_label="tra_passenger_energy-intensity", dim="Variables")
     dm_public.groupby(
-        {"TRAIN_PUB": ["rail_CEV"], "TRAMWAY_TROLLEY": ["metrotram_mt", "bus_CEV"]},
+        {
+            "TRAIN_PUB": ["rail_CEV"],
+            "TRAMWAY_TROLLEY": ["metrotram_mt", "bus_CEV", "bus_BEV"],
+        },
         dim="Categories1",
         inplace=True,
     )
+    with np.errstate(divide="ignore", invalid="ignore"):  # 0/0 for empty categories
+        dm_public.operation(
+            "tra_passenger_energy-demand",
+            "/",
+            "tra_passenger_transport-demand",
+            out_col="tra_passenger_energy-intensity",
+            unit="kWh/pkm",
+        )
+    # Back to the same variables as dm_private (they are appended below)
+    dm_public.drop(col_label="tra_passenger_energy-demand", dim="Variables")
     dm_public.normalise("Categories1", inplace=True, keep_original=True)
     public_mob_tech = list(m.TECHNOLOGIES_OF_END_USES_TYPE["MOB_PUBLIC"])
     for cat in public_mob_tech:
