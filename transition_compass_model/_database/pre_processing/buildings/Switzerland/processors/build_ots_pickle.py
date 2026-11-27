@@ -160,7 +160,7 @@ def compute_nonres_demolition_rate_CH(dm_srv_floor, dm_nonres_rr, years_ots):
 
     dm_demo = DataMatrix(
         col_labels={
-            "Country": country_list,
+            "Country": dm_srv_floor.col_labels["Country"],
             "Years": years_ots,
             "Variables": ["bld_demolition-rate"],
             "Categories1": nonres_types,
@@ -408,11 +408,19 @@ def run(dm_pop, DM_all, years_ots, years_fts):
     # Non-residential demolition rate from EP2050 class-F stock dynamics (same source as renovation rate)
     if dm_srv_floor is not None:
         res_countries = dm_demolition_rate.col_labels["Country"]
+        # filter keeps the original country order, so sort to match the residential
+        # matrix: the rows are added below by position.
+        dm_srv_floor_res = dm_srv_floor.filter(
+            {"Country": res_countries}, inplace=False
+        )
+        dm_srv_floor_res.sort("Country")
+        assert dm_srv_floor_res.col_labels["Country"] == res_countries
         dm_nonres_demo = compute_nonres_demolition_rate_CH(
-            dm_srv_floor.filter({"Country": res_countries}, inplace=False),
+            dm_srv_floor_res,
             dm_nonres_rr.filter({"Country": res_countries}, inplace=False),
             years_ots,
         )
+        assert dm_nonres_demo.col_labels["Country"] == res_countries
         for t in nonres_types:
             i_t = dm_nonres_demo.idx[t]
             dm_demolition_rate.add(

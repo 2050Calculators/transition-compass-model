@@ -518,6 +518,9 @@ def run(country_list, years_ots):
     dm_demand = dm_services_fuels_eud_cantons_FSO.copy()
     dm_demand.filter({"Years": years_ots}, inplace=True)
     assert dm_eff.col_labels["Country"] == dm_demand.col_labels["Country"]
+    # The product below is by position: technologies must be in the same order.
+    dm_eff.sort("Categories1")
+    assert dm_eff.col_labels["Categories1"] == dm_demand.col_labels["Categories2"]
     dm_demand[:, :, :, :, :] = dm_demand[:, :, :, :, :] * dm_eff[:, :, :, np.newaxis, :]
 
     dm_tot_demand = dm_demand.group_all("Categories2", inplace=False)
