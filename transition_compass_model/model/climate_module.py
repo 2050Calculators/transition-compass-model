@@ -30,8 +30,12 @@ def read_data(DM_climate, lever_setting):
 
 
 def climate_buildings_interface(DM_ots_fts, write_pickle=False):
-    # append
-    dm_bld = DM_ots_fts["temp"]
+    # "cdd-hdd": legacy scalars (HDD 18/15, CDD 21/24, N15, N24, AC uptake)
+    # "degree-days": HDD, CDD and day counts for every base temperature Tb
+    DM_bld = {
+        "cdd-hdd": DM_ots_fts["temp"]["cdd-hdd"],
+        "degree-days": DM_ots_fts["temp"]["degree-days"],
+    }
 
     # if write_pickle is True, write pickle
     if write_pickle is True:
@@ -40,13 +44,15 @@ def climate_buildings_interface(DM_ots_fts, write_pickle=False):
             current_file_directory,
             "../_database/data/interface/climate_to_buildings.pickle",
         )
-        DM_bld = {}
-        DM_bld["cdd-hdd"] = dm_bld.copy()
         with open(f, "wb") as handle:
-            pickle.dump(DM_bld, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(
+                {k: dm.copy() for k, dm in DM_bld.items()},
+                handle,
+                protocol=pickle.HIGHEST_PROTOCOL,
+            )
 
     # return
-    return dm_bld
+    return DM_bld
 
 
 def variables_to_tpe(DM_ots_fts):
@@ -66,11 +72,11 @@ def climate(
     DM_ots_fts = read_data(DM_input, lever_setting)
 
     # tpe
-    results_run = DM_ots_fts["temp"]
+    results_run = DM_ots_fts["temp"]["cdd-hdd"]
 
     # interface buildings
-    dm_bld = climate_buildings_interface(DM_ots_fts, write_pickle=False)
-    interface.add_link(from_sector="climate", to_sector="buildings", dm=dm_bld)
+    DM_bld = climate_buildings_interface(DM_ots_fts, write_pickle=False)
+    interface.add_link(from_sector="climate", to_sector="buildings", dm=DM_bld)
 
     # TODO: interface water when water is ready
 

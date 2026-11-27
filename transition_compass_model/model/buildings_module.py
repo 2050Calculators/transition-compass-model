@@ -117,20 +117,21 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
         cntr_list = DM_floor_area["floor-intensity"].col_labels["Country"]
         dm_lfs.filter({"Country": cntr_list}, inplace=True)
 
+    # DM_clm: {"cdd-hdd": legacy scalars + AC uptake, "degree-days": table by Tb}
     if interface.has_link(from_sector="climate", to_sector="buildings"):
-        dm_clm = interface.get_link(from_sector="climate", to_sector="buildings")
+        DM_clm = interface.get_link(from_sector="climate", to_sector="buildings")
     else:
         if len(interface.list_link()) != 0:
-            print("You are missing lifestyles to buildings interface")
+            print("You are missing climate to buildings interface")
         data_file = os.path.join(
             current_file_directory,
             "../_database/data/interface/climate_to_buildings.pickle",
         )
         with open(data_file, "rb") as handle:
             DM_clm = pickle.load(handle)
-        dm_clm = DM_clm["cdd-hdd"]
         cntr_list = DM_floor_area["floor-intensity"].col_labels["Country"]
-        dm_clm.filter({"Country": cntr_list}, inplace=True)
+        for dm in DM_clm.values():
+            dm.filter({"Country": cntr_list}, inplace=True)
 
     # Floor Area, Comulated floor area, Construction material
     DM_floor_out = wkf.bld_floor_area_workflow(
@@ -146,7 +147,7 @@ def buildings(lever_setting, years_setting, DM_input, interface=Interface()):
     # print('You are missing the costs')
     # Total Energy demand, Renovation and Construction per depth, GHG emissions (for Space Heating)
     DM_energy_out = wkf.bld_energy_workflow(
-        DM_energy, dm_clm, DM_floor_out["wf-energy"], cdm_const
+        DM_energy, DM_clm, DM_floor_out["wf-energy"], cdm_const
     )
 
     DM_hotwater_out = wkf.bld_hotwater_workflow(

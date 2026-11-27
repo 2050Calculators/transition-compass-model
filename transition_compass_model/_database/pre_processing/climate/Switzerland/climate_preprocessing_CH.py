@@ -1,3 +1,4 @@
+import os
 import pickle
 
 import numpy as np
@@ -18,8 +19,23 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 ######        CDD, HDD       #######
 ####################################
 
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Canton names in the cantonal csv files that differ from the names in country_list
+# Population-weighted degree-day table produced by hdd_cdd_meteoswiss_CH.py
+# (MeteoSwiss TabsD 1 km grid, BFS STATPOP weights). One value per region, year,
+# variable and base temperature Tb.
+DD_FILE = os.path.join(CURRENT_DIR, "data/meteoswiss_tabsd/hdd_cdd_annual_CH.csv")
+
+# variable in the csv -> (variable in the DataMatrix, unit)
+DD_VARIABLES = {
+    "HDD": ("clm_HDD", "daysK"),
+    "N_below": ("clm_days-below", "days"),
+    "CDD": ("clm_CDD", "daysK"),
+    "N_above": ("clm_days-above", "days"),
+}
+DAY_COUNT_VARIABLES = ["clm_days-below", "clm_days-above"]
+
+# Canton names in the csv that differ from the names in country_list
 CANTON_NAME_IN_FILE = {
     "Basel Landschaft": "Basel-Landschaft",
     "Basel Stadt": "Basel-Stadt",
@@ -29,146 +45,93 @@ CANTON_NAME_IN_FILE = {
 }
 
 
-# Data can be found here https://polybox.ethz.ch/index.php/s/UbbrQmssjTkXxY6
-def extract_Yasser_dataset(filename, variable, country):
-    df = pd.read_csv(filename)
-    if "canton" in df.columns:
-        name_in_file = CANTON_NAME_IN_FILE.get(country, country)
-        df = df.loc[df["canton"] == name_in_file]
-        if df.empty:
-            raise ValueError(f"Canton '{name_in_file}' not found in {filename}")
-        df.drop(columns="canton", inplace=True)
-    df = df.T
-    df.reset_index(inplace=True)
-    df.columns = ["Years", variable]
-    df["Country"] = country
-    dm = DataMatrix.create_from_df(df, 0)
+def load_degree_day_table(countries):
+    """Degree-day table as a DataMatrix: Country x Years x Variables x Categories1,
+    where Categories1 are the base temperatures Tb as strings ("-5" ... "30")."""
+    df = pd.read_csv(DD_FILE)
+    file_to_model = {v: k for k, v in CANTON_NAME_IN_FILE.items()}
+    df["region"] = df["region"].replace(file_to_model)
+    df["variable"] = df["variable"].map({k: v[0] for k, v in DD_VARIABLES.items()})
+    missing = set(countries) - set(df["region"])
+    if missing:
+        raise ValueError(f"Regions missing in {DD_FILE}: {sorted(missing)}")
+
+    years = sorted(int(y) for y in df["year"].unique())
+    tbs = sorted(df["Tb"].unique())
+    variables = [v[0] for v in DD_VARIABLES.values()]
+    index = pd.MultiIndex.from_product([countries, years, variables, tbs])
+    values = df.set_index(["region", "year", "variable", "Tb"])["value"].reindex(index)
+    if values.isna().any():
+        raise ValueError("Incomplete degree-day table")
+
+    dm = DataMatrix(
+        col_labels={
+            "Country": list(countries),
+            "Years": years,
+            "Variables": variables,
+            "Categories1": [f"{tb:g}" for tb in tbs],
+        },
+        units={v[0]: v[1] for v in DD_VARIABLES.values()},
+    )
+    dm.array = values.to_numpy().reshape(dm.array.shape)
+    # Other sectors combine DataMatrices by position, so keep the alphabetical order
+    # used by the other pickles (not the order of country_list)
+    dm.sort("Country")
     return dm
 
 
-def join_ots_fts_Yasser_dataset(dm_ots, dm_fts, years_fts):
-    dm = dm_fts.copy()
+def extrapolate_trend(dm, years_out):
+    """Placeholder forecast until the CH2025 scenarios are processed: ordinary
+    least-squares linear trend over all observed years, per country, variable and Tb,
+    evaluated at years_out. Degree-days are clipped at 0, day counts to [0, 365]."""
+    years_obs = np.array(dm.col_labels["Years"], dtype=float)
+    y = np.moveaxis(dm.array, 1, 0)  # years first
+    slope, intercept = np.polyfit(years_obs, y.reshape(len(years_obs), -1), 1)
+    out = intercept + slope * np.array(years_out, dtype=float)[:, np.newaxis]
+    out = np.moveaxis(out.reshape((len(years_out),) + y.shape[1:]), 0, 1)
 
-    for i in range(3):
-        window_size = 5  # Change window size to control the smoothing effect
-        data_smooth = moving_average(
-            dm.array, window_size, axis=dm.dim_labels.index("Years")
+    dm_out = DataMatrix(
+        col_labels={**dm.col_labels, "Years": list(years_out)}, units=dm.units
+    )
+    dm_out.array = np.maximum(out, 0)
+    idx = dm_out.idx
+    for var in DAY_COUNT_VARIABLES:
+        dm_out.array[:, :, idx[var], ...] = np.minimum(
+            dm_out.array[:, :, idx[var], ...], 365
         )
-        dm.array[:, 2:-2, ...] = data_smooth
+    return dm_out
 
-    dm.filter({"Years": years_fts}, inplace=True)
 
-    dm.append(dm_ots, dim="Years")
-    dm.sort("Years")
-
+def legacy_variables(dm_dd):
+    """Two-threshold metrics the model used historically, derived from the table:
+    HDD 18/15 = HDD(15) + 3 N_below(15),  CDD 21/24 = CDD(24) + 3 N_above(24)."""
+    dm = DataMatrix(
+        col_labels={
+            "Country": dm_dd.col_labels["Country"],
+            "Years": dm_dd.col_labels["Years"],
+            "Variables": [
+                "clm_CDD",
+                "clm_HDD",
+                "clm_days-above-24",
+                "clm_days-below-15",
+            ],
+        },
+        units={
+            "clm_CDD": "daysK",
+            "clm_HDD": "daysK",
+            "clm_days-above-24": "days",
+            "clm_days-below-15": "days",
+        },
+    )
+    dm[:, :, "clm_HDD"] = (
+        dm_dd[:, :, "clm_HDD", "15"] + 3 * dm_dd[:, :, "clm_days-below", "15"]
+    )
+    dm[:, :, "clm_days-below-15"] = dm_dd[:, :, "clm_days-below", "15"]
+    dm[:, :, "clm_CDD"] = (
+        dm_dd[:, :, "clm_CDD", "24"] + 3 * dm_dd[:, :, "clm_days-above", "24"]
+    )
+    dm[:, :, "clm_days-above-24"] = dm_dd[:, :, "clm_days-above", "24"]
     return dm
-
-
-def extract_CDD_HDD_from_Yasser_dataset(years_fts, country_list):
-    ots_folder = "data/historical_meteoswiss/"
-    fts_folder = "data/ch2018_climate_models/"
-    swiss_file_CDD = ots_folder + "historical_meteoswiss_national_CDD.csv"
-    swiss_file_HDD = ots_folder + "historical_meteoswiss_national_HDD.csv"
-    swiss_file_CDD_fts = (
-        fts_folder + "CLMCOM-CCLM4_ECEARTH_EUR11_RCP85_national_CDD.csv"
-    )
-    swiss_file_HDD_fts = (
-        fts_folder + "CLMCOM-CCLM4_ECEARTH_EUR11_RCP85_national_HDD.csv"
-    )
-    canton_file_CDD = ots_folder + "historical_meteoswiss_cantonal_CDD.csv"
-    canton_file_HDD = ots_folder + "historical_meteoswiss_cantonal_HDD.csv"
-    canton_file_CDD_fts = (
-        fts_folder + "CLMCOM-CCLM4_ECEARTH_EUR11_RCP85_cantonal_CDD.csv"
-    )
-    canton_file_HDD_fts = (
-        fts_folder + "CLMCOM-CCLM4_ECEARTH_EUR11_RCP85_cantonal_HDD.csv"
-    )
-
-    mapping = {
-        "CDD": {
-            "Switzerland": (swiss_file_CDD, swiss_file_CDD_fts),
-        },
-        "HDD": {"Switzerland": (swiss_file_HDD, swiss_file_HDD_fts)},
-    }
-
-    canton_list = [c for c in country_list if c != "Switzerland"]
-    for canton in canton_list:
-        mapping["CDD"][canton] = (canton_file_CDD, canton_file_CDD_fts)
-        mapping["HDD"][canton] = (canton_file_HDD, canton_file_HDD_fts)
-
-    name_var = {"CDD": "clm_CDD[daysK]", "HDD": "clm_HDD[daysK]"}
-
-    for HCDD, country_file in mapping.items():
-        for country, files in country_file.items():
-            dm_ots = extract_Yasser_dataset(files[0], name_var[HCDD], country)
-            dm_fts = extract_Yasser_dataset(files[1], name_var[HCDD], country)
-            dm = join_ots_fts_Yasser_dataset(dm_ots, dm_fts, years_fts)
-            if "dm_all" in locals():
-                dm_all.append(dm, dim="Country")
-            else:
-                dm_all = dm
-        if "dm_HCDD" in locals():
-            dm_HCDD.append(dm_all, dim="Variables")  # noqa: F823
-        else:
-            dm_HCDD = dm_all.copy()
-        del dm_all
-
-    return dm_HCDD
-
-
-def extract_days_Tbase_from_Yasser_dataset(years_fts, country_list):
-    ots_folder = "data/historical_meteoswiss/"
-    fts_folder = "data/ch2018_climate_models/"
-    swiss_file_Nabove = ots_folder + "historical_meteoswiss_national_above_tbase.csv"
-    swiss_file_Nbelow = ots_folder + "historical_meteoswiss_national_below_tbase.csv"
-    swiss_file_Nabove_fts = (
-        fts_folder + "CLMCOM-CCLM4_ECEARTH_EUR11_RCP85_national_above_tbase.csv"
-    )
-    swiss_file_Nbelow_fts = (
-        fts_folder + "CLMCOM-CCLM4_ECEARTH_EUR11_RCP85_national_below_tbase.csv"
-    )
-    canton_file_Nabove = ots_folder + "historical_meteoswiss_cantonal_above_tbase.csv"
-    canton_file_Nbelow = ots_folder + "historical_meteoswiss_cantonal_below_tbase.csv"
-    canton_file_Nabove_fts = (
-        fts_folder + "CLMCOM-CCLM4_ECEARTH_EUR11_RCP85_cantonal_above_tbase.csv"
-    )
-    canton_file_Nbelow_fts = (
-        fts_folder + "CLMCOM-CCLM4_ECEARTH_EUR11_RCP85_cantonal_below_tbase.csv"
-    )
-
-    mapping = {
-        "Nabove": {
-            "Switzerland": (swiss_file_Nabove, swiss_file_Nabove_fts),
-        },
-        "Nbelow": {
-            "Switzerland": (swiss_file_Nbelow, swiss_file_Nbelow_fts),
-        },
-    }
-    canton_list = [c for c in country_list if c != "Switzerland"]
-    for canton in canton_list:
-        mapping["Nabove"][canton] = (canton_file_Nabove, canton_file_Nabove_fts)
-        mapping["Nbelow"][canton] = (canton_file_Nbelow, canton_file_Nbelow_fts)
-
-    name_var = {
-        "Nabove": "clm_days-above-24[days]",
-        "Nbelow": "clm_days-below-15[days]",
-    }
-
-    for N, country_file in mapping.items():
-        for country, files in country_file.items():
-            dm_ots = extract_Yasser_dataset(files[0], name_var[N], country)
-            dm_fts = extract_Yasser_dataset(files[1], name_var[N], country)
-            dm = join_ots_fts_Yasser_dataset(dm_ots, dm_fts, years_fts)
-            if "dm_all" in locals():
-                dm_all.append(dm, dim="Country")
-            else:
-                dm_all = dm
-        if "dm_N" in locals():
-            dm_N.append(dm_all, dim="Variables")  # noqa: F823
-        else:
-            dm_N = dm_all.copy()
-        del dm_all
-    return dm_N
 
 
 def dummy_update_DM_module_baseyear(DM_old):
@@ -266,34 +229,42 @@ def compute_cooling_uptake(dm_CDD_ots, dict_CDD_fts):
     return dm_uptake_ots, dict_uptake_fts
 
 
-dm_HCDD = extract_CDD_HDD_from_Yasser_dataset(years_fts, country_list)
+dm_dd = load_degree_day_table(country_list)
+missing_ots = set(years_ots) - set(dm_dd.col_labels["Years"])
+if missing_ots:
+    raise ValueError(f"Degree-day table has no data for {sorted(missing_ots)}")
 
-dm_N = extract_days_Tbase_from_Yasser_dataset(years_fts, country_list)
+dm_dd_ots = dm_dd.filter({"Years": years_ots})
+dm_dd_fts = extrapolate_trend(dm_dd, years_fts)
 
-dm_all = dm_HCDD.copy()
-dm_all.append(dm_N, dim="Variables")
-
-DM_climate_new = {"ots": {}, "fts": {"temp": {}}}
-
-DM_climate_new["ots"] = {"temp": dm_all.filter({"Years": years_ots})}
-
-for lev in range(4):
-    lev = lev + 1
-    DM_climate_new["fts"]["temp"][lev] = dm_all.filter({"Years": years_fts})
+# Two groups under the "temp" lever: the legacy scalars (cdd-hdd) and the full
+# degree-day table by base temperature (degree-days)
+DM_climate_new = {
+    "ots": {
+        "temp": {
+            "cdd-hdd": legacy_variables(dm_dd_ots),
+            "degree-days": dm_dd_ots,
+        }
+    },
+    "fts": {"temp": {"cdd-hdd": {}, "degree-days": {}}},
+}
+dm_legacy_fts = legacy_variables(dm_dd_fts)
+for lev in range(1, 5):
+    DM_climate_new["fts"]["temp"]["cdd-hdd"][lev] = dm_legacy_fts.copy()
+    DM_climate_new["fts"]["temp"]["degree-days"][lev] = dm_dd_fts.copy()
 
 #########################
 ####    AC UPTAKE    ####
 #########################
-dict_fts = DM_climate_new["fts"]["temp"].copy()
-dm_ots = DM_climate_new["ots"]["temp"].copy()
+dict_fts = DM_climate_new["fts"]["temp"]["cdd-hdd"].copy()
+dm_ots = DM_climate_new["ots"]["temp"]["cdd-hdd"].copy()
 dm_uptake_ots, dict_uptake_fts = compute_cooling_uptake(dm_ots, dict_fts)
-DM_climate_new["ots"]["temp"].append(dm_uptake_ots, dim="Variables")
-for lev in range(4):
-    lev = lev + 1
-    DM_climate_new["fts"]["temp"][lev].append(dict_uptake_fts[lev], dim="Variables")
+DM_climate_new["ots"]["temp"]["cdd-hdd"].append(dm_uptake_ots, dim="Variables")
+for lev in range(1, 5):
+    DM_climate_new["fts"]["temp"]["cdd-hdd"][lev].append(
+        dict_uptake_fts[lev], dim="Variables"
+    )
 
-file = "../../../data/datamatrix/climate.pickle"
+file = os.path.join(CURRENT_DIR, "../../../data/datamatrix/climate.pickle")
 with open(file, "wb") as handle:
     pickle.dump(DM_climate_new, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-print("Hello")

@@ -581,21 +581,53 @@ def multiply_energy_consumption_by_emission_factor_fxa(
     return dm_tech
 
 
-def bld_energy_workflow(DM_energy, dm_clm, dm_floor_area, cdm_const):
+# Threshold outdoor temperatures [°C] of the degree-day sums: heating counts days with
+# T_out below T_THRESHOLD_HEATING, cooling days with T_out above T_THRESHOLD_COOLING.
+# 15 and 24 reproduce the HDD 18/15 and CDD 21/24 metrics used so far. They are meant
+# to become balance temperatures per building type and envelope class: any value or
+# array broadcastable to (Categories1, Categories2) of the buildings matrices works.
+T_THRESHOLD_HEATING = 15.0
+T_THRESHOLD_COOLING = 24.0
+
+
+def _degree_days_at(dm_dd, variable, T):
+    """Value of `variable` in the climate degree-day table at base temperature(s) T,
+    by linear interpolation along its Tb categories (Categories1, in °C).
+    T: array of thresholds; returns an array of shape (Country, Years, *T.shape)."""
+    tbs = np.array([float(tb) for tb in dm_dd.col_labels["Categories1"]])
+    T = np.asarray(T, dtype=float)
+    if T.min() < tbs[0] or T.max() > tbs[-1]:
+        raise ValueError(
+            f"Threshold temperature outside the degree-day table ({tbs[0]}–{tbs[-1]} °C)"
+        )
+    arr = dm_dd[:, :, variable, :]  # (Country, Years, Tb)
+    i = np.clip(np.searchsorted(tbs, T, side="right") - 1, 0, len(tbs) - 2)
+    w = (T - tbs[i]) / (tbs[i + 1] - tbs[i])
+    return arr[:, :, i] * (1 - w) + arr[:, :, i + 1] * w
+
+
+def bld_energy_workflow(DM_energy, DM_clm, dm_floor_area, cdm_const):
+    dm_dd = DM_clm["degree-days"]  # HDD, CDD and day counts by base temperature
+    dm_clm = DM_clm["cdd-hdd"]  # AC uptake
     # SECTION ENERGY
     # SECTION Adjusted HDD, CDD
     ####    Modify HDD and CDD   ####
     dm_Tint = DM_energy["heatcool-behaviour"].copy()
+    shape_type_class = dm_Tint.array.shape[3:]
 
-    # HDD = HDD_ref + N_15 x (Tint - 18)
-    arr = dm_clm[:, :, "clm_HDD", np.newaxis, np.newaxis] + dm_clm[
-        :, :, "clm_days-below-15", np.newaxis, np.newaxis
-    ] * (dm_Tint[:, :, "bld_Tint-heating", :, :] - 18)
+    # Heating: sum over days with T < T_thr of (Tint - T)
+    #   = HDD(T_thr) + N_below(T_thr) x (Tint - T_thr)
+    T_h = np.broadcast_to(T_THRESHOLD_HEATING, shape_type_class)
+    arr = _degree_days_at(dm_dd, "clm_HDD", T_h) + _degree_days_at(
+        dm_dd, "clm_days-below", T_h
+    ) * (dm_Tint[:, :, "bld_Tint-heating", :, :] - T_h)
     dm_Tint.add(arr, dim="Variables", col_label="bld_HDD-adj", dummy=True, unit="daysK")
-    # CDD = CDD_ref + N_24 x (21 - Tint)
-    arr = dm_clm[:, :, "clm_CDD", np.newaxis, np.newaxis] + dm_clm[
-        :, :, "clm_days-above-24", np.newaxis, np.newaxis
-    ] * (21 - dm_Tint[:, :, "bld_Tint-cooling", :, :])
+    # Cooling: sum over days with T > T_thr of (T - Tint)
+    #   = CDD(T_thr) + N_above(T_thr) x (T_thr - Tint)
+    T_c = np.broadcast_to(T_THRESHOLD_COOLING, shape_type_class)
+    arr = _degree_days_at(dm_dd, "clm_CDD", T_c) + _degree_days_at(
+        dm_dd, "clm_days-above", T_c
+    ) * (T_c - dm_Tint[:, :, "bld_Tint-cooling", :, :])
     dm_Tint.add(arr, dim="Variables", col_label="bld_CDD-adj", dummy=True, unit="daysK")
 
     # SECTION Heating energy demand
