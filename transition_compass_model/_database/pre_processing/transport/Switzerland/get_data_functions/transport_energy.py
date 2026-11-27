@@ -219,12 +219,23 @@ def get_public_transport_energy_consumption(dm_passenger_energy_all):
         return DataMatrix.create_from_df(df_T, num_cat=2)
 
     df_bus_idx = df.loc[df["Unnamed: 0"] == "Autobus"].index[0]
-    df_bus = pd.concat(
-        [
-            df.iloc[df_bus_idx + 2 : df_bus_idx + 5, :],
-            df.loc[df["Unnamed: 0"] == "Trolleybus"],
-        ]
-    )
+    # Autobus energy by type: "Électrique ", "Diesel", "Autres"
+    df_autobus = df.iloc[df_bus_idx + 2 : df_bus_idx + 5, :].copy()
+    df_autobus.set_index("Unnamed: 0", inplace=True)
+    # Before the split exists (2010), "Diesel" is the whole Autobus energy: the
+    # electric and other rows are 0 in those years, not unknown.
+    for row in ["Électrique ", "Autres"]:
+        first_valid = df_autobus.loc[row].first_valid_index()
+        if first_valid is not None:
+            years_before = [y for y in year_cols if y < first_valid]
+            df_autobus.loc[row, years_before] = 0
+    # "Autres" (other fuels: gas, biofuels) is burnt in combustion buses: add it to
+    # the combustion energy (kept in "Diesel" = ICE-diesel here). The bus efficiency
+    # then uses one combustion efficiency for diesel, gas and petrol buses.
+    df_autobus.loc["Diesel"] = df_autobus.loc["Diesel"] + df_autobus.loc["Autres"]
+    df_autobus.drop(index="Autres", inplace=True)
+    df_autobus.reset_index(inplace=True)
+    df_bus = pd.concat([df_autobus, df.loc[df["Unnamed: 0"] == "Trolleybus"]])
     dm_bus_energy = format_df_for_dm(df_bus, cat1="bus")
 
     df_train_idx = df.loc[df["Unnamed: 0"] == "Chemins de fer"].index[0]
@@ -243,6 +254,8 @@ def get_public_transport_energy_consumption(dm_passenger_energy_all):
     )
 
     dm_train_energy.add(0, dim="Categories2", col_label="BEV", dummy=True)
+    # Bus "Autres" is already in ICE-diesel; rail "Autres" is spread below
+    dm_bus_energy.add(0, dim="Categories2", col_label="Autres", dummy=True)
     dm_tra_public_energy = dm_bus_energy.copy()
     dm_tra_public_energy.append(dm_train_energy, dim="Categories1")
 

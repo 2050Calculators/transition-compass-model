@@ -100,7 +100,7 @@ if __name__ == "__main__":
 
     ## Total fleet and new-fleet (for private only)
     print("Fleet - private and public")
-    dm_private_fleet, dm_public_fleet = passenger_fleet_run(dm_pkm, years_ots)
+    dm_private_fleet, dm_public_fleet, _ = passenger_fleet_run(dm_pkm, years_ots)
 
     ## Renewal rate & Waste + adj fleet
     print("Renewal-rate & Waste + adj fleet")

@@ -9,6 +9,9 @@
 #   - Other modes and LDV BEV / FCEV: Swiss energy demand / vkm by technology.
 #     Only available for Switzerland: cantons get the Swiss value, and new
 #     vehicles get the fleet value.
+#   - Bus: FSO public transport energy (T1) / FSO public transport vkm (T5), so
+#     both cover the same buses (public operators). The efficiency is then used
+#     for every bus and coach (see compute_bus_efficiency_from_FSO).
 #   - EP2050 calibration of the main ICE (mode, technology) pairs: the Swiss
 #     fleet efficiency is set to EP2050 energy / EP2050 vkm. For LDV the same
 #     correction factor is applied to every canton and to new vehicles.
@@ -31,7 +34,6 @@ VAR_NEW = "tra_passenger_veh-efficiency_new"
 EP2050_CALIBRATED = {
     "2W": ["ICE-gasoline"],
     "LDV": ["ICE-diesel", "ICE-gas", "ICE-gasoline"],
-    "bus": ["ICE-diesel"],
 }
 # EP2050 LDV ICE-gas efficiency is not usable before 2007: in those years the
 # 2007 correction factor is used instead.
@@ -200,6 +202,57 @@ def add_metrotram_efficiency_from_JRC(dm_veh_eff):
     return dm_veh_eff
 
 
+BUS_COMBUSTION = ["ICE-diesel", "ICE-gas", "ICE-gasoline"]
+
+
+def compute_bus_efficiency_from_FSO(
+    dm_veh_eff_CH, dm_energy_MJ, dm_public_vkm_bus, dm_public_fleet
+):
+    """Swiss bus fleet efficiency (MJ/km) from FSO data only.
+
+    Energy (T1) and vkm (T5) both come from the FSO public transport statistics,
+    so they cover the same buses. The technology split of the vkm comes from the
+    bus fleet (FSO vehicle register), without trolleybuses.
+      - Combustion (diesel, gas, petrol): one efficiency = T1 Autobus diesel +
+        "Autres" / (T5 Autobus vkm x combustion share).
+      - BEV: T1 Autobus electricity / (T5 Autobus vkm x BEV share), averaged over
+        the years with data (noisy, few vehicles).
+      - CEV (trolleybus): T1 Trolleybus / T5 Trolleybus vkm.
+    """
+    fleet = {
+        tech: np.nan_to_num(
+            dm_public_fleet[
+                "Switzerland", :, "tra_passenger_vehicle-fleet", "bus", tech
+            ]
+        )
+        for tech in dm_public_fleet.col_labels["Categories2"]
+        if tech not in ["CEV", "mt"]
+    }
+    fleet_tot = sum(fleet.values())
+    share_comb = sum(fleet[t] for t in BUS_COMBUSTION if t in fleet) / fleet_tot
+    share_bev = fleet["BEV"] / fleet_tot
+
+    var_vkm = dm_public_vkm_bus.col_labels["Variables"][0]
+    vkm_autobus = dm_public_vkm_bus["Switzerland", :, var_vkm, "autobus"]
+    vkm_trolley = dm_public_vkm_bus["Switzerland", :, var_vkm, "trolleybus"]
+
+    def energy(tech):
+        return dm_energy_MJ["Switzerland", :, "tra_energy_demand", "bus", tech]
+
+    eff_comb = energy("ICE-diesel") / (vkm_autobus * share_comb)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        eff_bev = energy("BEV") / (vkm_autobus * share_bev)
+    eff_bev[~np.isfinite(eff_bev) | (eff_bev == 0)] = np.nan
+    eff_bev[:] = np.nanmean(eff_bev)
+    eff_cev = energy("CEV") / vkm_trolley
+
+    for tech in BUS_COMBUSTION:
+        dm_veh_eff_CH["Switzerland", :, VAR_FLEET, "bus", tech] = eff_comb
+    dm_veh_eff_CH["Switzerland", :, VAR_FLEET, "bus", "BEV"] = eff_bev
+    dm_veh_eff_CH["Switzerland", :, VAR_FLEET, "bus", "CEV"] = eff_cev
+    return dm_veh_eff_CH
+
+
 def compute_ep2050_efficiency(dm_energy_MJ, dm_vkm_ep2050, mode, tech):
     # Swiss fleet efficiency (MJ/km) = EP2050 energy (MJ) / EP2050 vkm, by year
     energy = dm_energy_MJ["Switzerland", :, "tra_energy_demand", mode, tech]
@@ -255,6 +308,7 @@ def run(
     cdm_emissions_factors,
     years_ots,
     dm_data_check_vkm,
+    dm_public_vkm_bus,
 ):
     this_dir = os.path.dirname(os.path.abspath(__file__))
     dm_energy_MJ = get_energy_demand_MJ(dm_energy)
@@ -269,6 +323,10 @@ def run(
     print("cleaning efficiency")
     dm_veh_eff_CH = clean_electric_efficiency(dm_veh_eff_CH)
     dm_veh_eff_CH = add_metrotram_efficiency_from_JRC(dm_veh_eff_CH)
+    # Bus: FSO energy / FSO vkm (replaces the generic energy / vkm above)
+    dm_veh_eff_CH = compute_bus_efficiency_from_FSO(
+        dm_veh_eff_CH, dm_energy_MJ, dm_public_vkm_bus, dm_public_fleet
+    )
     dm_veh_eff_CH.fill_nans("Years")
 
     # Calibrate main ICE technologies on EP2050

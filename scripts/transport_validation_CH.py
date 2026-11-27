@@ -11,9 +11,11 @@ years (1990-2023) with official series:
   3. Energy by mode: EP2050+ detailed results (road by vehicle type, rail, aviation)
      [TWh/yr], passenger and freight apart, 1990-2023. Note: for several modes the
      model efficiency was built as EP2050+ energy / vkm, so this mostly checks the
-     model's vkm and technology split, not the energy on its own.
+     model's vkm and technology split, not the energy on its own. Buses are an
+     exception: their efficiency is FSO energy / FSO vkm, so this is an
+     independent check for them.
   4. Passenger-km by mode: FSO "prestations de transport" (je-f-11.04.01.02)
-     [Bpkm/yr]: cars (with coaches), motorbikes, buses, tram, rail, bike, walk.
+     [Bpkm/yr]: cars, motorbikes, buses (with coaches), tram, rail, bike, walk.
   5. Vehicle-km by mode [Bvkm/yr]: FSO "prestations kilométriques"
      (je-f-11.04.01.01) for cars, motorbikes, buses, tram and rail (train-km), and
      EP2050+ road vkm (sheet "03 Fahrleistung", WWB) for cars, motorbikes, buses.
@@ -302,7 +304,7 @@ _PKM_COMMON = {
     "Trams": "metrotram",
     "Trolleybus": "bus",
     "Voitures de tourisme": "LDV",
-    "Cars": "LDV",  # coaches, counted with cars as in the model
+    "Cars": "bus",  # coaches, counted as bus as in the model
     "Motocycles": "2W",
 }
 FSO_PKM_ROWS = {
@@ -324,7 +326,7 @@ _VKM_COMMON = {
     "Tram": "metrotram",
     "Trolleybus": "bus",
     "Voitures de tourisme": "LDV",
-    "Cars privés": "LDV",
+    "Cars privés": "bus",  # coaches
     "Motocycles": "2W",
 }
 FSO_VKM_ROWS = {
@@ -1123,6 +1125,7 @@ def main():
         "- EP2050+: model trucks include rigid trucks (HDVM); model metro/tram is left\n"
         "  out (EP2050+ rail = trains). Model efficiency for several modes was built\n"
         "  from EP2050+ energy / vkm, so gaps there come from vkm or technology split.\n"
+        "  Bus efficiency is FSO energy / FSO vkm (public operators), not EP2050+.\n"
         "- EP2050+ by mode and fuel: model plug-in hybrids are counted with their fuel\n"
         "  (EP2050+ has no PHEV); heavy trucks = model HDVH + HDVM; vans = HDVL.\n"
         "- Electricity road vs rail: model road = BEV + 10 % of PHEV energy; model rail\n"
@@ -1132,7 +1135,7 @@ def main():
         "  a pre-processing or lever problem. Empty FSO years are left out of the\n"
         "  averages, and the total is only shown for years where every mode has data.\n"
         "- EP2050+ road vkm is territorial (vehicles driving in Switzerland). EP2050+\n"
-        "  buses include coaches; the model and FSO count coaches with cars."
+        "  buses include coaches, as in the model and here."
     )
 
     os.makedirs(args.out, exist_ok=True)

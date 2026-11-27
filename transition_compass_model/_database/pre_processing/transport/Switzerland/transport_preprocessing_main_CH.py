@@ -56,7 +56,9 @@ dm_pkm_cap, dm_pkm, dm_vkm = demand_pkm_vkm_run(dm_pop_ots, years_ots)
 
 ## Total fleet and new-fleet
 print("Fleet - private and public")
-dm_private_fleet, dm_public_fleet = passenger_fleet_run(dm_pkm, years_ots)
+dm_private_fleet, dm_public_fleet, dm_public_vkm_bus = passenger_fleet_run(
+    dm_pkm, years_ots
+)
 
 ## Renewal rate & Waste + adj fleet
 print("Renewal-rate & Waste + adj fleet")
@@ -125,6 +127,7 @@ dm_veh_eff = passenger_efficiency_run(
     cdm_emissions_factors,
     years_ots,
     dm_data_check_vkm,
+    dm_public_vkm_bus,
 )
 
 # aviation_pt1_run downloads/caches raw data files (FSO, IATA, World Bank)

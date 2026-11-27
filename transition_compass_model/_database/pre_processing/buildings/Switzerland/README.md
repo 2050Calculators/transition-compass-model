@@ -166,7 +166,8 @@ envelope class.
 **Building the stock.** The starting point is the Swiss Stats building register (SDMX
 dataflow `CH1.GWS / DF_GWS_REG7`). It gives floor area and number of buildings by canton,
 building type and construction period. Each construction period is mapped to an envelope
-class (see the table above), and summing over classes gives `stock tot`. The class split is
+class (see the class table in *Words used in this guide*), and summing over classes gives
+`stock tot`. The class split is
 only trusted for **2023**, so every other year of `stock cat` is left as NaN. Years the
 register doesn't cover are filled by keeping floor area per person on its trend.
 
@@ -326,9 +327,27 @@ classes in proportion to their building counts, from 2000 onwards. Before 2000, 
 correction is extrapolated. Coal is phased out to zero by 2021. The result is normalised over
 technologies, so it becomes a share.
 
-**Non-residential buildings** have no data by technology, so all six types copy the MFH mix.
-Apartment blocks are closer to service buildings than detached houses are, especially for
-district heating and gas.
+**Non-residential buildings** have no cantonal data by technology. All six types start from
+the MFH mix of their canton: apartment blocks are closer to service buildings than detached
+houses are. Nationally, EP2050+ (*Dienstleistung*, Tabelle 02-02) shows that services heat
+differently from MFH (2023: 9 % heat pumps vs 21 % in MFH, more gas and district heating).
+So classes C–F (built up to 2010) are corrected:
+
+- For each year and heating-mix group (oil, gas, wood, electricity, heat pump, district
+  heating, other), a national factor multiplies every canton's mix, which is then
+  renormalised over technologies.
+- The factor is fitted so that the Swiss mix of classes C–F, weighted by the Swiss MFH
+  floor area of each class, equals the EP2050+ services mix of buildings built before 2010.
+  The first guess is EP2050+ services ÷ Swiss MFH; a few iterations remove the small error
+  from renormalising each class on its own. The pipeline prints the check.
+- 1990–1999 use the 2000 factor. Future years are not corrected directly, but the scenario
+  builders extrapolate from the corrected 2015–2023 trend.
+- **Class B** (built from 2011) keeps the MFH mix. EP2050+ has no services mix for new
+  buildings alone: Tabelle 02-01 mixes new buildings with heating replacements in old
+  ones, and it can't be split because it doesn't add up with Tabelle 02-02.
+
+The cantons keep their differences (e.g. more district heating in some), while the Swiss
+total follows EP2050+.
 
 **Efficiency.** Efficiencies come from EP2050+ (Tabelle 01-08, space-heating efficiencies in
 the ZERO Basis scenario). Electricity is set to 1, and solar, other-tech and coal to 0.6.
@@ -523,8 +542,13 @@ timing of the floor area added in the W&P series; classes E and F take the rest.
 | `services_efficiencies` | efficiency by technology |
 | `services_floor-area` | `bld_floor-area_services` [m²], type (6) × class B–F |
 
-> ⚠️ The space-heating technology mix of services is a placeholder copied from hot water
-> (`!FIXME: DUMMY dm_space_heat`). It affects how "renewables" are split.
+> ⚠️ To split each FSO fuel between hot water and space heating, the pipeline needs a
+> space-heating fuel mix. It uses a placeholder: a copy of the household hot-water mix
+> (`!FIXME: DUMMY dm_space_heat`). Because both mixes are the same, every fuel is split in
+> the same ratio, so the services hot-water mix ends up close to the total services heating
+> fuel mix. The placeholder also sets how FSO "renewables" are split into solar and heat
+> pumps. It does **not** affect services space heating in the model, which uses the
+> corrected MFH mix from step 4.
 
 ---
 
@@ -547,8 +571,10 @@ It then checks services space heating on its own:
   buildings module publishes for this purpose;
 - space heating, final energy, against Prognos Table 26 (includes agriculture);
 - the heating mix against EP2050+ Tabelle 02-02. EP2050+ gives a share of heating systems
-  in buildings built before 2010, so it is compared with the model's input mix weighted
-  by floor area (also a share of systems), not with energy by fuel.
+  in buildings built before 2010, so it is compared with the model's input mix of classes
+  C–F weighted by floor area (also a share of systems), not with energy by fuel. Step 4
+  fits classes C–F to this table, so they should match; class B (built from 2011) is
+  shown separately, with no official counterpart.
 
 Results are printed as tables and plotted in `scripts/output/buildings_validation_CH.html`.
 Official files are cached in `scripts/data/`. The EP2050+ workbook is read from this
@@ -710,7 +736,7 @@ country already in the pickle). `ots` matrices cover 1990–2023, `fts` matrices
 | STAT-TAB `px-x-0204000000_106` | Energy accounts by sector and fuel | PxWeb API | `energy_accounts_economy_households.pickle` |
 | STAT-TAB `px-x-0602010000_101` | Employees by sector and canton | PxWeb API | `employees_per_sector_canton.pickle` |
 | FSO households table | Number of households | Download | `households_number.xlsx` |
-| EP2050+ detailed results (*Private Haushalte*, *Dienstleistung*) | Residential floor area, heating mix, heating efficiency, non-residential floor area and renovation; services useful heat (U-value fit and validation) and services heating mix (validation) | Download (zip) | `EP2050_sectors/`, `bld_EP2050_floor_area_type.pickle`, `bld_heating_tech_EP2050.pickle`, `bld_heating_efficiencies.pickle` |
+| EP2050+ detailed results (*Private Haushalte*, *Dienstleistung*) | Residential floor area, heating mix, heating efficiency, non-residential floor area and renovation; services useful heat (U-value fit and validation) and services heating mix (correction of classes C–F and validation) | Download (zip) | `EP2050_sectors/`, `bld_EP2050_floor_area_type.pickle`, `bld_heating_tech_EP2050.pickle`, `bld_heating_efficiencies.pickle` |
 | EP2050+ / Prognos, *Analyse nach Verwendungszweck* | Hot water, lighting, cooking, other electricity | Download | `EP2050_Households_CH.xlsx` |
 | Prognos/Infras/TEP 2021, Table 26 | Services energy by end use; services space heating (validation) | Hard-coded (`services_CH.py`) | – |
 | SFOE open data `ogd109` | Appliance stock, sales, consumption | Download | `appliances_stock_new_energy_CH_raw.csv` |
@@ -729,15 +755,19 @@ country already in the pickle). `ots` matrices cover 1990–2023, `fts` matrices
 
 - **Several policy levels apply to Vaud only.** The other cantons and Switzerland get BAU for most
   heating, hot-water and renovation levels.
-- **Fribourg and Schwyz renovation shares are placeholders** (`FIXME` in the renovation
-  pipeline). In the current code that dictionary isn't used, since the rate comes from the
-  Programme Bâtiments reports instead.
 - **Demolition** uses a 0.2 % floor rather than measured data.
-- **Services space-heating mix** is a copy of the hot-water mix.
-- **Non-residential heating mix** copies MFH. Compared with EP2050+, services get too many
-  heat pumps (2023: 23 % vs 9 % of systems) and too little oil, gas and district heating.
-  This likely explains why services final space heating is about 15 % below Prognos
-  although useful heat matches EP2050+.
+- **Services hot-water mix** follows the total services heating fuel mix, because the
+  hot-water / space-heating split uses a placeholder space-heating mix (see step 9).
+- **Non-residential heating mix** is the MFH mix of each canton, corrected for classes C–F
+  with one national EP2050+ factor per year and technology. Cantonal differences between
+  services and MFH are not known. EP2050+ gives a share of heating systems, while the
+  model mix is a share of floor area. Class B (built from 2011) keeps the MFH mix, since
+  no national services figure exists for new buildings alone. The correction does **not**
+  close the services space-heating gap: final energy stays about 15 % below Prognos
+  (0.85 × on average over 2000–2020, the same as before). Against BFE (T17c, 2023),
+  district heating rises from 1.3 × to 2.0 × official and gas from 1.2 × to 1.3 ×:
+  EP2050+ gives district heating a larger share of systems than BFE's district-heating
+  energy suggests.
 - **Internal gains are not subtracted** in the heating formula. The residential and the
   fitted services U-values absorb them on average, but the trend over time is off: the
   model falls more slowly than EP2050+ (services: 0.89 × EP2050+ in 2000, 1.07 × in 2023
@@ -746,4 +776,5 @@ country already in the pickle). `ots` matrices cover 1990–2023, `fts` matrices
   "process-heat" are dropped, and the intensities are rescaled to FSO totals.
 - The **main script's printed messages** don't always match which levels a step writes. For
   example, "PCV (level 2) and PCV+ (level 3)" also writes renovation for levels 3 and 4,
-  and hot water for levels 2–4. The table above shows the final state.
+  and hot water for levels 2–4. The summary table at the end of Phase 3 shows the final
+  state.

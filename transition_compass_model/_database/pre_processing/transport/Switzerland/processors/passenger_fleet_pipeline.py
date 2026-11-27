@@ -44,7 +44,11 @@ def downscale_public_fleet_canton(dm_public_fleet, dm_pkm):
 
 
 def compute_passenger_new_fleet(
-    agency_new_veh, dataflow_new_veh, file_new_veh_ots1, file_new_veh_ots2
+    agency_new_veh,
+    dataflow_new_veh,
+    file_new_veh_ots1,
+    file_new_veh_ots2,
+    file_new_bus,
 ):
     """
     Compute the new passenger fleet by technology for Switzerland and Vaud.
@@ -54,6 +58,8 @@ def compute_passenger_new_fleet(
         dataflow_new_veh (str): The Swiss Stats SDMX dataflow ID for the new vehicle registrations data.
         file_new_veh_ots1 (str): The path to the file containing new vehicle data for the first period.
         file_new_veh_ots2 (str): The path to the file containing new vehicle data for the second period.
+        file_new_bus (str): The path to the cache of new coaches and buses (2005 - now),
+            subtracted from "Passenger vehicles" (LDV).
 
     Returns:
         DataMatrix: dm_new_fleet_tech The computed passenger fleet by technology for Switzerland and Vaud.
@@ -127,6 +133,16 @@ def compute_passenger_new_fleet(
         agency_new_veh, dataflow_new_veh, file_new_veh_ots1
     )
     dm_new_fleet_tech_ots1.filter({"Country": country_list}, inplace=True)
+    # Coaches and buses are in the bus fleet: remove them from "Passenger vehicles".
+    # Before 2005 there is no split; new buses are about 0.2% of new LDV, so this is
+    # left as is.
+    dm_new_bus = get_data.get_new_fleet_by_tech_raw(
+        agency_new_veh,
+        dataflow_new_veh,
+        file_new_bus,
+        vehicle_types=get_data.BUS_VEHICLE_TYPES,
+    )
+    get_data.subtract_buses_from_passenger_vehicles(dm_new_fleet_tech_ots1, dm_new_bus)
     # Passenger new fleet Switzerland + Vaud: 2005 - new (by technology)
     dm_pass_new_fleet_tech_ots1, dm_new_tech = (
         get_data.extract_passenger_new_fleet_by_tech(dm_new_fleet_tech_ots1)
@@ -225,7 +241,7 @@ def get_public_transport_data(file_url, local_filename, years_ots):
         DF_dict["Passenger pkm"], years_ots
     )
     dm_public_demand_vkm = get_data.extract_public_passenger_vkm(
-        DF_dict["Passenger vkm"], years_ots
+        DF_dict["Passenger vkm"], years_ots, split_bus=True
     )
 
     DM_public = {
@@ -237,53 +253,98 @@ def get_public_transport_data(file_url, local_filename, years_ots):
     return DM_public
 
 
-def compute_non_diesel_bus_share(dm_public_fleet, years_ots):
-    """Use the OFS data on bus fleet by fuel type to compute the share of non-diesel buses in the total bus fleet per canton.
-    The data concerns public and private buses but it is assumed that the share of of technology is the same in both cases.
+def build_bus_fleet_from_register(dm_public_fleet, dm_bus_register):
+    """Bus fleet = every registered bus and coach (FSO vehicle register) + trolleybuses.
+
+    "Bus" is any shared bus or coach, whoever owns it, so the fleet covers the same
+    vehicles as the bus pkm / vkm (FSO, coaches included).
+      - From 2005: register counts ("Coach, bus" + "Articulated bus", DF_MFZ_2) by
+        canton and technology.
+      - Before 2005: FSO public transport buses ("Autobus", table T4) times the 2005
+        ratio register / Autobus, split with the 2005 canton and technology shares.
+      - Trolleybus (CEV): FSO public transport (T4), not in the register. Kept as is.
 
     Args:
-        dm_public_fleet (Datamatrix): number of public vehicles by vehicle type and fuel type for all cantons
+        dm_public_fleet (DataMatrix): public fleet (bus, metrotram, rail) by canton,
+            with bus "ICE-diesel" = FSO "Autobus" and bus "CEV" = trolleybus.
+        dm_bus_register (DataMatrix): registered buses by canton and technology
+            (get_data.get_fleet_bus), 2005 - now.
     Returns:
-        Datamatrix: _description_
+        DataMatrix: dm_public_fleet with the bus technologies replaced.
     """
+    dm_reg = dm_bus_register.copy()
+    techs = dm_reg.col_labels["Categories1"]
+    for tech in techs:
+        if tech not in dm_public_fleet.col_labels["Categories2"]:
+            dm_public_fleet.add(np.nan, dim="Categories2", col_label=tech, dummy=True)
+    dm_public_fleet.sort("Country")
+    dm_reg.sort("Country")
+    if dm_reg.col_labels["Country"] != dm_public_fleet.col_labels["Country"]:
+        raise ValueError("Bus register and public fleet countries do not match")
 
-    # We have the total number of bus. We know want the distinction between the number of bus by fuel type (electric and diesel)
-    # Get a database with the number of bus by fuel type (electric and diesel) for all cantons
-    file = "../data/tra_fleet_transport_vehicles.pickle"
-    dm_bus_normalised = get_data.get_fleet_bus(
-        file, agency="CH1.MFZ_IVS", dataflow="DF_MFZ_2"
-    )
+    years = dm_public_fleet.col_labels["Years"]
+    years_reg = dm_reg.col_labels["Years"]
+    first_year = years_reg[0]
+    years_before = [y for y in years if y < first_year]
 
-    idx_normalised = dm_bus_normalised.idx
-    # Almost only diesel bus before 2005
-    dm_bus_normalised.array[:, : idx_normalised[2005], 0, :] = 0
-    dm_bus_normalised.array[
-        :, : idx_normalised[2005], 0, idx_normalised["ICE-diesel"]
-    ] = 1
-    dm_bus_normalised.fill_nans("Years")
-
-    # keep the proportion and multiply it with OFS fleet
-    non_overlapping_tech = [
-        i
-        for i in dm_bus_normalised.col_labels["Categories1"]
-        if i not in dm_public_fleet.col_labels["Categories2"]
+    # Register counts: Country x Years x Tech
+    arr_reg = dm_reg.array[:, :, 0, :]
+    # 2005 canton x technology shares of the Swiss register total
+    arr_2005 = arr_reg[:, 0, :]
+    tot_ch_2005 = arr_2005[dm_reg.idx["Switzerland"]].sum()
+    arr_share_2005 = arr_2005 / tot_ch_2005
+    # Swiss buses before 2005: FSO Autobus x (register / Autobus) in 2005
+    autobus_ch = dm_public_fleet[
+        "Switzerland", :, "tra_passenger_vehicle-fleet", "bus", "ICE-diesel"
     ]
-    for tech in non_overlapping_tech:
-        dm_public_fleet.add(np.nan, dim="Categories2", col_label=tech, dummy=True)
-
-    idx_fleet = dm_public_fleet.idx
-    for tech in non_overlapping_tech:
-        dm_public_fleet.array[:, :, 0, idx_fleet["bus"], idx_fleet[tech]] = (
-            dm_public_fleet.array[:, :, 0, idx_fleet["bus"], idx_fleet["ICE-diesel"]]
-            * dm_bus_normalised.array[:, :, 0, idx_normalised[tech]]
-        )
-
-    # Update diesel value as well
-    dm_public_fleet.array[:, :, 0, idx_fleet["bus"], idx_fleet["ICE-diesel"]] = (
-        dm_public_fleet.array[:, :, 0, idx_fleet["bus"], idx_fleet["ICE-diesel"]]
-        * dm_bus_normalised.array[:, :, 0, idx_normalised["ICE-diesel"]]
+    ratio = tot_ch_2005 / autobus_ch[years.index(first_year)]
+    i_before = [years.index(y) for y in years_before]
+    arr_before = (
+        autobus_ch[i_before][np.newaxis, :, np.newaxis]
+        * ratio
+        * arr_share_2005[:, np.newaxis, :]
     )
+
+    idx = dm_public_fleet.idx
+    i_reg = [idx[y] for y in years_reg]
+    for t, tech in enumerate(techs):
+        dm_public_fleet.array[:, i_before, 0, idx["bus"], idx[tech]] = arr_before[
+            :, :, t
+        ]
+        dm_public_fleet.array[:, i_reg, 0, idx["bus"], idx[tech]] = arr_reg[:, :, t]
     return dm_public_fleet
+
+
+def subtract_buses_from_LDV_stock(dm_pass_fleet, dm_public_fleet):
+    """Remove the registered buses and coaches from the LDV stock (in place).
+
+    FSO "Passenger vehicles" (counted as LDV) = minibuses + coaches and buses. The
+    coaches and buses are in the bus fleet (build_bus_fleet_from_register), so only
+    minibuses stay in LDV. All technologies except trolleybus (CEV) are removed.
+    """
+    dm_bus = dm_public_fleet.filter(
+        {
+            "Categories1": ["bus"],
+            "Country": dm_pass_fleet.col_labels["Country"],
+            "Years": dm_pass_fleet.col_labels["Years"],
+        }
+    )
+    for col in ["Country", "Years"]:
+        dm_pass_fleet.sort(col)
+        dm_bus.sort(col)
+    if dm_bus.col_labels["Years"] != dm_pass_fleet.col_labels["Years"]:
+        raise ValueError("Bus fleet and LDV fleet years do not match")
+    for tech in dm_bus.col_labels["Categories2"]:
+        if tech == "CEV" or tech not in dm_pass_fleet.col_labels["Categories2"]:
+            continue
+        arr_bus = np.nan_to_num(
+            dm_bus[:, :, "tra_passenger_vehicle-fleet", "bus", tech]
+        )
+        arr_ldv = dm_pass_fleet[:, :, "tra_passenger_vehicle-fleet", "LDV", tech]
+        dm_pass_fleet[:, :, "tra_passenger_vehicle-fleet", "LDV", tech] = np.maximum(
+            arr_ldv - arr_bus, 0
+        )
+    return dm_pass_fleet
 
 
 def run(dm_pkm, years_ots):
@@ -297,6 +358,8 @@ def run(dm_pkm, years_ots):
     Returns:
         dm_private_fleet (DataMatrix): DataMatrix of private passenger fleet data
         dm_public_fleet (DataMatrix): DataMatrix of public passenger fleet data
+        dm_public_vkm_bus (DataMatrix): FSO public transport vkm of Autobus and
+            Trolleybus (Switzerland)
     """
     this_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -317,8 +380,15 @@ def run(dm_pkm, years_ots):
     )
 
     # dm_new_tech is the number of new vehicles for new technologies (used to allocate "Other" category in dm_pass_fleet
+    file_new_bus = os.path.join(
+        this_dir, "../data/tra_new_fleet_bus_swiss_stats.pickle"
+    )
     dm_pass_new_fleet, dm_new_tech = compute_passenger_new_fleet(
-        agency_new_veh, dataflow_new_veh, file_new_veh_ots1, file_new_veh_ots2
+        agency_new_veh,
+        dataflow_new_veh,
+        file_new_veh_ots1,
+        file_new_veh_ots2,
+        file_new_bus,
     )
     dm_pass_new_fleet.filter({"Years": years_ots}, inplace=True)
     dm_new_tech.filter({"Years": years_ots}, inplace=True)
@@ -385,12 +455,26 @@ def run(dm_pkm, years_ots):
     dm_public_fleet = downscale_public_fleet_canton(dm_public_fleet, dm_pkm)
     dm_public_fleet.sort("Country")
 
-    dm_public_fleet = compute_non_diesel_bus_share(dm_public_fleet, years_ots)
+    # Bus fleet = all registered buses and coaches + trolleybuses
+    file_bus = os.path.join(this_dir, "../data/tra_fleet_transport_vehicles.pickle")
+    dm_bus_register = get_data.get_fleet_bus(
+        file_bus, agency="CH1.MFZ_IVS", dataflow="DF_MFZ_2"
+    )
+    dm_public_fleet = build_bus_fleet_from_register(dm_public_fleet, dm_bus_register)
+    # ... which are then removed from LDV ("Passenger vehicles")
+    dm_pass_fleet = subtract_buses_from_LDV_stock(dm_pass_fleet, dm_public_fleet)
 
     dm_private_fleet = dm_pass_fleet
     dm_private_fleet.append(dm_pass_new_fleet, dim="Variables")
 
-    return dm_private_fleet, dm_public_fleet
+    # FSO public transport vkm of "Autobus" and "Trolleybus" (T5), used with the T1
+    # energy for the bus efficiency
+    dm_public_vkm_bus = DM_public["public_demand-vkm"].filter(
+        {"Categories1": ["autobus", "trolleybus"]}
+    )
+    dm_public_vkm_bus.filter({"Years": years_ots}, inplace=True)
+
+    return dm_private_fleet, dm_public_fleet, dm_public_vkm_bus
 
 
 if __name__ == "__main__":

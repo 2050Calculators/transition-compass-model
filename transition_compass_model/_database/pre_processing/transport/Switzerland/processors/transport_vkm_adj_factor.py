@@ -15,7 +15,8 @@ has no trolleybus, so bus CEV is left out of the comparison).
 At run time (model/transport/workflows.py) the fleet share is multiplied by f and
 renormalised per mode, so total vkm by mode is unchanged and only the split
 between technologies moves. Modes / technologies without usable EP2050 data get
-f = 1. The same Swiss factor is copied to every canton.
+f = 1. Buses also get f = 1 (MODES_NO_FACTOR): their fleet and vkm come from FSO
+only. The same Swiss factor is copied to every canton.
 """
 
 import os
@@ -30,6 +31,8 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 VAR_NAME = "tra_passenger_vkm-adj-factor"
 MODES = ["2W", "LDV", "bus"]  # road passenger modes covered by EP2050
+# Modes kept at f = 1: the bus fleet and vkm come from FSO only (no EP2050)
+MODES_NO_FACTOR = ["bus"]
 CALIB_YEARS = create_years_list(1990, 2015, 1)
 MIN_SHARE = 0.01  # skip years where a tech has < 1 % share (unstable ratio)
 MIN_VALID_YEARS = 5  # need at least this many usable years, else f = 1
@@ -88,6 +91,8 @@ def run(dm_fleet_share_CH, dm_vkm_ep2050, years_ots, years_fts, country_list):
     n_valid = valid.sum(axis=0)
     f_const = np.where(n_valid >= MIN_VALID_YEARS, np.nanmean(ratio, axis=0), 1.0)
     f_const = np.nan_to_num(f_const, nan=1.0)
+    for mode in MODES_NO_FACTOR:
+        f_const[MODES.index(mode), :] = 1.0
     print_variability(techs, ratio, valid, f_const)
 
     years = list(years_ots) + list(years_fts)

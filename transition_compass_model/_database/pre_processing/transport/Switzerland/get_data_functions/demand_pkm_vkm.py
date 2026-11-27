@@ -43,7 +43,7 @@ def get_transport_demand_pkm(file_url, local_filename, years_ots):
         "bus",
         "LDV",
         "2W",
-        "LDV",
+        "bus",  # "Cars" = coaches, counted as bus like MRMT "Autocar" and EP2050 "coach"
         "bike",
         "walk",
     ]
@@ -118,7 +118,8 @@ def get_transport_demand_vkm(file_url, local_filename, years_ots):
         "Cars privés",
         "Motocycles",
     ]
-    new_name = ["rail", "metrotram", "bus", "bus", "LDV", "LDV", "2W"]
+    # "Cars privés" = coaches, counted as bus (same as in get_transport_demand_pkm)
+    new_name = ["rail", "metrotram", "bus", "bus", "LDV", "bus", "2W"]
     var_name = "tra_passenger_transport-demand-vkm"
     unit = "Mvkm"
     header_row = 0

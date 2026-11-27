@@ -30,7 +30,12 @@ from transition_compass_model.model.common.data_matrix_class import DataMatrix
 
 
 #### New fleet Switzerland + Vaud: 2005 - now
-def get_new_fleet_by_tech_raw(agency, dataflow, file):
+def get_new_fleet_by_tech_raw(
+    agency,
+    dataflow,
+    file,
+    vehicle_types=("Passenger cars", "Passenger vehicles", "Motorcycles"),
+):
     # New fleet data are heavy, download them only once
     try:
         with open(file, "rb") as handle:
@@ -43,18 +48,11 @@ def get_new_fleet_by_tech_raw(agency, dataflow, file):
             "FREQ": ["Annual"],
             "UV_RV_OWNER_TYPE": ["Total"],
             "UV_RV_REGISTRATION_TYPE": ["First registrations of new vehicles"],
-            # FIXME: "Passenger vehicles" (buses/coaches/minibuses, SDMX code 200) is only
-            # included here to match the old STAT-TAB pipeline's regex-based ".*Passenger.*"
-            # grouping, which wrongly folded it into "LDV" alongside "Passenger cars" (code
-            # 100 - a sibling category, not a parent). Kept for a clean migration parity
-            # check against the old pipeline's output; drop it once parity is confirmed.
-            "UV_RV_VEHICLE_GROUP_AND_TYPE": [
-                "Passenger cars",
-                "Passenger vehicles",
-                # "Light motor vehicle",
-                # "Heavy motor vehicle",
-                "Motorcycles",
-            ],
+            # "Passenger vehicles" (SDMX code 200) = minibuses + coaches and buses.
+            # It is counted as "LDV", and the coaches and buses ("Coach, bus",
+            # "Articulated bus", fetched separately) are then subtracted from it:
+            # they belong to the bus fleet (see extract_passenger_new_fleet_by_tech).
+            "UV_RV_VEHICLE_GROUP_AND_TYPE": list(vehicle_types),
             "UV_RV_FUEL": fuel_types,
             "UV_HGDE_KT": utils.swiss_stats_canton_filter(),  # "Total" = all of Switzerland
         }
@@ -91,6 +89,53 @@ def get_new_fleet_by_tech_raw(agency, dataflow, file):
 
 
 ### Passenger new fleet Switzerland + Vaud: 2005 - new
+BUS_VEHICLE_TYPES = ("Coach, bus", "Articulated bus")
+
+
+def subtract_buses_from_passenger_vehicles(dm_new_fleet, dm_new_bus):
+    """Remove new coaches and buses from "Passenger vehicles" (in place).
+
+    "Passenger vehicles" (SDMX code 200) = minibuses + coaches and buses. Coaches and
+    buses belong to the bus fleet, so only minibuses are left in it (counted as LDV).
+
+    Args:
+        dm_new_fleet (DataMatrix): raw new registrations, with "Passenger vehicles"
+            in Categories1 and the raw fuel labels in Categories2.
+        dm_new_bus (DataMatrix): raw new registrations of BUS_VEHICLE_TYPES, same
+            dimensions.
+    """
+    dm_bus = dm_new_bus.copy()
+    dm_bus.groupby(
+        {"Passenger vehicles": list(BUS_VEHICLE_TYPES)},
+        dim="Categories1",
+        inplace=True,
+    )
+    dm_bus.filter(
+        {
+            "Country": dm_new_fleet.col_labels["Country"],
+            "Years": dm_new_fleet.col_labels["Years"],
+        },
+        inplace=True,
+    )
+    # The API only returns fuels with data: add the missing ones as 0
+    missing = [
+        f
+        for f in dm_new_fleet.col_labels["Categories2"]
+        if f not in dm_bus.col_labels["Categories2"]
+    ]
+    if missing:
+        dm_bus.add(0.0, dim="Categories2", col_label=missing, dummy=True)
+    for col in ["Country", "Years", "Categories2"]:
+        dm_bus.sort(col)
+        dm_new_fleet.sort(col)
+    if dm_bus.col_labels["Categories2"] != dm_new_fleet.col_labels["Categories2"]:
+        raise ValueError("Bus and passenger new fleet fuels do not match")
+    arr_bus = np.nan_to_num(dm_bus[:, :, :, "Passenger vehicles", :])
+    arr_pv = np.nan_to_num(dm_new_fleet[:, :, :, "Passenger vehicles", :])
+    dm_new_fleet[:, :, :, "Passenger vehicles", :] = np.maximum(arr_pv - arr_bus, 0)
+    return dm_new_fleet
+
+
 def extract_passenger_new_fleet_by_tech(dm_new_fleet):
     # Sum all months
     dm_new_fleet.groupby(
@@ -100,9 +145,8 @@ def extract_passenger_new_fleet_by_tech(dm_new_fleet):
     # The raw data is already fetched filtered to just these vehicle-type categories
     # (see get_new_fleet_by_tech_raw), so just rename them to the transport module's labels
     dm_pass_new_fleet = dm_new_fleet.copy()
-    # FIXME: "Passenger vehicles" (buses/coaches/minibuses) should not count as LDV - see
-    # FIXME in get_new_fleet_by_tech_raw. Drop it from this list once migration parity
-    # against the old pipeline's output is confirmed.
+    # "Passenger vehicles" is counted as LDV once its coaches and buses are removed
+    # (see subtract_buses_from_passenger_vehicles): what is left is minibuses.
     dm_pass_new_fleet.groupby(
         {
             "LDV": ["Passenger cars", "Passenger vehicles"],
@@ -599,15 +643,24 @@ def get_fleet_bus(file, agency="CH1.MFZ_IVS", dataflow="DF_MFZ_2"):
         with open(f, "wb") as handle:
             pickle.dump(dm_fleet_bus, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+    # Number of registered buses and coaches (all owners), by canton and technology.
+    # The register has no trolleybuses: they are added from the FSO public transport
+    # statistics (see build_bus_fleet_from_register in passenger_fleet_pipeline).
     dm_fleet_bus = dm_fleet_bus.groupby(
-        {"tra_fleet_bus": dm_fleet_bus.col_labels["Variables"]},
+        {"tra_passenger_vehicle-fleet": dm_fleet_bus.col_labels["Variables"]},
         dim="Variables",
         inplace=False,
     ).copy()
+    utils.rename_swiss_stats_cantons(dm_fleet_bus)
+    # "Other" (7-34 vehicles in Switzerland) is counted as diesel
     dict_tech = {
         "FCEV": ["Fuel cell electric vehicle (FCEV)"],
         "BEV": ["Battery electric vehicle (BEV)"],
-        "ICE-diesel": ["Diesel: conventional", "Diesel: hybrid electric vehicle (HEV)"],
+        "ICE-diesel": [
+            "Diesel: conventional",
+            "Diesel: hybrid electric vehicle (HEV)",
+            "Other",
+        ],
         "ICE-gasoline": [
             "Petrol: conventional",
             "Petrol: hybrid electric vehicle (HEV)",
@@ -615,23 +668,14 @@ def get_fleet_bus(file, agency="CH1.MFZ_IVS", dataflow="DF_MFZ_2"):
         "PHEV-gasoline": ["Plug-in hybrid electric vehicle (PHEV): petrol"],
         "ICE-gas": ["Gas (mono- and bi-fuel)"],
     }
-
     dm_fleet_bus.groupby(dict_tech, dim="Categories1", regex=False, inplace=True)
+    dm_fleet_bus.array = np.nan_to_num(dm_fleet_bus.array)
 
-    # we want the proportion in the other categories
-    dm_fleet_bus.drop(dim="Categories1", col_label="Other")
-
-    dm_fleet_bus.filter({"Years": years_ots}, inplace=True)
-
+    years_in = [y for y in years_ots if y in dm_fleet_bus.col_labels["Years"]]
+    dm_fleet_bus.filter({"Years": years_in, "Country": country_list}, inplace=True)
     dm_fleet_bus.sort("Country")
-    dm_bus_normalised = dm_fleet_bus.normalise(dim="Categories1", inplace=False)
-
-    # add missing years and extrapoalte the missing values with a linear fit
-    year_database = dm_bus_normalised.col_labels["Years"]
-    old_years = [y for y in years_ots if y not in year_database]
-    dm_bus_normalised.add(np.nan, dim="Years", col_label=old_years, dummy=True)
-    dm_bus_normalised.sort("Years")
-    return dm_bus_normalised
+    dm_fleet_bus.sort("Categories1")
+    return dm_fleet_bus
 
 
 def extract_public_passenger_fleet(df, years_ots):
@@ -800,7 +844,10 @@ def extract_public_passenger_pkm(df, years_ots):
     return dm
 
 
-def extract_public_passenger_vkm(df, years_ots):
+def extract_public_passenger_vkm(df, years_ots, split_bus=False):
+    """FSO public transport vkm (table T5). With split_bus, "Autobus" and
+    "Trolleybus" are kept apart (as "autobus" and "trolleybus") instead of being
+    grouped as "bus"."""
     # Change headers
     new_header = df.iloc[2]
     new_header.values[0] = "Variables"
@@ -854,6 +901,10 @@ def extract_public_passenger_vkm(df, years_ots):
         "metrotram": ["Tram"],
         "rail": ["Chemins de fer", "Chemins de fer à crémaillère"],
     }
+    if split_bus:
+        del cat_map["bus"]
+        cat_map["autobus"] = ["Autobus"]
+        cat_map["trolleybus"] = ["Trolleybus"]
     dm.groupby(cat_map, dim="Categories1", inplace=True)
     mask = dm.array == 0
     dm.array[mask] = np.nan

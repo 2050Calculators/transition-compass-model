@@ -227,15 +227,32 @@ technology, and how many new cars and motorbikes are registered each year.
 - 1990–2004: the Swiss total comes from FSO table gr-e-11.03.02.02.01a. Each canton gets
   its 2005 share of the Swiss total, and the technology split is that of 2005.
 
-**Buses, trains, trams.** FSO, *Transports publics – séries chronologiques détaillées*
-(`tra_public_transport.xlsx`) gives the Swiss fleet. Each canton gets the Swiss fleet ×
-*canton pkm / Swiss pkm* for that mode. The bus fleet is public-operator buses only,
-while bus pkm and vkm include coaches. So bus vkm per vehicle is high, and the
-electric-bus efficiency (energy / vkm, step 5) is lower than a city-bus-only value.
+**Buses.** A bus is any shared bus or coach, whoever owns it: city and regional buses
+and coaches. So the fleet covers the same vehicles as bus pkm and vkm (FSO, coaches
+included). `build_bus_fleet_from_register` in `processors/passenger_fleet_pipeline.py`:
+- 2005 onwards: Swiss Stats vehicle register `CH1.MFZ_IVS / DF_MFZ_2`, "Coach, bus" +
+  "Articulated bus", by canton and fuel (9,414 vehicles in Switzerland in 2023). This
+  also gives the technology split. Diesel hybrids count as `ICE-diesel`, and "Other"
+  (7–34 vehicles) too.
+- 1990–2004: FSO public transport buses ("Autobus", table T4) × the 2005 ratio
+  register / Autobus (about 1.5). Each canton gets its 2005 share of the Swiss register,
+  with its 2005 technology split.
+- Trolleybuses (`CEV`) are not in the register. They come from FSO public transport
+  (T4), split by canton like trains and trams (below).
 
-**Minibuses.** The Swiss Stats group "Passenger vehicles" (code 200: mostly minibuses up
-to 3.5 t, plus coaches and buses) is counted with cars (`LDV`), in the stock and in new
-registrations, because most of them are minibuses used like cars.
+Bus vkm per vehicle is then about 45,000 km/yr in 1990 and 52,000 km/yr in 2023.
+
+**Trains, trams, trolleybuses.** FSO, *Transports publics – séries chronologiques
+détaillées* (`tra_public_transport.xlsx`, T4) gives the Swiss fleet. Each canton gets the
+Swiss fleet × *canton pkm / Swiss pkm* for that mode.
+
+**Minibuses.** The Swiss Stats group "Passenger vehicles" (code 200) is minibuses up to
+3.5 t plus coaches and buses. It is counted with cars (`LDV`), after removing the coaches
+and buses, which are in the bus fleet:
+- stock: the bus fleet above (all technologies except `CEV`) is subtracted from `LDV`;
+- new registrations, 2005 onwards: Swiss Stats new "Coach, bus" + "Articulated bus"
+  (`DF_IVS_0_GENERAL`) are subtracted from "Passenger vehicles". Before 2005 there is no
+  split; new buses are about 0.2 % of new cars, so nothing is removed.
 
 **Output:** `dm_private_fleet` (stock and new vehicles, `LDV` and `2W`) and
 `dm_public_fleet` (stock, `bus`, `rail`, `metrotram`), in number of vehicles.
@@ -303,6 +320,12 @@ used for passengers, freight and aviation.
 sheet "04 Energieverbrauch Strasse", give Swiss road energy by mode and fuel. Rail energy
 comes from the EP2050+ technical report, Kap. 8, Abb. 112, all assigned to `CEV`.
 
+Bus and rail energy are then replaced with FSO public transport energy (T1). For buses:
+"Autobus" electricity (`BEV`), "Autobus" diesel + "Autres" (other fuels: gas, biofuels;
+all burnt in combustion buses, so kept with `ICE-diesel`), and "Trolleybus" (`CEV`).
+Before 2010 T1 has no split by fuel and "Diesel" is the whole Autobus energy, so
+electricity and "Autres" are 0 in those years.
+
 ---
 
 ### 5. Efficiency: how much energy each vehicle needs per km
@@ -330,9 +353,19 @@ over all years (electric cars: 2011 and 2012 are left out of the average as outl
 32.2 kgoe/100 km in 2021, joined by a straight line. For these modes, new vehicles get the
 fleet value, and every canton gets the Swiss value.
 
-**Correction to EP2050+.** For 2W gasoline, LDV diesel, gas and gasoline, and bus diesel,
-the Swiss fleet efficiency is set to *EP2050+ energy / EP2050+ vkm*, each year.
-- 2W and bus: every canton and new vehicles get this Swiss value, like the other modes.
+**Buses: FSO only** (`compute_bus_efficiency_from_FSO`). Energy (T1) and vkm (T5) both
+come from FSO public transport statistics, so both cover the same buses (public
+operators). The efficiency is then used for every bus and coach. The vkm by technology
+is T5 "Autobus" vkm × the bus fleet share (register, without trolleybuses).
+- Combustion (diesel, gas, petrol): one value = (diesel + "Autres") / combustion vkm.
+  About 14 MJ/km in 1990 and 15 MJ/km in 2023.
+- `BEV`: electricity / BEV vkm, averaged over the years with data (about 3.9 MJ/km).
+- `CEV` (trolleybus): T1 trolleybus energy / T5 trolleybus vkm (11 MJ/km in 1990,
+  8.5 MJ/km in 2023).
+
+**Correction to EP2050+.** For 2W gasoline and LDV diesel, gas and gasoline, the Swiss
+fleet efficiency is set to *EP2050+ energy / EP2050+ vkm*, each year.
+- 2W: every canton and new vehicles get this Swiss value, like the other modes.
 - LDV: the CO₂-based values are multiplied by *EP2050+ efficiency / Swiss CO₂-based fleet
   efficiency*. So Switzerland matches EP2050+, while cantons and new cars keep their
   CO₂-based ratio to the Swiss fleet. For LDV gas, years before 2007 use the 2007 factor
@@ -609,7 +642,7 @@ levels instead (step 6).
    - Technology share of new vehicles:
      - level 1: the PCV path, 65 % electric and plug-in cars in new sales in 2035, then the
        same trend continues. The code comment says levels 1 and 2 are swapped for now;
-     - levels 2–3: BAU, with Vaud buses reaching 80 % `CEV` in 2050;
+     - levels 2–3: BAU, with Vaud new buses reaching 80 % electric (`BEV` + `CEV`) in 2050;
      - level 4: 100 % electric new cars and 100 % `CEV` new buses from 2030.
    - pkm per person:
      - level 1: Vaud back to its 2019 value from 2030; **all other regions held flat at
@@ -664,7 +697,7 @@ levels instead (step 6).
 | `passenger_modal-share` | BAU trend | Vaud: PCV; CH: halfway L1–L3; other cantons: BAU | rail 32 %, bike 9 %, walk 11 % | DLS shares |
 | `passenger_occupancy` | BAU (vkm trend) | cars +0.1 by 2050 | cars +0.2 by 2050 | cars +0.3 by 2050 |
 | `passenger_utilization-rate` | BAU | 25 % towards L4 | 75 % towards L4 | BAU + 10 % in 2050 |
-| `passenger_technology-share_new` | BAU; Vaud cars: PCV path | BAU; Vaud buses 80 % CEV | no combustion cars from 2035, buses 100 % CEV | Vaud: 100 % electric cars and CEV buses from 2030; others: BAU |
+| `passenger_technology-share_new` | BAU; Vaud cars: PCV path | BAU; Vaud buses 80 % BEV + CEV | no combustion cars from 2035, buses 100 % CEV | Vaud: 100 % electric cars and CEV buses from 2030; others: BAU |
 | `passenger_veh-efficiency_new` | flat at 2023 | Vaud: PCV gains; CH: 25 % towards L4; other cantons: flat | halfway between L2 (before fill) and L4 | smaller cars |
 | `passenger_aviation-pkm` | +4 %/year | +2.9 %/year | +2 %/year | −2 %/year |
 | `fuel-mix` | no SAF; road and rail biofuel 0 | half of L3 SAF | SAF budget | same as L3 |
@@ -686,7 +719,8 @@ level 1 for every canton except Vaud.
 | pkm per person, by mode | MRMT survey (grande région split, cantonal total), see step 1 |
 | vkm | canton pkm / Swiss occupancy |
 | Car and motorbike fleet, new vehicles | Swiss Stats by canton (2005+). Before 2005: archive by canton (stock), Swiss total × 2005 share (new) |
-| Bus, rail, tram fleet | Swiss fleet × canton share of Swiss pkm |
+| Bus fleet | Swiss Stats register by canton (2005+). Before 2005: Swiss total × 2005 canton share |
+| Rail, tram, trolleybus fleet | Swiss fleet × canton share of Swiss pkm |
 | Car efficiency (combustion, plug-in) | Swiss Stats CO₂ classes by canton |
 | Freight tkm | GTS share of tkm starting in the canton (2016–2020) |
 | Aviation absolute totals | Swiss value × 2023 population share |
@@ -742,10 +776,11 @@ future years are NaN or flat: the model recomputes them from the fleet stock-flo
 | MRMT, daily distance by grande région (2000, 2005, 2010, 2015, 2021) | Mode split per canton | Download (2010+), local file (2000, 2005) | `tra_pkm_CH_reg_<year>.xls(x)` |
 | MRMT cantonal key figures 2015 and 2021 | Canton total km per day | Download | `MRMT/2015/<canton>.xlsx`, `MRMT/su-f-11.04.03-MZ-2021-A2_Kant.xlsx` |
 | Swiss Stats `DF_MFZ_0_GENERAL` | Car, motorbike and truck fleet, 2005+ | SDMX API | `tra_tot_fleet_swiss_stat.pickle`, `tra_freight_fleet_bfs.pickle` |
-| Swiss Stats `DF_IVS_0_GENERAL` | New cars, motorbikes and trucks, 2005+ | SDMX API | `tra_new_fleet_swiss_stats.pickle`, `tra_freight_new_bfs.pickle` |
+| Swiss Stats `DF_IVS_0_GENERAL` | New cars, motorbikes and trucks, 2005+; new coaches and buses (removed from LDV) | SDMX API | `tra_new_fleet_swiss_stats.pickle`, `tra_freight_new_bfs.pickle`, `tra_new_fleet_bus_swiss_stats.pickle` |
+| Swiss Stats `DF_MFZ_2` | Bus and coach fleet by canton and fuel, 2005+ | SDMX API | `tra_fleet_transport_vehicles.pickle` |
 | STAT-TAB `px-x-1103020100_101` | Car and motorbike fleet before 2005 | Local file | `px-x-1103020100_101.csv` |
 | FSO gr-e-11.03.02.02.01a | Swiss new vehicles 1990–2004 | Local file (download by hand) | `tra_new-vehicles_CH_1990-2023.csv` |
-| FSO *Transports publics – séries chronologiques détaillées* | Bus, rail, tram fleet; rail freight tkm (T7.2.1) | Download | `tra_public_transport.xlsx` |
+| FSO *Transports publics – séries chronologiques détaillées* | Rail, tram, trolleybus fleet (T4); bus fleet before 2005 (T4); bus and rail energy (T1); bus and trolleybus vkm (T5); rail freight tkm (T7.2.1) | Download | `tra_public_transport.xlsx` |
 | Swiss Stats `DF_MFZ_1_EMISSION` / `DF_IVS_1_EMISSION` | CO₂ per km of the car fleet / new cars, by canton | SDMX API | `tra_veh_efficiency_swiss_stat_co2.pickle`, `tra_new-veh_efficiency_co2.pickle` |
 | STAT-TAB `px-x-1103020100_106` | Fleet CO₂ per km (read, then not used) | PxWeb API | `tra_veh_efficiency.pickle` |
 | EP2050+ detailed results, *Verkehrssektor* | Road energy, vkm, truck fleet and new registrations; future freight levels | Download (zip) | `EP2050_sectors/`, `tra_EP2050_energy_demand_private.pickle`, `tra_EP2050_vkm_demand_private.pickle` |
