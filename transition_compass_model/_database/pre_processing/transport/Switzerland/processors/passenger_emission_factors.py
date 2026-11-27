@@ -36,6 +36,14 @@ def create_emissions_factors_cdm(emis, mapping_cat):
 def run():
     # SECTION Emission factors - constants
     # region Literature on emissions factors
+    # CO2 for diesel, gasoline, gas and marinefueloil: Swiss GHG inventory values from
+    # FOEN (BAFU), Faktenblatt "CO2-Emissionsfaktoren des Treibhausgasinventars der
+    # Schweiz", January 2026
+    # https://www.bafu.admin.ch/dam/de/sd-web/NlGIhzJ8OW0t/CO2_Emissionsfaktoren_THG_Inventar.pdf
+    #   Table 1: Benzin 73.8, Diesel 73.3, Schweröl 77.0 t CO2/TJ (used from 2013 on)
+    #   Table 2: Erdgas 55.9 t CO2/TJ (2025 value; it varies 55.9-56.5 since 2013)
+    # The FOEN sheet gives CO2 only. CH4 and N2O, and all aviation factors (kerosene,
+    # SAF, H2), still come from IPCC 2006 as below.
     # Source cited in EUCalc doc
     # CO2 emissions from table 3.2.1 "Road transport default CO2 emission factors and uncertainty ranges"
     # CH4 and N2O emissions from table 3.2.2 "Road transport N2O and CH4 default emission factors and uncertainty ranges"
@@ -60,11 +68,11 @@ def run():
     # Emission factors in kg/TJ
     emis = {
         "CO2": {
-            "diesel": 74100,
-            "gas": 56100,
-            "gasoline": 69300,
+            "diesel": 73300,  # FOEN 2026, Diesel
+            "gas": 55900,  # FOEN 2026, Erdgas (2025)
+            "gasoline": 73800,  # FOEN 2026, Benzin
             "kerosene": 73.3 * 1000,
-            "marinefueloil": 77400,
+            "marinefueloil": 77000,  # FOEN 2026, Schweröl
             "SAF": 73.3 * (2 / 3) * 1000,
             "H2": 73.3 * (2 / 3) * 0.25 * 1000,
         },
